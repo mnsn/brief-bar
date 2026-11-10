@@ -1064,13 +1064,16 @@ extension CopilotTasksStore {
     /// since. On its own: git fetches the branch first, which may wait on the network, and the other prompts' reads don't
     /// wait for it. Its turn's end was seen, so meanwhile it isn't read again, which would take what its session does next
     /// for its own, nor taken for one whose end wasn't seen as another prompt is sent its session (`overlap`). Once Send
-    /// Work to Copilot is off, nothing's kept: it's read again once it's on. Once, while one is under way.
+    /// Work to Copilot is off, or BriefBar stopped, git isn't asked, and nothing it told is kept: it's read again once it's
+    /// on. Once, while one is under way.
     private func tellWhetherPushed(_ id: String, _ probe: PushProbe) {
         guard promptsBeingTold.insert(id).inserted else { return }
         let forTests = pushedForTests
         Task {
             defer { promptsBeingTold.remove(id) }
+            guard canSend, isOn, !hasStopped else { return }
             let git = await git()
+            guard canSend, isOn, !hasStopped else { return }
             let pushed = await Self.pushedItsOwn(
                 in: probe.folder, branch: probe.branch, since: probe.start, at: probe.end, git: git, forTests: forTests
             )

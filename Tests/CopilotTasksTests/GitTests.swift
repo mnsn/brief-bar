@@ -409,6 +409,18 @@ import Testing
         try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", pushed], at: base + 130)
         #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(130).addingTimeInterval(0.5)) == nil)
         #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(129)) == false)
+
+        // Without git's log of where HEAD was, it can't tell where the checkout was as the turn ended, only where it is now;
+        // without origin/<branch>'s, how the commit came to the branch, or when, whatever the branch has now.
+        func log(of ref: String) async throws -> URL {
+            let path = try await git.run(["-C", checkout.path, "rev-parse", "--git-path", "logs/\(ref)"], timeout: 30)
+            return path.hasPrefix("/") ? URL(fileURLWithPath: path) : checkout.appendingPathComponent(path)
+        }
+        try FileManager.default.removeItem(at: try await log(of: "HEAD"))
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(140)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last) == true)
+        try FileManager.default.removeItem(at: try await log(of: "refs/remotes/origin/\(Self.source)"))
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last) == nil)
     }
 
     /// Whether a fix was partway through a rebase, a merge or a cherry-pick as its turn ended, from git's log of where HEAD
@@ -416,7 +428,9 @@ import Testing
     /// later turn starts doesn't; nor a merge a later turn starts once HEAD moved. git doesn't log when a merge or a
     /// cherry-pick starts: one going on since HEAD's last move before the end leaves it unknown, and so does calling one off
     /// since, which git logs on a branch. Others' commit, which the checkout fetched, isn't its push, whatever it did there;
-    /// nor is one pushed from another worktree of the clone, which shares origin/<branch>, where a rebase on it stopped.
+    /// nor is one pushed from another worktree of the clone, which shares origin/<branch>, where a rebase on it stopped. A
+    /// rebase on a detached HEAD logs no finish: one that went through, then pushed, isn't partway after its last step. What
+    /// git logs in the second the turn ended may have come after it.
     @Test(.timeLimit(.minutes(5)))
     func tellsWhatItWasPartwayThroughAsItsTurnEnded() async throws {
         let (fixture, git) = try await retargetable()
@@ -472,6 +486,10 @@ import Testing
         #expect(await pushed(since: start, at: 90) == true)
         #expect(await git.stoppedPartway(checkout, at: at(125)) == true)
         try await run(["rebase", "--abort"], at: 130)
+        #expect(await git.stoppedPartway(checkout, at: at(125)) == true)
+        #expect(await git.stoppedPartway(checkout, at: at(120).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(130).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(135)) == false)
 
         // The next fix resets to what's pushed, then someone pushes over it, and it resets to theirs, and cherry-picks its
         // fix there, which stops on the conflict, as its turn ends. Called off since, with HEAD where it was, which git
@@ -524,6 +542,71 @@ import Testing
         #expect(await pushed(since: start, at: 370) == false)
         try await run(["rebase", "--abort"], at: 380)
         #expect(await pushed(since: start, at: 370) == false)
+
+        // The next fix's push is rejected, as someone pushed meanwhile, to another file, and its rebase on that goes
+        // through, on a detached HEAD; it pushes, and its turn ends.
+        try await run(["checkout", "--quiet", "--detach", "origin/\(Self.source)"], at: 390)
+        start = try await remote()
+        try await commit("Last", to: "last.txt", at: 400)
+        try await pushFromElsewhere("Fourth", to: "fourth.txt", fixture)
+        try await run(["fetch", "--quiet", "origin"], at: 410)
+        try await run(["rebase", "--quiet", "origin/\(Self.source)"], at: 420)
+        try await push(at: 430)
+        #expect(await git.stoppedPartway(checkout, at: at(420).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(440)) == false)
+        #expect(await pushed(since: start, at: 440) == true)
+    }
+
+    /// What git's log of where HEAD was says of a rebase, a merge, a cherry-pick or a revert going on at a time in a second,
+    /// and where a ref was then, from how it moved alone.
+    @Test func tellsFromHowHEADMovedWhatWasGoingOn() {
+        let (a, b) = (String(repeating: "a", count: 40), String(repeating: "b", count: 40))
+        func moves(_ entries: [(Int, String)]) -> [Git.Move] {
+            entries.reversed().map { Git.Move(second: $0.0, commit: a, subject: $0.1) }
+        }
+        func partway(_ entries: [(Int, String)], _ now: Git.Partway = .nothing, at second: Int) -> Bool? {
+            Git.stoppedPartway(moves(entries), now: now, at: second)
+        }
+        // A rebase, from its start to its calling off, or its finish; what it logs in that second may have come after it.
+        let aborted = [(10, "rebase (start): checkout origin/main"), (10, "rebase (pick): Mine"), (30, "rebase (abort): returning to \(b)")]
+        #expect(partway(aborted, at: 5) == false)
+        #expect(partway(aborted, at: 10) == nil)
+        #expect(partway(aborted, at: 20) == true)
+        #expect(partway(aborted, at: 30) == nil)
+        #expect(partway(aborted, at: 40) == false)
+        #expect(partway([(10, "rebase (start): checkout x"), (20, "rebase (continue): Mine"), (25, "rebase (finish): returning to refs/heads/b")], at: 22) == true)
+        // One on a detached HEAD logs no finish: its last step ends it, `git pull --rebase`'s too; one going on now hasn't
+        // ended, and one going on now whose start isn't logged can't be told.
+        #expect(partway([(10, "pull --rebase (start): checkout \(b)"), (12, "pull --rebase (pick): Mine"), (20, "commit: More")], at: 15) == false)
+        #expect(partway([(10, "rebase (start): checkout x")], .rebase, at: 20) == true)
+        #expect(partway([(10, "rebase (start): checkout x"), (12, "rebase (pick): Mine"), (30, "rebase (start): checkout y")], .rebase, at: 11) == true)
+        #expect(partway([(10, "rebase (start): checkout x")], .rebase, at: 5) == false)
+        #expect(partway([(5, "commit: Mine")], .rebase, at: 20) == nil)
+        #expect(partway([(10, "rebase (continue): Mine"), (20, "rebase (finish): returning to refs/heads/b")], at: 15) == true)
+        // A merge, a cherry-pick or a revert going on now started since HEAD last moved; one going on then may have ended with
+        // HEAD's first move since.
+        #expect(partway([(10, "commit: Mine")], .other, at: 20) == nil)
+        #expect(partway([(10, "commit: Mine"), (30, "commit: Later")], .other, at: 20) == false)
+        #expect(partway([(10, "commit: Mine"), (30, "reset: moving to \(b)")], at: 20) == nil)
+        #expect(partway([(10, "commit: Mine"), (30, "commit (cherry-pick): Mine")], at: 20) == nil)
+        #expect(partway([], at: 20) == nil)
+        #expect(Git.rebaseStep("rebase (start): checkout origin/main") == .start)
+        #expect(Git.rebaseStep("pull (start): checkout \(b)") == .start)
+        #expect(Git.rebaseStep("rebase (pick): Mine") == .step)
+        #expect(Git.rebaseStep("rebase (update-ref): refs/heads/b") == .step)
+        #expect(Git.rebaseStep("rebase (abort): returning to \(b)") == .end)
+        #expect(Git.rebaseStep("commit (merge): Merge branch 'main'") == nil)
+        #expect(Git.rebaseStep("commit (cherry-pick): Mine") == nil)
+        #expect(Git.rebaseStep("checkout: moving from main to b") == nil)
+        #expect(Git.rebaseStep("") == nil)
+
+        // Where a ref was: as the second before ended, unless it moved to another commit in that second.
+        let refMoves = [Git.Move(second: 20, commit: b, subject: "commit: Later"), Git.Move(second: 10, commit: a, subject: "commit: Mine")]
+        #expect(Git.commit(at: 5, of: refMoves) == nil)
+        #expect(Git.commit(at: 15, of: refMoves) == a)
+        #expect(Git.commit(at: 20, of: refMoves) == nil)
+        #expect(Git.commit(at: 25, of: refMoves) == b)
+        #expect(Git.commit(at: 20, of: [Git.Move(second: 20, commit: a, subject: "checkout: moving from a to a")] + refMoves.dropFirst()) == a)
     }
 
     /// A push moves origin/<branch> as the remote's fetch settings map the branch to it: by default, but not in a clone of

@@ -1021,9 +1021,11 @@ import Testing
         #expect(store.statuses[task] == nil)
     }
 
-    /// What git tells of a task once Send Work to Copilot is turned off, or BriefBar stopped, while it was asked, isn't kept,
-    /// and says nothing: the task stands as it did, and once the feature's on again, git is asked again.
+    /// Once Send Work to Copilot is turned off while a task's log is read, git isn't asked whether it pushed; what git tells
+    /// once it's turned off, or BriefBar stopped, while it was asked, isn't kept, and says nothing. The task stands as it
+    /// did, and once the feature's on again, git is asked again.
     @Test func whatGitTellsOnceItsOffIsntKept() async throws {
+        enum Off { case whileRead, whileAsked, stoppedWhileAsked }
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
         try finishedLog(of: task, in: home, after: now)
@@ -1031,32 +1033,42 @@ import Testing
         shipping.worktree = URL(fileURLWithPath: "/tmp/copilot-worktrees/payments-api/\(task)", isDirectory: true)
         shipping.fixes = true
         shipping.head = "c1"
-        for stops in [false, true] {
+        for off in [Off.whileRead, .whileAsked, .stoppedWhileAsked] {
             let settings = AppSettings(defaults: MemoryDefaults())
             settings.notifications = true
             settings.copilotRuns = [shipping]
             let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
             let store = store(settings, notifier: Notifier(recent: recent, posts: false))
             store.useEnvironment(["COPILOT_HOME": home.path])
+            let answers = PushAnswers([shipping.worktree.path: true])
             let gate = Gate()
-            store.pushedForTests = { _, _, _, _ in
+            store.pushedForTests = {
+                let answer = await answers.answer($0, $1, $2, $3)
                 await gate.wait()
-                return true
+                return answer
             }
             store.refresh()
-            try await settle { store.runsBeingTold.contains(task) }
-            if stops { store.stop() } else { settings.copilotEnabled = false }
-            await gate.open()
-            try await settle { store.runsBeingTold.isEmpty }
+            if off == .whileRead {
+                await gate.open()
+                settings.copilotEnabled = false
+                try await settle { !store.isRefreshing && store.runsBeingTold.isEmpty }
+                #expect(await answers.asked.isEmpty)
+            } else {
+                try await settle { store.runsBeingTold.contains(task) }
+                if off == .stoppedWhileAsked { store.stop() } else { settings.copilotEnabled = false }
+                await gate.open()
+                try await settle { store.runsBeingTold.isEmpty }
+                #expect(await answers.asked.count == 1)
+            }
             #expect(settings.copilotRuns == [shipping])
             #expect(recent.history.entries.isEmpty)
-            if !stops {
-                settings.copilotEnabled = true
-                store.refresh()
-                try await settle { settings.copilotRuns.first?.ended != nil }
-                #expect(settings.copilotRuns.first?.pushed == true)
-                #expect(recent.history.entries.map(\.id) == [CopilotTasksStore.notificationID(task)])
-            }
+            guard off != .stoppedWhileAsked else { continue }
+            settings.copilotEnabled = true
+            store.refresh()
+            try await settle { settings.copilotRuns.first?.ended != nil }
+            #expect(settings.copilotRuns.first?.pushed == true)
+            #expect(recent.history.entries.map(\.id) == [CopilotTasksStore.notificationID(task)])
+            #expect(await answers.asked.count == (off == .whileRead ? 1 : 2))
         }
     }
 

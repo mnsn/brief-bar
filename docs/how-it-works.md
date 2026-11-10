@@ -3270,18 +3270,22 @@ where HEAD and that branch were then, so that what's done there since, such as a
 doesn't count: it pushed when the commit the checkout was at, which the commit kept didn't have, had come to the branch
 there by a push from the clone, which moves it, not by a fetch of what others pushed, and no rebase, merge, cherry-pick
 or revert had stopped partway there, which leaves the checkout at what others pushed
-(`Git.pushedItsOwn(in:branch:since:at:)`, `Git.stoppedPartway(_:at:)`). git logs a rebase as it starts, `git pull
---rebase`'s too, but not a merge, a cherry-pick or a revert, which keep HEAD where it is until they end: one going on
-that started since HEAD last moved before the turn ended leaves it unknown, and so does one that HEAD's first move since
-may have ended, as calling it off on a branch logs a reset. So does a move of HEAD, or a push of its commit, in the
-second the turn ended, since git's logs keep whole seconds. A push moves the branch there only when the clone's fetch
-settings name it, which a clone of one branch's don't (`Git.tracksPushes(to:in:)`): there git fetches the branch first,
-and goes by whether it has the commit now, or, when it can't fetch, as offline, had it. For a prompt, git is asked only on the read of its
+(`Git.pushedItsOwn(in:branch:since:at:)`, `Git.stoppedPartway(_:now:at:)`). git logs a rebase's start, `git pull
+--rebase`'s too, its steps, and its finish or its calling off, so one was partway from its start to its end, however it
+ended since; on a detached HEAD it logs no finish, so its last step ends it there. git logs neither the start nor the end
+of a merge, a cherry-pick or a revert, which keep HEAD where it is until they end: one going on that started since HEAD
+last moved before the turn ended leaves it unknown, and so does one that HEAD's first move since may have ended, as
+calling it off on a branch logs a reset. So does a move of HEAD, a push of its commit, or a rebase's start or end, in the
+second the turn ended, since git's logs keep whole seconds; and logs that don't reach back to before then. A push moves
+the branch there only when the clone's fetch settings name it, which a clone of one branch's don't
+(`Git.tracksPushes(to:in:)`): there git fetches the branch first, and goes by whether it has the commit now, or, when it
+can't fetch, as offline, had it. For a prompt, git is asked only on the read of its
 log that ends its turn. The fix ends once git has told, each on its own, so that the other tasks' and prompts' reads
 don't wait on it
 (`CopilotTasksStore.tellWhetherPushed`); a task gone on with meanwhile, which takes its place, isn't told what was read
 of the one before; and a prompt whose turn was seen to end isn't read again meanwhile, nor taken, as another prompt is
-sent its session, for one whose end wasn't seen. BriefBar keeps what git
+sent its session, for one whose end wasn't seen. Once Send Work to Copilot is off, or BriefBar stops, git isn't asked,
+and what it told isn't kept: it's asked again once the feature's on. BriefBar keeps what git
 said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,
@@ -3293,7 +3297,8 @@ when git can't tell, as when its checkout is gone, or one kept from before Brief
 apart: a push from another checkout of the clone, which shares the branch's place there, from the session's own, so that
 a commit someone pushed from another worktree, which the session checked out as it was, committing nothing, looks like
 its own, as when a merge or a cherry-pick on it stopped partway, called off since with HEAD where it was, which git
-doesn't log on a detached HEAD; and, in a clone whose fetch settings don't name the branch, a commit someone else pushed
+doesn't log on a detached HEAD, or a rebase on it stopped, ended since with `--quit` or by skipping what it stopped at,
+which git doesn't log either; and, in a clone whose fetch settings don't name the branch, a commit someone else pushed
 after BriefBar fetched, which the session checked out so, and a push of its commit from a later turn there before git
 fetched, as when the turn ended while BriefBar wasn't running, from its own. Not seen pushed, it isn't
 ready to push either, since it may have replied, which a Push & Reply would post again: **Fix** it again; a later push

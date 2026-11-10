@@ -305,7 +305,7 @@ final class CopilotTasksStore: ObservableObject {
     private var startedHere: Set<String> = []
     private var goneSince: [String: Date] = [:]
     private var timer: Timer?
-    private var isRefreshing = false
+    private(set) var isRefreshing = false
     private var cancellables: Set<AnyCancellable> = []
     /// Your login shell's environment, asked for again with each send.
     private var loginEnvironment: [String: String]?
@@ -886,15 +886,19 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// Ends a task that fixed what it took on first, then was to push and reply, and finished, once git in its checkout
-    /// tells whether it pushed a commit of its own (`pushedItsOwn(_:at:)`), on its own: git may fetch the branch first, which
-    /// may wait on the network, and the other tasks' reads don't wait for it. Until then it stands as it did. Once Send Work
-    /// to Copilot is off, or BriefBar stopped, nothing's kept: it's read again once it's on. Once, while one is under way.
+    /// tells whether it pushed a commit of its own (`pushedItsOwn(_:at:git:)`), on its own: git may fetch the branch first,
+    /// which may wait on the network, and the other tasks' reads don't wait for it. Until then it stands as it did. Once Send
+    /// Work to Copilot is off, or BriefBar stopped, as while `refresh` read, git isn't asked, and nothing it told is kept:
+    /// it's read again once it's on. Once, while one is under way.
     private func tellWhetherPushed(_ ended: Ended) {
         guard runsBeingTold.insert(ended.run.id).inserted else { return }
         Task {
             defer { runsBeingTold.remove(ended.run.id) }
+            guard canSend, isOn, !hasStopped else { return }
+            let git = await git()
+            guard canSend, isOn, !hasStopped else { return }
             var ended = ended
-            ended.pushed = await pushedItsOwn(ended.run, at: ended.status.since)
+            ended.pushed = await pushedItsOwn(ended.run, at: ended.status.since, git: git)
             guard canSend, isOn, !hasStopped else { return }
             apply([ended])
         }
@@ -903,9 +907,9 @@ final class CopilotTasksStore: ObservableObject {
     /// Whether a task that fixed what it took on first, then was to push and reply, pushed a commit of its own from its
     /// checkout since it started, as git there says things stood as it ended, at `end` (`Git.pushedItsOwn(in:branch:since:at:)`):
     /// nil when git can't tell, or BriefBar didn't read where the branch was as it started (`CopilotRun.head`).
-    private func pushedItsOwn(_ run: CopilotRun, at end: Date?) async -> Bool? {
+    private func pushedItsOwn(_ run: CopilotRun, at end: Date?, git: Git) async -> Bool? {
         guard let branch = run.onPullRequest?.sourceBranch, let start = run.head else { return nil }
-        return await Self.pushedItsOwn(in: run.worktree, branch: branch, since: start, at: end, git: await git(), forTests: pushedForTests)
+        return await Self.pushedItsOwn(in: run.worktree, branch: branch, since: start, at: end, git: git, forTests: pushedForTests)
     }
 
     /// Whether a session's checkout pushed a commit of its own to a pull request's branch since `start`, as things stood at
