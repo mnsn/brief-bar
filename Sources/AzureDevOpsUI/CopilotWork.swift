@@ -868,12 +868,13 @@ extension CopilotTasksStore {
     /// sent it before, whose ends weren't seen yet, from its turn, so BriefBar stops following them, and says so
     /// (`SentPrompt.overlapped`). One seen over only once may be the end of the turn that ran as it was sent, so it isn't
     /// taken as its own. One copied for you to paste that BriefBar didn't see pasted isn't handed off: whether you pasted it
-    /// can't be told either.
+    /// can't be told either. One whose end was seen, which waits for git to tell whether it pushed (`tellWhetherPushed`),
+    /// ended before.
     func overlap(promptsIn session: String, before date: Date) {
         guard canSend, isOn, !hasStopped else { return }
         var prompts = settings.copilotSentPrompts
         for index in prompts.indices where prompts[index].session == session && prompts[index].isFollowed
-            && !prompts[index].awaitsFork && prompts[index].sentAt < date {
+            && !prompts[index].awaitsFork && prompts[index].sentAt < date && !promptsBeingTold.contains(prompts[index].id) {
             prompts[index].overlapped = true
             promptTurns[prompts[index].id] = nil
             promptsOver[prompts[index].id] = nil
@@ -909,7 +910,9 @@ extension CopilotTasksStore {
     /// (`pauseFollowing`).
     func followSentPrompts(now: Date = Date()) {
         guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
-        let open = settings.copilotSentPrompts.filter { $0.isFollowed && followingPaused[$0.session] == nil }
+        let open = settings.copilotSentPrompts.filter {
+            $0.isFollowed && followingPaused[$0.session] == nil && !promptsBeingTold.contains($0.id)
+        }
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
         let home = appHome
@@ -1055,11 +1058,12 @@ extension CopilotTasksStore {
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
     }
 
-    /// Ends a fix sent with Push and Reply on, whose turn finished, once git in the checkout its session works in tells
-    /// whether it pushed a commit of its own, which it keeps (`SentPrompt.pushed`): once, whatever moves the branch since.
-    /// On its own: git fetches the branch first, which may wait on the network, and the other prompts' reads don't wait for
-    /// it. Not once Send Work to Copilot is off, nor once the prompt isn't followed, or its turn isn't over, by then: the
-    /// next read tells. Once, while one is under way.
+    /// Ends a fix sent with Push and Reply on, whose turn was seen to finish, once git in the checkout its session works in
+    /// tells whether it pushed a commit of its own, which it keeps (`SentPrompt.pushed`): once, whatever moves the branch
+    /// since. On its own: git fetches the branch first, which may wait on the network, and the other prompts' reads don't
+    /// wait for it. Its turn's end was seen, so meanwhile it isn't read again, which would take what its session does next
+    /// for its own, nor taken for one whose end wasn't seen as another prompt is sent its session (`overlap`). Once Send
+    /// Work to Copilot is off, nothing's kept: it's read again once it's on. Once, while one is under way.
     private func tellWhetherPushed(_ id: String, _ probe: PushProbe) {
         guard promptsBeingTold.insert(id).inserted else { return }
         let forTests = pushedForTests
@@ -1067,10 +1071,8 @@ extension CopilotTasksStore {
             defer { promptsBeingTold.remove(id) }
             let git = await git()
             let pushed = await Self.pushedItsOwn(in: probe.folder, branch: probe.branch, since: probe.start, git: git, forTests: forTests)
-            guard canSend, isOn, !hasStopped, promptsOver[id] != nil,
-                  let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
-                  settings.copilotSentPrompts[index].isFollowed,
-                  followingPaused[settings.copilotSentPrompts[index].session] == nil
+            guard canSend, isOn, !hasStopped, let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
+                  settings.copilotSentPrompts[index].isFollowed
             else { return }
             var prompt = settings.copilotSentPrompts[index]
             prompt.ended = .finished

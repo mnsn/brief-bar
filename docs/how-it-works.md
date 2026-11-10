@@ -3272,7 +3272,8 @@ rebase, merge, cherry-pick or revert stopped partway there, which leaves the che
 (`Git.pushedItsOwn(in:branch:since:)`). For a prompt, git is asked only on the read of its log that ends its turn. The
 fix ends once git has told, each on its own, so that the other tasks' and prompts' reads don't wait on its fetch
 (`CopilotTasksStore.tellWhetherPushed`); a task gone on with meanwhile, which takes its place, isn't told what was read
-of the one before. BriefBar keeps what git
+of the one before; and a prompt whose turn was seen to end isn't read again meanwhile, nor taken, as another prompt is
+sent its session, for one whose end wasn't seen. BriefBar keeps what git
 said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,

@@ -1062,9 +1062,10 @@ import Testing
         #expect(await answers.asked.count == 1)
     }
 
-    /// A fix sent with Push and Reply on whose turn doesn't read over any more by the time git tells whether it pushed, as
-    /// when its session took up another message, isn't ended by what git said: the next read tells.
-    @Test func aPromptWhoseTurnGoesOnWhileGitIsAskedIsntEndedByIt() async throws {
+    /// A fix sent with Push and Reply on whose turn was seen to finish has ended, though git hasn't told yet whether it
+    /// pushed: a prompt sent its session meanwhile doesn't take it for one whose end wasn't seen (`overlap`), nor is its
+    /// session's next turn read as its own. It ends with what git says.
+    @Test func aFixWhosePushGitIsAskedAboutHasEnded() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let sent = Date()
@@ -1083,17 +1084,29 @@ import Testing
         shipping.head = "c1"
         settings.copilotSentPrompts = [try #require(SentPrompt(shipping, session: session, sentAt: sent, copied: false))]
         let id = try #require(settings.copilotSentPrompts.first?.id)
-        for seconds in [3.0, 6.0] {
+        func follow(at seconds: TimeInterval) async throws {
             store.followSentPrompts(now: sent.addingTimeInterval(seconds))
             try await settle { !store.isFollowingPrompts }
         }
+        try await follow(at: 3)
+        try await follow(at: 6)
         #expect(store.promptsBeingTold == [id])
-        // Meanwhile a read finds its turn going on.
-        store.promptsOver[id] = nil
+        // Meanwhile you send the session a fix of 13, and it takes it up.
+        _ = store.keep(about(threads: [13]), sentTo: .sent, from: session, forking: false, at: sent.addingTimeInterval(7))
+        let stamp = sent.addingTimeInterval(8).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        let log = try FileHandle(forWritingTo: home.appendingPathComponent("session-state/\(session)/events.jsonl"))
+        try log.seekToEnd()
+        try log.write(contentsOf: Data((#"{"type":"user.message","data":{"content":"Fix 13"},"id":"c","timestamp":"\#(stamp)","parentId":null}"# + "\n").utf8))
+        try log.close()
+        try await follow(at: 9)
         await gate.open()
         try await settle { store.promptsBeingTold.isEmpty }
-        #expect(settings.copilotSentPrompts.first?.ended == nil)
-        #expect(settings.copilotSentPrompts.first?.pushed == nil)
+        let fix = try #require(settings.copilotSentPrompts.first { $0.id == id })
+        #expect(fix.ended == .finished)
+        #expect(fix.pushed == true)
+        #expect(!fix.overlapped)
+        #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Fixed, pushed and replied in ‘Retry backoff’")
+        #expect(settings.copilotSentPrompts.first { $0.parts == [.thread(13)] }?.isFollowed == true)
     }
 
     /// Whether a fix sent with Push and Reply on pushed is kept as it finished, so another push since doesn't change it
