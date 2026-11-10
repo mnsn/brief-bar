@@ -136,4 +136,53 @@ import Testing
         links.unlink(session, pullRequest)
         #expect(links.suggestions(for: session, among: links.candidates(for: session)) == [pullRequest])
     }
+
+    /// What each way to open a linked thing did.
+    @MainActor private final class Opened {
+        var done: [String] = []
+        var showsOverTheDetails = true
+    }
+
+    /// A row's links show a pull request over the details where there's somewhere, as on the Sprint page, a teammate's
+    /// too, then in BriefBar's window for one of yours, then where it lives, each the next way where it can't; anything
+    /// else, and anywhere else, as before.
+    @Test func aRowsLinksShowAPullRequestOverTheDetailsWhereTheyCan() {
+        let opened = Opened()
+        let yours = LinkedItem(
+            ref: pullRequest, label: "!4071", title: "Fix the coupon rounding", symbol: "arrow.triangle.pull", color: .blue,
+            open: { opened.done.append("open yours") }, show: { opened.done.append("show yours"); return true }
+        )
+        let teammates = LinkedItem(
+            ref: .pullRequest(organization: "contoso", number: 4072), label: "!4072", title: "Retry payments",
+            symbol: "arrow.triangle.pull", color: .blue, open: { opened.done.append("open teammate's") }
+        )
+        func titles(_ item: LinkedItem, _ navigation: ItemNavigation?) -> [String] {
+            LinksMenuContent.openings(of: item, navigation: navigation).map(\.title)
+        }
+
+        // Without somewhere over the details, as in the menu bar's lists.
+        #expect(titles(yours, nil) == ["Show in BriefBar", "Open in Azure DevOps"])
+        #expect(titles(teammates, nil) == ["Open in Azure DevOps"])
+
+        let navigation = ItemNavigation(trail: [workItem]) { ref in
+            opened.done.append("details of \(ref.id)")
+            return opened.showsOverTheDetails
+        }
+        #expect(titles(yours, navigation) == ["Show Details", "Show in BriefBar", "Open in Azure DevOps"])
+        #expect(titles(teammates, navigation) == ["Show Details", "Open in Azure DevOps"])
+        #expect(titles(item(gitHubPullRequest, "Speed up checkout"), navigation) == ["Show Details", "Open on GitHub"])
+        #expect(titles(item(session, "Rounding"), navigation) == ["Open in Copilot"])
+        #expect(titles(item(workItem, "Save items for later"), navigation) == ["Open in Azure DevOps"])
+
+        LinksMenuContent.openings(of: teammates, navigation: navigation).first?.action?()
+        #expect(opened.done == ["details of 4072"])
+        // Where they can't show it, in BriefBar's window, else where it lives.
+        opened.showsOverTheDetails = false
+        opened.done = []
+        LinksMenuContent.openings(of: yours, navigation: navigation).first?.action?()
+        #expect(opened.done == ["details of 4071", "show yours"])
+        opened.done = []
+        LinksMenuContent.openings(of: teammates, navigation: navigation).first?.action?()
+        #expect(opened.done == ["details of 4072", "open teammate's"])
+    }
 }

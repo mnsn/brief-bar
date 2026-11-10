@@ -82,6 +82,20 @@ public enum SendOutcome: Sendable, Equatable {
     case forkedNotSent(fork: String, SendFailure)
 }
 
+/// What became of a prompt that BriefBar asked the extension that sends it to report, and, once the session, or its fork,
+/// got it, which report says how its turn goes.
+public struct SendReceipt: Sendable, Equatable {
+    public var outcome: SendOutcome
+    /// The request whose report says how the prompt's turn goes (`CopilotOutbox.report(of:sentTo:)`): nil when nothing
+    /// reports it, as an extension that started before BriefBar asked for reports doesn't.
+    public var report: String?
+
+    public init(_ outcome: SendOutcome, report: String? = nil) {
+        self.outcome = outcome
+        self.report = report
+    }
+}
+
 /// Sends a prompt to one of the Copilot app's sessions, or forks the session and sends the fork the prompt, through
 /// BriefBar's extension in it (`CopilotOutbox`), and waits for the extension to say how it went: only as you ask, never
 /// in the demo. It waits without blocking a thread, looking at the outbox every `Timing.poll`.
@@ -170,9 +184,14 @@ public struct SessionSender: Sendable {
 
     /// Sends the session a prompt.
     public func send(_ prompt: String, to session: String) async -> SendOutcome {
-        switch await request(.send(prompt, to: session, now: effects.now())) {
-        case .success: return .sent
-        case .failure(let why): return .notSent(why)
+        await send(prompt, to: session, report: false).outcome
+    }
+
+    /// Sends the session a prompt, and, with `report`, asks its extension to report how the prompt's turn goes.
+    public func send(_ prompt: String, to session: String, report: Bool) async -> SendReceipt {
+        switch await request(.send(prompt, to: session, report: report, now: effects.now())) {
+        case .success(let result): return SendReceipt(.sent, report: result.reports ? result.requestId : nil)
+        case .failure(let why): return SendReceipt(.notSent(why))
         }
     }
 
@@ -181,6 +200,12 @@ public struct SessionSender: Sendable {
     /// extension names; or, when it named none, or one that isn't, or didn't say it made one, the one fork of the session
     /// made since, if there's just one. Otherwise there's no telling which, if any.
     public func forkAndSend(_ prompt: String, from session: String) async -> SendOutcome {
+        await forkAndSend(prompt, from: session, report: false).outcome
+    }
+
+    /// Forks the session, then sends the fork the prompt, as `forkAndSend(_:from:)` does, and, with `report`, asks the
+    /// fork's extension to report how the prompt's turn goes there.
+    public func forkAndSend(_ prompt: String, from session: String, report: Bool) async -> SendReceipt {
         // When it starts, to the instant: the request's own times are whole seconds, and a fork made earlier in the same
         // second is none of its own.
         let started = effects.now()
@@ -192,18 +217,18 @@ public struct SessionSender: Sendable {
                 break
             }
             switch await confirm(id, asForkOf: session, madeSince: started) {
-            case nil: return await sendFork(prompt, to: id)
+            case nil: return await sendFork(prompt, to: id, report: report)
             case .unconfirmedFork?: unnamed = .unconfirmedFork
-            case let stopped?: return .forkedNotSent(fork: id, stopped)
+            case let stopped?: return SendReceipt(.forkedNotSent(fork: id, stopped))
             }
         case .failure(let why):
-            guard Self.mayHaveForked(why) else { return .notSent(why) }
+            guard Self.mayHaveForked(why) else { return SendReceipt(.notSent(why)) }
             unnamed = why
         }
         switch await theFork(of: session, madeSince: started) {
-        case .success(let found?): return await sendFork(prompt, to: found)
-        case .success(nil): return .notSent(unnamed)
-        case .failure(let stopped): return .notSent(stopped)
+        case .success(let found?): return await sendFork(prompt, to: found, report: report)
+        case .success(nil): return SendReceipt(.notSent(unnamed))
+        case .failure(let stopped): return SendReceipt(.notSent(stopped))
         }
     }
 
@@ -220,12 +245,12 @@ public struct SessionSender: Sendable {
     }
 
     /// Sends the fork the prompt, once no other is on its way to it, or to its checkout.
-    private func sendFork(_ prompt: String, to fork: String) async -> SendOutcome {
-        if let busy = await effects.reserve(fork) { return .forkedNotSent(fork: fork, busy) }
+    private func sendFork(_ prompt: String, to fork: String, report: Bool) async -> SendReceipt {
+        if let busy = await effects.reserve(fork) { return SendReceipt(.forkedNotSent(fork: fork, busy)) }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
-        switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
-        case .success: return .forkedAndSent(fork: fork)
-        case .failure(let why): return .forkedNotSent(fork: fork, why)
+        switch await request(.send(prompt, to: fork, report: report, now: effects.now()), opens: true) {
+        case .success(let result): return SendReceipt(.forkedAndSent(fork: fork), report: result.reports ? result.requestId : nil)
+        case .failure(let why): return SendReceipt(.forkedNotSent(fork: fork, why))
         }
     }
 

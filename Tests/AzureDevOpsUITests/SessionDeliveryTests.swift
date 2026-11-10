@@ -40,10 +40,14 @@ private final class ExtensionStandIn: Sendable {
     }
 
     /// Takes its session's requests until `stop()`: what `answer` returns goes into each one's result, or none when nil.
+    /// With `reports`, a send that asks for a report and is done gets one, saying it works, before its result says so.
     /// Started again, it answers as it's told then, and stops looking as it was told before. It looks on `TestThreads`,
     /// beside the tests, as an extension in another process would: so once `stop()` or `start` returns, a look begun before
     /// may still be under way, but claims nothing.
-    func start(after delay: Duration = .zero, answer: @escaping @Sendable (_ kind: String) -> [String: Any]? = { _ in ["ok": true] }) {
+    func start(
+        after delay: Duration = .zero, reports: Bool = false,
+        answer: @escaping @Sendable (_ kind: String) -> [String: Any]? = { _ in ["ok": true] }
+    ) {
         let looking = UUID()
         state.withLock {
             $0.task?.cancel()
@@ -63,7 +67,17 @@ private final class ExtensionStandIn: Sendable {
                         else { continue }
                         state.withLock { $0.received.append(kind == "send" ? request["prompt"] as? String ?? "" : kind) }
                         try? await Task.sleep(for: delay)
-                        if let fields = answer(kind) {
+                        if var fields = answer(kind) {
+                            if reports, kind == "send", request["report"] as? Bool == true, fields["ok"] as? Bool == true {
+                                let started = DetachedProgram.startTime(of: getpid()) ?? Date()
+                                let now = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+                                try? Self.write([
+                                    "version": 1, "requestId": requestId, "sessionId": sessionId, "pid": Int(getpid()),
+                                    "startedAt": started.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)),
+                                    "state": "working", "since": now,
+                                ], to: outbox.appendingPathComponent("reports"), named: "\(requestId).json")
+                                fields["reports"] = true
+                            }
                             let result = ["version": 1, "requestId": requestId, "sessionId": sessionId, "kind": kind].merging(fields) { $1 }
                             try? Self.write(result, to: outbox.appendingPathComponent("results"), named: "\(requestId).json")
                         }
@@ -196,9 +210,6 @@ private final class TakenAt: Sendable {
     /// The app's database, with the session and the forks it records: each one's ID, the session it was forked from, and
     /// when it was made; and other sessions, which are no forks.
     private func database(at home: URL, forks: [(id: String, original: String, created: String)], others: [String] = []) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
         let statements = """
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL);
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
@@ -220,7 +231,7 @@ private final class TakenAt: Sendable {
                 INSERT INTO sessions (id, title, session_type, created_at, updated_at)
                     VALUES ('\(id)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
                 """ }.joined()
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
     }
 
     @Test func sendsThePromptThroughTheSessionsExtension() async throws {
@@ -345,10 +356,33 @@ private final class TakenAt: Sendable {
 
     /// Runs SQL in the app's database.
     private func sql(_ statements: String, home: URL) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
-        defer { sqlite3_close(handle) }
-        guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        try write(statements, home: home)
+    }
+
+    /// Writes to the app's database, in one transaction. The store reads it, read-only, as it checks whether a turn runs,
+    /// again and again while a delivery waits, and a write in this process while it does fails at once: with
+    /// `SQLITE_BUSY`, or, next to a read-only reader, as macOS's SQLite has it, an I/O error (`SQLITE_IOERR_LOCK`), which
+    /// SQLite doesn't wait out. Such a write is tried again, for up to a minute, as each step waits.
+    private func write(_ statements: String, home: URL) throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while true {
+            var handle: OpaquePointer?
+            guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else {
+                sqlite3_close(handle)
+                throw CocoaError(.fileReadUnknown)
+            }
+            defer { sqlite3_close(handle) }
+            if sqlite3_exec(handle, "BEGIN IMMEDIATE;\n\(statements)\nCOMMIT;", nil, nil, nil) == SQLITE_OK { return }
+            let code = sqlite3_extended_errcode(handle)
+            let says = String(cString: sqlite3_errmsg(handle))
+            sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)
+            // `SQLITE_IOERR_LOCK`, which Swift can't import.
+            let whileItsRead = code & 0xFF == SQLITE_BUSY || code == SQLITE_IOERR | (15 << 8)
+            guard whileItsRead, ContinuousClock.now < deadline else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: says])
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
     }
 
     /// The sessions that run a turn now, as the app's database flags them; none of the others.
@@ -867,6 +901,51 @@ private final class TakenAt: Sendable {
         let tookIt = try #require(taken.date)
         #expect(kept.sentAt >= before)
         #expect(kept.sentAt <= tookIt)
+        // An extension from before it reported: its turn is followed from the session's log.
+        #expect(kept.report == nil)
+    }
+
+    /// A prompt BriefBar keeps asks the extension that sends it to report how its turn goes, and BriefBar keeps which
+    /// report does, to follow it there: in the session, or in its fork. One BriefBar doesn't keep asks for none.
+    @Test func keepsWhichReportSaysHowAPromptsTurnGoes() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, forkedFrom: session)
+        store.showForTests = { _ in true }
+        let outbox = home.appendingPathComponent("Outbox")
+        let ext = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let forked = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        try ext.listen()
+        try forked.listen()
+        ext.start(reports: true) { [fork] kind in kind == "fork" ? ["ok": true, "forkSessionId": fork] : ["ok": true] }
+        forked.start(reports: true)
+        defer {
+            ext.stop()
+            forked.stop()
+        }
+        try hold(session, home: home)
+        try hold(fork, home: home)
+        let reports = { ((try? FileManager.default.contentsOfDirectory(atPath: outbox.appendingPathComponent("reports").path)) ?? []).sorted() }
+
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .sent)
+        #expect(reports().isEmpty)
+        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(11)])
+        #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .sent)
+        let kept = try #require(store.settings.copilotSentPrompts.first)
+        let report = try #require(kept.report)
+        #expect(reports() == ["\(report).json"])
+        #expect(kept.session == session)
+        #expect(store.outbox.report(of: report, sentTo: session)?.state == .working)
+
+        let other = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, parts: [.thread(12)])
+        #expect(await store.deliver("Try it another way", to: choice(session), forking: true, about: other) == .forkedAndSent(fork: fork))
+        let inFork = try #require(store.settings.copilotSentPrompts.first { $0.parts == [.thread(12)] })
+        #expect(inFork.session == fork)
+        #expect(inFork.forkedFrom == session)
+        let forkReport = try #require(inFork.report)
+        #expect(store.outbox.report(of: forkReport, sentTo: fork)?.state == .working)
+        // The first is followed still: its report is of its own message.
+        #expect(store.settings.copilotSentPrompts.first { $0.parts == [.thread(11)] }?.isFollowed == true)
     }
 
     /// While a prompt is being sent to a session, the turns of the prompts sent it before aren't followed: it may reach the

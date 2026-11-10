@@ -1,14 +1,16 @@
 // BriefBar's outbox, as the extension in one of the GitHub Copilot app's sessions reads it. BriefBar writes a request
 // for a session; the extension in that session claims it, sends the session its prompt, forks the session or stops its
-// turn, and writes the result. It's files in a private folder on this Mac, and nothing else: no network, no sockets. The
-// extension never logs, echoes or keeps a prompt: it only hands it to session.send. docs/how-it-works.md describes
-// the files under "Send work to Copilot" (Sending to a session, or a fork of it), and the extension under "Its
-// extension for the app's sessions".
+// turn, and writes the result; for a send BriefBar asks it to report, it then says how the message's turn goes, in a
+// report it rewrites until the turn ends (./turn.mjs). It's files in a private folder on this Mac, and nothing else: no
+// network, no sockets. The extension never logs, echoes or keeps a prompt: it only hands it to session.send.
+// docs/how-it-works.md describes the files under "Send work to Copilot" (Sending to a session, or a fork of it), and the
+// extension under "Its extension for the app's sessions".
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { followTurn, line } from "./turn.mjs";
 
 export const VERSION = 1;
 /** What the extension does when BriefBar asks. */
@@ -21,6 +23,12 @@ export const LONGEST_WAIT_MS = 120 * 1000;
 export const CLOCK_SLACK_MS = 5 * 1000;
 /** The longest error message a result carries. */
 export const LONGEST_MESSAGE = 200;
+/** How often a report says the step a turn is at, at most: what it is, and how the turn stands, it says at once. */
+export const STEP_EVERY_MS = 1000;
+/** How long a report waits for the session's name, at most. */
+export const NAME_WAIT_MS = 2000;
+/** How long a report that couldn't be written waits to be written again. */
+export const REWRITE_AFTER_MS = 5000;
 
 const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const UUID = new RegExp(`^${UUID_PATTERN}$`);
@@ -96,7 +104,9 @@ export function stopWithTheSession(outbox, proc = process) {
  * Says that this session listens, in `listening/<sessionId>.json`, then acts on each request BriefBar writes for it
  * in `requests/`, as it arrives (fs.watch) and any that were already there: one at a time, oldest first. Each says
  * how it went once it's done, however long that takes: one that's still going when BriefBar stops waiting may still
- * reach the session, which BriefBar says, so it never says it failed when it can't know.
+ * reach the session, which BriefBar says, so it never says it failed when it can't know. A send that asks for a report
+ * says how its message's turn goes in `reports/<requestId>.json`, written before its result and rewritten as the turn
+ * goes, until it ends, the extension stops, or BriefBar removes it: meanwhile, it takes other requests, such as a stop.
  *
  * Options, for tests: `folder`, the outbox, and `root`, the folder it's in that's trusted as it is, below which no
  * folder is followed through a link, as BriefBar follows none (by default, your home folder, or `folder`'s own when
@@ -112,6 +122,7 @@ export function listen(session, options = {}) {
         requests: path.join(outbox, "requests"),
         results: path.join(outbox, "results"),
         listening: path.join(outbox, "listening"),
+        reports: path.join(outbox, "reports"),
     };
     const pid = options.pid ?? process.pid;
     const uid = options.uid ?? process.getuid();
@@ -137,6 +148,8 @@ export function listen(session, options = {}) {
     let stopped = false;
     let scanning = null;
     let again = false;
+    // The turns of the sends it reports, by their request's ID, until each ends.
+    const followers = new Map();
 
     function setUp() {
         prepare(folders, uid);
@@ -182,7 +195,7 @@ export function listen(session, options = {}) {
             const owner = Number(match[3]);
             if (owner !== pid && !running(owner)) removeOwnFile(path.join(folders.requests, name), uid);
         }
-        for (const folder of [folders.results, folders.listening]) {
+        for (const folder of [folders.results, folders.listening, folders.reports]) {
             for (const name of names(folder)) {
                 const match = TEMPORARY_NAME.exec(name);
                 if (!match) continue;
@@ -274,7 +287,7 @@ export function listen(session, options = {}) {
         let outcome;
         try {
             const request = checkRequest(parse(await readRequest(claimed, uid)), { requestId, sessionId, now: now() });
-            outcome = await carryOut(request);
+            outcome = await carryOut(request, requestId, claimed);
         } catch (error) {
             outcome = error instanceof Refusal
                 ? failed(error.code, error.message, error.kind)
@@ -289,7 +302,7 @@ export function listen(session, options = {}) {
         await fsp.rm(claimed, { force: true }).catch(() => {});
     }
 
-    async function carryOut(request) {
+    async function carryOut(request, requestId, claimed) {
         if (request.kind === "stop") {
             // As the app's own Stop: the turn that runs in the session now ends, and the session goes on as it was.
             try {
@@ -299,15 +312,7 @@ export function listen(session, options = {}) {
             }
             return { ok: true, kind: "stop" };
         }
-        if (request.kind === "send") {
-            let messageId;
-            try {
-                messageId = await session.send({ prompt: request.prompt });
-            } catch {
-                return failed("send_failed", "Copilot didn't take the prompt.", "send");
-            }
-            return { ok: true, kind: "send", ...(typeof messageId === "string" ? { messageId } : {}) };
-        }
+        if (request.kind === "send") return send(request, requestId, claimed);
         let answer;
         try {
             answer = await session.rpc.tools.execute({ name: "fork_session", arguments: {} });
@@ -329,20 +334,205 @@ export function listen(session, options = {}) {
             ...(outcome.kind ? { kind: outcome.kind } : {}),
             ok: outcome.ok,
             ...(outcome.messageId ? { messageId: outcome.messageId } : {}),
+            ...(outcome.reports ? { reports: true } : {}),
             ...(outcome.forkSessionId ? { forkSessionId: outcome.forkSessionId } : {}),
             ...(outcome.ok ? {} : { error: outcome.error }),
             finishedAt: new Date(now()).toISOString(),
         };
     }
 
+    /** Sends the session the prompt, as your own message. Asked to report, it follows the message's turn from the
+     * session's events, which it hears from before it sends it, and says it does once its first report is written.
+     * @param claimed the request, as it was claimed: while it's there, BriefBar still wants its turn reported. */
+    async function send(request, requestId, claimed) {
+        let follower = null;
+        if (request.report && typeof session.on === "function") {
+            follower = {
+                requestId,
+                claimed,
+                turn: followTurn({ sentAt: new Date(now()).toISOString() }),
+                reporting: false,
+                written: false,
+                timer: null,
+                writtenAt: -Infinity,
+            };
+            try {
+                follower.unsubscribe = session.on((event) => heard(follower, event));
+            } catch {
+                follower = null;
+            }
+        }
+        let messageId;
+        try {
+            messageId = await session.send({ prompt: request.prompt });
+        } catch {
+            if (follower) quiet(follower);
+            return failed("send_failed", "Copilot didn't take the prompt.", "send");
+        }
+        const outcome = { ok: true, kind: "send", ...(typeof messageId === "string" ? { messageId } : {}) };
+        if (follower) {
+            if (typeof messageId === "string" && messageId !== "" && !stopped) {
+                outcome.reports = await report(follower, messageId);
+            } else {
+                quiet(follower);
+            }
+        }
+        return outcome;
+    }
+
+    /** Starts reporting a send's turn, now that its message's ID is known: true once its first report is written. */
+    async function report(follower, messageId) {
+        follower.messageId = messageId;
+        follower.turn.begin(messageId);
+        follower.name = await sessionName();
+        if (stopped) {
+            quiet(follower);
+            return false;
+        }
+        followers.set(follower.requestId, follower);
+        follower.reporting = true;
+        if (!isWanted(follower) || !writeReport(follower)) {
+            quiet(follower);
+            return false;
+        }
+        if (follower.turn.isOver) quiet(follower);
+        return true;
+    }
+
+    /** Whether BriefBar still wants a turn reported: until its first report is written, while the request it came in is
+     * still there; then while that report is. BriefBar removes them once it no longer follows the turn, as when it took
+     * how it ended, and every one as Azure DevOps is turned off, which forgets them (`CopilotOutbox.forget`). */
+    function isWanted(follower) {
+        const file = follower.written ? path.join(folders.reports, `${follower.requestId}.json`) : follower.claimed;
+        try {
+            return fs.lstatSync(file).isFile();
+        } catch {
+            return false;
+        }
+    }
+
+    /** What the session said happened, for a turn it reports: how the turn stands now goes in its report at once, but
+     * the step it's at at most every `STEP_EVERY_MS`. As it starts waiting on you, the session's name is read again
+     * after, in case it was renamed meanwhile; an end is written at once, as the extension may be about to stop. */
+    function heard(follower, event) {
+        let change;
+        try {
+            change = follower.turn.observe(event);
+        } catch {
+            return;
+        }
+        if (change === "none" || !follower.reporting) return;
+        if (change === "step") {
+            const wait = follower.writtenAt + STEP_EVERY_MS - performance.now();
+            if (wait > 0) {
+                if (!follower.timer) {
+                    follower.timer = setTimeout(() => rewrite(follower), wait);
+                    follower.timer.unref?.();
+                }
+                return;
+            }
+        }
+        rewrite(follower);
+        if (follower.reporting && follower.turn.report.state === "needsYou") {
+            const asked = follower.turn.report.since;
+            void sessionName().then((name) => {
+                if (!name || name === follower.name) return;
+                follower.name = name;
+                if (follower.turn.report.since === asked) rewrite(follower);
+            });
+        }
+    }
+
+    /** Writes a turn's report as it stands now: then, once it's over, stops following it. One that can't be written is
+     * written again a little later, while the turn is followed. One whose report BriefBar removed, it stops following,
+     * writing nothing more: the session's turn goes on. */
+    function rewrite(follower) {
+        if (!followers.has(follower.requestId)) return;
+        clearTimeout(follower.timer);
+        follower.timer = null;
+        if (!isWanted(follower)) {
+            quiet(follower);
+            return;
+        }
+        if (!writeReport(follower)) {
+            follower.timer = setTimeout(() => rewrite(follower), REWRITE_AFTER_MS);
+            follower.timer.unref?.();
+            return;
+        }
+        if (follower.turn.isOver) quiet(follower);
+    }
+
+    function writeReport(follower) {
+        const turn = follower.turn.report;
+        const value = {
+            version: VERSION,
+            requestId: follower.requestId,
+            sessionId,
+            messageId: follower.messageId,
+            pid,
+            startedAt: announcement.startedAt,
+            ...(follower.name ? { name: follower.name } : {}),
+            state: turn.state,
+            since: turn.since,
+            ...(turn.step ? { step: turn.step } : {}),
+            ...(turn.asks ? { asks: turn.asks } : {}),
+            ...(turn.said ? { said: turn.said } : {}),
+            ...(turn.cause ? { cause: turn.cause } : {}),
+            updatedAt: new Date(now()).toISOString(),
+        };
+        try {
+            checkPath(folders, uid);
+            writeFile(folders.reports, `${follower.requestId}.json`, value, pid);
+        } catch {
+            return false;
+        }
+        follower.written = true;
+        follower.writtenAt = performance.now();
+        return true;
+    }
+
+    /** Stops following a turn: what it last said stays in its report, for BriefBar. */
+    function quiet(follower) {
+        clearTimeout(follower.timer);
+        follower.timer = null;
+        follower.reporting = false;
+        followers.delete(follower.requestId);
+        try {
+            follower.unsubscribe?.();
+        } catch {
+            // The session is gone already.
+        }
+    }
+
+    /** The session's name, as the app shows it, for a report to say where the work is; undefined when it can't tell
+     * in time. */
+    async function sessionName() {
+        let timer;
+        try {
+            const answer = await Promise.race([
+                Promise.resolve().then(() => session.rpc.name.get()),
+                new Promise((resolve) => {
+                    timer = setTimeout(resolve, NAME_WAIT_MS);
+                    timer.unref?.();
+                }),
+            ]);
+            return line(answer?.name);
+        } catch {
+            return undefined;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     /** Stops listening, and says so: removes its listening file, unless another extension in the session wrote its
-     * own since. */
+     * own since. The turns it reports, it stops following: what each last said stays in its report. */
     function stop() {
         if (stopped) return;
         stopped = true;
         clearTimeout(retry);
         watcher?.close();
         watcher = null;
+        for (const follower of [...followers.values()]) quiet(follower);
         try {
             const stat = fs.lstatSync(announced);
             if (!stat.isFile() || stat.size > 4096) return;
@@ -379,7 +569,7 @@ function prepare(folders, uid) {
         makeFolder(parent, uid);
         checkParent(parent);
     }
-    for (const folder of [folders.outbox, folders.requests, folders.results, folders.listening]) {
+    for (const folder of ownFolders(folders)) {
         makeFolder(folder, uid);
         checkFolder(folder, uid);
     }
@@ -388,7 +578,12 @@ function prepare(folders, uid) {
 /** What `prepare` checks, without making anything. */
 function checkPath(folders, uid) {
     for (const parent of parents(folders)) checkParent(parent);
-    for (const folder of [folders.outbox, folders.requests, folders.results, folders.listening]) checkFolder(folder, uid);
+    for (const folder of ownFolders(folders)) checkFolder(folder, uid);
+}
+
+/** The outbox, and its own folders. */
+function ownFolders(folders) {
+    return [folders.outbox, folders.requests, folders.results, folders.listening, folders.reports];
 }
 
 /** The folders the outbox is in, below `root`, from the outermost. */
@@ -534,8 +729,13 @@ export function checkRequest(value, { requestId, sessionId, now }) {
         if (typeof value.prompt !== "string" || value.prompt.trim() === "") {
             throw new Refusal("invalid", "A send needs a prompt.", kind);
         }
+        if (Object.hasOwn(value, "report") && typeof value.report !== "boolean") {
+            throw new Refusal("invalid", "Its report isn't true or false.", kind);
+        }
     } else if (Object.hasOwn(value, "prompt")) {
         throw new Refusal("invalid", `A ${kind} takes no prompt.`, kind);
+    } else if (Object.hasOwn(value, "report")) {
+        throw new Refusal("invalid", `A ${kind} has no report.`, kind);
     }
     const createdAt = instant(value.createdAt);
     const expiresAt = instant(value.expiresAt);
@@ -546,7 +746,7 @@ export function checkRequest(value, { requestId, sessionId, now }) {
     if (expiresAt - createdAt > LONGEST_WAIT_MS) throw new Refusal("invalid", "It would wait longer than 120 s.", kind);
     if (createdAt > now + CLOCK_SLACK_MS) throw new Refusal("invalid", "It's dated in the future.", kind);
     if (now >= expiresAt) throw new Refusal("expired", "It expired before it was claimed.", kind);
-    return kind === "send" ? { kind, prompt: value.prompt } : { kind };
+    return kind === "send" ? { kind, prompt: value.prompt, report: value.report === true } : { kind };
 }
 
 function instant(text) {
