@@ -1099,6 +1099,11 @@ extension CopilotTasksStore {
         if report.isOver {
             prompt.ended = Self.phase(of: turn)
             notifyPrompt(&prompt, report: report)
+            // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at its next
+            // refresh, as for one followed from its log.
+            if prompt.fixes == true, report.state == .finished, let number = prompt.pullRequest.number {
+                rereadPullRequest(PRKey(prompt.pullRequest.scope, number))
+            }
             return requestId
         }
         if report.state == .needsYou {

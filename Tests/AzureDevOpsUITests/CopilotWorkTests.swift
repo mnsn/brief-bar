@@ -1831,6 +1831,39 @@ import Testing
         #expect(offRecent.history.entries.isEmpty)
     }
 
+    /// A fix sent to push and reply that its extension says is done: the list reads its pull request again then, rather than
+    /// at its next refresh, to tell whether it pushed, as for one followed from its log; and its notification says Copilot
+    /// finished, not whether it pushed, which what Copilot said tells. Not for one that failed.
+    @Test func aReportedFixSentToPushAndReplyIsReadAgainAsItEnds() async throws {
+        let ships = SentPrompt.About(pullRequest: key, purpose: .pushAndReply, parts: [.thread(11)], fixes: true)
+        for (state, said, reads, title) in [
+            ("finished", "Pushed and replied on the thread.", true, "Copilot finished fixing a comment in ‘Retry backoff’"),
+            ("failed", "The tests failed.", false, "Couldn't fix and push it in ‘Retry backoff’"),
+        ] {
+            let (store, outbox, recent, requestId, home) = try reportedPrompt(ships)
+            defer { try? FileManager.default.removeItem(at: home) }
+            var reread: [PRKey] = []
+            store.rereadPullRequest = { reread.append($0) }
+            try writeReport(requestId, in: outbox, state: "working", since: Date())
+            try await follow(store)
+            #expect(reread.isEmpty)
+            try writeReport(requestId, in: outbox, state: state, since: Date(), ["said": said])
+            try await follow(store)
+            #expect(reread == (reads ? [key] : []), "\(state)")
+            #expect(recent.history.entries.first?.title == title)
+            #expect(recent.history.entries.first?.body == said)
+        }
+
+        let requestId = UUID().uuidString.lowercased()
+        let both = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .pushAndReply, parts: [.thread(11), .thread(12)], fixes: true),
+            session: session, sentAt: now, copied: false, report: requestId
+        ))
+        let done = OutboxReport(requestId: requestId, sessionId: session, pid: 1, startedAt: now, name: "Retry backoff", state: .finished, since: now)
+        #expect(CopilotTasksStore.promptNotification(both, requestId: requestId, report: done, pullRequest: nil).title
+            == "Copilot finished fixing the comments in ‘Retry backoff’")
+    }
+
     /// What a prompt's notification says, and opens: the line's words, by the name of the session it went to, a fork's own;
     /// the pull request, as BriefBar read it; and a click opens it, at the thread a thread's prompt took on.
     @Test func aPromptsNotificationSaysWhereAndOpensThePullRequest() throws {

@@ -1085,7 +1085,14 @@ final class CopilotTasksStore: ObservableObject {
         // In the session it went to, by its own name, a fork's included.
         var work = CopilotWork.from(prompt, about: part, turn: SessionTurn(report))
         work.forkedFrom = nil
-        let title = work.sentence(name: report.name, forkOf: nil)
+        var title = work.sentence(name: report.name, forkOf: nil)
+        // A fix sent to push and reply that's done: whether it pushed isn't known yet, until the list reads its branch moved,
+        // which it reads again now. What Copilot said tells, as a task's notification has it.
+        if report.state == .finished, work.purpose == .pushAndReply, work.fixes {
+            let place = CopilotWork.place(report.name, isFork: false, forkOf: nil)
+            let threads = prompt.parts.filter { $0.thread != nil }.count
+            title = "Copilot finished fixing \(threads == 1 ? "a comment" : "the comments") in \(place)"
+        }
         let said = firstLine(report.said)
         let body: String
         var state = ItemState.done
