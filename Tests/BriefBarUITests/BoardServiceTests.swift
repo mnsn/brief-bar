@@ -525,17 +525,23 @@ import Testing
     }
 
     /// One you chose before BriefBar knew which account signed in stays in memory, and is kept with that account once it
-    /// does.
+    /// does, over what the account chose before.
     @Test func aChoiceBeforeBriefBarKnowsTheAccountIsKeptWithItOnceItDoes() {
         let defaults = MemoryDefaults()
+        let earlier = Self.service(defaults)
+        Self.tell(earlier, Self.fixes)
+        #expect(earlier.pickNext(Self.ref(4132), in: .fix))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4132)]))
+
         let order = Self.service(defaults)
         order.publish(
             .azureDevOps, pullRequests: Self.fixes.keys.sorted().map(Self.ado),
             stages: Dictionary(uniqueKeysWithValues: Self.fixes.map { (Self.ref($0.key), $0.value) }), listsRead: ["contoso"]
         )
+        #expect(order.picks.isEmpty)
         #expect(order.pickNext(Self.ref(4133), in: .fix))
         #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
-        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4132)]))
         #expect(order.keepsStages)
 
         Self.tell(order, Self.fixes)

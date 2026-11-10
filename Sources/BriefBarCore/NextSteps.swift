@@ -597,7 +597,9 @@ extension UpNextPicks {
             var accounts: [String: [UpNextSlot: Entry]] = [:]
             for record in saved.compactMap(\.value) {
                 let account = record.account.lowercased()
-                guard let slot = UpNextSlot(rawValue: record.slot), accounts[account]?[slot] == nil else { continue }
+                guard let slot = UpNextSlot(rawValue: record.slot), record.pullRequest.kind.isPullRequest,
+                      accounts[account]?[slot] == nil
+                else { continue }
                 accounts[account, default: [:]][slot] = Entry(ref: record.pullRequest, listedAt: record.listedAt)
             }
             return Kept(accounts: accounts)

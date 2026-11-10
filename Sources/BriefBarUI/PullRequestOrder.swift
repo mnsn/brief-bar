@@ -109,9 +109,10 @@ package final class PullRequestOrder: ObservableObject {
     private var changesInMemory = OrderChanges()
     /// What BriefBar saw become of the pull requests that only those changes name, kept in memory as they are.
     private var evidenceInMemory = OrderEvidence()
-    /// The pull requests you chose for Up Next's slots that are listed only because someone sent them in a chat, or that you
-    /// chose before BriefBar knew which account signed in, which never go to the preferences: kept while BriefBar runs, Pull
-    /// Request Order off or on, as your changes about them are, until another account signs in.
+    /// The pull requests you chose for Up Next's slots that are listed only because someone sent them in a chat, which
+    /// never go to the preferences, or that you chose before BriefBar knew which account signed in, until it does and
+    /// they're kept with it: kept while BriefBar runs, Pull Request Order off or on, as your changes about them are, until
+    /// another account signs in. They come first, as you chose them since (`picksNow()`).
     private var picksInMemory = UpNextPicks()
     /// What you chose for Up Next's slots that BriefBar keeps, for each account, as the preferences have it
     /// (`UpNextPicks.Kept`): what one account chose waits, unused, while another is signed in. None while it's off.
@@ -432,7 +433,7 @@ package final class PullRequestOrder: ObservableObject {
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
         // What the account that's signed in now chose for Up Next's slots applies, and what one chose before BriefBar knew
-        // the account is kept with it.
+        // the account is kept with it, over what it chose before.
         if accountChanged { picks = picksNow() }
         let listsChanged = old?.inMemory != new.inMemory || !sameFacts
         if listsChanged { keep(changes) }
@@ -615,7 +616,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// What you chose for Up Next's slots that applies now: what BriefBar keeps for the account each pull request's source
-    /// told last, and what it keeps in memory.
+    /// told last, and what it keeps in memory, which comes first, as you chose it since: before BriefBar knew the account,
+    /// or one sent to you in a chat.
     private func picksNow() -> UpNextPicks {
         var kept = UpNextPicks()
         for account in Set(accounts.values).sorted() {
@@ -623,7 +625,7 @@ package final class PullRequestOrder: ObservableObject {
                 kept[slot] = ref
             }
         }
-        return kept.merging(picksInMemory)
+        return picksInMemory.merging(kept)
     }
 
     /// The account a pull request's source told last, kept while Pull Request Order is off: the one whose choices for Up

@@ -642,17 +642,21 @@ import Testing
         #expect(saved.allSatisfy { Set($0.keys) == ["account", "slot", "pullRequest", "listedAt"] })
         #expect(UpNextPicks.Kept.load(from: defaults) == kept)
 
-        // Only the pull requests of slots it knows, with an account.
+        // Only the pull requests of slots it knows, with an account; one that isn't a pull request doesn't take its slot.
         defaults.set(Data(#"""
         [{"account":"Robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4101","listedAt":0},
          {"account":"robin@contoso.com","slot":"later","pullRequest":"pullRequest/contoso/1","listedAt":0},
          {"account":"robin@contoso.com","slot":"waits","pullRequest":"workItem/contoso/5","listedAt":0},
          {"account":"robin@contoso.com","slot":"yourReview","pullRequest":42,"listedAt":0},
          {"slot":"canMerge","pullRequest":"pullRequest/contoso/4120","listedAt":0},
-         {"account":"robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4102","listedAt":0}]
+         {"account":"robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4102","listedAt":0},
+         {"account":"robin@contoso.com","slot":"waits","pullRequest":"pullRequest/contoso/4140","listedAt":0}]
         """#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
         #expect(UpNextPicks.Kept.load(from: defaults) == UpNextPicks.Kept(accounts: [
-            "robin@contoso.com": [.fix: .init(ref: Self.pr(4101), listedAt: Date(timeIntervalSinceReferenceDate: 0))],
+            "robin@contoso.com": [
+                .fix: .init(ref: Self.pr(4101), listedAt: Date(timeIntervalSinceReferenceDate: 0)),
+                .waits: .init(ref: Self.pr(4140), listedAt: Date(timeIntervalSinceReferenceDate: 0)),
+            ],
         ]))
         // An earlier build's, each slot's reference alone, and what isn't a list.
         defaults.set(Data(#"{"fix":"pullRequest/contoso/4101"}"#.utf8), forKey: UpNextPicks.Kept.defaultsKey)

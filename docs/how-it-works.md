@@ -1641,7 +1641,8 @@ Azure DevOps' lists, so for a moment a pull request a session asks you about rea
 Azure DevOps throttles BriefBar, a failed build shows only once it lets BriefBar read the pull request's details again. When it
 went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again,
 BriefBar starts again, or another account signs in, each choice has its half hour again, so time away while BriefBar is
-closed, or while Pull Request Order is off, doesn't count, nor does how another account saw it. One whose source can't tell where it is now, as before Azure DevOps has read its
+closed, or while Pull Request Order is off, doesn't count, nor does how another account saw it. One whose source can't
+tell where it is now, as before Azure DevOps has read its
 organization's lists since BriefBar started, while the latest refresh read nothing, as offline, or while it's off, is
 neither away nor back, and waits; an organization whose lists can't be read again keeps what they had. So does one
 BriefBar reads by its link, sent to you in a chat or watched, as its organization's lists don't have one you're not on,
@@ -1659,7 +1660,8 @@ waits, unused, while another is; one no list has had for 30 days goes, with any 
 as once its organization isn't watched, or its account doesn't sign in again. One of a pull request listed only because
 someone sent it in a chat stays in memory while BriefBar runs, Pull Request Order off or on, as your changes to its
 mission do, until BriefBar lists it otherwise, and goes when another account signs in; so does one chosen before BriefBar
-knew the account, until it does.
+knew the account, until it does, when it's kept with the account, over what the account chose for that slot before. Each
+of those comes first, as you chose it since.
 **Forget Stages…** forgets them all, with every account, and turning Azure DevOps off forgets its own. `needs_me` reads
 those kept in the preferences for the account its lists read with, and lists each first in its stage, as the Board does.
 
