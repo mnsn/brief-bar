@@ -1255,12 +1255,14 @@ package final class PullRequestOrder: ObservableObject {
         stacked = OrderBoard.stacked(facts)
         let focused = focus.flatMap(OrderFocus.ref(of:))
         // What an order changed since one of your changes, as BriefBar sees it: that change doesn't hold anymore, though the
-        // order changes back, until you put yours back. A split's that an order took, as one told while BriefBar was closed,
-        // which it notes as it starts, keeps the mission it went back to together, in this look (`keepKeptTogether`).
+        // order changes back, until you put yours back. A split's that an order took since BriefBar last looked, as one told
+        // while BriefBar was closed, which it notes as it starts, or one that took it over from an order BriefBar forgot,
+        // keeps the mission it went to together, in this look (`keepKeptTogether`).
         var noted = changes
         var splitsTakenBack: Set<ItemRef> = []
         if noted.noteOverrides(in: orders, now: date, status: OrderBoard.statuses(facts, evidence: evidence)) {
-            for change in noted.all where change.bySplit && change.overridden != nil && changes[change.ref]?.overridden == nil {
+            for change in noted.all where change.bySplit {
+                guard let by = change.overridden?.by, changes[change.ref]?.overridden?.by != by else { continue }
                 splitsTakenBack.insert(change.ref)
             }
             keep(noted)

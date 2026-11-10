@@ -329,5 +329,19 @@ private final class Announcements: Sendable {
         let read = try await #require(tools["pull_request_order"]).run(.object([:]))
         #expect(!read.contains("The user changed"))
         #expect(defaults.data(forKey: OrderChanges.defaultsKey) == saved)
+
+        // Naming one the split moved that the order didn't name, stacked with its own, takes it back, and the rest with it.
+        var attached = OrderChanges()
+        try attached.apply(
+            .split(.plan(plan.id), [OrderSplitMove([ref(4103), ref(4104), ref(4105)], to: .into(.mine(mine)))]), missions: [],
+            orders: DeclaredOrders.load(from: defaults), now: Self.now - 30
+        )
+        attached.save(to: defaults)
+        let named = try await told(entries + #", "\#(Self.link(4105))""#, plan: id, revision: 3)
+        #expect(named.hasSuffix("""
+            You changed where !4103, !4104 and !4105 in contoso go after the user had: BriefBar shows yours now, and says so \
+            to the user.
+            """))
+        #expect(!named.contains("The user changed"))
     }
 }

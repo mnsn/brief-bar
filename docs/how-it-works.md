@@ -1398,7 +1398,7 @@ to It's in the card you chose it in, though the pull request leaves it, or in it
 top of the list once that card is gone, or with the Board's Lanes: None. A change BriefBar refuses says why beside it.
 BriefBar keeps them in the preferences (`order.changes`) as references, codes and dates, never titles, those about a
 pull request sent to you in a chat in memory only; with where the orders put each when you made it, and, for what a
-split moved, the lines of its order it knows, and why an order took it back, but only of the
+split moved, when it did, the lines of its order it knows, and why an order took it back, but only of the
 orders BriefBar still keeps, and not a pull request sent to you only in a chat that none of those names anymore
 (`OrderChanges.forgetPlaces`), so that a session telling an old revision again that named it then goes against yours; at
 most 500, refusing more rather than dropping one; each until two weeks after BriefBar saw its pull requests merge or
@@ -1461,19 +1461,22 @@ mission, as the order's later change (`OrderChanges.splitsTakenBack`), so that n
 why, "‘Checkout flow’ put !4402 after it", or "took it back with !4405", with Put Yours Back; one the order named then
 and no longer does stays, with nowhere to go back to. And as the order takes one of them back, in any way, as by naming
 it again elsewhere in its mission, the rest of what the split moved with it goes back with it, also one that comes back
-to them since. Only a line that crosses the split as BriefBar first sees it: not
+to them since, but not one a split moved there since. Only a line that crosses the split as BriefBar first sees it: not
 a line you took away, nor one to a pull request you moved elsewhere yourself, nor one among what the split moved
 together, which each keeps as it sees them, with the order's lines it had when you last changed it
 (`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves them, or goes back to the order's
-mission, takes nothing back; one that Undo, or an order BriefBar forgot that had taken it, brings back where the split
-put it knows the lines told meanwhile, as none of those crossed the split for it. Nor one that holds nothing up, to one
+mission, takes nothing back; one that Undo brings back where the split put it knows the lines told meanwhile, as Undo is
+your later change, but not one an order BriefBar forgot that had taken it brings back, as the order's line is the later
+change. Nor one that holds nothing up, to one
 that merged or closed or from one that merged, until
 it does again; one BriefBar can't see counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
-one puts back all the order took back with it, as one change, each keeping the order's lines it has then, so telling
+one puts back all the order took back of what the split moved with it, whoever took that one, where it would go back with
+them, as one change, each keeping the order's lines it has then, so telling
 the same again takes nothing back, but a new line across does. **Keep Together**,
 Undo, Undo Your Changes
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
-moved, one told while BriefBar was closed too, which BriefBar notes as it starts (`OrderChanges.noteOverrides`), each
+moved, one told while BriefBar was closed too, which BriefBar notes as it starts, or as it takes one over from an order
+BriefBar forgot (`OrderChanges.noteOverrides`), each
 keep the mission it's in together as it's made now, or, while BriefBar can't tell yet, as it's made once it can: in the
 preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of
 (`MissionSplitQuestion.Contents`), one for each of its Azure DevOps pull requests and those of the missions split off

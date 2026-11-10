@@ -1271,6 +1271,70 @@ fileprivate final class SplitViewer {}
         #expect(order.keptTogether.entries[key] != nil)
     }
 
+    /// A line across a split, told while another session's order had what the split moved, takes it back once BriefBar
+    /// forgets that order, and keeps the order's mission together: also what the split moved alone, which goes from that
+    /// order's override straight to its own order's.
+    @Test func aLineToldWhileAnotherOrderHadWhatASplitMovedTakesItBackAsBriefBarForgetsThatOrder() async throws {
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        let otherID = UUID(uuidString: "71111111-2222-4333-8444-555555555555")!
+        for numbers in [[4101, 4102, 4103, 4120], [4101, 4102, 4120, 4121]] {
+            let clock = SplitClock()
+            let model = SplitModel()
+            let defaults = MemoryDefaults()
+            var orders = DeclaredOrders.load(from: defaults)
+            try orders.apply(OrderRequest(entries: numbers.map { .init(link: link($0)) }), now: clock.now, newID: Self.planID)
+            orders.save(to: defaults)
+            let order = Self.service(defaults, clock: clock)
+            order.namer = model.namer(clock: clock)
+            Self.tellCopilot(order, opened: [])
+            Self.tell(order, numbers)
+            let key = MissionKey.plan(Self.planID)
+            let viewer = SplitViewer()
+            Self.show([key], in: viewer, by: order)
+            clock.advance(MissionNamer.settleFor)
+            order.namer?.next()
+            let shown = try #require(Self.mission(key, in: order))
+            try #require(await MissionNamingTests.eventually { order.suggestedSplit(for: shown) != nil })
+            try #require(order.split(shown) != nil)
+            try #require(Set(order.changes.all.map(\.ref)) == Set(numbers.filter { $0 >= 4120 }.map(Self.pr)))
+            order.stopShowing(in: viewer)
+            func save(_ change: (inout DeclaredOrders) throws -> Void) throws {
+                var revised = DeclaredOrders.load(from: defaults)
+                try change(&revised)
+                revised.save(to: defaults)
+                order.reloadOrders()
+            }
+
+            // Another session's order takes the build agents' upgrade, which keeps the order's mission together, as the order
+            // names it too; a session turns out to have opened only the coupon field, and three hours later that goes. The
+            // split's order puts the upgrade after the coupon totals meanwhile.
+            clock.advance(60)
+            try save { try $0.apply(OrderRequest(entries: [.init(link: link(4120))]), now: clock.now, newID: otherID) }
+            #expect(order.changes[Self.pr(4120)]?.overridden?.by == otherID)
+            #expect(order.keptTogether.entries[key] != nil)
+            Self.tellCopilot(order, opened: [4101])
+            Self.hoursPass(order, clock: clock)
+            #expect(order.keptTogether.entries[key] == nil)
+            clock.advance(60)
+            try save {
+                try $0.apply(
+                    OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: numbers.map { number in
+                        number == 4120 ? .init(link: link(4120), after: [link(4102)]) : .init(link: link(number))
+                    }),
+                    now: clock.now
+                )
+            }
+            #expect(order.keptTogether.entries[key] == nil)
+            // BriefBar forgets the other order: the split's order takes what the split moved back, and its mission keeps
+            // together.
+            clock.advance(60)
+            try save { _ = try $0.forget(plan: otherID.uuidString) }
+            #expect(order.changes.all.allSatisfy { $0.overridden?.by == Self.planID })
+            #expect(Self.refs(of: Self.mission(key, in: order)) == Set(numbers.map(Self.pr)))
+            #expect(order.keptTogether.entries[key] != nil)
+        }
+    }
+
     /// A line among what a split moved, told since, is one BriefBar knows from then on, kept with your changes: once one of
     /// them goes back to the order's mission, by Undo Your Changes to It, the order told again takes nothing back.
     @Test func aLineAmongWhatASplitMovedToldSinceTakesNothingBackOnceOneOfThemGoesBack() async throws {
