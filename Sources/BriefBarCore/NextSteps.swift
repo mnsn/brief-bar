@@ -551,9 +551,11 @@ extension UpNextPicks {
             return changed
         }
 
-        /// Forgets those no list has had for 30 days, with every account: true when it forgot any.
-        public mutating func forgetUnlisted(now: Date) -> Bool {
-            forget { $0.isUnlisted(at: now) }
+        /// Forgets those of these kinds that no list has had for 30 days, with every account: true when it forgot any.
+        /// - Parameter kinds: those whose sources have listed what they show, so that a list could have noted that it has
+        ///   them.
+        public mutating func forgetUnlisted(now: Date, of kinds: Set<ItemRef.Kind>) -> Bool {
+            forget { kinds.contains($0.ref.kind) && $0.isUnlisted(at: now) }
         }
 
         /// Forgets those of the sources you turned off, with every account: true when it forgot any.

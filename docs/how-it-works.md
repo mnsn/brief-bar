@@ -1582,7 +1582,10 @@ for each pull request: its number, the stage, when, and only what would end it (
 progress and for Teammate's review on someone else's, and the votes, for Teammate's review alone, on yours their digest,
 how many of each others cast, never who, on someone else's your own vote; Your review keeps neither. For a pull request
 listed only because someone sent it to you in a chat, it's kept in memory only, as what you've seen of it is. Either
-way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes; what
+way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes,
+once Azure DevOps has listed what it shows since Pull Request Order turned on, as BriefBar started or in Settings, and
+since it last told another account (`PullRequestOrder.timePassed`): till then, no list could note that it has it, so
+one doesn't go after a month away while the Azure CLI wants you to sign in again first; what
 Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
 Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
 no group, count, notification or brief: they only label rows.
@@ -1655,9 +1658,11 @@ Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let Brief
 it at once, whether the slot shows it then or waits for it to come back; so does unchecking Make Next on its card while
 the slot shows it. There's no Undo line, as for Focus. It's kept in the preferences with the Azure DevOps account you
 chose it with, as the stages you set are (`UpNextPicks.Kept`, `order.upNextPicks`): each slot's name, its pull request's
-reference, and when a list last had it, noted once a day. What one account chose applies only while it's signed in, and
-waits, unused, while another is; one no list has had for 30 days goes, with any account, as a stage you set does, such
-as once its organization isn't watched, or its account doesn't sign in again. One of a pull request listed only because
+reference, and when a list last had it, noted once a day; what BriefBar can't read there, as what builds from main saved
+before, each slot's reference alone, goes as Pull Request Order reads it. What one account chose applies only while it's
+signed in, and waits, unused, while another is; one no list has had for 30 days goes, with any account, such as once its
+organization isn't watched, or its account doesn't sign in again, but, as for a stage you set, only once Azure DevOps
+has listed what it shows since Pull Request Order turned on. One of a pull request listed only because
 someone sent it in a chat stays in memory while BriefBar runs, Pull Request Order off or on, as your changes to its
 mission do, until BriefBar lists it otherwise, and goes when another account signs in; so does one chosen before BriefBar
 knew the account, until it does, when it's kept with the account, over what the account chose for that slot before. Each
