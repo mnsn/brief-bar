@@ -32,6 +32,8 @@ final class FakeExtension: Sendable {
     struct Received: Sendable, Equatable {
         var kind: String
         var prompt: String?
+        /// A send asked it to report how its turn goes.
+        var report = false
     }
 
     let outbox: URL
@@ -64,18 +66,34 @@ final class FakeExtension: Sendable {
         try? FileManager.default.removeItem(at: folder("listening").appendingPathComponent("\(sessionId).json"))
     }
 
+    /// Says how the turn of a send it reports goes, as an extension does, in its report, which it writes whole: by this
+    /// process, which runs, unless the fields say otherwise.
+    func report(_ requestId: String, state: String, _ fields: [String: Any] = [:]) throws {
+        let now = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        let started = (DetachedProgram.startTime(of: getpid()) ?? Date()).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        let report: [String: Any] = [
+            "version": 1, "requestId": requestId, "sessionId": sessionId, "messageId": "message-1", "pid": Int(getpid()),
+            "startedAt": started, "state": state, "since": now, "updatedAt": now,
+        ]
+        try Self.write(
+            JSONSerialization.data(withJSONObject: report.merging(fields) { $1 }), to: folder("reports"), named: "\(requestId).json"
+        )
+    }
+
     /// Starts taking its session's requests, looking every `lookEvery`, until `stop()`. Started again, it answers as it's
     /// told then, and stops looking as it was told before, which would otherwise go on until the tests end. It looks, and
     /// answers, on `TestThreads`, beside the tests, as an extension in another process would: so once `stop()` or `start`
     /// returns, a look begun before may still be under way, but claims nothing.
-    func start(answer: @escaping @Sendable (Received) -> Answer = { _ in .done() }) {
+    /// - Parameter reports: it reports the turns of the sends that ask, as an extension does since BriefBar asks; otherwise
+    ///   it takes no notice, as one from before did.
+    func start(reports: Bool = false, answer: @escaping @Sendable (Received) -> Answer = { _ in .done() }) {
         let looking = UUID()
         state.withLock {
             $0.task?.cancel()
             $0.looking = looking
             $0.task = Task(executorPreference: TestThreads.shared) { [self] in
                 while !Task.isCancelled {
-                    takeRequests(answer: answer, while: looking)
+                    takeRequests(reports: reports, answer: answer, while: looking)
                     try? await Task.sleep(for: Self.lookEvery)
                 }
             }
@@ -93,7 +111,7 @@ final class FakeExtension: Sendable {
         outbox.appendingPathComponent(name, isDirectory: true)
     }
 
-    private func takeRequests(answer: @escaping @Sendable (Received) -> Answer, while looking: UUID) {
+    private func takeRequests(reports: Bool, answer: @escaping @Sendable (Received) -> Answer, while looking: UUID) {
         let requests = folder("requests")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: requests.path)) ?? []
         for name in names where name.hasPrefix("\(sessionId).") && name.hasSuffix(".json") {
@@ -112,13 +130,13 @@ final class FakeExtension: Sendable {
             state.withLock { $0.received.append(request) }
             let response = answer(request)
             Task(executorPreference: TestThreads.shared) { [self] in
-                await respond(response, to: request, requestId: requestId)
+                await respond(response, to: request, requestId: requestId, reports: reports)
                 try? FileManager.default.removeItem(at: claimed)
             }
         }
     }
 
-    private func respond(_ answer: Answer, to request: Received, requestId: String) async {
+    private func respond(_ answer: Answer, to request: Received, requestId: String, reports: Bool) async {
         var fields: [String: Any] = [
             "version": 1, "requestId": requestId, "sessionId": sessionId, "kind": request.kind,
             "finishedAt": Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)),
@@ -128,13 +146,15 @@ final class FakeExtension: Sendable {
             return
         case .after(let delay, let then):
             try? await Task.sleep(for: delay)
-            return await respond(then, to: request, requestId: requestId)
+            return await respond(then, to: request, requestId: requestId, reports: reports)
         case .once(let ready, let then):
             while !ready() { try? await Task.sleep(for: Self.lookEvery) }
-            return await respond(then, to: request, requestId: requestId)
+            return await respond(then, to: request, requestId: requestId, reports: reports)
         case .done(let fork):
             fields["ok"] = true
             if let fork { fields["forkSessionId"] = fork } else { fields["messageId"] = "message-1" }
+            // Its first report, written before the result that says it reports.
+            if reports, request.report, (try? report(requestId, state: "working")) != nil { fields["reports"] = true }
         case .failed(let code, let message):
             fields["ok"] = false
             fields["error"] = ["code": code, "message": message]
@@ -143,7 +163,8 @@ final class FakeExtension: Sendable {
     }
 
     /// A request it may act on: a regular file that's yours, only yours to read, of 256 KiB or less, at version 1, for its
-    /// own session, with a prompt only for a send, that hasn't expired and was given at most 120 seconds.
+    /// own session, with a prompt only for a send, and a report asked for only by a send, that hasn't expired and was given
+    /// at most 120 seconds.
     static func check(_ file: URL, requestId: String, sessionId: String) -> Received? {
         var info = stat()
         guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_mode & 0o7777 == 0o600,
@@ -159,7 +180,12 @@ final class FakeExtension: Sendable {
         else { return nil }
         let prompt = fields["prompt"] as? String
         guard (kind == "send") == (prompt != nil) else { return nil }
-        return Received(kind: kind, prompt: prompt)
+        var report = false
+        if let asked = fields["report"] {
+            guard kind == "send", let flag = asked as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return nil }
+            report = flag.boolValue
+        }
+        return Received(kind: kind, prompt: prompt, report: report)
     }
 
     /// Writes a file atomically, only yours to read, as the extension does: under a name starting with `.`, then renamed.

@@ -40,11 +40,13 @@ beforeEach(() => {
     open = [];
 });
 
-/** A made-up session: what it was sent and asked to run, how many times its turn was stopped, and the answers it gives. */
-function fakeSession(sessionId = randomUUID(), { send, execute, abort } = {}) {
+/** A made-up session: what it was sent and asked to run, how many times its turn was stopped, and the answers it gives,
+ * its name among them. `emit` sends what listens to its events one, made at `timestamp`; `handlers` are those. */
+function fakeSession(sessionId = randomUUID(), { send, execute, abort, name = () => ({ name: "Retry backoff" }) } = {}) {
     const calls = { sent: [], executed: [] };
     const stops = { count: 0 };
     const forkId = randomUUID();
+    const handlers = new Set();
     const session = {
         sessionId,
         async send(options) {
@@ -54,6 +56,10 @@ function fakeSession(sessionId = randomUUID(), { send, execute, abort } = {}) {
         async abort() {
             stops.count += 1;
             if (abort) return abort();
+        },
+        on(handler) {
+            handlers.add(handler);
+            return () => handlers.delete(handler);
         },
         rpc: {
             tools: {
@@ -66,9 +72,16 @@ function fakeSession(sessionId = randomUUID(), { send, execute, abort } = {}) {
                     };
                 },
             },
+            name: {
+                get: async () => name(),
+            },
         },
     };
-    return { session, calls, forkId, stops };
+    const emit = (type, data = {}, timestamp = iso(NOW)) => {
+        const event = { id: randomUUID(), timestamp, parentId: null, type, data };
+        for (const handler of [...handlers]) handler(event);
+    };
+    return { session, calls, forkId, stops, emit, handlers };
 }
 
 function listenTo(session, options = {}) {
@@ -135,7 +148,7 @@ describe("listening", () => {
     test("says it listens once it has joined, in private folders it makes", () => {
         const { session, calls } = fakeSession();
         listenTo(session, { pid: 4242 });
-        for (const name of ["", "requests", "results", "listening"]) {
+        for (const name of ["", "requests", "results", "listening", "reports"]) {
             const stat = fs.lstatSync(path.join(folder, name));
             assert.ok(stat.isDirectory(), name);
             assert.equal(stat.mode & 0o777, 0o700, name);
@@ -341,6 +354,262 @@ describe("sending", () => {
     });
 });
 
+describe("reporting", () => {
+    function readReport(requestId) {
+        const file = path.join(folder, "reports", `${requestId}.json`);
+        if (!fs.existsSync(file)) return undefined;
+        const stat = fs.lstatSync(file);
+        assert.ok(stat.isFile());
+        assert.equal(stat.mode & 0o777, 0o600);
+        return JSON.parse(fs.readFileSync(file, "utf8"));
+    }
+
+    /** A session that takes up each message as it's sent, as an idle one does: before `send` answers. */
+    function idleSession(options = {}) {
+        const fake = fakeSession(undefined, {
+            ...options,
+            send() {
+                const messageId = `message-${fake.calls.sent.length}`;
+                fake.emit("user.message", { messageId, delivery: "idle", content: PROMPT }, iso(NOW + 100));
+                return messageId;
+            },
+        });
+        return fake;
+    }
+
+    async function sendReported(fake, fields = {}) {
+        const outbox = listenTo(fake.session, { pid: 4242 });
+        const value = request(fake.session.sessionId, { report: true, ...fields });
+        writeRequest(value);
+        await outbox.scan();
+        return { outbox, value, result: readResult(value.requestId) };
+    }
+
+    test("says how the turn of a send it's asked to report goes, in a private file it rewrites whole until it ends", async () => {
+        const fake = idleSession();
+        const { value, result } = await sendReported(fake);
+        const { requestId } = value;
+        const sessionId = fake.session.sessionId;
+        assert.deepEqual(result, {
+            version: 1, requestId, sessionId, kind: "send", ok: true, messageId: "message-1", reports: true, finishedAt: iso(NOW),
+        });
+        assert.deepEqual(readReport(requestId), {
+            version: 1, requestId, sessionId, messageId: "message-1", pid: 4242, startedAt: iso(STARTED),
+            name: "Retry backoff", state: "working", since: iso(NOW + 100), updatedAt: iso(NOW),
+        });
+
+        fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content: "Fixed the backoff." });
+        fake.emit("user_input.requested", { requestId: "q1", question: "Push it?" }, iso(NOW + 5000));
+        assert.deepEqual(readReport(requestId), {
+            version: 1, requestId, sessionId, messageId: "message-1", pid: 4242, startedAt: iso(STARTED),
+            name: "Retry backoff", state: "needsYou", since: iso(NOW + 5000), asks: "question", said: "Push it?", updatedAt: iso(NOW),
+        });
+        fake.emit("user_input.completed", { requestId: "q1" }, iso(NOW + 8000));
+        assert.equal(readReport(requestId).state, "working");
+        fake.emit("session.idle", { mode: "interactive" }, iso(NOW + 9000));
+        assert.deepEqual(readReport(requestId), {
+            version: 1, requestId, sessionId, messageId: "message-1", pid: 4242, startedAt: iso(STARTED),
+            name: "Retry backoff", state: "finished", since: iso(NOW + 9000), said: "Fixed the backoff.", updatedAt: iso(NOW),
+        });
+        // Over: it stops hearing the session, and leaves the report for BriefBar.
+        assert.equal(fake.handlers.size, 0);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), [`${requestId}.json`]);
+        // Nothing holds the prompt, though the session's own message has it.
+        for (const [file, text] of Object.entries(everything())) assert.ok(!text.includes("PROMPT-MARKER"), file);
+    });
+
+    test("reports nothing it isn't asked to, or for a session that doesn't say its events", async () => {
+        const fake = fakeSession();
+        const outbox = listenTo(fake.session);
+        for (const fields of [{}, { report: false }]) {
+            const value = request(fake.session.sessionId, fields);
+            writeRequest(value);
+            await outbox.scan();
+            assert.equal(readResult(value.requestId).ok, true);
+            assert.equal(readResult(value.requestId).reports, undefined);
+        }
+        assert.equal(fake.handlers.size, 0);
+
+        const older = fakeSession();
+        delete older.session.on;
+        const { result } = await sendReported(older);
+        assert.equal(result.ok, true);
+        assert.equal(result.reports, undefined);
+        assert.deepEqual(older.calls.sent, [{ prompt: PROMPT }]);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), []);
+    });
+
+    test("reports a turn that ended before the send answered, and stops following it at once", async () => {
+        const fake = fakeSession(undefined, {
+            send() {
+                fake.emit("user.message", { messageId: "message-1", delivery: "idle" }, iso(NOW + 100));
+                fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content: "Done." });
+                fake.emit("session.idle", { mode: "interactive" }, iso(NOW + 200));
+                return "message-1";
+            },
+        });
+        const { value, result } = await sendReported(fake);
+        assert.equal(result.reports, true);
+        const report = readReport(value.requestId);
+        assert.equal(report.state, "finished");
+        assert.equal(report.since, iso(NOW + 200));
+        assert.equal(report.said, "Done.");
+        assert.equal(fake.handlers.size, 0);
+    });
+
+    test("follows each send's turn on its own: one queued behind another waits, then works as the first ends", async () => {
+        const fake = fakeSession();
+        const outbox = listenTo(fake.session);
+        const first = request(fake.session.sessionId, { report: true });
+        writeRequest(first);
+        await outbox.scan();
+        fake.emit("user.message", { messageId: "message-1", delivery: "idle" });
+        const second = request(fake.session.sessionId, { report: true });
+        writeRequest(second);
+        await outbox.scan();
+        assert.equal(readReport(first.requestId).state, "working");
+        assert.equal(readReport(second.requestId).state, "waiting");
+        fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content: "First done." });
+        fake.emit("assistant.idle", {});
+        fake.emit("user.message", { messageId: "message-2", delivery: "queued" }, iso(NOW + 3000));
+        assert.equal(readReport(first.requestId).state, "finished");
+        assert.equal(readReport(first.requestId).said, "First done.");
+        assert.equal(readReport(second.requestId).state, "working");
+        fake.emit("assistant.message", { messageId: "a2", originatingMessageId: "message-2", content: "Second done." });
+        fake.emit("session.idle", {});
+        assert.equal(readReport(second.requestId).said, "Second done.");
+        assert.equal(fake.handlers.size, 0);
+    });
+
+    test("says the step it's at at most once a second, and how the turn stands at once", async () => {
+        const fake = idleSession();
+        const { value } = await sendReported(fake);
+        const step = (description) =>
+            fake.emit("tool.execution_start", { toolCallId: randomUUID(), toolName: "bash", arguments: { description } });
+        step("One");
+        step("Two");
+        // Its first report was written just now: the latest step waits for a second to pass.
+        assert.equal(readReport(value.requestId).step, undefined);
+        await waitFor(() => (readReport(value.requestId).step === "Two" ? true : undefined), "the latest step, a second later");
+        // How the turn stands, at once.
+        fake.emit("user_input.requested", { requestId: "q1", question: "Push it?" });
+        assert.equal(readReport(value.requestId).state, "needsYou");
+        fake.emit("user_input.completed", { requestId: "q1" });
+        const working = readReport(value.requestId);
+        assert.deepEqual([working.state, working.step], ["working", undefined]);
+        step("Three");
+        assert.equal(readReport(value.requestId).step, undefined);
+        await waitFor(() => (readReport(value.requestId).step === "Three" ? true : undefined), "the step, a second later");
+    });
+
+    test("reads the session's name again as it starts waiting on you, in case you renamed it", async () => {
+        let name = "Retry backoff";
+        const fake = idleSession({ name: () => ({ name }) });
+        const { value } = await sendReported(fake);
+        assert.equal(readReport(value.requestId).name, "Retry backoff");
+        name = "Retry backoff\n(renamed)";
+        fake.emit("user_input.requested", { requestId: "q1", question: "Push it?" });
+        await waitFor(() => (readReport(value.requestId).name === "Retry backoff (renamed)" ? true : undefined), "the new name");
+        assert.equal(readReport(value.requestId).state, "needsYou");
+    });
+
+    test("says no name when the session can't tell it, in time or at all", async () => {
+        for (const name of [() => { throw new Error("No such method"); }, () => ({}), () => new Promise(() => {})]) {
+            const fake = idleSession({ name });
+            const { value, result } = await sendReported(fake);
+            assert.equal(result.reports, true);
+            const report = readReport(value.requestId);
+            assert.equal(report.state, "working");
+            assert.ok(!Object.hasOwn(report, "name"));
+        }
+    });
+
+    test("says it doesn't report a turn whose report it can't write, and follows nothing", async () => {
+        const fake = idleSession();
+        const outbox = listenTo(fake.session);
+        const value = request(fake.session.sessionId, { report: true });
+        // A folder where its report would go.
+        fs.mkdirSync(path.join(folder, "reports", `${value.requestId}.json`));
+        writeRequest(value);
+        await outbox.scan();
+        const result = readResult(value.requestId);
+        assert.equal(result.ok, true);
+        assert.equal(result.reports, undefined);
+        assert.equal(fake.handlers.size, 0);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), [`${value.requestId}.json`]);
+    });
+
+    test("follows nothing for a send that failed", async () => {
+        const fake = fakeSession(undefined, {
+            send() {
+                throw new Error("Session closed");
+            },
+        });
+        const { result } = await sendReported(fake);
+        assert.equal(result.ok, false);
+        assert.equal(result.reports, undefined);
+        assert.equal(fake.handlers.size, 0);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), []);
+    });
+
+    test("says at once that the session closed, as the extension stops with it", async () => {
+        const fake = idleSession();
+        const { value } = await sendReported(fake);
+        fake.emit("session.shutdown", { shutdownType: "routine" }, iso(NOW + 4000));
+        const report = readReport(value.requestId);
+        assert.equal(report.state, "stopped");
+        assert.equal(report.cause, "closed");
+        assert.equal(report.since, iso(NOW + 4000));
+        assert.equal(fake.handlers.size, 0);
+    });
+
+    test("stops following as it stops listening, leaving what each report last said", async () => {
+        const fake = idleSession();
+        const { outbox, value } = await sendReported(fake);
+        outbox.stop();
+        assert.equal(fake.handlers.size, 0);
+        fake.emit("session.idle", {});
+        assert.equal(readReport(value.requestId).state, "working");
+    });
+
+    test("stops following a turn whose report BriefBar removed, as turning Azure DevOps off does, and writes it no more", async () => {
+        const fake = idleSession();
+        const { value } = await sendReported(fake);
+        const reports = path.join(folder, "reports");
+        fs.rmSync(path.join(reports, `${value.requestId}.json`));
+        fake.emit("user_input.requested", { requestId: "q1", question: "Push it?" }, iso(NOW + 5000));
+        assert.deepEqual(fs.readdirSync(reports), []);
+        assert.equal(fake.handlers.size, 0);
+        fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content: "Fixed the backoff." });
+        fake.emit("session.idle", {}, iso(NOW + 9000));
+        assert.deepEqual(fs.readdirSync(reports), []);
+        // The session's turn goes on: only its report stops.
+        assert.equal(fake.stops.count, 0);
+    });
+
+    test("starts no report for a send whose request BriefBar removed as it went, as turning Azure DevOps off does", async () => {
+        let answer;
+        const fake = fakeSession(undefined, { send: () => new Promise((resolve) => { answer = resolve; }) });
+        const outbox = listenTo(fake.session);
+        const value = request(fake.session.sessionId, { report: true });
+        writeRequest(value);
+        const scanning = outbox.scan();
+        await waitFor(() => answer, "the send");
+        // BriefBar forgets its requests, the ones claimed too.
+        const requests = path.join(folder, "requests");
+        for (const name of fs.readdirSync(requests)) fs.rmSync(path.join(requests, name));
+        answer("message-1");
+        await scanning;
+        const result = readResult(value.requestId);
+        assert.equal(result.ok, true);
+        assert.equal(result.reports, undefined);
+        assert.equal(fake.handlers.size, 0);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), []);
+        // It went all the same.
+        assert.deepEqual(fake.calls.sent, [{ prompt: PROMPT }]);
+    });
+});
+
 describe("turning requests down", () => {
     const cases = [
         ["one that isn't private to you", (sessionId) => ({ value: request(sessionId), mode: 0o644 }), "invalid"],
@@ -439,11 +708,25 @@ describe("turning requests down", () => {
     test("checks each field as the contract says", () => {
         const sessionId = randomUUID();
         const value = request(sessionId);
-        assert.deepEqual(checkRequest(value, { requestId: value.requestId, sessionId, now: NOW }), { kind: "send", prompt: PROMPT });
+        const sent = { kind: "send", prompt: PROMPT, report: false };
+        assert.deepEqual(checkRequest(value, { requestId: value.requestId, sessionId, now: NOW }), sent);
+        const reported = request(sessionId, { report: true });
+        assert.deepEqual(checkRequest(reported, { requestId: reported.requestId, sessionId, now: NOW }), { ...sent, report: true });
+        const unreported = request(sessionId, { report: false });
+        assert.deepEqual(checkRequest(unreported, { requestId: unreported.requestId, sessionId, now: NOW }), sent);
+        for (const report of ["yes", 1, null]) {
+            const odd = request(sessionId, { report });
+            assert.throws(() => checkRequest(odd, { requestId: odd.requestId, sessionId, now: NOW }), { code: "invalid" }, String(report));
+        }
         const fork = request(sessionId, { kind: "fork" });
         assert.deepEqual(checkRequest(fork, { requestId: fork.requestId, sessionId, now: NOW }), { kind: "fork" });
         const stop = request(sessionId, { kind: "stop" });
         assert.deepEqual(checkRequest(stop, { requestId: stop.requestId, sessionId, now: NOW }), { kind: "stop" });
+        // Only a send has a turn to report.
+        for (const kind of ["fork", "stop"]) {
+            const odd = request(sessionId, { kind, report: true });
+            assert.throws(() => checkRequest(odd, { requestId: odd.requestId, sessionId, now: NOW }), { code: "invalid", kind });
+        }
         // Swift's ISO 8601 dates, with and without fractions of a second, in UTC or with an offset.
         for (const createdAt of ["2026-11-02T09:59:59Z", "2026-11-02T09:59:59.123Z", "2026-11-02T11:59:59+02:00"]) {
             const dated = request(sessionId, { createdAt });
@@ -614,9 +897,15 @@ describe("cleaning up and recovering", () => {
         const anotherSessions = claimed(randomUUID(), 101);
         const temporary = path.join(folder, "results", `.${randomUUID()}.json.101.${randomUUID()}.tmp`);
         fs.writeFileSync(temporary, "{}", { mode: 0o600 });
+        fs.mkdirSync(path.join(folder, "reports"), { mode: 0o700 });
+        const reportLeft = path.join(folder, "reports", `.${randomUUID()}.json.101.${randomUUID()}.tmp`);
+        const reportBeingWritten = path.join(folder, "reports", `.${randomUUID()}.json.102.${randomUUID()}.tmp`);
+        for (const file of [reportLeft, reportBeingWritten]) fs.writeFileSync(file, "{}", { mode: 0o600 });
         listenTo(session, { isRunning: (pid) => pid === 102 });
         assert.ok(!fs.existsSync(deadOne), "its own, from a process that's gone");
         assert.ok(!fs.existsSync(temporary));
+        assert.ok(!fs.existsSync(reportLeft));
+        assert.ok(fs.existsSync(reportBeingWritten), "a report another process still writes");
         assert.ok(fs.existsSync(liveOne), "one that's still being handled");
         assert.ok(fs.existsSync(anotherSessions), "another session's");
     });

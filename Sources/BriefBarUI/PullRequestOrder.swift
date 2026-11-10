@@ -1678,12 +1678,12 @@ package final class PullRequestOrder: ObservableObject {
     private func undoOrderChange() -> Bool {
         guard isOn, lastOrderChange?.canUndo == true else { return false }
         // Against the orders as agents last told them, as for a change: what a split moved, back where the split put it,
-        // knows the lines they told before. What it puts back is then named as the missions it makes are, as each rebuild
-        // names it (`OrderLastChange.renamingMissions`).
+        // stays taken back where its order has taken it back by then. What it puts back is then named as the missions it
+        // makes are, as each rebuild names it (`OrderLastChange.renamingMissions`).
         reloadOrders()
         guard let last = lastOrderChange, last.canUndo else { return false }
         var changed = changes
-        changed.restore(last.touched, orders: orders, status: OrderBoard.statuses(facts, evidence: evidence))
+        changed.restore(last.touched, orders: orders)
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
         // took them from since, as Undo of Put Yours Back, or of a second split, brings back.
         let splitBack = Set(last.touched.keys.filter { ref in

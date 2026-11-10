@@ -125,9 +125,9 @@ public struct OrderChange: Equatable, Sendable {
     /// yourself, or one you took away (`OrderChanges.noteOverrides`). Empty for any other change. A line between it and one
     /// of those never takes it back into that order's mission, however it comes to cross the split, as when that one leaves
     /// it, or you put it back over that line: only one that crosses as BriefBar first sees it does
-    /// (`OrderChanges.splitsTakenBack`). Back where the split put it, as Undo brings it back, it knows those it put it in
-    /// meanwhile too, as Undo is yours and later (`OrderChanges.restore`); not as an order BriefBar forgot that had taken it
-    /// does, as the latest of those is the order's.
+    /// (`OrderChanges.splitsTakenBack`). Back where the split put it, as Undo brings it back, it knows only those it knew
+    /// then and saw there since (`OrderChanges.restore`): one its order put it in while it was out is later than your
+    /// change, as is one an order BriefBar forgot that had taken it was told meanwhile.
     public var linedWith: Set<ItemRef>
     /// When its session told the revision of the order a split moved it from that `linedWith` knows all the lines of, as
     /// BriefBar learned them from it: when you changed it, or put it back, or as BriefBar saw it since, if that's the one it
@@ -1419,20 +1419,16 @@ extension OrderChanges {
         }
     }
 
-    /// Puts back the changes an edit touched, as `apply` said they were. One a split moved, back where the split put it,
-    /// knows the lines its order put it in since (`OrderChange.linedWith`): what it saw there, where it stayed, or all of
-    /// them, where it wasn't there, as none of those crossed the split for it, also where its order went against the
-    /// change you made since by moving it elsewhere, as by naming it again where you'd moved it, which went against that
-    /// change, not the split; but not where its order took it back since, which Undo doesn't give back: it stays taken
-    /// back, as its order took it (`splitsTakenBack`), also where your change since left it where the split put it, as a
-    /// Set as Next or Merge After does. Only lines that hold something up, as `status` tells: one that holds nothing up
-    /// BriefBar sees once it does again.
-    /// - Parameters:
-    ///   - orders: the orders sessions told.
-    ///   - status: where each pull request stands, as BriefBar sees it; open by default.
-    public mutating func restore(
-        _ touched: [ItemRef: OrderChange?], orders: DeclaredOrders, status: (ItemRef) -> OrderStatus = { _ in .open }
-    ) {
+    /// Puts back the changes an edit touched, as `apply` said they were: each as you'd made it, so a revision told since
+    /// that goes against it shows instead, as for any change of yours. One a split moved, back where the split put it,
+    /// knows the lines of its order it knew then, and those it saw there since, where it stayed (`OrderChange.linedWith`);
+    /// not those its order told while it was out, moved, undone or taken by another order: one of those across the split is
+    /// later than your change, so it takes what the split moved back (`splitsTakenBack`), as it would have had you never
+    /// changed it. One limit: another the split moved from that order that saw one of those while this one was out, as
+    /// you'd moved it in with them, still knows it, as BriefBar doesn't keep when it saw it, and a line either end knows
+    /// takes nothing back. Where its order took it back since, it stays taken back, as its order took it.
+    /// - Parameter orders: the orders sessions told.
+    public mutating func restore(_ touched: [ItemRef: OrderChange?], orders: DeclaredOrders) {
         for (ref, was) in touched {
             guard var change = was, !change.isEmpty else {
                 changes[ref] = nil
@@ -1445,9 +1441,6 @@ extension OrderChanges {
                     change.linedAt = now.linedAt
                 } else if let now, SplitGroup(now) == group, let taken = now.overridden, taken.by == group.order {
                     change.overridden = taken
-                } else {
-                    change.linedWith.formUnion(change.lined(in: orders, status: status))
-                    change.linedAt = change.linedAt(in: orders)
                 }
             }
             changes[ref] = change
