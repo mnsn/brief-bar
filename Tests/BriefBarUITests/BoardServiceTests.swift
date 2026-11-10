@@ -860,6 +860,27 @@ import Testing
         again.timePassed()
         #expect(again.picks == UpNextPicks([.fix: Self.ref(4131)]))
         #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4131)]))
+    }
+
+    /// That's for Azure DevOps as a whole: once it reads some of your lists, what you chose in an organization whose lists
+    /// it doesn't read, as one you no longer watch, counts from when a list last had it, across a restart too, so the 30
+    /// days still end it, rather than start again each time BriefBar does.
+    @Test func aChoiceInAnOrganizationItNoLongerReadsStillGoesAfterAMonthAway() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let failed = StageFacts(role: .author, failure: "Build failed", since: Date(timeIntervalSince1970: 1_791_300_000))
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, fabrikam: failed, listsRead: ["contoso", "fabrikam"])
+        #expect(order.pickNext(Self.fabrikam, in: .fix))
+
+        now += 35 * 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, fabrikam: nil, listsRead: ["contoso"])
+        #expect(again.picks == UpNextPicks([.fix: Self.fabrikam]))
+        now += 3_600
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
         #expect(Self.kept(defaults).isEmpty)
         Self.tell(again, Self.fixes)
         #expect(again.picks.isEmpty)

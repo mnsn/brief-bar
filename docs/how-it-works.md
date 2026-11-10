@@ -1585,7 +1585,11 @@ listed only because someone sent it to you in a chat, it's kept in memory only, 
 way, an account keeps up to 500, those in memory counted with the others, and one no list has had for 30 days goes,
 once Azure DevOps has listed what it shows since Pull Request Order turned on, as BriefBar started or in Settings, and
 since it last told another account (`PullRequestOrder.timePassed`): till then, no list could note that it has it, so
-one doesn't go after a month away while the Azure CLI wants you to sign in again first; what
+one doesn't go after a month away while Azure DevOps can't read any of your lists, as when the Azure CLI wants you to
+sign in again first. That's for Azure DevOps as a whole: once it reads some organization's lists, one in another whose
+lists it can't read yet, as in a directory the Azure CLI wants you to sign in to again, or one you watch whose read by
+its link failed, counts from when a list last had it, as before, so that one in an organization you no longer watch,
+whose lists it never reads again, still goes. What
 Undo puts back once there's no room waits in memory until there is. **Forget Stages…** forgets them all, and turning
 Azure DevOps off forgets its own; turning Pull Request Order off keeps them, unused, those in memory too. Stages change
 no group, count, notification or brief: they only label rows.

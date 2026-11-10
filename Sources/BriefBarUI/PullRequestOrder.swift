@@ -128,7 +128,9 @@ package final class PullRequestOrder: ObservableObject {
     /// The sources that have listed what they show since Pull Request Order turned on, as BriefBar started or in Settings,
     /// and since they last told another account: what you set or chose that no list has had for 30 days goes only once its
     /// source has (`timePassed()`), as till then no list could note that it has it, as when BriefBar starts after a month
-    /// away and Azure DevOps can't be read yet.
+    /// away and Azure DevOps can't read anything yet. It's for the source as a whole: once Azure DevOps reads some
+    /// organization's lists, one in another, whose lists it can't read yet, counts as before, so that one in an
+    /// organization you no longer watch, whose lists it never reads again, still goes.
     private var listedSinceOn: Set<SourceID> = []
     /// What each source told it last.
     private var told: [SourceID: Told] = [:] {
