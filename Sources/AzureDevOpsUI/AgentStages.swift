@@ -101,7 +101,7 @@ extension AzureDevOpsAgent {
         let setters = Self.setters(&copilot, sentTasks: sentTasks)
         let orderFacts = OrderFacts(pullRequests: pullRequests, sessions: copilot.sessions, sourcesOn: [.pullRequest])
         var changes = kept.changes
-        changes.noteOverrides(in: kept.orders, now: now)
+        changes.noteOverrides(in: kept.orders, now: now, status: OrderBoard.statuses(orderFacts, evidence: kept.evidence))
         var evidence = kept.evidence
         let subjects = changes.subjects
         for observation in orderFacts.observations

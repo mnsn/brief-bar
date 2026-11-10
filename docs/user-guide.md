@@ -227,7 +227,8 @@ the model that writes a summary with the rest, and BriefBar keeps none of it.
 ## Notifications
 
 Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
-Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
+Copilot, as it starts and when it ends, or, for work you send to one of the Copilot app's sessions, when
+the session waits for your answer and when it's done ([below](#azure-devops)). Clicking one opens what it's about,
 such as the comment or the run, in front of BriefBar: in Azure DevOps, or, for a pull request, in its
 details in BriefBar's window, with **Open Pull Requests in BriefBar** on. With **Send Work to Copilot**
 on, one about your pull request whose build failed, that has merge conflicts, or where someone
@@ -359,14 +360,14 @@ build on counting as long as they've waited, as they can't merge before it; **Ne
 that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
 mission you focus on comes first in each. To choose which one a slot shows, such as a more urgent fix, click its title,
 **Fix next ⌄**, and pick it from its pull requests, each with why it's there: it shows with ✎, first in its column on the
-Board too, and BriefBar remembers it, for the Azure DevOps account you're signed in with, until that pull request moves
-on to another stage, merges or closes, or leaves your lists, as a review once its author completes it, and stays away for
-half an hour while BriefBar runs with Pull Request Order on; then BriefBar chooses again. Back sooner, as when someone
-wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless you've since
-chosen another or let BriefBar choose. While its build runs again, or a session writes it, Fix next shows the next one
-meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
-to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next**
-to fold it, and BriefBar remembers. It changes no group or count.
+Board too, and BriefBar remembers it, for the Azure DevOps account you're signed in with (one sent to you in a chat, in
+memory only), until that pull request moves on to another stage, merges or closes, or leaves your lists, as a review
+once its author completes it, and stays away for half an hour while BriefBar runs with Pull Request Order on; then
+BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and **Undo**, after you move
+its card, chooses it again, unless you've since chosen another or let BriefBar choose. While its build runs again, or a
+session writes it, Fix next shows the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in
+the same list, gives the slot back to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the
+rest on the Board. Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
@@ -403,13 +404,15 @@ in the mission for three hours: a pull request, a work item or story one is for,
 that merges, closes or leaves, a next you set, a title alone, Show Links or Copilot turned off or on, or a read that
 fails for a while; time offline or asleep doesn't count. Undo counts as Keep Together, and so does a session's order
 that takes back what a split moved, even one told while BriefBar was closed, so the two don't undo each other.
-Meanwhile, **Suggested Split…** in the mission's **⋯** shows it again. Apple Intelligence never splits a mission itself,
-and nothing moves until you click. It looks at a story's mission, a session's order and the pull requests opened under a
-session, with three open Azure DevOps pull requests or more, never a chain, a stack or a mission of your own; pull
-requests that merged or closed, GitHub's, those you changed, there or in another mission, and those another session's
-order names too, stay where they are, and related ones, such as stacked ones, stay together, and a story's mission, or a
-session's pull requests, keeps two open ones at least. It's often quiet, as it suggests a split only where it's clear,
-and a split applies whole: to take part of one, Keep Together, then **Move to Mission**.
+Meanwhile, **Suggested Split…** in the mission's **⋯** shows it again. A session's order takes back what a split moved
+once it puts one of those after one that stayed, or the other way round, so a split never cuts its lines; their rows
+say so, and **Put Yours Back** puts all of them back at once, without that line. Apple Intelligence never splits a
+mission itself, and nothing moves until you click. It looks at a story's mission, a session's order and the pull
+requests opened under a session, with three open Azure DevOps pull requests or more, never a chain, a stack or a mission
+of your own; pull requests that merged or closed, GitHub's, those you changed, there or in another mission, and those
+another session's order names too, stay where they are, and related ones, such as stacked ones, stay together, and a
+story's mission, or a session's pull requests, keeps two open ones at least. It's often quiet, as it suggests a split
+only where it's clear, and a split applies whole: to take part of one, Keep Together, then **Move to Mission**.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
@@ -552,10 +555,15 @@ push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’** once
 a new commit, which it reads again as the turn ends; until then, and when it stopped before it pushed, as when the tests
 still failed, or the pull request was retargeted, completed or abandoned meanwhile, **Fixed in ‘Retry backoff’, but not
 pushed**, with what Copilot said under it. One of BriefBar's own tasks, named for what it does, is called a task there,
-**Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
-before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
-thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
-hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
+**Fixed in the ‘Fix Comments’ task, not pushed**. Sent with **Send to Session** or **Send to a Fork**, BriefBar's
+extension in the session tells BriefBar how its turn goes, and what Copilot said as it ended, so the line follows it
+however long that takes, and a notification says when the session waits for your answer and when it's done, failed, or
+stopped by something else than you, such as the session closing or autopilot reaching its limit; none comes when you
+stop it. Otherwise, as for a prompt you paste, when you send a
+session something else before it's done with what you sent it, BriefBar can't tell from the session which of them ended
+how, so the earlier thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't
+finished in twelve hours, such as one that waited overnight for your answer, or once the extension that sent it stopped
+before it said. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
 which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
@@ -752,7 +760,9 @@ to Copilot with **Fix Comments** or **Push & Reply**, or when you choose **Remov
 before. The first time, only the last three days count as new, and each account you sign in to the Azure
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
-that fails or waits for an approval, all of them passing, or one canceled. Clicking one opens the
+that fails or waits for an approval, all of them passing, or one canceled; and, for a prompt about a pull request
+that you send to one of the Copilot app's sessions with **Send Prompts to Copilot Sessions** on, that the session
+waits for your answer, then how its turn ended ([below](#in-the-github-copilot-app)). Clicking one opens the
 comment, or the run, it's about: in Azure DevOps, or in the pull request's details in BriefBar's window
 with **Open Pull Requests in BriefBar** on. The first time, BriefBar finds the organizations where you have pull
 requests; **Organizations** in its settings changes them.
@@ -1174,7 +1184,10 @@ bundle identifier of the app it's in, and leaves any other named `briefbar`, wit
 **Send Prompts to Copilot Sessions**, on the same page, is off until you turn it on. Then BriefBar
 installs its other plugin, an extension that runs in each of the app's sessions, so that BriefBar's Send
 to Copilot window can send a prompt to a session itself, with **Send to Session**, or fork the session and
-send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. The extension
+send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. For a prompt
+about a pull request, it then tells BriefBar how the session's turn goes and what Copilot said as it ended,
+which the pull request's line shows, and BriefBar notifies you when the session waits for your answer and
+when it's done, under Azure DevOps' **Notifications**. The extension
 does nothing else: it acts only on what BriefBar asks of its own session, never logs a prompt, and runs
 as a process of about 46 MB in each session the app has open.
 Sessions that are already open get it once they start again. Turning it off, or turning agents off,
@@ -1474,9 +1487,11 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   marked as read there, by their numbers, with each account,
   your organizations, and the pull requests you watch; with Pull Request Order, the stages you set on them, for each
   account, by their numbers, with only the commit and the votes that would end them, but for those only sent to you in
-  a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at most; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
-  sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the tags you
-  added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
+  a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at
+  most, and the pull request you choose for each of Up Next's slots, for each account, by its number, but one only sent
+  to you in a chat, which stays in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which
+  Copilot sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the
+  tags you added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
   splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
   once its mission has had something new in it for three hours or hasn't shown for 14 days; and its settings.

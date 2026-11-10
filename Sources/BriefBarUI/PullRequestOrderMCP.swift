@@ -187,10 +187,11 @@ package enum PullRequestOrderMCP {
             \(OrderText.lines(of: plan).map { "- \($0)" }.joined(separator: "\n"))
             """
         // The user's changes to it, which the app keeps and only the app writes: those this went against, and those that
-        // hold.
+        // hold, as the app shows them once it sees this, without what it takes back that a split moved.
         let changes = await keeper.userChanges
-        let held = changes.holding(in: told.value.before)
-        let holding = changes.holding(in: told.value.after)
+        let status = OrderBoard.statuses(OrderFacts(), evidence: await keeper.evidence)
+        let held = changes.holding(in: told.value.before, now: now, status: status)
+        let holding = changes.holding(in: told.value.after, now: now, status: status)
         let overrode = held.values.filter { holding[$0.ref] == nil && OrderText.isAbout($0, plan) }.map(\.ref).sorted()
         if !overrode.isEmpty {
             answer += """
@@ -223,7 +224,8 @@ package enum PullRequestOrderMCP {
             plans = [plan]
         }
         guard !plans.isEmpty else { return "No session has told BriefBar an order of pull requests." }
-        let holding = await keeper.userChanges.holding(in: orders)
+        let status = OrderBoard.statuses(OrderFacts(), evidence: await keeper.evidence)
+        let holding = await keeper.userChanges.holding(in: orders, status: status)
         var changed = false
         var parts = plans.map { plan in
             let lines = OrderText.userChanges(to: plan, holding: holding)
@@ -569,6 +571,11 @@ actor OrderKeeper {
     /// The user's changes to missions, as the app keeps them: only the app writes them.
     var userChanges: OrderChanges {
         OrderChanges.load(from: defaults)
+    }
+
+    /// What the app saw become of the pull requests orders and the user's changes name, as it keeps it.
+    var evidence: OrderEvidence {
+        OrderEvidence.load(from: defaults)
     }
 
     /// Whether Pull Request Order is on, asked with each call: the demo's always is.

@@ -66,10 +66,11 @@ import Testing
         #expect(!halfADay && aDay && !anotherAccount)
         #expect(marks.accounts["robin"]?[Self.pr(4093)]?.listedAt == t(day))
 
-        // 30 days after a list last had it, and not before.
-        let after30Days = marks.forgetUnlisted(now: t(day * 30))
-        let afterMore = marks.forgetUnlisted(now: t(day * 30 + 1))
-        #expect(!after30Days && afterMore)
+        // 30 days after a list last had it, and not before; and only of the kinds whose sources have listed since.
+        let after30Days = marks.forgetUnlisted(now: t(day * 30), of: [.pullRequest])
+        let ofOtherKinds = marks.forgetUnlisted(now: t(day * 30 + 1), of: [.gitHubPullRequest, .session])
+        let afterMore = marks.forgetUnlisted(now: t(day * 30 + 1), of: [.pullRequest])
+        #expect(!after30Days && !ofOtherKinds && afterMore)
         #expect(marks.mark(of: Self.pr(4094), for: "robin") == nil)
         #expect(marks.mark(of: Self.pr(4093), for: "robin") != nil)
     }
