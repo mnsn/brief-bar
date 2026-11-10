@@ -2990,14 +2990,16 @@ this Mac only (`CopilotOutbox`):
 - **Reports.** A `send` of a prompt BriefBar keeps, about some of a pull request ([below](#about-a-comment)),
   says `"report": true`: its extension then reports how the message's turn goes. It writes
   `reports/<request>.json` before its result, which then says `reports`, and rewrites it whole as the turn
-  changes, until it's over: whether the session has taken the message up, the step it's at, what waits on
-  you (a question, a plan, a permission, or something else Copilot asks for), and how it ended, with what
-  Copilot said, at most 4,000 characters, or the error, or why it stopped when you didn't stop it (the
-  session closed, or autopilot reached the most it may spend); the session's name, as the app shows it;
-  and its process ID and when it started, as `listening` says them. Never the prompt. BriefBar only reads
-  it (`OutboxReport`), and removes it once it has taken how the turn ended, or lost track of it. An
-  extension from before reports takes no notice of the field and leaves `reports` out, so BriefBar follows
-  that turn from the session's log.
+  changes, until it's over: whether the session has taken the message up, the step it's at, what waits on you
+  (a question, a plan, a permission, or something else Copilot asks for), and how it ended, with what Copilot
+  said, at most 4,000 characters, or the error, or why it stopped when you didn't stop it (the session
+  closed, or autopilot reached the most it may spend); the session's name, as the app shows it; and its
+  process ID and when it started, as `listening` says them. Never the prompt. BriefBar only reads it
+  (`OutboxReport`), and removes it once it has taken how the turn ended, or lost track of it: an extension
+  still following that turn stops then, writing it no more, so turning Azure DevOps off, which removes every
+  report, stops them all, and one whose request went before its first report starts none. An extension from
+  before reports takes no notice of the field and leaves `reports` out, so BriefBar follows that turn from
+  the session's log.
 - **Only yours.** Each folder is a real one that only you can open (0700), and each file a regular one that
   only you can read (0600), written whole to a name starting with `.`, then renamed into place. BriefBar
   opens each without following a symbolic link below your home folder, uses no folder and reads no file
@@ -3381,16 +3383,18 @@ demo's are made up (`SentPrompt.demo`).
 shows then, nor in the demo, whose Notifications page lists a made-up one (`CopilotTasksStore.demoNotifications`), and
 it needs Send Work to Copilot and Send Prompts to Copilot Sessions, which are off until you turn them on. Once its turn
 has waited on you a couple of seconds, each time it starts to, one says so, with what Copilot asks, its question or its
-plan's summary, and goes once the turn goes on; a permission that a rule grants at once says nothing. Once the turn
-ends, one says how, in that one's place: done, failed, or stopped because the session closed or autopilot reached the
-most it may spend, never when you stopped it, which takes back the one that said it waited on you. Its title is what the
-pull request's line says, by the session's name as the app shows it, a fork's own: "Fixed in ‘Retry backoff’, not
-pushed", "‘Retry backoff’ is waiting for your answer", but, for a comment's fix sent to push and reply that's done, only
-that Copilot finished fixing it, "Copilot finished fixing a comment in ‘Retry backoff’", as above, since whether it
-pushed isn't known yet; then the pull request, "!4102 Add retry with backoff", as a task's says it; then the first line
-of what Copilot said. Clicking it opens the pull request, at the thread a thread's prompt took on, as other
-notifications about it do. Its record keeps when BriefBar last said its turn waited on you, so that a restart doesn't
-say so again; an end BriefBar learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
+plan's summary, and goes once the turn goes on, or says another still open again once you answer the one it said; a
+permission that a rule grants at once says nothing. Once the turn ends, one says how, in that one's place: done, failed,
+or stopped because the session closed or autopilot reached the most it may spend, never when you stopped it, which takes
+back the one that said it waited on you. Its title is what the pull request's line says, by the session's name as the
+app shows it, a fork's own: "Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but,
+for a comment's fix sent to push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a
+comment in ‘Retry backoff’", as above, since whether it pushed isn't known yet; then the pull request, "!4102 Add retry
+with backoff", as a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the
+thread a thread's prompt took on, as other notifications about it do; one posted before the list read the pull request,
+as BriefBar starts, names it and the thread, and a click finds them as the list has them by then
+(`CopilotTasksStore.promptLink`). Its record keeps when BriefBar last said its turn waited on you, so that a restart
+doesn't say so again; an end BriefBar learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
 `CopilotTasksStore.promptNotification`). One BriefBar follows from the session's log says nothing.
 
 A line that says what Copilot does about a thread, a build or the conflicts has ⋯, with what its state allows, in its
@@ -4376,20 +4380,21 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
 - A `send` that asks for a report also follows that message's turn (`turn.mjs`), from the Copilot SDK's
   documented session events, which it hears from before it sends the message (`session.on`), by the ID
   that `session.send` gives it, which Copilot's messages in that turn carry (`originatingMessageId`). It
-  never reads a message's own text. The turn waits until the session takes the message up; then works,
-  at the step a tool says it's at (its `description`, else its title), written at most once a second;
-  waits on you while a question, a plan, a permission or something else Copilot asks for is open; and
-  ends at the first of: autopilot stopping it; the session going idle; the next message's turn starting,
-  since none goes idle between turns that waited in the queue; an error for it, unless Copilot may switch
-  models and go on; or the session shutting down, as when the app closes it, since a session that opens
-  again doesn't go on with it. A shell or an agent it started in the background holds the idle back, and
-  the turn its end wakes is still its own; so are the turns autopilot goes on with. Stopped, it says why
-  when it wasn't a Stop: the session closed, or autopilot reached its credit limit. What Copilot said is
-  the last its own messages in the turn said, or autopilot's summary, at most 4,000 characters. It reads
-  the session's name with `session.rpc.name.get()`, and again as the turn starts to wait on you. It writes
-  the report before the result, then again as the turn changes, until it's over or the extension stops;
-  the one that says the session shut down, at once. As tried with the runtime of the GitHub Copilot app
-  1.1.35 (1.0.102), in one of its sessions.
+  never reads a message's own text. The turn waits until the session takes the message up; then works, at
+  the step a tool says it's at (its `description`, else its title), written at most once a second; waits
+  on you while a question, a plan, a permission or something else Copilot asks for is open, the latest of
+  them, as since it was asked, so one answered first leaves the one before as it was; and ends at the
+  first of: autopilot stopping it; the session going idle; the next message's turn starting, since none
+  goes idle between turns that waited in the queue; an error for it, unless Copilot may switch models and
+  go on; or the session shutting down, as when the app closes it, since a session that opens again doesn't
+  go on with it. A shell or an agent it started in the background holds the idle back, and the turn its
+  end wakes is still its own; so are the turns autopilot goes on with. Stopped, it says why when it wasn't
+  a Stop: the session closed, or autopilot reached its credit limit. What Copilot said is the last its own
+  messages in the turn said, or autopilot's summary, at most 4,000 characters. It reads the session's name
+  with `session.rpc.name.get()`, and again as the turn starts to wait on you. It writes the report before
+  the result, then again as the turn changes, until it's over, the extension stops, or BriefBar removed
+  it, as above, while the session's turn goes on; the one that says the session shut down, at once. As
+  tried with the runtime of the GitHub Copilot app 1.1.35 (1.0.102), in one of its sessions.
 - A `stop` stops the turn that runs in its session with `session.abort()`, as the app's own Stop does: the
   session goes on as it was. BriefBar asks it only of an extension that says it can, in `listening`'s `kinds`,
   as one that started before it could doesn't, and then shows the session instead, to stop it there.

@@ -1697,6 +1697,18 @@ import Testing
         #expect(recent.history.entries.first?.date == asking.date)
         #expect(SentPrompt.load(from: settings.defaults).first?.notifiedNeedsYou == asked)
 
+        // Asked something else meanwhile, which you answered first: the first question waits still, as since it was asked,
+        // which its report says again, and its notification says it again, in the other's place.
+        let again = asked.addingTimeInterval(20)
+        try writeReport(requestId, in: outbox, state: "needsYou", since: again, ["asks": "question", "said": "Which branch?"])
+        try await follow(store, at: again.addingTimeInterval(CopilotTasksStore.needsYouAfter))
+        #expect(recent.history.entries.first?.body == "Which branch?")
+        try writeReport(requestId, in: outbox, state: "needsYou", since: asked, ["asks": "question", "said": "Push it now?\nOr wait?"])
+        try await follow(store, at: again.addingTimeInterval(5))
+        #expect(recent.history.entries.first?.body == "Push it now?")
+        #expect(recent.history.entries.count == 1)
+        #expect(settings.copilotSentPrompts.first?.notifiedNeedsYou == asked)
+
         // It went on: what said it waits goes.
         try writeReport(requestId, in: outbox, state: "working", since: sent.addingTimeInterval(1))
         try await follow(store)
@@ -1865,7 +1877,8 @@ import Testing
     }
 
     /// What a prompt's notification says, and opens: the line's words, by the name of the session it went to, a fork's own;
-    /// the pull request, as BriefBar read it; and a click opens it, at the thread a thread's prompt took on.
+    /// the pull request, as BriefBar read it; and a click opens it, at the thread a thread's prompt took on, as the list has
+    /// it by then for one posted before the list read it.
     @Test func aPromptsNotificationSaysWhereAndOpensThePullRequest() throws {
         let pullRequest = PullRequest(
             key: key, title: "Add retry with backoff", author: Person(id: "robin", name: "Robin Diaz"), createdAt: now, projectId: "p",
@@ -1898,8 +1911,20 @@ import Testing
         #expect(plan.title == "‘Retry backoff’ is waiting for your answer")
         #expect(plan.body == "Fix the backoff.")
         #expect(plan.subtitle == "!4102")
-        #expect(plan.userInfo.isEmpty)
         #expect(plan.id == "copilot.prompt.\(requestId)")
+
+        // Posted before the list read the pull request, as when BriefBar had just started: it names the pull request, and the
+        // thread, for a click to find them where the list has them then.
+        #expect(plan.userInfo == ["pullRequest": key.description])
+        let early = CopilotTasksStore.promptNotification(inFork, requestId: requestId, report: report(.finished), pullRequest: nil)
+        #expect(early.userInfo == ["pullRequest": key.description, "thread": "11"])
+        let store = store()
+        #expect(store.promptLink(early.userInfo) == nil)
+        store.knownPullRequest = { $0 == key.linkRef ? pullRequest : nil }
+        #expect(store.promptLink(early.userInfo) == pullRequest.threadURL(11))
+        #expect(store.promptLink(plan.userInfo) == pullRequest.webURL)
+        // One that says where it opens, as other notifications do, opens there.
+        #expect(store.promptLink(done.userInfo) == nil)
     }
 
     /// A prompt keeps its report's request, and when BriefBar last said its turn waits on you, checked as it loads: one whose

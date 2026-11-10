@@ -849,7 +849,8 @@ package final class AzureDevOpsSource: BriefBarSource {
                 return
             }
         }
-        if let link = userInfo["url"].flatMap(URL.init(string:)) {
+        // A prompt's posted before the list had read its pull request: where the list has it now.
+        if let link = userInfo["url"].flatMap(URL.init(string:)) ?? copilot?.promptLink(userInfo) {
             if inWindow || settings.opensPullRequestsInBriefBar,
                pullRequestDetails?.reveal(notification: userInfo["pullRequest"], link: link) == true {
                 return

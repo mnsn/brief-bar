@@ -213,19 +213,28 @@ describe("waiting on you", () => {
         assert.deepEqual(turn.report, { state: "stopped", since: at(20) });
     });
 
-    test("says the latest of what waits on you, until each is answered", () => {
+    test("says the latest of what waits on you, as waiting since it was asked, until each is answered", () => {
         const turn = sent();
         observe(turn, [started(1)]);
         assert.equal(turn.observe(event(2, "permission.requested", { requestId: "r1", permissionRequest: { kind: "shell" } })), "state");
         assert.deepEqual(turn.report, { state: "needsYou", since: at(2), asks: "permission" });
         assert.equal(turn.observe(event(3, "elicitation.requested", { requestId: "e1", message: "Sign in to the server" })), "state");
         assert.deepEqual(turn.report, { state: "needsYou", since: at(3), asks: "input", said: "Sign in to the server" });
+        // The latest answered, the one before says it waits again, since it was asked: BriefBar notifies of each by that.
         assert.equal(turn.observe(event(4, "elicitation.completed", { requestId: "e1" })), "state");
-        assert.equal(turn.report.asks, "permission");
+        assert.deepEqual(turn.report, { state: "needsYou", since: at(2), asks: "permission" });
         // An answer to what it never asked changes nothing.
         assert.equal(turn.observe(event(4, "permission.completed", { requestId: "elsewhere" })), "none");
         assert.equal(turn.observe(event(5, "permission.completed", { requestId: "r1" })), "state");
         assert.deepEqual(turn.report, { state: "working", since: at(1) });
+
+        // One before the latest answered: the latest still says it waits, since it was asked.
+        observe(turn, [
+            event(6, "user_input.requested", { requestId: "q1", question: "Which branch?" }),
+            event(7, "exit_plan_mode.requested", { requestId: "p1", summary: "Fix the backoff." }),
+        ]);
+        assert.equal(turn.observe(event(8, "user_input.completed", { requestId: "q1", answer: "main" })), "state");
+        assert.deepEqual(turn.report, { state: "needsYou", since: at(7), asks: "plan", said: "Fix the backoff." });
     });
 
     test("not for a permission a hook settled, or for what's asked before its run started", () => {

@@ -52,7 +52,7 @@ export function followTurn({ sentAt = new Date().toISOString() } = {}) {
     let since = sentAt;
     let workingSince = sentAt;
     let step;
-    // What waits on you now, by its request's ID, in the order asked.
+    // What waits on you now, by its request's ID, in the order asked, with when each was.
     const asking = new Map();
     // The last of its run's own messages with text; autopilot's summary of it, once it said it's done.
     let words;
@@ -210,7 +210,7 @@ export function followTurn({ sentAt = new Date().toISOString() } = {}) {
         const asks = ASKS[type];
         const what = type === "user_input.requested" ? data.question : type === "exit_plan_mode.requested" ? data.summary : data.message;
         asking.delete(data.requestId);
-        asking.set(data.requestId, { asks, said: text(what) });
+        asking.set(data.requestId, { asks, said: text(what), at });
         // Once you answer, it isn't at the step it was at before it asked.
         step = undefined;
         state = "needsYou";
@@ -220,7 +220,12 @@ export function followTurn({ sentAt = new Date().toISOString() } = {}) {
 
     function answered(data) {
         if (!asking.delete(data.requestId) || state !== "needsYou") return "none";
-        if (asking.size > 0) return "state";
+        // Another still waits on you, which it says since it was asked: BriefBar notifies of each by that.
+        const latest = [...asking.values()].at(-1);
+        if (latest) {
+            since = latest.at;
+            return "state";
+        }
         return enter("working", workingSince);
     }
 

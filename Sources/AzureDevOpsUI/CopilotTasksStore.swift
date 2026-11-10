@@ -1077,7 +1077,8 @@ final class CopilotTasksStore: ObservableObject {
     /// What a notification says of a prompt's turn, as its report says it stands: what its line says, in a sentence, by the
     /// name of the session it went to, as its extension read it; the pull request under it, as a task's says it; and the
     /// first line of what Copilot said as it ended, or of what it asks. A click opens the pull request, at the thread a
-    /// thread's prompt took on, as other notifications about it do.
+    /// thread's prompt took on, as other notifications about it do: one posted before the list read the pull request, as
+    /// when BriefBar had just started, names them, for the click to find them as the list has them then (`promptLink`).
     static func promptNotification(
         _ prompt: SentPrompt, requestId: String, report: OutboxReport, pullRequest: PullRequest?
     ) -> BriefBarNotification {
@@ -1123,11 +1124,24 @@ final class CopilotTasksStore: ObservableObject {
         if let pullRequest {
             info["url"] = (part.thread.map(pullRequest.threadURL) ?? pullRequest.webURL).absoluteString
             info["pullRequest"] = pullRequest.key.description
+        } else if let number = prompt.pullRequest.number {
+            info["pullRequest"] = PRKey(prompt.pullRequest.scope, number).description
+            if let thread = part.thread { info["thread"] = String(thread) }
         }
         return BriefBarNotification(
             id: promptNotificationID(requestId), source: .azureDevOps, state: state, title: title, subtitle: subtitle, body: body,
             thread: "copilot", userInfo: info
         )
+    }
+
+    /// Where a prompt's notification opens, when it was posted before the list had read its pull request
+    /// (`promptNotification`): the pull request as the list has it now, at the thread it names. Nil while the list doesn't
+    /// have it, and for a notification that says where it opens itself.
+    func promptLink(_ userInfo: [String: String]) -> URL? {
+        guard userInfo["url"] == nil, let key = userInfo["pullRequest"].flatMap(PRKey.init(description:)),
+              let pullRequest = knownPullRequest(key.linkRef)
+        else { return nil }
+        return userInfo["thread"].flatMap(Int.init).map(pullRequest.threadURL) ?? pullRequest.webURL
     }
 
     /// A prompt's notification, by its request: that it waits on you, then how it ended, in its place.

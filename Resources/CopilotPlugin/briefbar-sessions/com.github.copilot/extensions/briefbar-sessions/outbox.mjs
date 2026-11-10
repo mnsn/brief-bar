@@ -106,7 +106,7 @@ export function stopWithTheSession(outbox, proc = process) {
  * how it went once it's done, however long that takes: one that's still going when BriefBar stops waiting may still
  * reach the session, which BriefBar says, so it never says it failed when it can't know. A send that asks for a report
  * says how its message's turn goes in `reports/<requestId>.json`, written before its result and rewritten as the turn
- * goes, until it ends or the extension stops: meanwhile, it takes other requests, such as a stop.
+ * goes, until it ends, the extension stops, or BriefBar removes it: meanwhile, it takes other requests, such as a stop.
  *
  * Options, for tests: `folder`, the outbox, and `root`, the folder it's in that's trusted as it is, below which no
  * folder is followed through a link, as BriefBar follows none (by default, your home folder, or `folder`'s own when
@@ -287,7 +287,7 @@ export function listen(session, options = {}) {
         let outcome;
         try {
             const request = checkRequest(parse(await readRequest(claimed, uid)), { requestId, sessionId, now: now() });
-            outcome = await carryOut(request, requestId);
+            outcome = await carryOut(request, requestId, claimed);
         } catch (error) {
             outcome = error instanceof Refusal
                 ? failed(error.code, error.message, error.kind)
@@ -302,7 +302,7 @@ export function listen(session, options = {}) {
         await fsp.rm(claimed, { force: true }).catch(() => {});
     }
 
-    async function carryOut(request, requestId) {
+    async function carryOut(request, requestId, claimed) {
         if (request.kind === "stop") {
             // As the app's own Stop: the turn that runs in the session now ends, and the session goes on as it was.
             try {
@@ -312,7 +312,7 @@ export function listen(session, options = {}) {
             }
             return { ok: true, kind: "stop" };
         }
-        if (request.kind === "send") return send(request, requestId);
+        if (request.kind === "send") return send(request, requestId, claimed);
         let answer;
         try {
             answer = await session.rpc.tools.execute({ name: "fork_session", arguments: {} });
@@ -342,14 +342,17 @@ export function listen(session, options = {}) {
     }
 
     /** Sends the session the prompt, as your own message. Asked to report, it follows the message's turn from the
-     * session's events, which it hears from before it sends it, and says it does once its first report is written. */
-    async function send(request, requestId) {
+     * session's events, which it hears from before it sends it, and says it does once its first report is written.
+     * @param claimed the request, as it was claimed: while it's there, BriefBar still wants its turn reported. */
+    async function send(request, requestId, claimed) {
         let follower = null;
         if (request.report && typeof session.on === "function") {
             follower = {
                 requestId,
+                claimed,
                 turn: followTurn({ sentAt: new Date(now()).toISOString() }),
                 reporting: false,
+                written: false,
                 timer: null,
                 writtenAt: -Infinity,
             };
@@ -388,12 +391,24 @@ export function listen(session, options = {}) {
         }
         followers.set(follower.requestId, follower);
         follower.reporting = true;
-        if (!writeReport(follower)) {
+        if (!isWanted(follower) || !writeReport(follower)) {
             quiet(follower);
             return false;
         }
         if (follower.turn.isOver) quiet(follower);
         return true;
+    }
+
+    /** Whether BriefBar still wants a turn reported: until its first report is written, while the request it came in is
+     * still there; then while that report is. BriefBar removes them once it no longer follows the turn, as when it took
+     * how it ended, and every one as Azure DevOps is turned off, which forgets them (`CopilotOutbox.forget`). */
+    function isWanted(follower) {
+        const file = follower.written ? path.join(folders.reports, `${follower.requestId}.json`) : follower.claimed;
+        try {
+            return fs.lstatSync(file).isFile();
+        } catch {
+            return false;
+        }
     }
 
     /** What the session said happened, for a turn it reports: how the turn stands now goes in its report at once, but
@@ -429,11 +444,16 @@ export function listen(session, options = {}) {
     }
 
     /** Writes a turn's report as it stands now: then, once it's over, stops following it. One that can't be written is
-     * written again a little later, while the turn is followed. */
+     * written again a little later, while the turn is followed. One whose report BriefBar removed, it stops following,
+     * writing nothing more: the session's turn goes on. */
     function rewrite(follower) {
         if (!followers.has(follower.requestId)) return;
         clearTimeout(follower.timer);
         follower.timer = null;
+        if (!isWanted(follower)) {
+            quiet(follower);
+            return;
+        }
         if (!writeReport(follower)) {
             follower.timer = setTimeout(() => rewrite(follower), REWRITE_AFTER_MS);
             follower.timer.unref?.();
@@ -466,6 +486,7 @@ export function listen(session, options = {}) {
         } catch {
             return false;
         }
+        follower.written = true;
         follower.writtenAt = performance.now();
         return true;
     }

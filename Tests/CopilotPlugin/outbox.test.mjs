@@ -571,6 +571,43 @@ describe("reporting", () => {
         fake.emit("session.idle", {});
         assert.equal(readReport(value.requestId).state, "working");
     });
+
+    test("stops following a turn whose report BriefBar removed, as turning Azure DevOps off does, and writes it no more", async () => {
+        const fake = idleSession();
+        const { value } = await sendReported(fake);
+        const reports = path.join(folder, "reports");
+        fs.rmSync(path.join(reports, `${value.requestId}.json`));
+        fake.emit("user_input.requested", { requestId: "q1", question: "Push it?" }, iso(NOW + 5000));
+        assert.deepEqual(fs.readdirSync(reports), []);
+        assert.equal(fake.handlers.size, 0);
+        fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content: "Fixed the backoff." });
+        fake.emit("session.idle", {}, iso(NOW + 9000));
+        assert.deepEqual(fs.readdirSync(reports), []);
+        // The session's turn goes on: only its report stops.
+        assert.equal(fake.stops.count, 0);
+    });
+
+    test("starts no report for a send whose request BriefBar removed as it went, as turning Azure DevOps off does", async () => {
+        let answer;
+        const fake = fakeSession(undefined, { send: () => new Promise((resolve) => { answer = resolve; }) });
+        const outbox = listenTo(fake.session);
+        const value = request(fake.session.sessionId, { report: true });
+        writeRequest(value);
+        const scanning = outbox.scan();
+        await waitFor(() => answer, "the send");
+        // BriefBar forgets its requests, the ones claimed too.
+        const requests = path.join(folder, "requests");
+        for (const name of fs.readdirSync(requests)) fs.rmSync(path.join(requests, name));
+        answer("message-1");
+        await scanning;
+        const result = readResult(value.requestId);
+        assert.equal(result.ok, true);
+        assert.equal(result.reports, undefined);
+        assert.equal(fake.handlers.size, 0);
+        assert.deepEqual(fs.readdirSync(path.join(folder, "reports")), []);
+        // It went all the same.
+        assert.deepEqual(fake.calls.sent, [{ prompt: PROMPT }]);
+    });
 });
 
 describe("turning requests down", () => {
