@@ -865,6 +865,83 @@ import Testing
         #expect(sessions.session(for: key)?.session?.folder == nil)
     }
 
+    /// What was read of the folder the session Show Links names works in goes once Show Links is off, though nothing follows
+    /// the pull request then, as once its details closed, and so does the session kept for them, which only Show Links
+    /// linked: on again, neither is there until it's read again.
+    @Test func forgetsTheFolderOnceShowLinksIsOffAfterTheDetailsClosed() async throws {
+        let home = try folder()
+        let worktree = try folder()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: worktree)
+        }
+        try sessionState(onBranch, home: home, folder: worktree)
+        let store = copilot(home: home)
+        store.settings.copilotEnabled = false
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let sessions = PullRequestSessions(copilot: store, links: links)
+        sessions.refreshEvery = refresh
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        let ref = try #require(ItemRef.session(onBranch))
+        links.publish(.copilot, links: [try #require(ItemLink(ref, key.linkRef, origin: .branch))], items: [LinkedItem(
+            ref: ref, label: "Delivery estimates", title: "Delivery estimates", symbol: "waveform.path.ecg", color: .pink,
+            status: "Idle", place: "shop-web · delivery-estimates", date: now
+        )])
+        let following = followOnScreen(sessions, item, record: record)
+        try await until { sessions.session(for: key)?.session?.folder != nil }
+
+        // The details close: their session stays a while, to show at once as they open again.
+        following.cancel()
+        await following.value
+        #expect(sessions.session(for: key)?.session?.folder?.path == worktree.path)
+        #expect(await sessions.find(record)?.session?.folder?.path == worktree.path)
+
+        links.setOn(false)
+        try await until { sessions.session(for: key) == nil }
+        #expect(sessions.session(for: key) == nil)
+        links.setOn(true)
+        let found = try #require(await sessions.find(record))
+        #expect(found.session?.name == "Delivery estimates")
+        #expect(found.session?.folder == nil)
+    }
+
+    /// A task that went on with one of the Copilot app's sessions works where that session works now, which may have moved
+    /// since the task started: the folder its details open is the one that session's state says, read with the app's
+    /// sessions; where the task started stays its worktree.
+    @Test func opensWhereTheAppsSessionATaskWentOnWithWorksNow() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088", isDirectory: true)
+        let moved = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088-continued", isDirectory: true)
+        for folder in [worktree, moved] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        try sessionState(task, home: home, folder: moved)
+        let store = copilot(home: home)
+        store.settings.copilotRuns = [CopilotRun(
+            id: task, workItem: nil,
+            onPullRequest: PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "delivery-estimates"),
+            action: .fixComments, options: CopilotModel.standard, repository: worktree.deletingLastPathComponent(), worktree: worktree,
+            startedAt: now.addingTimeInterval(-3_600), process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished,
+            isAppSession: true
+        )]
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = refresh
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+
+        try await until { sessions.session(for: key)?.session?.currentFolder?.path == moved.path }
+        let session = try #require(sessions.session(for: key))
+        #expect(session.basis == .lastTask)
+        #expect(session.session?.folder?.path == worktree.path)
+        #expect(SessionShortcuts.of(session)?.folder?.path == moved.path)
+    }
+
     // MARK: The demo
 
     /// The demo's made-up tasks: the one fixing !4088's build, still working, so busy; the work item's task that opened

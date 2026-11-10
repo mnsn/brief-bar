@@ -38,12 +38,13 @@ struct SessionShortcuts: Equatable {
     var choice: SessionChoice
     var way: SessionOpening.Way
     /// An earlier task's worktree, or the folder one of the Copilot app's sessions works in, as its session state says, read
-    /// with Send Work to Copilot or Show Links on; nil until it's read, and when it says none or that folder isn't there.
+    /// with Send Work to Copilot or Show Links on, which, for a task that went on with one of them, is where that session
+    /// works now (`SessionChoice.currentFolder`); nil until it's read, and when it says none or that folder isn't there.
     var folder: URL?
 
     static func of(_ session: PullRequestSession?) -> SessionShortcuts? {
         guard let choice = session?.session else { return nil }
-        return SessionShortcuts(choice: choice, way: SessionOpening.way(of: choice), folder: choice.folder)
+        return SessionShortcuts(choice: choice, way: SessionOpening.way(of: choice), folder: choice.currentFolder)
     }
 
     /// "the worktree ‘Fix the Build’ works in, ~/Developer/copilot-worktrees/payments-api/pr-4071", for tooltips: a task

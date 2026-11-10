@@ -394,9 +394,22 @@ final class PullRequestSessions: ObservableObject {
     }
 
     /// Every followed pull request's session as things are now, without reading anything more: for tests, and as things
-    /// change.
+    /// change. Once Show Links is off, what it found goes, whatever follows it (`forgetShowLinks`).
     func updateAll() {
+        forgetShowLinks()
         for key in followed.keys { update(key) }
+    }
+
+    /// Once Show Links is off: what was read of the folders its sessions work in (`readLinkedFolder`), and the sessions kept
+    /// for details that closed that only it linked to their pull requests, which nothing follows to forget them.
+    private func forgetShowLinks() {
+        guard !links.isOn else { return }
+        linkedFolders = [:]
+        kept.removeAll { key in
+            guard sessions[key]?.canChoose == false else { return false }
+            sessions[key] = nil
+            return true
+        }
     }
 
     /// A followed pull request's session as things are now, from what was read last, BriefBar's tasks as they are, the
@@ -413,8 +426,6 @@ final class PullRequestSessions: ObservableObject {
             followed[key] = state
             mentionsRead = [:]
         }
-        // What was read of the folders Show Links' sessions work in goes once it's off.
-        if !links.isOn, !linkedFolders.isEmpty { linkedFolders = [:] }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
         // The folder of a session Show Links names that hasn't been read, as when it's just been linked: now, rather than
@@ -482,9 +493,14 @@ final class PullRequestSessions: ObservableObject {
     ) -> [SessionChoice] {
         let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
         let open = Set(found.filter(\.isOpenInApp).map(\.id))
+        // Where the app's sessions that tasks went on with work now, as read.
+        let moved = found.reduce(into: [String: URL]()) { folders, choice in
+            if choice.run?.isAppSession == true, let folder = choice.appFolder { folders[choice.id] = folder }
+        }
         var tasks = copilot.taskChoices(for: subject)
         for index in tasks.indices {
             tasks[index].isOpenInApp = open.contains(tasks[index].id)
+            if tasks[index].run?.isAppSession == true { tasks[index].appFolder = moved[tasks[index].id] }
         }
         let taskIDs = Set(tasks.map(\.id))
         let links = copilot.linkedSessions(CopilotTasksStore.ref(of: subject))

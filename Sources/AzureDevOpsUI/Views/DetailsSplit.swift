@@ -252,6 +252,14 @@ struct DetailsFillsPageKey: PreferenceKey {
     }
 }
 
+extension View {
+    /// Asks for the whole page while `fills` is, as well as while anything in it asks for it (`DetailsFillsPageKey`), such
+    /// as a file's page once you click its ⤢: `preference(key:value:)` would put this in place of what they ask.
+    func fillsDetailsPage(_ fills: Bool) -> some View {
+        transformPreference(DetailsFillsPageKey.self) { asks in asks = asks || fills }
+    }
+}
+
 /// Making the details fill the page, over the list beside them, and showing the list beside them again, which ends every
 /// way they came to fill it, a file's page you made fill it too: what a pull request's Fill the Page and Show the List do,
 /// and a file's page's ⤡. Nil where the details don't offer it: over the list in a narrow window, which they cover

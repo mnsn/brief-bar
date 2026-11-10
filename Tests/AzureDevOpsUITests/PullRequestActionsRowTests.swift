@@ -1,13 +1,15 @@
+import AppKit
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
 /// The actions under a pull request's heading: its Copilot session, opened as its line's ⌄ opens it, the folder it works
-/// in, and Fill the Page, which lasts until the details close or Show the List.
+/// in now, and Fill the Page, which lasts until the details close or Show the List, and leaves a file's page its own.
 @MainActor
 @Suite(.opensNothing) struct PullRequestActionsRowTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
@@ -53,7 +55,7 @@ import Testing
         let taskShortcuts = try #require(SessionShortcuts.of(session(.session(task(fixing), .lastTask))))
         #expect(taskShortcuts.way == .terminal && taskShortcuts.folder?.path == "/tmp/copilot-worktrees/shop-web/pr-4071")
         #expect(SessionShortcuts.of(session(.session(task(fixing, inApp: true), .lastTask)))?.way == .copilot)
-        // A session only Show Links links to it, whose folder BriefBar doesn't read: no folder.
+        // A session only Show Links links to it, until its folder is read: none.
         let linked = try #require(SessionShortcuts.of(session(.session(app(onBranch), .linkedByYou), canChoose: false)))
         #expect(linked.way == .copilot && linked.folder == nil)
         // Nothing without one, or while BriefBar asks which it is.
@@ -61,6 +63,23 @@ import Testing
         #expect(SessionShortcuts.of(session(.newSession(chosenByYou: false))) == nil)
         #expect(SessionShortcuts.of(session(.newSession(chosenByYou: true))) == nil)
         #expect(SessionShortcuts.of(session(.ask([app(onBranch), app(other)]))) == nil)
+    }
+
+    /// A task that went on with one of the app's sessions opens where that session works now, as read, which may have moved
+    /// since the task started; until it's read, where it started. A task BriefBar runs with the Copilot CLI works in its own
+    /// worktree.
+    @Test func opensWhereTheSessionATaskWentOnWithWorksNow() {
+        let started = "/tmp/copilot-worktrees/shop-web/pr-4071"
+        let moved = URL(fileURLWithPath: "/tmp/copilot-worktrees/shop-web/pr-4071-continued", isDirectory: true)
+        var inApp = task(fixing, inApp: true)
+        #expect(SessionShortcuts.of(session(.session(inApp, .lastTask)))?.folder?.path == started)
+        inApp.appFolder = moved
+        #expect(SessionShortcuts.of(session(.session(inApp, .lastTask)))?.folder == moved)
+        // Where it started is still its worktree, to tell whether another task works in its checkout.
+        #expect(inApp.folder?.path == started)
+        var own = task(fixing)
+        own.appFolder = moved
+        #expect(SessionShortcuts.of(session(.session(own, .lastTask)))?.folder?.path == started)
     }
 
     @Test func namesTheFolderInItsTooltips() {
@@ -120,5 +139,56 @@ import Testing
         store.detailsFillPage = true
         store.close()
         #expect(!store.detailsFillPage && !store.fillsPage)
+    }
+
+    /// A file's page that you made fill the page fills it under the details, whose own Fill the Page doesn't take its place
+    /// (`fillsDetailsPage`), and either fills it alone. Drawn in a window off screen, beside a list.
+    @Test func aFilesPageFillsThePageUnderTheDetailsOwnFillThePage() async throws {
+        _ = NSApplication.shared
+        let cases: [(file: Bool, details: Bool, room: DetailsRoom)] = [(true, false, .fillingPage), (false, true, .fillingPage), (false, false, .beside)]
+        for (file, details, room) in cases {
+            let seen = SeenRoom()
+            let split = DetailsSplit(showsDetails: true, preferredWidth: .constant(nil)) {
+                Color.clear
+            } details: {
+                VStack {
+                    RoomProbe(seen: seen)
+                    // As a file's page asks, once you click its ⤢.
+                    Color.clear.frame(height: 10).preference(key: DetailsFillsPageKey.self, value: file)
+                }
+                // As a pull request's details do, with Fill the Page or without.
+                .fillsDetailsPage(details)
+            }
+            .frame(width: 1_200, height: 700)
+            let host = NSHostingView(rootView: split)
+            let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_200, height: 700), styleMask: .borderless,
+                                  backing: .buffered, defer: false)
+            window.contentView = host
+            defer { window.contentView = nil }
+            let deadline = ContinuousClock.now.advanced(by: waitLimit)
+            while seen.room != room, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(25))
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+            }
+            #expect(seen.room == room, "with a file's page asking: \(file); with Fill the Page: \(details)")
+        }
+    }
+}
+
+/// Where `DetailsSplit` put the details, as a view in them sees it.
+@MainActor private final class SeenRoom {
+    var room: DetailsRoom?
+}
+
+private struct RoomProbe: View {
+    let seen: SeenRoom
+    @Environment(\.detailsRoom) private var room
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .onAppear { seen.room = room }
+            .onChange(of: room) { _, now in seen.room = now }
     }
 }

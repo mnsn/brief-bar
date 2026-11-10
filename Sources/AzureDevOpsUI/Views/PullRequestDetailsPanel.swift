@@ -73,9 +73,9 @@ struct PullRequestDetailsPanel: View {
                 if !isOn { details.closePages() }
             }
             // Fill the Page: they cover the list, with the pages over them and their files' pages, until they close or
-            // Show the List.
+            // Show the List; as they do while a file's page in them fills it, as you made it.
             .environment(\.detailsFilling, filling)
-            .preference(key: DetailsFillsPageKey.self, value: details.detailsFillPage)
+            .fillsDetailsPage(details.detailsFillPage)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(accessibilityName(item))
         }

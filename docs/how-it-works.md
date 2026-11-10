@@ -1929,8 +1929,9 @@ The actions beside **✨ Summarize** in its heading (`PullRequestActionsRow`) do
 the details already do. **Open in Copilot**, or **Continue in Terminal** for a task BriefBar runs
 with the Copilot CLI, opens the session the line shows, as its menu does (`SessionOpening`): not while Copilot works in
 it or in its checkout, and not while the line asks which session it is. The folder buttons open the folder that session
-works in (`SessionChoice.folder`): an earlier task's worktree, or the folder one of the app's sessions works in, from its
-`workspace.yaml`, as the line reads it with Send Work to Copilot on. Without it, or once the pull request is closed,
+works in now (`SessionChoice.currentFolder`): an earlier task's worktree, or the folder one of the app's sessions works
+in, from its `workspace.yaml`, as the line reads it with Send Work to Copilot on, which, for a task that went on with one
+of the app's sessions, is that session's, as it may have moved since the task started. Without it, or once the pull request is closed,
 BriefBar reads, with Show Links on, only the folder of the session the line names, the same way: as the details come on
 screen and every ten seconds while they stay there, off the main thread, kept in memory only, until Show Links is off
 (`PullRequestSessions.readLinkedFolder`). The buttons don't show until it's read, nor once it says none or that folder
