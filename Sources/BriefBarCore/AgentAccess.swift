@@ -20,7 +20,12 @@ public enum AgentAccess {
     /// raises it, from what pull requests say under Descriptions in their notes (scripts/prepare-release.sh).
     /// 6: BriefBar --wait, for one of your pull requests, read every minute for up to two hours until its next build
     /// passes or fails, comments wait on you, it has merge conflicts or it closes.
-    public static let version = 6
+    /// 7: with Pull Request Order on, a tool for sessions to set the stages of the Azure DevOps pull requests they work
+    /// on, `pull_request_stage`; each Azure DevOps pull request's stage, why, and who set it, in `needs_me` and
+    /// `pull_request`; and, in the order tools' answers, what you changed in the orders sessions told, which still
+    /// holds. Whatever the setting, each Azure DevOps pull request's work items and the story each is for, in
+    /// `pull_request`, and the pull requests linked to a work item's tasks, in `work_item`.
+    public static let version = 7
 
     public static let defaultsKey = "agents"
 
