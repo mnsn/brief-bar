@@ -63,7 +63,16 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// requests, and what those stories are when BriefBar hasn't read them; and, while Apple Intelligence is on,
     /// missions named on this Mac from the titles of their pull requests, work items, stories and sessions, with the
     /// names you give missions kept.
-    nonisolated package static let descriptionVersion = 25
+    /// 26: with Pull Request Order and agents on, the stages Copilot sessions set on your pull requests, kept in
+    /// BriefBar's preferences for each session, by reference, with only what would end each, for 30 days at most, which
+    /// count only while the Copilot app lists the session. With Pull Request Order on, while Apple Intelligence is on,
+    /// a split suggested on this Mac for a mission whose pull requests look like different pieces of work, from the
+    /// same titles its name is, which moves nothing until you click Split; with the suggestions you keep together kept,
+    /// each as digests of what its mission is made of, never a title. Ask…, asking one of your Copilot sessions where
+    /// it stands, or your own question, which sends its conversation, with your question, to GitHub Copilot; and the
+    /// forks it makes for that, until they're deleted. Right before a comment's Fix or Fix All goes with Push and reply
+    /// once it's fixed checked, the same reads, requests and git fetch as right before a Push & Reply goes.
+    nonisolated package static let descriptionVersion = 26
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
