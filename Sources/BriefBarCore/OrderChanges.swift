@@ -831,13 +831,18 @@ public struct OrderChanges: Equatable, Sendable {
             let found = Self.lines(across: refs, of: plan, changes: changes, holding: holding, status: status)
             seen.merge(found.seen) { $0.union($1) }
             // Told after the split moved the one it's about: one told before is what the split moved them from, but for one
-            // that held nothing up as BriefBar learned that revision's lines, which crosses whenever it comes to.
+            // that held nothing up as BriefBar learned that revision's lines, which crosses whenever it comes to. That one
+            // takes them back as BriefBar first sees it hold something up, not as its order told it, before your change.
             let lines = found.across.filter { line in
                 let member = refs.contains(line.after) ? line.after : line.before
                 return holding[member].map { plan.updatedAt > $0.changedAt || $0.linedAt == plan.updatedAt } ?? false
             }
             if let first = lines.map({ refs.contains($0.after) ? $0.after : $0.before }).min() {
-                let at = min(plan.updatedAt, now)
+                let late = lines.contains { line in
+                    let member = refs.contains(line.after) ? line.after : line.before
+                    return holding[member].map { plan.updatedAt <= $0.changedAt } ?? false
+                }
+                let at = late ? now : min(plan.updatedAt, now)
                 for ref in refs {
                     let later = lines.filter { $0.before == ref }.map(\.after)
                     let overridden: OrderChange.Overridden = if lines.contains(where: { $0.after == ref }) {

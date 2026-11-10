@@ -1585,6 +1585,18 @@ import Testing
         #expect(changes[Self.pr(4403)]?.linedWith.contains(Self.pr(4402)) == true)
         #expect(changes[Self.pr(4404)]?.linedWith.contains(Self.pr(4406)) == false)
         #expect(takenBack(changes, both) == group)
+        // Its order takes the others back as BriefBar first sees that line hold something up, after you put them back, so
+        // 4403, which another session's order had taken meanwhile, goes back with them once BriefBar forgets that order.
+        let otherOrder = UUID(uuidString: "51111111-2222-4333-8444-555555555555")!
+        let named = DeclaredOrders(plans: both.plans + [OrderPlan(
+            id: otherOrder, createdAt: t(13), updatedAt: t(13), declaredBy: Self.session, entries: [.init(ref: Self.pr(4403))]
+        )])
+        changes.noteOverrides(in: named, now: t(14), status: closed4406)
+        #expect(changes[Self.pr(4403)]?.overridden?.by == otherOrder)
+        changes.noteOverrides(in: named, now: t(20))
+        #expect(changes[Self.pr(4404)]?.overridden == .init(by: Self.planID, at: t(20), before: [Self.pr(4406)]))
+        changes.noteOverrides(in: both, now: t(30))
+        #expect(changes.all.allSatisfy { $0.overridden?.by == Self.planID })
     }
 
     /// One a split moved, back where the split put it as Undo, or an order BriefBar forgot that had taken it, brings it back
