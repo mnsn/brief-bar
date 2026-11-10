@@ -353,8 +353,72 @@ import Testing
         let head = try await git.run(["-C", clone.path, "rev-parse", "HEAD"], timeout: 30)
         try await fixture.git(["-C", clone.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"])
         // The push left origin/<branch> where it was.
+        #expect(await git.tracksPushes(to: Self.source, in: clone) == false)
         #expect(try await git.run(["-C", clone.path, "rev-parse", "refs/remotes/origin/\(Self.source)"], timeout: 30) == start)
-        #expect(await git.pushedItsOwn(in: clone, branch: Self.source, since: start) == true)
+        #expect(await git.pushedItsOwn(in: clone, branch: Self.source, since: start, at: Date()) == true)
+    }
+
+    /// As things stood when a turn ended, from git's logs of where HEAD and origin/<branch> were: its own push then counts,
+    /// whatever's done there since; a commit it didn't push doesn't, though a later turn there pushes it along.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhatItPushedAsItsTurnEnded() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let checkout = fixture.checkout
+        _ = try await git.checkPush(in: checkout, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        // After all git has logged by the clock so far.
+        let base = Int(Date().timeIntervalSince1970) + 1_000
+        func at(_ seconds: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(base + seconds)) }
+        func commit(_ text: String, at seconds: Int) async throws {
+            try "\(text)\n".write(to: checkout.appendingPathComponent("\(text).txt"), atomically: true, encoding: .utf8)
+            try await fixture.git(["-C", checkout.path, "add", "\(text).txt"])
+            try await fixture.git(["-C", checkout.path] + Self.identity + ["commit", "--quiet", "-m", text], at: base + seconds)
+        }
+        func push(at seconds: Int) async throws {
+            let head = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+            try await fixture.git(["-C", checkout.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"], at: base + seconds)
+        }
+        // A fix commits and pushes, then its turn ends; a later turn there commits and pushes more.
+        try await commit("The fix", at: 10)
+        try await push(at: 20)
+        try await commit("Later", at: 40)
+        try await push(at: 50)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start, at: at(30)) == true)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start, at: at(15)) == false)
+        // The next fix commits and doesn't push, then its turn ends; a later turn there pushes it along with its own.
+        let next = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await commit("Another fix", at: 60)
+        try await commit("Yet another", at: 80)
+        try await push(at: 90)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next, at: at(70)) == false)
+        // As things are now, it would look pushed.
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == true)
+    }
+
+    /// A push moves origin/<branch> as the remote's fetch settings map the branch to it: by default, but not in a clone of
+    /// one other branch, one that maps it elsewhere, or one that leaves it out.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhichBranchesAPushTracks() async throws {
+        let fixture = try await RepositoryFixture()
+        defer { fixture.remove() }
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment)
+        let checkout = fixture.checkout
+        func fetching(_ refspecs: [String]) async throws -> Bool? {
+            _ = try? await git.run(["-C", checkout.path, "config", "--unset-all", "remote.origin.fetch"], timeout: 30)
+            for refspec in refspecs {
+                try await fixture.git(["-C", checkout.path, "config", "--add", "remote.origin.fetch", refspec])
+            }
+            return await git.tracksPushes(to: Self.source, in: checkout)
+        }
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/origin/*"]) == true)
+        #expect(try await fetching(["+refs/heads/main:refs/remotes/origin/main"]) == false)
+        #expect(try await fetching(["+refs/heads/main:refs/remotes/origin/main", "refs/heads/\(Self.source):refs/remotes/origin/\(Self.source)"]) == true)
+        #expect(try await fetching(["+refs/heads/users/*:refs/remotes/origin/users/*"]) == true)
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/upstream/*"]) == false)
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/origin/*", "^refs/heads/users/*"]) == false)
+        #expect(try await fetching([]) == false)
+        #expect(await git.tracksPushes(to: Self.source, in: fixture.folder.appendingPathComponent("nowhere")) == nil)
     }
 
     @Test func putsWorktreesNextToTheRepositoryEachInAFolderOfItsOwn() {

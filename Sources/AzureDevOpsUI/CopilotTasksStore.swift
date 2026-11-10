@@ -221,10 +221,10 @@ final class CopilotTasksStore: ObservableObject {
     }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
-    /// Says whether a session's checkout pushed a commit of its own to a pull request's branch since `start`, in git's place
-    /// (`Git.pushedItsOwn(in:branch:since:)`), in tests.
+    /// Says whether a session's checkout pushed a commit of its own to a pull request's branch since `start`, as things
+    /// stood at `end`, in git's place (`Git.pushedItsOwn(in:branch:since:at:)`), in tests.
     var pushedForTests: PushedItsOwn?
-    typealias PushedItsOwn = @Sendable (_ folder: URL, _ branch: String, _ start: String) async -> Bool?
+    typealias PushedItsOwn = @Sendable (_ folder: URL, _ branch: String, _ start: String, _ end: Date?) async -> Bool?
     /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.
     var openForTests: ((_ sessionId: String, _ prompt: String) -> Bool)?
     /// Whether an app opens `ghapp://` links, in tests.
@@ -893,27 +893,27 @@ final class CopilotTasksStore: ObservableObject {
         guard runsBeingTold.insert(ended.run.id).inserted else { return }
         Task {
             var ended = ended
-            ended.pushed = await pushedItsOwn(ended.run)
+            ended.pushed = await pushedItsOwn(ended.run, at: ended.status.since)
             apply([ended])
             runsBeingTold.remove(ended.run.id)
         }
     }
 
     /// Whether a task that fixed what it took on first, then was to push and reply, pushed a commit of its own from its
-    /// checkout since it started, as git there says now (`Git.pushedItsOwn(in:branch:since:)`): nil when git can't tell, or
-    /// BriefBar didn't read where the branch was as it started (`CopilotRun.head`).
-    private func pushedItsOwn(_ run: CopilotRun) async -> Bool? {
+    /// checkout since it started, as git there says things stood as it ended, at `end` (`Git.pushedItsOwn(in:branch:since:at:)`):
+    /// nil when git can't tell, or BriefBar didn't read where the branch was as it started (`CopilotRun.head`).
+    private func pushedItsOwn(_ run: CopilotRun, at end: Date?) async -> Bool? {
         guard let branch = run.onPullRequest?.sourceBranch, let start = run.head else { return nil }
-        return await Self.pushedItsOwn(in: run.worktree, branch: branch, since: start, git: await git(), forTests: pushedForTests)
+        return await Self.pushedItsOwn(in: run.worktree, branch: branch, since: start, at: end, git: await git(), forTests: pushedForTests)
     }
 
-    /// Whether a session's checkout pushed a commit of its own to a pull request's branch since `start`
-    /// (`Git.pushedItsOwn(in:branch:since:)`), or what a test says in git's place (`pushedForTests`).
+    /// Whether a session's checkout pushed a commit of its own to a pull request's branch since `start`, as things stood at
+    /// `end` (`Git.pushedItsOwn(in:branch:since:at:)`), or what a test says in git's place (`pushedForTests`).
     nonisolated static func pushedItsOwn(
-        in folder: URL, branch: String, since start: String, git: Git, forTests: PushedItsOwn?
+        in folder: URL, branch: String, since start: String, at end: Date?, git: Git, forTests: PushedItsOwn?
     ) async -> Bool? {
-        if let forTests { return await forTests(folder, branch, start) }
-        return await git.pushedItsOwn(in: folder, branch: branch, since: start)
+        if let forTests { return await forTests(folder, branch, start, end) }
+        return await git.pushedItsOwn(in: folder, branch: branch, since: start, at: end)
     }
 
     private func apply(_ results: [Ended]) {

@@ -882,14 +882,17 @@ import Testing
     private actor PushAnswers {
         private let answers: [String: Bool]
         private(set) var asked: [String] = []
+        /// When each was asked about as of: as its turn ended.
+        private(set) var ends: [Date?] = []
 
         /// - Parameter answers: by the checkout's folder's path; nil, git can't tell, for the rest.
         init(_ answers: [String: Bool]) {
             self.answers = answers
         }
 
-        func answer(_ folder: URL, _ branch: String, _ start: String) -> Bool? {
+        func answer(_ folder: URL, _ branch: String, _ start: String, _ end: Date?) -> Bool? {
             asked.append("\(folder.path) \(branch) \(start)")
+            ends.append(end)
             return answers[folder.path]
         }
     }
@@ -953,7 +956,7 @@ import Testing
         let answers = PushAnswers(["/tmp/copilot-worktrees/payments-api/\(task)": true, "/tmp/copilot-worktrees/payments-api/\(stopping)": false])
         let store = store(settings)
         store.useEnvironment(["COPILOT_HOME": home.path])
-        store.pushedForTests = { await answers.answer($0, $1, $2) }
+        store.pushedForTests = { await answers.answer($0, $1, $2, $3) }
         store.refresh()
         try await settle { settings.copilotRuns.allSatisfy { $0.ended != nil } }
         #expect(settings.copilotRuns.map(\.ended) == [.finished, .finished, .finished, .failed, .finished])
@@ -961,6 +964,8 @@ import Testing
         #expect(await answers.asked.sorted() == [
             "/tmp/copilot-worktrees/payments-api/\(task) payments-retry c1", "/tmp/copilot-worktrees/payments-api/\(stopping) payments-retry c1",
         ])
+        // As things stood as each ended, as its log says.
+        #expect(await answers.ends.allSatisfy { $0.map { abs($0.timeIntervalSince(now.addingTimeInterval(2))) < 0.01 } ?? false })
         let name = PullRequestAction.fixPushAndReplyTitle
         #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Fixed, pushed and replied in the ‘Fix, Push & Reply’ task")
         #expect(store.work(on: .thread(14), of: key)?.sentence(name: name, forkOf: nil) == "Fixed in the ‘Fix, Push & Reply’ task, but not pushed")
@@ -971,7 +976,7 @@ import Testing
         let restarted = self.store(settings)
         restarted.useEnvironment(["COPILOT_HOME": home.path])
         let later = PushAnswers(["/tmp/copilot-worktrees/payments-api/\(task)": false, "/tmp/copilot-worktrees/payments-api/\(stopping)": true])
-        restarted.pushedForTests = { await later.answer($0, $1, $2) }
+        restarted.pushedForTests = { await later.answer($0, $1, $2, $3) }
         restarted.refresh()
         try await settle { restarted.statuses.count == 5 }
         #expect(settings.copilotRuns.map(\.pushed) == [true, false, nil, nil, nil])
@@ -1000,7 +1005,7 @@ import Testing
         store.useEnvironment(["COPILOT_HOME": home.path])
         let earlier = "/tmp/copilot-worktrees/payments-api/\(task)"
         // While git is asked about the earlier task, you go on with its session.
-        store.pushedForTests = { folder, _, _ in
+        store.pushedForTests = { folder, _, _, _ in
             guard folder.path == earlier else { return false }
             await MainActor.run { settings.copilotRuns = settings.copilotRuns.map { $0.id == later.id ? later : $0 } }
             return true
@@ -1032,7 +1037,7 @@ import Testing
         let store = store(settings)
         store.appHomeForTests = home
         let answers = PushAnswers([checkout.path: true])
-        store.pushedForTests = { await answers.answer($0, $1, $2) }
+        store.pushedForTests = { await answers.answer($0, $1, $2, $3) }
         var shipping = about(.pushAndReply, threads: [12])
         shipping.fixes = true
         shipping.source = "payments-retry"
@@ -1056,6 +1061,8 @@ import Testing
         #expect(settings.copilotSentPrompts.map(\.ended) == [.finished, .finished])
         #expect(settings.copilotSentPrompts.map(\.pushed) == [true, nil])
         #expect(await answers.asked == ["\(checkout.path) payments-retry c1"])
+        // As things stood as its turn ended, as the session's log says.
+        #expect(await answers.ends.allSatisfy { $0.map { abs($0.timeIntervalSince(sent.addingTimeInterval(2))) < 0.01 } ?? false })
         #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Fixed, pushed and replied in ‘Retry backoff’")
         // Over, it isn't followed, nor asked about, any more.
         try await follow(at: sent.addingTimeInterval(9))
@@ -1074,7 +1081,7 @@ import Testing
         let store = store(settings)
         store.appHomeForTests = home
         let gate = Gate()
-        store.pushedForTests = { _, _, _ in
+        store.pushedForTests = { _, _, _, _ in
             await gate.wait()
             return true
         }

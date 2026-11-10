@@ -164,27 +164,84 @@ public struct Git: Sendable {
     }
 
     /// Whether a folder's checkout pushed a commit of its own to `branch` since `start`, the commit `origin/<branch>` was at
-    /// there as it started (`remoteHead(of:branch:)`): the commit it has checked out is in `origin/<branch>` now, which its
-    /// push moves, and wasn't in `start`. The branch is fetched there first, as `checkPush(in:source:target:)` fetches it:
-    /// a push moves `origin/<branch>` only when the clone's fetch settings name the branch, which a clone of one branch's
-    /// don't; when it can't be fetched, as offline, it goes by what the push moved. False when it isn't: when it committed
+    /// there as it started (`remoteHead(of:branch:)`), as things stood at `end`, as the turn that was to push ended: the
+    /// commit it had checked out then was in `origin/<branch>` then, which its push moves, and wasn't in `start`. git's logs
+    /// of where HEAD and `origin/<branch>` were tell, so that what's done there since, such as a later turn's push of that
+    /// commit, doesn't count. A push moves `origin/<branch>` only when the clone's fetch settings name the branch
+    /// (`tracksPushes(to:in:)`), which a clone of one branch's don't: there the branch is fetched first, as
+    /// `checkPush(in:source:target:)` fetches it, and it goes by where that is now, or, when it can't be fetched, as
+    /// offline, where it was. Without `end`, or those logs, by where they are now. False when it isn't: when it committed
     /// nothing, or only fetched and checked out what others pushed, or its push was rejected, or it stopped before it, or
     /// partway through a rebase, a merge, a cherry-pick or a revert, as when one on what others pushed conflicts, which
     /// leaves it at their commit (`stoppedPartway`). Nil when git can't tell, as when the folder isn't a checkout any more.
-    public func pushedItsOwn(in folder: URL, branch: String, since start: String) async -> Bool? {
-        guard Self.isBranchName(branch), Self.isCommit(start),
-              let head = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], timeout: 30),
-              Self.isCommit(head),
-              let partway = await stoppedPartway(folder)
+    public func pushedItsOwn(in folder: URL, branch: String, since start: String, at end: Date? = nil) async -> Bool? {
+        guard Self.isBranchName(branch), Self.isCommit(start) else { return nil }
+        let tracking = "refs/remotes/origin/\(branch)"
+        // git's logs of where refs were keep whole seconds.
+        let then = end.map { "@{\(Int($0.timeIntervalSince1970.rounded(.down)))}" }
+        guard let head = await commit(of: "HEAD", at: then, in: folder), let partway = await stoppedPartway(folder),
+              let tracked = await tracksPushes(to: branch, in: folder)
         else { return nil }
         if partway { return false }
-        _ = try? await run(
-            ["-C", folder.path, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"],
-            timeout: 60
-        )
-        guard let pushed = await isAncestor(head, of: "refs/remotes/origin/\(branch)", in: folder) else { return nil }
+        var pushedTo = tracking
+        if tracked {
+            pushedTo = await commit(of: tracking, at: then, in: folder) ?? tracking
+        } else {
+            _ = try? await run(["-C", folder.path, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/\(branch):\(tracking)"], timeout: 60)
+        }
+        guard let pushed = await isAncestor(head, of: pushedTo, in: folder) else { return nil }
         guard pushed else { return false }
         return await isAncestor(head, of: start, in: folder).map { !$0 }
+    }
+
+    /// The commit `ref` was at, at `then` (`@{<seconds>}`), as git's log of where it was says; where it is now without
+    /// `then`, or that log. Nil when it isn't there.
+    private func commit(of ref: String, at then: String?, in folder: URL) async -> String? {
+        for name in [then.map { ref + $0 }, ref].compactMap(\.self) {
+            if let commit = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "\(name)^{commit}"], timeout: 30),
+               Self.isCommit(commit) {
+                return commit
+            }
+        }
+        return nil
+    }
+
+    /// Whether a push to `branch` from a folder's checkout moves `origin/<branch>` there: git does when the remote's fetch
+    /// settings map the branch to it, as a clone's do by default, but a clone of one branch's name only that one. Nil when
+    /// git can't tell.
+    func tracksPushes(to branch: String, in folder: URL) async -> Bool? {
+        guard let result = try? await runner.run(
+            executable, arguments: ["-C", folder.path, "config", "--get-all", "remote.origin.fetch"], environment: environment, timeout: 30
+        ) else { return nil }
+        switch result.status {
+        case 0: break
+        case 1: return false
+        default: return nil
+        }
+        let source = "refs/heads/\(branch)", tracking = "refs/remotes/origin/\(branch)"
+        var tracks = false
+        for line in String(decoding: result.stdout, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            var refspec = line.trimmingCharacters(in: .whitespaces)
+            // One that leaves the branch out.
+            if refspec.hasPrefix("^") {
+                if Self.matched(source, by: String(refspec.dropFirst())) != nil { return false }
+                continue
+            }
+            if refspec.hasPrefix("+") { refspec.removeFirst() }
+            let sides = refspec.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard sides.count == 2, let matched = Self.matched(source, by: String(sides[0])) else { continue }
+            if sides[1].replacingOccurrences(of: "*", with: matched) == tracking { tracks = true }
+        }
+        return tracks
+    }
+
+    /// What a refspec's side, `pattern`, matches of `ref`: what its `*` stands for, or nothing when it has none and is
+    /// `ref`. Nil when it doesn't match.
+    static func matched(_ ref: String, by pattern: String) -> String? {
+        guard let star = pattern.firstIndex(of: "*") else { return pattern == ref ? "" : nil }
+        let prefix = pattern[..<star], suffix = pattern[pattern.index(after: star)...]
+        guard ref.count >= prefix.count + suffix.count, ref.hasPrefix(prefix), ref.hasSuffix(suffix) else { return nil }
+        return String(ref.dropFirst(prefix.count).dropLast(suffix.count))
     }
 
     /// Whether a folder's checkout stopped partway through a rebase, a merge, a cherry-pick or a revert, as git there keeps

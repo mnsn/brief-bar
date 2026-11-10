@@ -963,7 +963,7 @@ extension CopilotTasksStore {
                     var probe: PushProbe?
                     if prompt.fixes == true, turn.isOver, case .finished = turn.phase, let branch = prompt.source,
                        let start = prompt.head, let folder = AppSessions.folder(of: session, home: sessionHome) {
-                        probe = PushProbe(folder: folder, branch: branch, start: start)
+                        probe = PushProbe(folder: folder, branch: branch, start: start, end: turn.since)
                     }
                     read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: pasted, probe: probe))
                 }
@@ -989,11 +989,12 @@ extension CopilotTasksStore {
     }
 
     /// Where git tells whether a fix sent with Push and Reply on pushed a commit of its own: the checkout its session works
-    /// in, the pull request's branch, and the commit that branch was at there as the fix went.
+    /// in, the pull request's branch, the commit that branch was at there as the fix went, and when its turn ended.
     struct PushProbe: Sendable {
         var folder: URL
         var branch: String
         var start: String
+        var end: Date?
     }
 
     /// What `followSentPrompts` read, on the prompts as they're kept now.
@@ -1070,7 +1071,9 @@ extension CopilotTasksStore {
         Task {
             defer { promptsBeingTold.remove(id) }
             let git = await git()
-            let pushed = await Self.pushedItsOwn(in: probe.folder, branch: probe.branch, since: probe.start, git: git, forTests: forTests)
+            let pushed = await Self.pushedItsOwn(
+                in: probe.folder, branch: probe.branch, since: probe.start, at: probe.end, git: git, forTests: forTests
+            )
             guard canSend, isOn, !hasStopped, let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
                   settings.copilotSentPrompts[index].isFollowed
             else { return }

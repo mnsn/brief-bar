@@ -3265,12 +3265,15 @@ since its prompt has it stop before it pushes, and end its turn all the same, wh
 was retargeted, completed or abandoned, a merge brings in another branch, or a push was rejected. As it goes, BriefBar
 keeps the pull request's branch, and the commit git fetched it at in the checkout the session works in, as a Push &
 Reply's checks fetch it there (`Git.remoteHead(of:branch:)`, `SentPrompt.source`, `SentPrompt.head`, `CopilotRun.head`).
-As its turn finishes, git there tells, once, having fetched the branch there again, as a push moves it there only when
-the clone's fetch settings name it, which a clone of one branch's don't, or, when it can't fetch, as offline, by what
-the push moved: it pushed when that branch has the commit the checkout is at, which the commit kept didn't, and no
+As its turn finishes, git there tells, once, as things stood when the turn ended, as its log says, by git's logs of
+where HEAD and that branch were then, so that what's done there since, such as a later turn's push of its commit,
+doesn't count: it pushed when the branch then had the commit the checkout was at, which the commit kept didn't, and no
 rebase, merge, cherry-pick or revert stopped partway there, which leaves the checkout at what others pushed
-(`Git.pushedItsOwn(in:branch:since:)`). For a prompt, git is asked only on the read of its log that ends its turn. The
-fix ends once git has told, each on its own, so that the other tasks' and prompts' reads don't wait on its fetch
+(`Git.pushedItsOwn(in:branch:since:at:)`). A push moves the branch there only when the clone's fetch settings name it,
+which a clone of one branch's don't (`Git.tracksPushes(to:in:)`): there git fetches the branch first, and goes by
+where it is now, or, when it can't fetch, as offline, where it was. For a prompt, git is asked only on the read of its
+log that ends its turn. The fix ends once git has told, each on its own, so that the other tasks' and prompts' reads
+don't wait on it
 (`CopilotTasksStore.tellWhetherPushed`); a task gone on with meanwhile, which takes its place, isn't told what was read
 of the one before; and a prompt whose turn was seen to end isn't read again meanwhile, nor taken, as another prompt is
 sent its session, for one whose end wasn't seen. BriefBar keeps what git
@@ -3283,8 +3286,8 @@ the session's other fixes stay ready; its task's row says "Fixed, but not pushed
 the notification as it ends says only that Copilot finished fixing, with what it said. Nor is one known to have pushed
 when git can't tell, as when its checkout is gone, or one kept from before BriefBar kept the commit. What git can't tell
 apart: a commit someone else pushed after BriefBar fetched, which the session checked out as it was, committing nothing,
-from one of its own; and, as the turn is read once BriefBar sees it over (`SessionTurn`), one that ended while BriefBar
-wasn't running, whose session pushed in a turn you sent it there since, from one that pushed. Not seen pushed, it isn't
+from one of its own; and, in a clone whose fetch settings don't name the branch, a push of its commit from a later turn
+there before git fetched, as when the turn ended while BriefBar wasn't running, from its own. Not seen pushed, it isn't
 ready to push either, since it may have replied, which a Push & Reply would post again: **Fix** it again; a later push
 from its session, or from a fork of it made since, takes its change along, so it says it's pushed, without a reply
 (`CopilotWork.shipsUnpushed`). One sent to a fork of a
