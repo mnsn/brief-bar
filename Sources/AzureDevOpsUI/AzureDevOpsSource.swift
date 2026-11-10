@@ -966,14 +966,14 @@ package final class AzureDevOpsSource: BriefBarSource {
                 }
             }
             // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; with Where It
-            // Stands folded to who it waits on; and a pull request's page taller, for the README's trail to scroll
-            // down, and in a narrow window, where its details cover the board.
+            // Stands folded to who it waits on; and a pull request's page in a narrow window too, where its details cover
+            // the board.
             let variants: [String: Set<String>] = [
-                "sprint-details": ["-medium", "-narrow", "-folded"], "sprint-pull-request-page": ["-medium", "-narrow", "-tall"],
+                "sprint-details": ["-medium", "-narrow", "-folded"], "sprint-pull-request-page": ["-medium", "-narrow"],
             ]
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),
-                ("-folded", CGSize(width: 1_000, height: 720)), ("-tall", CGSize(width: 1_000, height: 1_000)),
+                ("-folded", CGSize(width: 1_000, height: 720)),
             ] {
                 guard suffix.isEmpty || variants[name, default: []].contains(suffix) else { continue }
                 let page = SprintPage()
