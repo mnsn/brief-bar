@@ -48,8 +48,13 @@ struct PullRequestDetailsContent: View {
     @LocalState private var drafts = CopilotDrafts()
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
+    /// Where the details are on their page: filling it, its parts are as wide as reads well (`readableWidth`).
+    @Environment(\.detailsRoom) private var room
     /// For `--render`: what Copilot does about its comments, builds and conflicts, as each picture draws it.
     @Environment(\.copilotActionsPreview) private var preview
+
+    /// How wide its parts get while the details fill the page, as Fill the Page makes them, in a wide window.
+    static let readableWidth: CGFloat = 960
 
     /// Whether `details` shows this pull request yet: a page's own store shows it once the page appears.
     private var isShown: Bool { details.selected?.key == item.key }
@@ -157,7 +162,9 @@ struct PullRequestDetailsContent: View {
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // As wide as reads well while the details fill the page, in its middle; a file's page as wide as they are.
+        .frame(maxWidth: showsFile || room != .fillingPage ? .infinity : Self.readableWidth, alignment: .leading)
+        .frame(maxWidth: .infinity)
         // VoiceOver follows it where it goes: its title doesn't take VoiceOver's focus as it shows while it's on its way.
         .environment(\.detailsArrival, arrivalNow)
         .onChange(of: details.place, initial: true) { go(in: panel) }
@@ -269,6 +276,7 @@ struct LinkedItemPage: View {
     @ObservedObject var details: PullRequestDetailsStore
 
     @EnvironmentObject private var store: PRStore
+    @Environment(\.detailsRoom) private var room
 
     var body: some View {
         if let item = Self.pullRequest(ref, in: store.items, kept: details) {
@@ -279,7 +287,10 @@ struct LinkedItemPage: View {
                     if details.selected?.key.linkRef == ref { details.close() }
                 }
         } else {
+            // As wide as reads well while the details fill the page, as a pull request's do.
             ItemPageView(ref: ref)
+                .frame(maxWidth: room == .fillingPage ? PullRequestDetailsContent.readableWidth : .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity)
         }
     }
 

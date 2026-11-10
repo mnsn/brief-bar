@@ -27,7 +27,8 @@ package enum ThisMac {
     @TaskLocal package static var noting: Notes?
 
     /// What a test process refused: "open <link>", "open <app>", "open Login Items in System Settings",
-    /// "activate <app>", "show <files> in the Finder", "copy <text>", "ask <alert's message>", "beep", oldest first.
+    /// "activate <app>", "show <files> in the Finder", "open <folder> in the Finder", "copy <text>", "ask <alert's
+    /// message>", "beep", oldest first.
     package final class Notes: Sendable {
         private let list = Mutex<[String]>([])
 
@@ -79,6 +80,13 @@ package enum ThisMac {
     package static func showInFinder(_ files: [URL]) {
         guard !refuses("show \(files.map(\.path).joined(separator: " ")) in the Finder") else { return }
         NSWorkspace.shared.activateFileViewerSelecting(files)
+    }
+
+    /// Opens a folder in the Finder, in a window that shows what's in it: never opens the folder itself in an app, as an
+    /// app's bundle would be.
+    package static func openInFinder(_ folder: URL) {
+        guard !refuses("open \(folder.path) in the Finder") else { return }
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
     }
 
     /// Puts text on the clipboard, in place of what you copied.
