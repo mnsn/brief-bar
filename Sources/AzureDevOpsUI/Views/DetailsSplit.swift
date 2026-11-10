@@ -49,8 +49,9 @@ struct DetailsLayout: Equatable {
 /// A page's list or board, and the details of what you clicked in it, in a floating panel: beside it, taking room from
 /// it, as wide as you drag them, or over it when the page is narrower than `DetailsLayout.besideWidth`, or, for a list
 /// whose room grows with its text, than that much more at a bigger text size, or while what they show asks for the whole
-/// page (`DetailsFillsPageKey`), as a file's diff can. The Sprint page's work items and the Pull Requests page's pull
-/// requests show their details this way, each page keeping its own width.
+/// page (`DetailsFillsPageKey`), as a file's diff can, and a pull request's details do once you click Fill the Page. The
+/// Sprint page's work items and the Pull Requests page's pull requests show their details this way, each page keeping its
+/// own width.
 struct DetailsSplit<Content: View, Details: View>: View {
     /// Whether details show.
     let showsDetails: Bool
@@ -248,5 +249,28 @@ struct DetailsFillsPageKey: PreferenceKey {
 
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
         value = value || nextValue()
+    }
+}
+
+/// Making the details fill the page, over the list beside them, and showing the list beside them again, which ends every
+/// way they came to fill it, a file's page you made fill it too: what a pull request's Fill the Page and Show the List do,
+/// and a file's page's ⤡. Nil where the details don't offer it: over the list in a narrow window, which they cover
+/// already, and on the Sprint page.
+struct DetailsFilling {
+    /// They fill the page now: as you asked, or as what shows in them asks, such as a file's page you made fill it.
+    var isFilling: Bool
+    /// Makes them fill it, for true; else shows the list beside them again.
+    var fill: @MainActor (Bool) -> Void
+}
+
+private struct DetailsFillingKey: EnvironmentKey {
+    static var defaultValue: DetailsFilling? { nil }
+}
+
+extension EnvironmentValues {
+    /// Making the details around a view fill the page, where they offer it (`DetailsFilling`).
+    var detailsFilling: DetailsFilling? {
+        get { self[DetailsFillingKey.self] }
+        set { self[DetailsFillingKey.self] = newValue }
     }
 }

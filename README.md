@@ -85,7 +85,8 @@ requests, their builds and Copilot sessions, with what needs you first, and **Wa
 acts next: you, a reviewer or Copilot. Click through without leaving BriefBar:
 
 - **Work item:** description, acceptance criteria, tasks, attachments and discussion.
-- **Pull request:** reviewers and votes, comments waiting on you, conflicts, builds and failure details.
+- **Pull request:** reviewers and votes, comments waiting on you, conflicts, builds and failure details, and one
+  click to its Copilot session or to the worktree it works in, in your editor, a terminal or the Finder.
 - **Session:** its question or plan, progress notes, what's been done, what's next and its last response.
 
 Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilot.

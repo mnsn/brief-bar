@@ -419,6 +419,9 @@ package final class AppServices: ObservableObject {
     /// Ask…: what you ask your Copilot sessions aside, and what they answer, in memory, while a source gives it a way to
     /// ask: Azure DevOps, with Send Work to Copilot on.
     package let sessionAsks = SessionAsks()
+    /// Opens a folder, such as a Copilot session's worktree, in the editor or terminal you opened one in last, or the
+    /// Finder.
+    package let folders: FolderOpener
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.
@@ -444,6 +447,7 @@ package final class AppServices: ObservableObject {
         summaries = StorySummaries(defaults: defaults, links: links, stories: stories, isDemo: isDemo)
         pullRequestOrder = PullRequestOrder(defaults: defaults, isDemo: isDemo)
         sessionUpdates = SessionUpdates(defaults: defaults, isDemo: isDemo)
+        folders = FolderOpener(defaults: defaults, isDemo: isDemo)
     }
 
     package func setInterfaceOption(_ option: InterfaceOption, enabled: Bool) {

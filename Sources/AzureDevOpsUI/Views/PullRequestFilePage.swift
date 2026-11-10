@@ -38,6 +38,8 @@ struct PullRequestFilePage: View {
     /// stands now (`DetailsDrafts.held`).
     @EnvironmentObject private var kept: DetailsDrafts
     @Environment(\.detailsRoom) private var room
+    /// Show the List, where the details offer to fill the page: ⤡ ends that too.
+    @Environment(\.detailsFilling) private var filling
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
     @Environment(\.isRendering) private var isRendering
@@ -497,13 +499,16 @@ struct PullRequestFilePage: View {
         }
     }
 
-    /// ⤢, the whole page for the diff, beside the list; ⤡, the list beside it again.
+    /// ⤢, the whole page for the diff, beside the list; ⤡, the list beside it again, however the details came to fill the
+    /// page: as you made the details fill it too, with Fill the Page, where they offer it (`DetailsFilling`).
     @ViewBuilder
     private var roomButton: some View {
         if room == .beside || room == .fillingPage {
             let fills = room == .fillingPage
             Button {
-                withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { details.fillsPage = !fills }
+                withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) {
+                    if fills, let filling { filling.fill(false) } else { details.fillsPage = !fills }
+                }
             } label: {
                 Image(systemName: fills ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     .font(size: 11.5, weight: .medium)

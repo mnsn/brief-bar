@@ -523,7 +523,7 @@ final class PullRequestSessions: ObservableObject {
     // MARK: The demo
 
     /// The demo's: its made-up tasks on the pull request, or the one that opened it, each as a task in a worktree of its
-    /// own; and the sessions Show Links links to it, from the Copilot demo. Nothing's read.
+    /// own; and the sessions Show Links links to it, from the Copilot demo, each in a made-up worktree too. Nothing's read.
     private func demoChoices(for key: PRKey, pullRequest: TaskPullRequest) -> [SessionChoice] {
         let link = key.linkRef
         let repository = CopilotTasksStore.demoRepository(for: .pullRequest(pullRequest, .fixComments)).root
@@ -551,7 +551,15 @@ final class PullRequestSessions: ObservableObject {
             ))
         }
         let ids = Set(tasks.map(\.id))
-        return copilot.availability(of: tasks + linkedChoices(key).filter { !ids.contains($0.id) })
+        // The Copilot app's, each in a worktree of its own, made up as the rest is: where it would work, to open.
+        let worktrees = repository.deletingLastPathComponent().appendingPathComponent("copilot-worktrees/\(repository.lastPathComponent)")
+        let apps = linkedChoices(key).filter { !ids.contains($0.id) }.map { choice in
+            var choice = choice
+            let folder = choice.appSession?.branch.flatMap { $0.isEmpty ? nil : $0 } ?? String(choice.id.prefix(8))
+            choice.appFolder = worktrees.appendingPathComponent(folder, isDirectory: true)
+            return choice
+        }
+        return copilot.availability(of: tasks + apps)
     }
 
     /// How the demo says work would reach a session: in the Copilot app for one of its sessions, with the CLI for a task of

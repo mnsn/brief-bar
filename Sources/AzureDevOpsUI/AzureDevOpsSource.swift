@@ -1069,8 +1069,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     /// The Pull Requests page with a pull request's details: the first of yours that needs you, beside the list as in a big
-    /// window and in BriefBar's window as it opens, over it in a narrow one, all of it in a tall one, and with the page of
-    /// the first work item linked to it over them; the first that's failing; the first of yours set to complete by itself;
+    /// window and in BriefBar's window as it opens, over it in a narrow one, all of it in a tall one, filling the page as
+    /// Fill the Page makes them, and with the page of the first work item linked to it over them; the first that's failing;
+    /// the first of yours set to complete by itself;
     /// for the line of its Copilot session, the first of yours with merge conflicts, whose two sessions ask which is its,
     /// and the one whose session waits for your answer; the first review you're asked for, at its reviewers, as it opens
     /// from anywhere but beside the list; and, with Pull Request Order on, the first whose stage you set, for its track.
@@ -1094,22 +1095,24 @@ package final class AzureDevOpsSource: BriefBarSource {
         let staged = store.items.first { services.pullRequestOrder.stage(of: $0.key.linkRef)?.isSetByYou == true }
         let sessionStaged = store.items.first { services.pullRequestOrder.stage(of: $0.key.linkRef)?.mark?.isYours == false }
         let wide = CGSize(width: 1_000, height: 720)
-        let shown: [(name: String, item: PRSnapshot?, sizes: [(suffix: String, size: CGSize)], page: ItemRef.Kind?, about: Bool)] = [
+        let shown: [(name: String, item: PRSnapshot?, sizes: [(suffix: String, size: CGSize)], page: ItemRef.Kind?, about: Bool, fills: Bool)] = [
             ("pull-requests-details", yours, [
                 ("", wide), ("-medium", CGSize(width: 820, height: 680)), ("-narrow", CGSize(width: 560, height: 720)),
                 ("-tall", CGSize(width: 1_000, height: 1_500)),
-            ], nil, false),
-            ("pull-requests-details-page", yours, [("", wide)], .workItem, false),
-            ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil, false),
-            ("pull-requests-completing-details", completing, [("", wide)], nil, false),
-            ("pull-requests-session-question", asking, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false),
-            ("pull-requests-session-waiting", waiting, [("", wide)], nil, false),
-            ("pull-requests-review-details", reviewing, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, true),
-            ("pull-requests-stage-details", staged, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false),
-            ("pull-requests-session-stage-details", sessionStaged, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false),
+            ], nil, false, false),
+            // Filling the page, over the list, as Fill the Page makes them: in a wide window, as wide as reads well.
+            ("pull-requests-details-filled", yours, [("", wide), ("-wide", CGSize(width: 1_400, height: 720))], nil, false, true),
+            ("pull-requests-details-page", yours, [("", wide)], .workItem, false, false),
+            ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil, false, false),
+            ("pull-requests-completing-details", completing, [("", wide)], nil, false, false),
+            ("pull-requests-session-question", asking, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false, false),
+            ("pull-requests-session-waiting", waiting, [("", wide)], nil, false, false),
+            ("pull-requests-review-details", reviewing, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, true, false),
+            ("pull-requests-stage-details", staged, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false, false),
+            ("pull-requests-session-stage-details", sessionStaged, [("", wide), ("-narrow", CGSize(width: 560, height: 720))], nil, false, false),
         ]
         var renderings: [(name: String, view: AnyView)] = []
-        for (name, item, sizes, page, about) in shown {
+        for (name, item, sizes, page, about, fills) in shown {
             guard let item else { continue }
             let linked = page.flatMap { page in services.links.connections(of: item.key.linkRef).first { $0.item.ref.kind == page } }
             if page != nil, linked == nil { continue }
@@ -1119,6 +1122,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                 details.readRecord = { [weak store] key in store?.record(for: key) }
                 details.itemsChanged(store.items)
                 details.show(item, at: about ? details.about(item) : nil)
+                details.detailsFillPage = fills
                 if let linked { details.open(page: linked.item.ref) }
                 let view = PullRequestsPage()
                     .environmentObject(details)
