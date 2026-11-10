@@ -487,7 +487,8 @@ import Testing
 
     /// The user's own example, smaller: of those to fix, the one they know is most urgent, which BriefBar's order puts last.
     /// It's Fix next's, with every other one to choose from in their order after it, and first in In progress, wearing Next
-    /// as yours; and in Your review, ahead of the mission you focus on, first in its own mission's lane.
+    /// as yours; and in Your review, ahead of the mission you focus on, first in its own mission's lane, and in each lane
+    /// that has it, in two missions.
     @Test func theOneYouChooseIsItsSlotsPullRequestFirstInItsColumnInEveryLane() {
         #expect(Self.column(.inProgress, Self.fixes) == ["!4103", "!4101", "!4102", "!4104"])
         let unpicked = Self.board(Self.fixes)
@@ -520,6 +521,19 @@ import Testing
         #expect(lanes.next[.yourReview] == Self.pr(4302))
         #expect(lanes.lane(for: other.key)?.cards(in: .yourReview).first?.ref == Self.pr(4302))
         #expect(lanes.lane(for: focused.key)?.cards(in: .yourReview).first?.ref == Self.pr(4202))
+
+        // In two missions, it's first in each lane that has it, and the next step there.
+        let payments = Self.mission([Self.step(4301), Self.step(4302)])
+        let checkout = Self.mission([Self.step(4303), Self.step(4302)])
+        let shared: [Int: StageReading] = [
+            4301: Self.reading(.yourReview, .asked("Sam asked you"), at: 1),
+            4302: Self.reading(.yourReview, .asked("Priya asked you"), at: 9),
+            4303: Self.reading(.yourReview, .asked("Kai asked you"), at: 2),
+        ]
+        let twice = Self.board(shared, missions: [payments, checkout], picks: review)
+        #expect(twice.lane(for: payments.key)?.cards(in: .yourReview).map(\.ref) == [Self.pr(4302), Self.pr(4301)])
+        #expect(twice.lane(for: checkout.key)?.cards(in: .yourReview).map(\.ref) == [Self.pr(4302), Self.pr(4303)])
+        #expect(twice.lane(for: checkout.key)?.nextSteps.map(\.title) == ["Review !4302", "Review !4303"])
     }
 
     /// One its slot doesn't have, as In progress without needing you, in another stage or not on the board, changes
@@ -585,9 +599,9 @@ import Testing
         #expect(!UpNextSlot.fix.has(nil))
     }
 
-    /// One whose source reads nothing of it now, such as while its organization can't be read, since another account signed
-    /// in, or before Azure DevOps' lists are read, is neither away nor back, and waits, however long. One seen away before
-    /// is still away since then. What was noted of a slot you chose another for is forgotten.
+    /// One whose source can't tell where it is now, such as before Azure DevOps has read the lists of its organization, or
+    /// while it's off, is neither away nor back, and waits, however long. One seen away before is still away since then.
+    /// What was noted of a slot you chose another for is forgotten.
     @Test func aChoiceWaitsWhileItsSourceReadsNothingOfIt() {
         let picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
         let both: Set<ItemRef> = [Self.pr(4101), Self.pr(4202)]
@@ -607,23 +621,81 @@ import Testing
         #expect(away.isEmpty)
     }
 
-    @Test func itRemembersWhatYouChoseAndReadsOnlyWhatItCan() throws {
+    /// What BriefBar keeps of what you chose: for each account, by its name in lowercase, each slot's pull request with
+    /// when a list last had it, a record each; of what another program or an earlier build wrote, only the records it can
+    /// read, each alone.
+    @Test func itRemembersWhatEachAccountChoseAndReadsOnlyWhatItCan() throws {
         let defaults = MemorySettings()
-        #expect(UpNextPicks.load(from: defaults).isEmpty)
-        let picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
-        picks.save(to: defaults)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+        var kept = UpNextPicks.Kept()
+        kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]), for: "Robin@contoso.com", at: t(0))
+        kept.set(UpNextPicks([.fix: Self.pr(4103)]), for: "sam@contoso.com", at: t(60))
+        #expect(kept.picks(for: "robin@contoso.com") == UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]))
+        #expect(kept.picks(for: "SAM@contoso.com") == UpNextPicks([.fix: Self.pr(4103)]))
+        #expect(kept.picks(for: "kai@contoso.com").isEmpty)
+        kept.save(to: defaults)
         let data = try #require(defaults.data(forKey: "order.upNextPicks"))
-        #expect(String(decoding: data, as: UTF8.self) == #"{"fix":"pullRequest/contoso/4101","yourReview":"pullRequest/contoso/4202"}"#)
-        #expect(UpNextPicks.load(from: defaults) == picks)
+        let saved = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        #expect(saved.map { $0["account"] as? String } == ["robin@contoso.com", "robin@contoso.com", "sam@contoso.com"])
+        #expect(saved.map { $0["slot"] as? String } == ["fix", "yourReview", "fix"])
+        #expect(saved.map { $0["pullRequest"] as? String } == ["pullRequest/contoso/4101", "pullRequest/contoso/4202", "pullRequest/contoso/4103"])
+        #expect(saved.allSatisfy { Set($0.keys) == ["account", "slot", "pullRequest", "listedAt"] })
+        #expect(UpNextPicks.Kept.load(from: defaults) == kept)
 
-        // What another program wrote: only the slots and pull requests it can read.
-        defaults.set(Data(#"{"fix":"pullRequest/contoso/4101","later":"pullRequest/contoso/1","yourReview":42,"waits":"workItem/contoso/5"}"#.utf8), forKey: UpNextPicks.defaultsKey)
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.pr(4101)]))
-        defaults.set(Data("[".utf8), forKey: UpNextPicks.defaultsKey)
-        #expect(UpNextPicks.load(from: defaults).isEmpty)
+        // Only the pull requests of slots it knows, with an account.
+        defaults.set(Data(#"""
+        [{"account":"Robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4101","listedAt":0},
+         {"account":"robin@contoso.com","slot":"later","pullRequest":"pullRequest/contoso/1","listedAt":0},
+         {"account":"robin@contoso.com","slot":"waits","pullRequest":"workItem/contoso/5","listedAt":0},
+         {"account":"robin@contoso.com","slot":"yourReview","pullRequest":42,"listedAt":0},
+         {"slot":"canMerge","pullRequest":"pullRequest/contoso/4120","listedAt":0},
+         {"account":"robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4102","listedAt":0}]
+        """#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
+        #expect(UpNextPicks.Kept.load(from: defaults) == UpNextPicks.Kept(accounts: [
+            "robin@contoso.com": [.fix: .init(ref: Self.pr(4101), listedAt: Date(timeIntervalSinceReferenceDate: 0))],
+        ]))
+        // An earlier build's, each slot's reference alone, and what isn't a list.
+        defaults.set(Data(#"{"fix":"pullRequest/contoso/4101"}"#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+        defaults.set(Data("[".utf8), forKey: UpNextPicks.Kept.defaultsKey)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
 
-        UpNextPicks().save(to: defaults)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        UpNextPicks.Kept().save(to: defaults)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+    }
+
+    /// What an account chose keeps when a list last had each, as the stages you set do: choosing another for a slot notes it
+    /// then, a list that has one notes it at most once a day, and one no list has had for 30 days goes, with any account.
+    /// Turning a source off forgets its own; none chosen keeps nothing for the account.
+    @Test func whatEachAccountChoseGoesOnceNoListHasHadItFor30Days() {
+        var kept = UpNextPicks.Kept()
+        kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]), for: "robin@contoso.com", at: t(0))
+        kept.set(UpNextPicks([.canMerge: Self.gh(12)]), for: "sam@contoso.com", at: t(0))
+        kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4203)]), for: "robin@contoso.com", at: t(3_600))
+        #expect(kept.accounts["robin@contoso.com"]?[.fix]?.listedAt == t(0))
+        #expect(kept.accounts["robin@contoso.com"]?[.yourReview] == UpNextPicks.Kept.Entry(ref: Self.pr(4203), listedAt: t(3_600)))
+
+        let tooSoon = kept.listed([Self.pr(4101)], for: "robin@contoso.com", at: t(3_600))
+        let aDayLater = kept.listed([Self.pr(4101), Self.gh(12)], for: "Robin@contoso.com", at: t(86_400))
+        #expect(!tooSoon && aDayLater)
+        #expect(kept.accounts["robin@contoso.com"]?[.fix]?.listedAt == t(86_400))
+        #expect(kept.accounts["sam@contoso.com"]?[.canMerge]?.listedAt == t(0))
+        let anotherAccount = kept.listed([Self.pr(4101)], for: "kai@contoso.com", at: t(2 * 86_400))
+        #expect(!anotherAccount)
+
+        let notYet = kept.forgetUnlisted(now: t(UpNextPicks.Kept.unlistedFor))
+        let then = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor))
+        #expect(!notYet && then)
+        #expect(kept == UpNextPicks.Kept(accounts: ["robin@contoso.com": [.fix: .init(ref: Self.pr(4101), listedAt: t(86_400))]]))
+
+        kept.set(UpNextPicks([.fix: Self.pr(4101), .canMerge: Self.gh(12)]), for: "robin@contoso.com", at: t(90_000))
+        let forgot = kept.forget([.gitHubPullRequest])
+        let again = kept.forget([.gitHubPullRequest])
+        #expect(forgot && !again)
+        #expect(kept.picks(for: "robin@contoso.com") == UpNextPicks([.fix: Self.pr(4101)]))
+        kept.set(UpNextPicks(), for: "robin@contoso.com", at: t(90_000))
+        #expect(kept.isEmpty)
+        #expect(UpNextPicks.Kept(accounts: ["robin@contoso.com": [.fix: .init(ref: .workItem(organization: "contoso", id: 5), listedAt: t(0))]]).isEmpty)
     }
 
     @Test func choicesSplitMergeAndForgetASourcesOwn() {

@@ -36,6 +36,20 @@ final class PRStore: ObservableObject {
     var isListing: Bool {
         hasLoaded && (state.organizations.isEmpty || !state.firstLoaded.isEmpty) && !state.readNothing
     }
+    /// The organizations whose lists it read since BriefBar started, as the account signed in now, by name in lowercase:
+    /// what they had is what it lists of them, kept as it was while they can't be read again, so a pull request there that
+    /// it doesn't list has left them, as one you reviewed that its author completed, unless it reads that one by its link
+    /// and hasn't (`unreadLinks`). Another account reads them again.
+    var listedOrganizations: Set<String> {
+        Set(state.firstLoaded.keys.map { $0.lowercased() })
+    }
+    /// The pull requests it reads by their links, sent in chats or watched, that it doesn't list, though Azure DevOps
+    /// didn't say they're closed, gone or not yours to read: not read yet, as it reads ten a refresh and another account
+    /// reads them again, or after a read that failed, tried again an hour later. Their organizations' lists don't have one
+    /// you're not on, so those lists say nothing of where it is.
+    var unreadLinks: Set<PRKey> {
+        linkedKeys.subtracting(state.records.map(\.id)).subtracting(state.closedLinks)
+    }
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
     /// Each refresh, once its pull requests are listed: what was read of one can change without its row, such as an
@@ -349,9 +363,14 @@ final class PRStore: ObservableObject {
         setUpChatAccessWhenNeeded = false
     }
 
-    /// The pull requests to read by their links: those sent in chats, and those you watch.
+    /// The pull requests it reads by their links: those sent in chats, and those you watch.
+    private var linkedKeys: Set<PRKey> {
+        (settings.chatLinksEnabled ? settings.chatLinks.keys : []).union(settings.watchedKeys)
+    }
+
+    /// Tells the engine which pull requests to read by their links (`linkedKeys`).
     private func updateLinkedPullRequests() {
-        let keys = (settings.chatLinksEnabled ? settings.chatLinks.keys : []).union(settings.watchedKeys)
+        let keys = linkedKeys
         if let engine { Task { await engine.setLinkedPullRequests(keys) } }
     }
 
