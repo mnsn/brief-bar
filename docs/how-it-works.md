@@ -2956,14 +2956,27 @@ this Mac only (`CopilotOutbox`):
 - **Listening.** While it runs, the extension writes `listening/<session>.json`, with its process ID and
   when it started. BriefBar counts it only while that process runs and started by then, give or take two
   seconds, as it tells a task's process from one that got its ID later (`CopilotOutbox.isLive`).
+- **Reports.** A `send` of a prompt BriefBar keeps, about some of a pull request ([below](#about-a-comment)),
+  says `"report": true`: its extension then reports how the message's turn goes. It writes
+  `reports/<request>.json` before its result, which then says `reports`, and rewrites it whole as the turn
+  changes, until it's over: whether the session has taken the message up, the step it's at, what waits on
+  you (a question, a plan, a permission, or something else Copilot asks for), and how it ended, with what
+  Copilot said, at most 4,000 characters, or the error, or why it stopped when you didn't stop it (the
+  session closed, or autopilot reached the most it may spend); the session's name, as the app shows it;
+  and its process ID and when it started, as `listening` says them. Never the prompt. BriefBar only reads
+  it (`OutboxReport`), and removes it once it has taken how the turn ended, or lost track of it. An
+  extension from before reports takes no notice of the field and leaves `reports` out, so BriefBar follows
+  that turn from the session's log.
 - **Only yours.** Each folder is a real one that only you can open (0700), and each file a regular one that
   only you can read (0600), written whole to a name starting with `.`, then renamed into place. BriefBar
   opens each without following a symbolic link below your home folder, uses no folder and reads no file
   that isn't so, and makes the folders only as it writes a request. As it writes one, it removes its
-  requests and results that are more than an hour old; turning Azure DevOps off removes them all, since
-  they hold its prompts, even from a folder of yours that others could open by then, which goes too, and
-  unlinks a link where one of their folders should be, without following it (`CopilotOutbox.forget`); what
-  it can't remove, it logs. What the extensions say in `listening` stays, theirs while they run.
+  requests and results that are more than an hour old, and, as it keeps a prompt whose turn is reported,
+  the reports an hour old that none of its prompts follows; turning Azure DevOps off removes them all, since
+  requests and results hold its prompts, and reports what Copilot said, even from a folder of yours that
+  others could open by then, which goes too, and unlinks a link where one of their folders should be,
+  without following it (`CopilotOutbox.forget`); what it can't remove, it logs. What the extensions say in
+  `listening` stays, theirs while they run.
 
 Before you send it, the window says what will happen, and looks again every five seconds
 (`CopilotTasksStore.reach(of:)`): BriefBar's extension listens in the session, so the prompt goes at once;
@@ -3243,7 +3256,15 @@ task in the session keeps them so, for an older fix of one of them, elsewhere, n
 (`CopilotRun.taken(goingOnWith:on:taking:for:at:)`). A
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, what it took on, what for, and when (`SentPrompt`,
-`ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
+`ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows what the extension that
+sent it reports of its turn ([above](#send-work-to-copilot)), every three seconds, while Send Work to Copilot is on and
+Azure DevOps hasn't stopped: how it stands, at the step it's at, and how it ended, at once, which its record keeps, with
+what Copilot said, which its line shows under it while BriefBar runs, kept in memory only, as Explain's answers are
+(`OutboxReport`, `CopilotTasksStore.readReport`). It's followed for as long as that extension runs, as when its session
+waits overnight for your answer, and whatever else is sent the session meanwhile, since each report is of its own
+message; once the extension stopped before its report said how the turn ended, or the report went, BriefBar no longer
+follows it, and says it doesn't know how it went, as below (`SentPrompt.lostTrack`). One BriefBar copied for you to
+paste, or that an extension from before reports sent, BriefBar follows from the session's log
 since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too, but only from the
 first message the session got since, the prompt itself as the earliest, sent or pasted: a turn that was under way as it
 was sent, or copied, is an earlier message's, and a question it asks you counts while something runs the session or has
@@ -3264,12 +3285,14 @@ in memory only (`CopilotTasksStore.copiedPrompts`): one it copied before it rest
 message, as any prompt is, and hands nothing off; and one you don't paste, and one BriefBar stops following first, leave
 them there. It's kept with what was copied before BriefBar starts following it, and hands off only as a look at the
 session finds the text pasted (`CopilotTasksStore.keep`). Once BriefBar sends the
-session another prompt, about threads or not, or goes on with it with the CLI, before a prompt's turn was seen to end,
-the session's log can't tell their turns apart: BriefBar stops following the earlier one, whose thread says **Sent to
+session another prompt, about threads or not, or goes on with it with the CLI, before the turn of a prompt it follows
+from the log was seen to end, the session's log can't tell their turns apart: BriefBar stops following the earlier one,
+whose thread says **Sent to
 ‘Retry backoff’ · see the session**, or **Copied for ‘Retry backoff’ · see the session** for one it copied, rather than
 how the later turn went, and leaves it out of the bar below; it's kept as long as one that ended
 (`SentPrompt.overlapped`, `CopilotTasksStore.overlap(promptsIn:before:)`). While BriefBar is sending the session another
-prompt, or starting the CLI on it, the earlier one isn't followed, since the new one's turn may end before BriefBar hears
+prompt, or starting the CLI on it, the earlier one isn't followed from its log, since the new one's turn may end before
+BriefBar hears
 it went; once nothing went, it's followed again (`CopilotTasksStore.pauseFollowing`). A turn seen over just once isn't taken as its
 end, since it may be the end of the turn that ran as it was sent. A fix that's done and not pushed, of a thread that's
 still open, a build that doesn't pass or conflicts the pull request still has (`PRRecord.partsToFix`), counts in the bar
@@ -3296,6 +3319,22 @@ say they're pushed once it's done, though prompts fixed them rather than its run
 takes on what its action is for (`PullRequestTasks.parts`): the threads whose entries are still in it as you send it
 (`PullRequestPrompt.threadsListed`), the builds that failed for Fix the Build, the conflicts for Resolve Conflicts. The
 demo's are made up (`SentPrompt.demo`).
+
+**Hearing back.** A prompt whose turn its extension reports says how it goes in a notification too, under Azure DevOps'
+**Notifications**, as a task's does, in the same group, and only that: nothing is posted as it's sent, since the session
+shows then, nor in the demo, whose Notifications page lists a made-up one (`CopilotTasksStore.demoNotifications`), and
+it needs Send Work to Copilot and Send Prompts to Copilot Sessions, which are off until you turn them on. Once its turn
+has waited on you a couple of seconds, each time it starts to, one says so, with what Copilot asks, its question or its
+plan's summary, and goes once the turn goes on; a permission that a rule grants at once says nothing. Once the turn
+ends, one says how, in that one's place: done, failed, or stopped because the session closed or autopilot reached the
+most it may spend, never when you stopped it, which takes back the one that said it waited on you. Its title is what the
+pull request's line says, by the session's name as the app shows it, a fork's own: "Fixed in ‘Retry backoff’, not
+pushed", "‘Retry backoff’ is waiting for your answer"; then the pull request, "!4102 Add retry with backoff", as a
+task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
+prompt took on, as other notifications about it do. Its record keeps when BriefBar last said its turn waited on you, so
+that a restart doesn't say so again; an end BriefBar learns as it starts, it says then, as a task's
+(`CopilotTasksStore.notifyPrompt`, `CopilotTasksStore.promptNotification`). One BriefBar follows from the session's log
+says nothing.
 
 A line that says what Copilot does about a thread, a build or the conflicts has ⋯, with what its state allows, in its
 context menu and VoiceOver's actions too (`CopilotLineActions`): **Stop** while the line says Copilot works on it, or asks
@@ -4273,6 +4312,23 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
   before it expires, and not past that.
 - A `send` hands its prompt to `session.send`, which queues it while a turn runs. It's your own message
   in the session: one more turn, with the session's model, mode and permissions.
+- A `send` that asks for a report also follows that message's turn (`turn.mjs`), from the Copilot SDK's
+  documented session events, which it hears from before it sends the message (`session.on`), by the ID
+  that `session.send` gives it, which Copilot's messages in that turn carry (`originatingMessageId`). It
+  never reads a message's own text. The turn waits until the session takes the message up; then works,
+  at the step a tool says it's at (its `description`, else its title), written at most once a second;
+  waits on you while a question, a plan, a permission or something else Copilot asks for is open; and
+  ends at the first of: autopilot stopping it; the session going idle; the next message's turn starting,
+  since none goes idle between turns that waited in the queue; an error for it, unless Copilot may switch
+  models and go on; or the session shutting down, as when the app closes it, since a session that opens
+  again doesn't go on with it. A shell or an agent it started in the background holds the idle back, and
+  the turn its end wakes is still its own; so are the turns autopilot goes on with. Stopped, it says why
+  when it wasn't a Stop: the session closed, or autopilot reached its credit limit. What Copilot said is
+  the last its own messages in the turn said, or autopilot's summary, at most 4,000 characters. It reads
+  the session's name with `session.rpc.name.get()`, and again as the turn starts to wait on you. It writes
+  the report before the result, then again as the turn changes, until it's over or the extension stops;
+  the one that says the session shut down, at once. As tried with the runtime of the GitHub Copilot app
+  1.1.35 (1.0.102), in one of its sessions.
 - A `stop` stops the turn that runs in its session with `session.abort()`, as the app's own Stop does: the
   session goes on as it was. BriefBar asks it only of an extension that says it can, in `listening`'s `kinds`,
   as one that started before it could doesn't, and then shows the session instead, to stop it there.
@@ -4281,17 +4337,19 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
   fork, with its history and its uncommitted changes, in a worktree of its own, and the original gains
   only a note that it was forked. The fork's runtime, and its extension, start at once, so BriefBar then
   sends the prompt to the fork through the fork's own extension. A fork takes about 20 seconds.
-- Last, it writes the result, never with the prompt: done, with the message's ID or the fork's session's,
+- Last, it writes the result, never with the prompt: done, with the message's ID, and `reports` once it
+  reports its turn, or the fork's session's,
   or why not: `invalid`, `expired`, `send_failed`, `fork_unavailable` where the session doesn't offer the
   app's fork, as a chat may not, `fork_failed`, where the fork failed or Copilot couldn't say how it
   went, so that a fork may exist, or `stop_failed`. It writes it once `session.send` or the fork is done, however long that
   takes. Then it removes the request it claimed, if BriefBar hasn't removed it already, as turning Azure
   DevOps off does.
 - As it starts, it removes the requests of its session that an extension which ended mid-request had
-  claimed, since they hold prompts.
+  claimed, since they hold prompts, and the files that one left half written.
 
 `Tests/CopilotPlugin` tests it with Node's test runner, with made-up sessions and requests in an outbox
-in a temporary folder, and the extension as the runtime starts it, with a stand-in for the SDK's
+in a temporary folder, the turns it reports from the events the runtime sent as each case was tried, and
+the extension as the runtime starts it, with a stand-in for the SDK's
 `joinSession` (`make plugin-test`, which CI runs). The tests aren't in BriefBar.app, which ships only the
 extension, as `CopilotPluginTests` and `scripts/check-app.sh` check.
 

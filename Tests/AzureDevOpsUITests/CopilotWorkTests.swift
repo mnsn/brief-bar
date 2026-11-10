@@ -1394,6 +1394,268 @@ import Testing
         #expect(SentPrompt.load(from: settings.defaults, now: sent.addingTimeInterval(SentPrompt.followLimit + 60)).first?.lostTrack == true)
     }
 
+    /// Writes a prompt's report, as the extension that sent it does: by this process, which runs, unless `startedAt` says
+    /// the extension started long before it.
+    private func writeReport(
+        _ requestId: String, in outbox: CopilotOutbox, state: String, since: Date, startedAt: Date? = nil, _ fields: [String: Any] = [:]
+    ) throws {
+        let folder = outbox.url.appendingPathComponent("reports", isDirectory: true)
+        for url in [outbox.url, folder] where !FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        }
+        let iso = { (date: Date) in date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+        let started = startedAt ?? DetachedProgram.startTime(of: getpid()) ?? Date()
+        let report: [String: Any] = [
+            "version": 1, "requestId": requestId, "sessionId": session, "messageId": "message-1", "pid": Int(getpid()),
+            "startedAt": iso(started), "name": "Retry backoff", "state": state, "since": iso(since), "updatedAt": iso(Date()),
+        ]
+        let temporary = folder.appendingPathComponent(".\(requestId).json.\(UUID().uuidString).tmp")
+        try JSONSerialization.data(withJSONObject: report.merging(fields) { $1 }).write(to: temporary)
+        chmod(temporary.path, 0o600)
+        guard rename(temporary.path, folder.appendingPathComponent("\(requestId).json").path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    /// A store that follows a prompt its extension reports, in an outbox of its own, and lists what it notifies.
+    private func reportedPrompt(_ about: SentPrompt.About? = nil, settings: AppSettings = AppSettings(defaults: MemoryDefaults()))
+        throws -> (store: CopilotTasksStore, outbox: CopilotOutbox, recent: RecentNotifications, requestId: String, home: URL) {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
+        let store = store(settings, notifier: Notifier(recent: recent, posts: false))
+        let outbox = CopilotOutbox(root: home, path: ["Outbox"])
+        store.outboxForTests = outbox
+        let requestId = UUID().uuidString.lowercased()
+        settings.copilotSentPrompts = [try #require(SentPrompt(about ?? self.about(), session: session, sentAt: Date(), copied: false, report: requestId))]
+        return (store, outbox, recent, requestId, home)
+    }
+
+    private func follow(_ store: CopilotTasksStore, at date: Date = Date()) async throws {
+        store.followSentPrompts(now: date)
+        try await settle { !store.isFollowingPrompts }
+    }
+
+    /// A prompt whose extension reports its turn is followed from its report, not its session's log: its step; that it
+    /// waits on you, which it notifies once, a moment in, and withdraws once it goes on; and how it ended, at once, with
+    /// what Copilot said, which it notifies in the same notification's place. Then the report goes.
+    @Test func followsAPromptsTurnFromItsReport() async throws {
+        let (store, outbox, recent, requestId, home) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = store.settings
+        let sent = try #require(settings.copilotSentPrompts.first?.sentAt)
+        try writeReport(requestId, in: outbox, state: "working", since: sent.addingTimeInterval(1), ["step": "Run the tests"])
+        try await follow(store)
+        #expect(store.work(on: .thread(11), of: key)?.state == .working("Run the tests"))
+        #expect(recent.history.entries.isEmpty)
+
+        // Only once it's waited a moment.
+        let asked = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        try writeReport(requestId, in: outbox, state: "needsYou", since: asked, ["asks": "question", "said": "Push it now?\nOr wait?"])
+        try await follow(store, at: asked.addingTimeInterval(1))
+        #expect(store.work(on: .thread(11), of: key)?.state == .needsYou)
+        #expect(recent.history.entries.isEmpty)
+        try await follow(store, at: asked.addingTimeInterval(CopilotTasksStore.needsYouAfter))
+        let asking = try #require(recent.history.entries.first)
+        #expect(recent.history.entries.count == 1)
+        #expect(asking.id == CopilotTasksStore.promptNotificationID(requestId))
+        #expect(asking.title == "‘Retry backoff’ is waiting for your answer")
+        #expect(asking.subtitle == "!4102")
+        #expect(asking.body == "Push it now?")
+        #expect(asking.state == .needsYou)
+        #expect(settings.copilotSentPrompts.first?.notifiedNeedsYou == asked)
+        // Once each time: not again, even after a restart.
+        try await follow(store, at: asked.addingTimeInterval(10))
+        #expect(recent.history.entries.first?.date == asking.date)
+        #expect(SentPrompt.load(from: settings.defaults).first?.notifiedNeedsYou == asked)
+
+        // It went on: what said it waits goes.
+        try writeReport(requestId, in: outbox, state: "working", since: sent.addingTimeInterval(1))
+        try await follow(store)
+        #expect(recent.history.entries.isEmpty)
+        #expect(settings.copilotSentPrompts.first?.notifiedNeedsYou == nil)
+        #expect(store.work(on: .thread(11), of: key)?.state == .working(nil))
+
+        // Over: at once, with what Copilot said, which it notifies. Then the report goes, and what it said stays only while
+        // BriefBar runs.
+        try writeReport(requestId, in: outbox, state: "finished", since: Date(), ["said": "Fixed the backoff.\n\nIt isn't pushed."])
+        try await follow(store)
+        #expect(settings.copilotSentPrompts.first?.ended == .finished)
+        #expect(store.work(on: .thread(11), of: key)?.state == .done("Fixed the backoff.\n\nIt isn't pushed."))
+        let done = try #require(recent.history.entries.first)
+        #expect(recent.history.entries.count == 1)
+        #expect(done.title == "Fixed in ‘Retry backoff’, not pushed")
+        #expect(done.body == "Fixed the backoff.")
+        #expect(done.state == .done)
+        try await settle { outbox.report(of: requestId, sentTo: session) == nil }
+        #expect(SentPrompt.load(from: settings.defaults).first?.ended == .finished)
+    }
+
+    /// A prompt its extension reports goes on being followed while another prompt is sent to its session, and after: its
+    /// report is of its own message. One followed from the log isn't.
+    @Test func followsAReportedPromptWhileAnotherIsSentToItsSession() async throws {
+        let (store, outbox, _, requestId, home) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = store.settings
+        let reported = try #require(settings.copilotSentPrompts.first)
+        let fromLog = try #require(SentPrompt(about(threads: [12]), session: session, sentAt: reported.sentAt.addingTimeInterval(-5), copied: false))
+        settings.copilotSentPrompts = [fromLog, reported]
+        try writeReport(requestId, in: outbox, state: "working", since: Date(), ["step": "Read the diff"])
+        store.pauseFollowing(session)
+        try await follow(store)
+        #expect(store.work(on: .thread(11), of: key)?.state == .working("Read the diff"))
+        store.overlap(promptsIn: session, before: Date())
+        store.resumeFollowing(session)
+        #expect(settings.copilotSentPrompts.first { $0.report == nil }?.overlapped == true)
+        #expect(settings.copilotSentPrompts.first { $0.report != nil }?.isFollowed == true)
+    }
+
+    /// One whose extension stopped before its report said how its turn ended, or whose report went, BriefBar no longer
+    /// follows: it says it doesn't know how it went, takes back what said it waits on you, and removes the report.
+    @Test func losesTrackOfAPromptWhoseExtensionStoppedBeforeItsEnd() async throws {
+        let (store, outbox, recent, requestId, home) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = store.settings
+        let asked = Date().addingTimeInterval(-10)
+        try writeReport(requestId, in: outbox, state: "needsYou", since: asked, ["asks": "plan", "said": "Fix it, then test it."])
+        try await follow(store)
+        #expect(recent.history.entries.first?.body == "Fix it, then test it.")
+        // The process with its ID started after the extension says it did: it's another's.
+        try writeReport(requestId, in: outbox, state: "needsYou", since: asked, startedAt: Date().addingTimeInterval(-3 * 86_400))
+        try await follow(store)
+        let kept = try #require(settings.copilotSentPrompts.first)
+        #expect(kept.lostTrack)
+        #expect(kept.ended == nil)
+        #expect(store.work(on: .thread(11), of: key)?.state == .unknown(copied: false))
+        #expect(recent.history.entries.isEmpty)
+        try await settle { outbox.report(of: requestId, sentTo: session) == nil }
+
+        // Gone before it said.
+        let (gone, _, goneRecent, _, goneHome) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: goneHome) }
+        try await follow(gone)
+        #expect(gone.settings.copilotSentPrompts.first?.lostTrack == true)
+        #expect(goneRecent.history.entries.isEmpty)
+    }
+
+    /// Once its extension isn't running, a report is read again: the extension may have said how the turn ended as it
+    /// stopped, after it was first read.
+    @Test func readsAReportAgainOnceItsExtensionStopped() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let outbox = CopilotOutbox(root: home, path: ["Outbox"])
+        let requestId = UUID().uuidString.lowercased()
+        try writeReport(requestId, in: outbox, state: "working", since: Date())
+        let read = CopilotTasksStore.readReport(requestId, sentTo: session, in: outbox) { _ in
+            try? writeReport(requestId, in: outbox, state: "finished", since: Date(), ["said": "Done."])
+            return false
+        }
+        #expect(read.report?.state == .finished)
+        #expect(read.report?.said == "Done.")
+        #expect(!read.follows)
+        #expect(CopilotTasksStore.readReport(requestId, sentTo: session, in: outbox) { _ in true }.report?.state == .finished)
+        let missing = CopilotTasksStore.readReport(UUID().uuidString.lowercased(), sentTo: session, in: outbox) { _ in true }
+        #expect(missing == CopilotTasksStore.Reported(report: nil, follows: false))
+    }
+
+    /// How a reported turn ended is notified when it failed, or stopped for a cause of its own, such as the session
+    /// closing; not when you stopped it, which takes back what said it waited on you; and nothing while Notifications are
+    /// off, though the prompt keeps how it ended.
+    @Test func notifiesHowAReportedTurnEndedButForYourStop() async throws {
+        for (state, fields, title, body) in [
+            ("failed", ["said": "Rate limited.\nTry later."], "Couldn't fix it in ‘Retry backoff’", "Rate limited."),
+            ("failed", [:], "Couldn't fix it in ‘Retry backoff’", "It reported an error."),
+            ("stopped", ["cause": "closed"], "Stopped in ‘Retry backoff’ before it fixed it", "The session closed before it finished."),
+            ("stopped", ["cause": "creditLimit"], "Stopped in ‘Retry backoff’ before it fixed it", "Autopilot reached the most it may spend."),
+            ("finished", [:], "Fixed in ‘Retry backoff’, not pushed", "It didn't say what it did."),
+        ] as [(String, [String: Any], String, String)] {
+            let (store, outbox, recent, requestId, home) = try reportedPrompt()
+            defer { try? FileManager.default.removeItem(at: home) }
+            try writeReport(requestId, in: outbox, state: state, since: Date(), fields)
+            try await follow(store)
+            let note = try #require(recent.history.entries.first, "\(state) \(fields)")
+            #expect(note.title == title)
+            #expect(note.body == body)
+            #expect(note.state == (state == "finished" ? .done : .failing))
+        }
+
+        let (stopped, outbox, recent, requestId, home) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try writeReport(requestId, in: outbox, state: "needsYou", since: Date().addingTimeInterval(-10), ["asks": "permission"])
+        try await follow(stopped)
+        #expect(recent.history.entries.first?.body == "It asks for your permission.")
+        try writeReport(requestId, in: outbox, state: "stopped", since: Date())
+        try await follow(stopped)
+        #expect(stopped.settings.copilotSentPrompts.first?.ended == .stopped)
+        #expect(recent.history.entries.isEmpty)
+
+        let quiet = AppSettings(defaults: MemoryDefaults())
+        quiet.notifications = false
+        let (off, offOutbox, offRecent, offRequest, offHome) = try reportedPrompt(settings: quiet)
+        defer { try? FileManager.default.removeItem(at: offHome) }
+        try writeReport(offRequest, in: offOutbox, state: "needsYou", since: Date().addingTimeInterval(-10), ["asks": "question"])
+        try await follow(off)
+        #expect(offRecent.history.entries.isEmpty)
+        try writeReport(offRequest, in: offOutbox, state: "finished", since: Date(), ["said": "Done."])
+        try await follow(off)
+        #expect(off.settings.copilotSentPrompts.first?.ended == .finished)
+        #expect(offRecent.history.entries.isEmpty)
+    }
+
+    /// What a prompt's notification says, and opens: the line's words, by the name of the session it went to, a fork's own;
+    /// the pull request, as BriefBar read it; and a click opens it, at the thread a thread's prompt took on.
+    @Test func aPromptsNotificationSaysWhereAndOpensThePullRequest() throws {
+        let pullRequest = PullRequest(
+            key: key, title: "Add retry with backoff", author: Person(id: "robin", name: "Robin Diaz"), createdAt: now, projectId: "p",
+            projectName: "Storefront", repositoryId: "r", repositoryName: "payments-api"
+        )
+        let requestId = UUID().uuidString.lowercased()
+        func report(_ state: OutboxReport.State, name: String? = "Retry backoff (fork)", asks: OutboxReport.Asks? = nil, said: String? = nil) -> OutboxReport {
+            OutboxReport(requestId: requestId, sessionId: fork, pid: 1, startedAt: now, name: name, state: state, since: now, asks: asks, said: said)
+        }
+        let inFork = try #require(SentPrompt(about(threads: [11, 12]), session: fork, forkedFrom: session, sentAt: now, copied: false, report: requestId))
+        let done = CopilotTasksStore.promptNotification(inFork, requestId: requestId, report: report(.finished, said: "Capped it."), pullRequest: pullRequest)
+        #expect(done.title == "Fixed in ‘Retry backoff (fork)’, not pushed")
+        #expect(done.subtitle == "!4102 Add retry with backoff")
+        #expect(done.body == "Capped it.")
+        #expect(done.thread == "copilot")
+        #expect(done.source == .azureDevOps)
+        #expect(done.userInfo == ["url": pullRequest.threadURL(11).absoluteString, "pullRequest": key.description])
+        #expect(CopilotTasksStore.promptNotification(inFork, requestId: requestId, report: report(.finished, name: nil), pullRequest: nil).title
+            == "Fixed in its session, not pushed")
+
+        let build = try #require(SentPrompt(
+            SentPrompt.About(pullRequest: key, purpose: .explain, parts: [.build(31)]), session: session, sentAt: now, copied: false, report: requestId
+        ))
+        let answered = CopilotTasksStore.promptNotification(build, requestId: requestId, report: report(.finished, name: "Retry backoff"), pullRequest: pullRequest)
+        #expect(answered.title == "Answered in ‘Retry backoff’")
+        #expect(answered.userInfo["url"] == pullRequest.webURL.absoluteString)
+        let plan = CopilotTasksStore.promptNotification(
+            build, requestId: requestId, report: report(.needsYou, name: "Retry backoff", asks: .plan, said: "Fix the backoff.\nThen test it."), pullRequest: nil
+        )
+        #expect(plan.title == "‘Retry backoff’ is waiting for your answer")
+        #expect(plan.body == "Fix the backoff.")
+        #expect(plan.subtitle == "!4102")
+        #expect(plan.userInfo.isEmpty)
+        #expect(plan.id == "copilot.prompt.\(requestId)")
+    }
+
+    /// A prompt keeps its report's request, and when BriefBar last said its turn waits on you, checked as it loads: one whose
+    /// report isn't a request's ID isn't kept.
+    @Test func keepsAPromptsReportByItsRequest() throws {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        let requestId = UUID().uuidString.lowercased()
+        var prompt = try #require(SentPrompt(about(), session: session, sentAt: now, copied: false, report: requestId))
+        prompt.notifiedNeedsYou = Date(timeIntervalSince1970: 1_794_294_000)
+        settings.copilotSentPrompts = [prompt]
+        #expect(SentPrompt.load(from: defaults, now: now) == [prompt])
+        #expect(SentPrompt(about(), session: session, sentAt: now, copied: false, report: "../\(requestId)") == nil)
+        var data = try JSONEncoder().encode([prompt])
+        data = Data(String(decoding: data, as: UTF8.self).replacingOccurrences(of: requestId, with: "../elsewhere").utf8)
+        defaults.set(data, forKey: SettingsKey.copilotSentPrompts)
+        #expect(SentPrompt.load(from: defaults, now: now).isEmpty)
+    }
+
     // MARK: What's Left
 
     /// While a task works, What's Left says Copilot's on what it took on alone: not the builds and conflicts a Push & Reply

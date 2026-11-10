@@ -7,8 +7,9 @@ import Foundation
 /// copied for you to paste there (`CopilotTasksStore.deliver`): which session took it, what it took on (comment threads, a
 /// build, its conflicts), what for and when, kept with Send Work to Copilot's runs (`ado.copilot.sentPrompts`) by references
 /// only, never what it says, for as long as a link you make (`LinkEdits.lifetime`). Copilot works on it in the app, which
-/// BriefBar doesn't run, so what became of it is what the session's log says from then on (`SessionTurn`), which BriefBar
-/// follows until its turn ends (`CopilotTasksStore.followSentPrompts`).
+/// BriefBar doesn't run, so what became of it is what the extension that sent it reports (`report`), or else what the
+/// session's log says from then on (`SessionTurn`), which BriefBar follows until its turn ends
+/// (`CopilotTasksStore.followSentPrompts`).
 struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// What it asked.
     enum Purpose: String, Codable, Sendable {
@@ -57,8 +58,16 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// from the session's log, so it says it doesn't know rather than take the later one's.
     var overlapped = false
     /// BriefBar stopped following its turn, which it didn't see end within `followLimit`, as when its session waited
-    /// overnight for your answer: it says it doesn't know how it went, rather than forget it.
+    /// overnight for your answer, or whose extension stopped before it reported how it ended: it says it doesn't know how
+    /// it went, rather than forget it.
     var lostTrack = false
+    /// The request whose report says how its turn goes, when the extension that sent it reports it
+    /// (`CopilotOutbox.report(of:sentTo:)`): BriefBar follows it there, rather than in the session's log, with no limit while
+    /// the extension runs. Nil for one copied for you to paste, or sent by an extension from before it reported.
+    var report: String?
+    /// When its turn started to wait on you, as its report said, the last time BriefBar notified you of it: kept so that it
+    /// says so once each time, even across a restart; nil once it went on.
+    var notifiedNeedsYou: Date?
 
     var id: String { "\(session)/\(sentAt.timeIntervalSince1970)" }
 
@@ -76,9 +85,11 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// Nil when a session's ID isn't one.
     init?(
         _ about: About, session: String, forkedFrom: String? = nil, awaitsFork: Bool = false, sentAt: Date, copied: Bool,
-        ended: RunPhase? = nil
+        ended: RunPhase? = nil, report: String? = nil
     ) {
-        guard AppSessions.isSessionID(session), forkedFrom.map(AppSessions.isSessionID) ?? true else { return nil }
+        guard AppSessions.isSessionID(session), forkedFrom.map(AppSessions.isSessionID) ?? true,
+              report.map(AppSessions.isSessionID) ?? true
+        else { return nil }
         pullRequest = about.pullRequest.linkRef
         self.session = session
         self.forkedFrom = forkedFrom
@@ -90,6 +101,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         self.sentAt = sentAt
         self.copied = copied
         self.ended = ended
+        self.report = report
     }
 
     /// Checked as when it was made: any program running as you can write the preferences.
@@ -108,7 +120,11 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         ended = try container.decodeIfPresent(RunPhase.self, forKey: .ended)
         overlapped = try container.decodeIfPresent(Bool.self, forKey: .overlapped) ?? false
         lostTrack = try container.decodeIfPresent(Bool.self, forKey: .lostTrack) ?? false
-        guard pullRequest.kind == .pullRequest, AppSessions.isSessionID(session), forkedFrom.map(AppSessions.isSessionID) ?? true else {
+        report = try container.decodeIfPresent(String.self, forKey: .report)
+        notifiedNeedsYou = try container.decodeIfPresent(Date.self, forKey: .notifiedNeedsYou)
+        guard pullRequest.kind == .pullRequest, AppSessions.isSessionID(session), forkedFrom.map(AppSessions.isSessionID) ?? true,
+              report.map(AppSessions.isSessionID) ?? true
+        else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Not a prompt to a session"))
         }
     }
@@ -123,8 +139,8 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     static let limit = 200
     /// How long BriefBar waits for you to paste one it copied, or for the fork you paste it in to be made.
     static let pasteWait: TimeInterval = 30 * 60
-    /// How long BriefBar follows one whose turn hasn't ended: then it stops, and says it doesn't know how it went
-    /// (`lostTrack`).
+    /// How long BriefBar follows one whose turn hasn't ended, from the session's log: then it stops, and says it doesn't
+    /// know how it went (`lostTrack`). One whose extension reports it, BriefBar follows for as long as that runs.
     static let followLimit: TimeInterval = 12 * 3_600
 
     /// The ones kept in the preferences, the oldest first: without what can't be read, such as what another program wrote
@@ -734,25 +750,26 @@ extension CopilotTasksStore {
     }
 
     /// Keeps a prompt that went to one of the Copilot app's sessions, sent as it says or copied for you to paste: about some
-    /// of a pull request, to follow its turn there from its log; about anything, as the session's next turn, which
-    /// the turns of the prompts sent it before aren't told from (`overlap`). Not once Azure DevOps stopped, or Send Work to
-    /// Copilot is off, which forgot what it kept, as a delivery that took a while may end after. One copied for you to paste
-    /// is kept with what was copied, `text`, and what it takes off Needs You once you paste it, `handOff` (`copiedPrompts`),
-    /// before BriefBar starts following it, which looks for what you pasted from the first.
+    /// of a pull request, to follow its turn there, from the report the extension that sent it writes, named for `report`,
+    /// or else from its log; about anything, as the session's next turn, which the turns of the prompts sent it before
+    /// aren't told from in their logs (`overlap`). Not once Azure DevOps stopped, or Send Work to Copilot is off, which
+    /// forgot what it kept, as a delivery that took a while may end after. One copied for you to paste is kept with what
+    /// was copied, `text`, and what it takes off Needs You once you paste it, `handOff` (`copiedPrompts`), before BriefBar
+    /// starts following it, which looks for what you pasted from the first.
     /// - Returns: the prompt it keeps, about some of a pull request; nil when it keeps none.
     @discardableResult
     func keep(
         _ about: SentPrompt.About?, sentTo outcome: SessionDelivery, from session: String, forking: Bool, at date: Date = Date(),
-        copying text: String? = nil, handOff: CommentHandOff? = nil
+        copying text: String? = nil, handOff: CommentHandOff? = nil, report: String? = nil
     ) -> SentPrompt? {
         guard canSend, isOn, !hasStopped else { return nil }
         let prompt: SentPrompt?
         switch outcome {
         case .sent:
             overlap(promptsIn: session, before: date)
-            prompt = about.flatMap { SentPrompt($0, session: session, sentAt: date, copied: false) }
+            prompt = about.flatMap { SentPrompt($0, session: session, sentAt: date, copied: false, report: report) }
         case .forkedAndSent(let fork):
-            prompt = about.flatMap { SentPrompt($0, session: fork, forkedFrom: session, sentAt: date, copied: false) }
+            prompt = about.flatMap { SentPrompt($0, session: fork, forkedFrom: session, sentAt: date, copied: false, report: report) }
         case .fellBack(let fallback):
             if let fork = fallback.fork {
                 overlap(promptsIn: fork, before: date)
@@ -769,6 +786,12 @@ extension CopilotTasksStore {
         if prompt.copied, let text { copiedPrompts[prompt.id] = (text, handOff) }
         // As things are now, not as the delivery started, which may be minutes ago: a prompt sent since, faster, stays.
         settings.copilotSentPrompts = SentPrompt.kept(settings.copilotSentPrompts + [prompt], now: Date())
+        // As one more report starts: those no prompt follows anymore, an hour old, go.
+        if prompt.report != nil {
+            let outbox = outbox
+            let followed = Set(settings.copilotSentPrompts.compactMap(\.report))
+            Task.detached(priority: .utility) { outbox.removeOldReports(keeping: followed) }
+        }
         refresh()
         return prompt
     }
@@ -777,12 +800,12 @@ extension CopilotTasksStore {
     /// sent it before, whose ends weren't seen yet, from its turn, so BriefBar stops following them, and says so
     /// (`SentPrompt.overlapped`). One seen over only once may be the end of the turn that ran as it was sent, so it isn't
     /// taken as its own. One copied for you to paste that BriefBar didn't see pasted isn't handed off: whether you pasted it
-    /// can't be told either.
+    /// can't be told either. One whose extension reports its turn goes on being followed: its report is of its own message.
     func overlap(promptsIn session: String, before date: Date) {
         guard canSend, isOn, !hasStopped else { return }
         var prompts = settings.copilotSentPrompts
         for index in prompts.indices where prompts[index].session == session && prompts[index].isFollowed
-            && !prompts[index].awaitsFork && prompts[index].sentAt < date {
+            && !prompts[index].awaitsFork && prompts[index].report == nil && prompts[index].sentAt < date {
             prompts[index].overlapped = true
             promptTurns[prompts[index].id] = nil
             promptsOver[prompts[index].id] = nil
@@ -792,8 +815,9 @@ extension CopilotTasksStore {
     }
 
     /// Another prompt is being sent to a session: until `resumeFollowing`, the turns of the prompts sent it before aren't
-    /// followed, since the new one may reach it, and its turn end, before BriefBar hears it went. Once it's known to have
-    /// gone, `overlap` says their outcome isn't known; once nothing went, they're followed again.
+    /// followed from its log, since the new one may reach it, and its turn end, before BriefBar hears it went. Once it's
+    /// known to have gone, `overlap` says their outcome isn't known; once nothing went, they're followed again. Those whose
+    /// extension reports them go on as they are.
     func pauseFollowing(_ session: String) {
         followingPaused[session, default: 0] += 1
     }
@@ -803,23 +827,26 @@ extension CopilotTasksStore {
         followingPaused[session] = sends > 1 ? sends - 1 : nil
     }
 
-    /// Follows the turns of the prompts sent to the Copilot app's sessions about pull requests that haven't ended,
-    /// from their sessions' logs since each was sent, off the main thread: which sessions the app runs a turn in, which
-    /// something has open, the fork made for one copied as `/fork`, and their logs. A turn that's over twice in a row, a few
-    /// seconds apart, ended: its prompt keeps how. One copied for you to paste, while BriefBar knows what it copied
-    /// (`copiedPrompts`), is taken up only once a message sent the session since holds it, which says you pasted it: its
-    /// turn starts there, and what it takes care of leaves Needs You; another message, sent before it or instead, is the
-    /// session's own. One not pasted, or whose fork isn't made, after half an hour, goes, with nothing handed off. One
-    /// whose turn hasn't ended after `SentPrompt.followLimit` isn't followed any more, and says BriefBar doesn't know how it
-    /// went (`SentPrompt.lostTrack`). Only while Send Work to Copilot is on, never in the demo, and not while another prompt
-    /// is being sent to its session (`pauseFollowing`).
+    /// Follows the turns of the prompts sent to the Copilot app's sessions about pull requests that haven't ended, off the
+    /// main thread: from the report the extension that sent one writes, while that extension runs, and otherwise from their
+    /// sessions' logs since each was sent, with which sessions the app runs a turn in, which something has open, and the
+    /// fork made for one copied as `/fork`. A turn its report says is over ended, as it says; one whose extension stopped
+    /// before it said so, BriefBar says it doesn't know how it went (`SentPrompt.lostTrack`). A turn its log says is over
+    /// twice in a row, a few seconds apart, ended: its prompt keeps how. One copied for you to paste, while BriefBar knows
+    /// what it copied (`copiedPrompts`), is taken up only once a message sent the session since holds it, which says you
+    /// pasted it: its turn starts there, and what it takes care of leaves Needs You; another message, sent before it or
+    /// instead, is the session's own. One not pasted, or whose fork isn't made, after half an hour, goes, with nothing
+    /// handed off. One whose log hasn't shown its end after `SentPrompt.followLimit` isn't followed any more, and says
+    /// BriefBar doesn't know how it went. Only while Send Work to Copilot is on, never in the demo, and, from its log, not
+    /// while another prompt is being sent to its session (`pauseFollowing`).
     func followSentPrompts(now: Date = Date()) {
         guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
-        let open = settings.copilotSentPrompts.filter { $0.isFollowed && followingPaused[$0.session] == nil }
+        let open = settings.copilotSentPrompts.filter { $0.isFollowed && ($0.report != nil || followingPaused[$0.session] == nil) }
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
         let home = appHome
         let monitor = promptMonitor
+        let outbox = outbox
         let copied = copiedPrompts.mapValues(\.text)
         Task {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
@@ -834,6 +861,10 @@ extension CopilotTasksStore {
                 let running = Set((try? AppSessions.running(home: home)) ?? [])
                 var read: [Read] = []
                 for prompt in open {
+                    if let report = prompt.report {
+                        read.append(Read(prompt: prompt, reported: Self.readReport(report, sentTo: prompt.session, in: outbox)))
+                        continue
+                    }
                     var session: String? = prompt.session
                     var fork: String?
                     if prompt.awaitsFork {
@@ -874,24 +905,49 @@ extension CopilotTasksStore {
 
     /// What `followSentPrompts` read of a prompt: the fork made for one copied as `/fork`, its turn, and, for one copied
     /// for you to paste, whether a message sent the session since holds what BriefBar copied; nil when BriefBar didn't know
-    /// what it copied as it read.
+    /// what it copied as it read. For one its extension reports, what its report said (`reported`).
     private struct Read: Sendable {
         var prompt: SentPrompt
         var fork: String?
         var turn: SessionTurn?
         var pasted: Bool?
+        var reported: Reported?
+    }
+
+    /// What a prompt's report said of its turn, and whether the extension that writes it still ran, so that it may say
+    /// more: nil when there was no report to read, or none as the contract has it.
+    struct Reported: Sendable, Equatable {
+        var report: OutboxReport?
+        var follows: Bool
+    }
+
+    /// Reads a prompt's report, and whether its extension still runs: once it doesn't, the report again, which it may have
+    /// rewritten, saying how the turn ended, as it stopped.
+    nonisolated static func readReport(
+        _ requestId: String, sentTo session: String, in outbox: CopilotOutbox,
+        isLive: (OutboxReport) -> Bool = { CopilotOutbox.isLive($0) }
+    ) -> Reported {
+        let report = outbox.report(of: requestId, sentTo: session)
+        guard let report, !report.isOver else { return Reported(report: report, follows: false) }
+        if isLive(report) { return Reported(report: report, follows: true) }
+        return Reported(report: outbox.report(of: requestId, sentTo: session), follows: false)
     }
 
     /// What `followSentPrompts` read, on the prompts as they're kept now.
     private func applyTurns(_ read: [Read], now: Date) {
         var prompts = settings.copilotSentPrompts
+        var taken: [String] = []
         for item in read {
             let (prompt, fork, turn, pasted) = (item.prompt, item.fork, item.turn, item.pasted)
-            // Gone, or overlapped by another since it was read: what it read isn't its. Nor while another prompt is being
-            // sent to its session, since it was read: what it read may be that one's turn.
-            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), prompts[index].isFollowed,
-                  followingPaused[prompts[index].session] == nil
-            else { continue }
+            // Gone, or overlapped by another since it was read: what it read isn't its.
+            guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), prompts[index].isFollowed else { continue }
+            if let reported = item.reported {
+                if let requestId = applyReport(reported, to: &prompts[index], now: now) { taken.append(requestId) }
+                continue
+            }
+            // Nor, from its log, while another prompt is being sent to its session, since it was read: what it read may be
+            // that one's turn.
+            guard followingPaused[prompts[index].session] == nil else { continue }
             if let fork {
                 prompts[index].session = fork
                 prompts[index].forkedFrom = prompt.session
@@ -936,7 +992,46 @@ extension CopilotTasksStore {
             }
         }
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
+        // Once what they said is kept: the reports of the turns that ended, or that BriefBar lost track of.
+        if !taken.isEmpty {
+            let outbox = outbox
+            Task.detached(priority: .utility) { for requestId in taken { outbox.removeReport(of: requestId) } }
+        }
     }
+
+    /// What a prompt's report said, on the prompt: how its turn stands, which what shows it says, words and all, while
+    /// BriefBar runs; once it's over, how it ended, which the prompt keeps. It's notified once it waits on you, as each time
+    /// it starts to, and once it ends (`notifyPrompt`). One whose extension stopped, or whose report went, before it said
+    /// how it ended, BriefBar no longer follows, and says it doesn't know how it went.
+    /// - Returns: the report's request, for BriefBar to remove it, once BriefBar has taken what it said.
+    private func applyReport(_ reported: Reported, to prompt: inout SentPrompt, now: Date) -> String? {
+        let id = prompt.id
+        guard let requestId = prompt.report, let report = reported.report, reported.follows || report.isOver else {
+            prompt.lostTrack = true
+            promptTurns[id] = nil
+            withdrawPromptNotification(&prompt)
+            return prompt.report
+        }
+        let turn = SessionTurn(report)
+        if promptTurns[id] != turn { promptTurns[id] = turn }
+        if report.isOver {
+            prompt.ended = Self.phase(of: turn)
+            notifyPrompt(&prompt, report: report)
+            return requestId
+        }
+        if report.state == .needsYou {
+            // Not for a moment's wait, such as a permission a rule grants.
+            if prompt.notifiedNeedsYou != report.since, now.timeIntervalSince(report.since) >= Self.needsYouAfter {
+                notifyPrompt(&prompt, report: report)
+            }
+        } else {
+            withdrawPromptNotification(&prompt)
+        }
+        return nil
+    }
+
+    /// How long a turn waits on you before BriefBar says so: not for what's settled at once.
+    static let needsYouAfter: TimeInterval = 2
 
     private static func phase(of turn: SessionTurn?) -> RunPhase {
         switch turn?.phase {

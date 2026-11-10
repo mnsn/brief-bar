@@ -107,7 +107,7 @@ import Testing
         let folder = Self.sessions.appendingPathComponent("com.github.copilot/extensions", isDirectory: true)
         #expect(try Self.contents(Self.sessions.appendingPathComponent("com.github.copilot")) == ["extensions"])
         #expect(try Self.contents(folder) == ["briefbar-sessions"])
-        #expect(try Self.contents(folder.appendingPathComponent("briefbar-sessions")) == ["extension.mjs", "outbox.mjs"])
+        #expect(try Self.contents(folder.appendingPathComponent("briefbar-sessions")) == ["extension.mjs", "outbox.mjs", "turn.mjs"])
     }
 
     @Test func skillsAreNamedForTheirCommands() throws {

@@ -227,7 +227,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   skills (`Resources/CopilotPlugin`) only say how to use the tools: what they name must be what `--mcp`
   lists, which `CopilotPluginTests` checks, and a new plugin is listed in `scripts/check-app.sh` too. The other plugin holds only BriefBar's extension for the
   Copilot app's sessions, which has no tools, hooks or commands, acts only on the requests BriefBar
-  writes for its own session, and never logs or keeps a prompt; `Tests/CopilotPlugin` checks it.
+  writes for its own session, and never logs or keeps a prompt: for a prompt BriefBar asks it to report on,
+  it writes only how that prompt's turn goes, from the SDK's events (`turn.mjs`); `Tests/CopilotPlugin` checks it.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller

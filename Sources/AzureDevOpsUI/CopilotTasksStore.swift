@@ -125,6 +125,9 @@ final class CopilotTasksStore: ObservableObject {
     var title: (WorkItemReference) -> String? = { _ in nil }
     /// A pull request's title, when the list shows it, for notifications.
     var pullRequestTitle: (PullRequestReference) -> String? = { _ in nil }
+    /// The pull request a prompt to one of the Copilot app's sessions is about, as BriefBar read it last, for what its
+    /// notifications say and open: nil when it doesn't have it.
+    var knownPullRequest: (ItemRef) -> PullRequest? = { _ in nil }
     /// A task that takes care of a pull request's comments started, with what its prompt handed off and the prompt you sent:
     /// for the list, to take those comments off Needs You.
     var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
@@ -972,6 +975,94 @@ final class CopilotTasksStore: ObservableObject {
     /// A notification's key for the task it's about, as it starts.
     nonisolated static let taskKey = "copilotTask"
 
+    // MARK: A prompt's notifications
+
+    /// Says how the turn of a prompt sent to one of the Copilot app's sessions stands, as the extension that sent it reports
+    /// it: once it starts to wait on you, each time, and once it ends, but for a Stop of yours, which ends it with nothing to
+    /// say. One notification for each prompt, each in the last one's place: none as it's sent, which shows the session. Under
+    /// Azure DevOps' Notifications, as tasks' are, in the same group; and only for what a pull request's line still shows.
+    func notifyPrompt(_ prompt: inout SentPrompt, report: OutboxReport) {
+        guard let requestId = prompt.report else { return }
+        let says = switch report.state {
+        case .needsYou, .finished, .failed: true
+        case .stopped: report.cause != nil
+        case .waiting, .working: false
+        }
+        guard says else {
+            withdrawPromptNotification(&prompt)
+            return
+        }
+        let earlier = prompt.notifiedNeedsYou
+        prompt.notifiedNeedsYou = report.state == .needsYou ? report.since : nil
+        guard settings.notifications, mode == .live, !prompt.parts.isEmpty, let notifier else {
+            // One that said it waits on you doesn't stay.
+            if earlier != nil { notifier?.remove([Self.promptNotificationID(requestId)]) }
+            return
+        }
+        notifier.post([Self.promptNotification(prompt, requestId: requestId, report: report, pullRequest: knownPullRequest(prompt.pullRequest))])
+    }
+
+    /// Withdraws the notification that a prompt's turn waits on you, once it doesn't, or BriefBar lost track of it.
+    func withdrawPromptNotification(_ prompt: inout SentPrompt) {
+        guard prompt.notifiedNeedsYou != nil else { return }
+        prompt.notifiedNeedsYou = nil
+        if let requestId = prompt.report { notifier?.remove([Self.promptNotificationID(requestId)]) }
+    }
+
+    /// What a notification says of a prompt's turn, as its report says it stands: what its line says, in a sentence, by the
+    /// name of the session it went to, as its extension read it; the pull request under it, as a task's says it; and the
+    /// first line of what Copilot said as it ended, or of what it asks. A click opens the pull request, at the thread a
+    /// thread's prompt took on, as other notifications about it do.
+    static func promptNotification(
+        _ prompt: SentPrompt, requestId: String, report: OutboxReport, pullRequest: PullRequest?
+    ) -> BriefBarNotification {
+        let part = prompt.parts.first { $0.thread != nil } ?? prompt.parts.first ?? .conflicts
+        // In the session it went to, by its own name, a fork's included.
+        var work = CopilotWork.from(prompt, about: part, turn: SessionTurn(report))
+        work.forkedFrom = nil
+        let title = work.sentence(name: report.name, forkOf: nil)
+        let said = firstLine(report.said)
+        let body: String
+        var state = ItemState.done
+        switch report.state {
+        case .needsYou:
+            state = .needsYou
+            switch report.asks {
+            case .question?: body = said ?? "It asks you a question."
+            case .plan?: body = said ?? "It has a plan for you to approve."
+            case .permission?: body = "It asks for your permission."
+            case .input?, nil: body = said ?? "It asks you for something."
+            }
+        case .finished:
+            body = said ?? "It didn't say what it did."
+        case .failed:
+            state = .failing
+            body = said ?? "It reported an error."
+        case .stopped:
+            state = .failing
+            body = report.cause == .creditLimit ? "Autopilot reached the most it may spend." : "The session closed before it finished."
+        case .waiting, .working:
+            state = .running
+            body = ""
+        }
+        let number = pullRequest?.key.number ?? prompt.pullRequest.number
+        let subtitle = number.map { "!\($0)" + (pullRequest.map { " \($0.title)" } ?? "") } ?? "A pull request"
+        var info: [String: String] = [:]
+        if let pullRequest {
+            info["url"] = (part.thread.map(pullRequest.threadURL) ?? pullRequest.webURL).absoluteString
+            info["pullRequest"] = pullRequest.key.description
+        }
+        return BriefBarNotification(
+            id: promptNotificationID(requestId), source: .azureDevOps, state: state, title: title, subtitle: subtitle, body: body,
+            thread: "copilot", userInfo: info
+        )
+    }
+
+    /// A prompt's notification, by its request: that it waits on you, then how it ended, in its place.
+    nonisolated static func promptNotificationID(_ requestId: String) -> String {
+        "copilot.prompt.\(requestId)"
+    }
+
     // MARK: A run's actions
 
     func stop(_ entry: CopilotTaskEntry) {
@@ -1012,8 +1103,8 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// What BriefBar saved of the runs it started: what each printed; and its requests to its extension in the Copilot
-    /// app's sessions, with their results, which hold its prompts, but not what the extensions that run say. Called when
-    /// Azure DevOps is turned off. What it can't delete, it logs.
+    /// app's sessions, with their results, which hold its prompts, and the reports of their turns, which hold what Copilot
+    /// said, but not what the extensions that run say. Called when Azure DevOps is turned off. What it can't delete, it logs.
     nonisolated static func deleteOutput(in folder: URL = outputFolder, outbox: CopilotOutbox = .standard) {
         if !outbox.forget() {
             Log.app.error("Couldn't remove all of BriefBar's requests to the Copilot app's sessions, which hold its prompts")

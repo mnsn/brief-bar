@@ -225,7 +225,8 @@ the model that writes a summary with the rest, and BriefBar keeps none of it.
 ## Notifications
 
 Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
-Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
+Copilot, as it starts and when it ends, or, for work you send to one of the Copilot app's sessions, when
+the session waits for your answer and when it's done ([below](#azure-devops)). Clicking one opens what it's about,
 such as the comment or the run, in front of BriefBar: in Azure DevOps, or, for a pull request, in its
 details in BriefBar's window, with **Open Pull Requests in BriefBar** on. With **Send Work to Copilot**
 on, one about your pull request whose build failed, that has merge conflicts, or where someone
@@ -542,10 +543,15 @@ explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Re
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
 couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
 push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’**. One of BriefBar's own tasks, named for what it does, is called a task there,
-**Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
-before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
-thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
-hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
+**Fixed in the ‘Fix Comments’ task, not pushed**. Sent with **Send to Session** or **Send to a Fork**, BriefBar's
+extension in the session tells BriefBar how its turn goes, and what Copilot said as it ended, so the line follows it
+however long that takes, and a notification says when the session waits for your answer and when it's done, failed, or
+stopped by something else than you, such as the session closing or autopilot reaching its limit; none comes when you
+stop it. Otherwise, as for a prompt you paste, when you send a
+session something else before it's done with what you sent it, BriefBar can't tell from the session which of them ended
+how, so the earlier thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't
+finished in twelve hours, such as one that waited overnight for your answer, or once the extension that sent it stopped
+before it said. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
 which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
@@ -740,7 +746,9 @@ to Copilot with **Fix Comments** or **Push & Reply**, or when you choose **Remov
 before. The first time, only the last three days count as new, and each account you sign in to the Azure
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
-that fails or waits for an approval, all of them passing, or one canceled. Clicking one opens the
+that fails or waits for an approval, all of them passing, or one canceled; and, for a prompt about a pull request
+that you send to one of the Copilot app's sessions with **Send Prompts to Copilot Sessions** on, that the session
+waits for your answer, then how its turn ended ([below](#in-the-github-copilot-app)). Clicking one opens the
 comment, or the run, it's about: in Azure DevOps, or in the pull request's details in BriefBar's window
 with **Open Pull Requests in BriefBar** on. The first time, BriefBar finds the organizations where you have pull
 requests; **Organizations** in its settings changes them.
@@ -1160,7 +1168,10 @@ bundle identifier of the app it's in, and leaves any other named `briefbar`, wit
 **Send Prompts to Copilot Sessions**, on the same page, is off until you turn it on. Then BriefBar
 installs its other plugin, an extension that runs in each of the app's sessions, so that BriefBar's Send
 to Copilot window can send a prompt to a session itself, with **Send to Session**, or fork the session and
-send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. The extension
+send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. For a prompt
+about a pull request, it then tells BriefBar how the session's turn goes and what Copilot said as it ended,
+which the pull request's line shows, and BriefBar notifies you when the session waits for your answer and
+when it's done, under Azure DevOps' **Notifications**. The extension
 does nothing else: it acts only on what BriefBar asks of its own session, never logs a prompt, and runs
 as a process of about 46 MB in each session the app has open.
 Sessions that are already open get it once they start again. Turning it off, or turning agents off,
