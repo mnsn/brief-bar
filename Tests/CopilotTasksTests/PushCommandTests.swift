@@ -14,7 +14,7 @@ import Testing
         PushCommand(command).pushes.map { $0.form(worktree: worktree, branch: branch ?? self.branch) }
     }
 
-    /// The push the prompt asks for, as a command of its own, or in one with others that don't push.
+    /// The push the prompt asks for, wherever it is in a command: its form. Whether it's all of the command is `isAlone`.
     @Test func takesThePushThePromptAsksFor() {
         let exact = PushCommand.Push.Form.exact(commit: commit)
         let commands = [
@@ -41,22 +41,35 @@ import Testing
         }
     }
 
-    /// Without -C, a push runs in the folder the shell is in: the worktree, unless the same command went elsewhere first,
-    /// or somewhere it can't tell. Where an earlier command went isn't known.
-    @Test func takesThePushFromAnotherFolderForAnother() {
+    /// A push as a command of its own, with nothing else in it, at any depth: nothing that could change what it does before
+    /// it runs, as a `cd`, even in a subshell, or `git config`.
+    @Test func knowsWhetherThePushIsAllOfTheCommand() {
         for command in [
-            "cd /Users/robin/src/shop-web && git push origin \(refspec)",
-            "pushd /tmp && git push origin \(refspec)",
-            "cd && git push origin \(refspec)",
-            "cd - && git push origin \(refspec)",
-            "cd .. && git push origin \(refspec)",
-            "cd \"$(git rev-parse --show-toplevel)\" && git push origin \(refspec)",
-            "cd \(worktree.path) && popd && git push origin \(refspec)",
-            "(cd /tmp; git push origin \(refspec))",
+            "git push origin \(refspec)",
+            "git -C \(worktree.path) push -q origin \(refspec) 2>&1",
+            "git push origin \(refspec) > /tmp/push.log 2>&1 &",
+            "git push \\\n  origin \(refspec) # push the commit I checked",
+            "(git push origin \(refspec));",
+            "{ git push origin \(refspec); }",
         ] {
-            #expect(forms(command) == [.other], "\(command)")
+            #expect(PushCommand(command).isAlone, "\(command)")
         }
-        #expect(forms("cd /tmp && cd \(worktree.path)/ && git push origin \(refspec)") == [.exact(commit: commit)])
+        for command in [
+            "cd \(worktree.path) && git push origin \(refspec)",
+            "cd /Users/robin/src/shop-web; (cd \(worktree.path)); git push origin \(refspec)",
+            "git config push.followTags true && git push origin \(refspec)",
+            "GIT_DIR=/tmp/other.git; git push origin \(refspec)",
+            "git status && git push origin \(refspec)",
+            "git push origin \(refspec) 2>&1 | tail -5",
+            "sh -c 'git push origin \(refspec)'",
+            "eval git push origin \(refspec)",
+            "git push origin \(refspec) > \"$(git config push.followTags true; echo /dev/null)\"",
+            "git push origin \(refspec) <<EOF\n$(git config push.followTags true)\nEOF",
+            "push() { git push origin \(refspec); }; push",
+            "for remote in origin; do git push origin \(refspec); done",
+        ] {
+            #expect(!PushCommand(command).isAlone, "\(command)")
+        }
     }
 
     /// A branch's name as the prompt writes it in a command (`QuotedText.commandWord`): in single quotes when a shell would
@@ -72,6 +85,21 @@ import Testing
             == PushCommand.Word(value: "a\tb'c\\dAA\u{01}"))
         // \u, which macOS's bash 3.2 doesn't read: not known.
         #expect(PushCommand("git push origin $'\\u0041'").pushes.first?.arguments.last?.isLiteral == false)
+    }
+
+    /// What ANSI-C quotes say ends at a NUL they make, and a NUL in the command itself is dropped, as bash does both: the
+    /// push that's left is read.
+    @Test func readsNULsAsBashDoes() {
+        for word in [
+            #"$'push\0ignored'"#, #"$'push\x00ignored'"#, #"$'push\x0ignored'"#, #"$'push\000ignored'"#, #"$'push\00ignored'"#,
+            #"$'push\400ignored'"#, #"$'push\c@ignored'"#, #"$'push\c ignored'"#, #"$'push\c`ignored'"#, #"$'pu\0x'sh"#, "pu\u{0}sh",
+        ] {
+            #expect(forms("git \(word) --force origin main") == [.unsafe(.force)], "\(word)")
+        }
+        // What's before the NUL stays as it was, literal.
+        #expect(PushCommand(#"git push origin $'a\0b'c"#).pushes.first?.arguments.last == PushCommand.Word(value: "ac"))
+        // \01 isn't a NUL.
+        #expect(forms(#"git $'push\01' --force origin main"#).isEmpty)
     }
 
     /// Any other push: Copilot can try again, in the form the prompt asks for.

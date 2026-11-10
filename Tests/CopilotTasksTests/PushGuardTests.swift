@@ -79,13 +79,12 @@ import Testing
         #expect(runner.arguments.isEmpty)
     }
 
-    /// The push the prompt names, from the shell's folder or with -C, toolArgs as a string or an object: checked against the
-    /// worktree's commit, the pull request's branches as fetched now, and what it would merge in.
+    /// The push the prompt names, as a command of its own, from the shell's folder or with -C, toolArgs as a string or an
+    /// object: checked against the worktree's commit, the pull request's branches as fetched now, and what it would merge in.
     @Test func letsThroughThePushThePromptNames() async {
         for command in [
             exact, "git -C \(QuotedText.commandWord(worktree.path)) push origin \(Self.head):refs/heads/\(Self.source)",
-            "if [ -n \"$(git status --porcelain)\" ]; then git commit -qam wip; fi; \(exact)",
-            "cd \(QuotedText.commandWord(worktree.path)) && \(exact)",
+            "\(exact) 2>&1",
         ] {
             for asString in [true, false] {
                 let runner = Self.repository()
@@ -114,18 +113,25 @@ import Testing
         }
     }
 
-    /// From another folder the same command went to first, it may push another clone's commit to its own origin: it's
-    /// asked for with -C, as the push's own folder.
-    @Test func asksForThePushFromTheWorktreeAfterACommandMovesElsewhere() async {
-        for command in ["cd /Users/robin/src/another-clone && \(exact)", "pushd .. && \(exact)", "cd \"$REPO\" && \(exact)"] {
+    /// The push the prompt names with other commands, which could change what it does before it runs, as a `cd` to another
+    /// clone, even in a subshell, or `git config`: it's asked for as a command of its own.
+    @Test func asksForThePushAsACommandOfItsOwn() async {
+        let folder = QuotedText.commandWord(worktree.path)
+        for command in [
+            "cd /Users/robin/src/another-clone; (cd \(folder)); \(exact)",
+            "git config push.followTags true && \(exact)",
+            "cd \(folder) && \(exact)",
+            "\(exact) 2>&1 | tail -5",
+            "sh -c '\(exact)'",
+            "cd /Users/robin/src/another-clone && git -C \(folder) push origin \(Self.head):refs/heads/\(Self.source)",
+        ] {
             let verdict = await check(command)
             guard case .retry(let why) = verdict else {
                 Issue.record("\(command): \(verdict)")
                 continue
             }
-            #expect(why.hasSuffix(retryWithHead), "\(command)")
+            #expect(why == PushGuard.retryMarker + "push in a command of its own, with nothing else in it. " + retryWithHead, "\(command)")
         }
-        #expect(await check("cd /Users/robin/src/another-clone && git -C \(QuotedText.commandWord(worktree.path)) push origin \(Self.head):refs/heads/\(Self.source)") == .allow)
     }
 
     /// git's configuration that would push more than the branch with it, as `push.followTags` or `submodule.recurse`: the

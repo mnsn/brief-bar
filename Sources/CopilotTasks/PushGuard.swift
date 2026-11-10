@@ -6,13 +6,14 @@ import Synchronization
 /// Push & Reply's check of each push, as Copilot makes it, in one of BriefBar's own Push & Reply tasks: the Copilot CLI
 /// asks it about each shell command, before running it, through the `preToolUse` hook of the plugin BriefBar gives that
 /// task alone (`PushGuardPlugin`, `--push-guard`). A command that pushes nothing runs. A push runs only in the form the
-/// prompt names, `git push origin <commit>:refs/heads/<branch>`, optionally `git -C <worktree> …`, where `<commit>` is
-/// what the worktree has checked out, with the options that keep it to that branch when git's configuration would push
-/// more (`Git.pushOptions`), while git finds no merge in it of what the branch the prompt names doesn't have
-/// (`Git.checkPush`), and then Azure DevOps says the pull request is active and merges into that branch. Pushed another way,
-/// Copilot is told the command to run instead, and can try again; one that would force, delete or push more than the
-/// branch, or that it would bring in what it mustn't, or that BriefBar can't check, is stopped, and the task fails with
-/// why (`PushStop`). On top of the launcher's checks before Copilot starts, and the prompt's, which stay as they are.
+/// prompt names, `git push origin <commit>:refs/heads/<branch>`, optionally `git -C <worktree> …`, as a command of its
+/// own, where `<commit>` is what the worktree has checked out, with the options that keep it to that branch when git's
+/// configuration would push more (`Git.pushOptions`), while git finds no merge in it of what the branch the prompt
+/// names doesn't have (`Git.checkPush`), and then Azure DevOps says the pull request is active and merges into that
+/// branch. Pushed another way, Copilot is told the command to run instead, and can try again; one that would force,
+/// delete or push more than the branch, or that it would bring in what it mustn't, or that BriefBar can't check, is
+/// stopped, and the task fails with why (`PushStop`). On top of the launcher's checks before Copilot starts, and the
+/// prompt's, which stay as they are.
 public struct PushGuard: Sendable {
     /// What BriefBar says of a shell command Copilot is about to run.
     public enum Verdict: Sendable, Equatable {
@@ -84,6 +85,7 @@ public struct PushGuard: Sendable {
     public func check(_ payload: Data) async -> Verdict {
         let pushes: [(push: PushCommand.Push, form: PushCommand.Push.Form)]
         let isUnreadable: Bool
+        let isAlone: Bool
         switch Self.read(payload) {
         case .decided(let verdict):
             return verdict
@@ -91,12 +93,14 @@ public struct PushGuard: Sendable {
             let read = PushCommand(command)
             pushes = read.pushes.map { ($0, $0.form(worktree: worktree, branch: source)) }
             isUnreadable = read.isUnreadable
+            isAlone = read.isAlone
         }
         if let unsafe = pushes.lazy.compactMap(\.form.unsafe).first { return .stop(Self.stop(Self.why(unsafe))) }
         let found = pushes.filter { $0.form != .dryRun }
         guard !found.isEmpty || isUnreadable else { return .allow }
         let late = Verdict.stop(Self.stop("BriefBar couldn't check it in time."))
-        return await Self.first(within: limit, otherwise: late) { await self.verify(found, isUnreadable: isUnreadable) }
+        let how = How(isUnreadable: isUnreadable, isAlone: isAlone, several: found.count > 1)
+        return await Self.first(within: limit, otherwise: late) { await self.verify(found, how) }
     }
 
     /// What BriefBar says without checking: a push, or a command it can't read that may push, is stopped, with `reason`;
@@ -116,10 +120,13 @@ public struct PushGuard: Sendable {
     /// A push in the form the prompt names, checked: the worktree's commit; the options git's configuration needs to push
     /// only the branch; what it would bring in; and last, so that what it says is as late as can be, the branch the pull
     /// request merges into now, and whether it's still active.
-    private func verify(_ pushes: [(push: PushCommand.Push, form: PushCommand.Push.Form)], isUnreadable: Bool) async -> Verdict {
-        let exact: (push: PushCommand.Push, commit: String)? =
-            if !isUnreadable, pushes.count == 1, case .exact(let commit) = pushes[0].form { (pushes[0].push, commit) } else { nil }
-        let several = pushes.count > 1
+    private func verify(
+        _ pushes: [(push: PushCommand.Push, form: PushCommand.Push.Form)], _ how: How
+    ) async -> Verdict {
+        var exact: (push: PushCommand.Push, commit: String)?
+        if !how.isUnreadable, how.isAlone, pushes.count == 1, case .exact(let commit) = pushes[0].form {
+            exact = (pushes[0].push, commit)
+        }
         let head: String
         do {
             head = try await git.commit(checkedOutIn: worktree)
@@ -127,7 +134,7 @@ public struct PushGuard: Sendable {
             guard exact == nil else {
                 return .stop(Self.stop("BriefBar couldn't read which commit the worktree has checked out: \(Self.words(error))"))
             }
-            return .retry(retry(nil, options: [], isUnreadable: isUnreadable, several: several))
+            return .retry(retry(nil, options: [], how))
         }
         let options: [String]
         do {
@@ -136,10 +143,10 @@ public struct PushGuard: Sendable {
             guard exact == nil else {
                 return .stop(Self.stop("BriefBar couldn't read git's configuration in the worktree: \(Self.words(error))"))
             }
-            return .retry(retry(head, options: [], isUnreadable: isUnreadable, several: several))
+            return .retry(retry(head, options: [], how))
         }
         guard let (push, commit) = exact else {
-            return .retry(retry(head, options: options, isUnreadable: isUnreadable, several: several))
+            return .retry(retry(head, options: options, how))
         }
         guard commit == head else {
             return .retry(Self.retryMarker + "\(commit) isn't the commit the worktree has checked out. Push the one it has, in a command of its own, exactly: \(command(head, options: options)).")
@@ -176,9 +183,19 @@ public struct PushGuard: Sendable {
             + ["origin \(commit ?? "<commit>"):refs/heads/\(QuotedText.commandWord(source))"]).joined(separator: " ")
     }
 
-    private func retry(_ head: String?, options: [String], isUnreadable: Bool, several: Bool) -> String {
-        let what = isUnreadable ? "BriefBar couldn't read this command, so it didn't run."
-            : several ? "push once, in a command of its own." : "push only the commit the worktree has checked out, by its ID, to the pull request's branch, without force."
+    /// How the command that pushes is made: whether BriefBar could read it, and whether the push is all of it.
+    private struct How {
+        var isUnreadable: Bool
+        var isAlone: Bool
+        var several: Bool
+    }
+
+    private func retry(_ head: String?, options: [String], _ how: How) -> String {
+        let what = how.isUnreadable ? "BriefBar couldn't read this command, so it didn't run."
+            : how.several ? "push once, in a command of its own."
+            : !how.isAlone ? "push in a command of its own, with nothing else in it."
+            : "push only the commit the worktree has checked out, by its ID, to the pull request's branch, "
+                + "without force."
         let commit = head == nil ? ", where <commit> is what git rev-parse HEAD says there" : ""
         return Self.retryMarker + what + " Once your changes are committed, run exactly: \(command(head, options: options))\(commit)."
     }

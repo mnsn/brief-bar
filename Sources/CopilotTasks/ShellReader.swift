@@ -445,14 +445,17 @@ extension ShellReader {
         return false
     }
 
-    /// ANSI-C quotes, past `$'`, to the quote that closes them, with their escapes read as bash and zsh read them, macOS's
-    /// bash 3.2 too: `\xE2`, octal, `\n` and the others. `\u` and `\U`, which that bash doesn't read, leave the word not
-    /// literal.
-    private mutating func ansiC(_ value: inout [UInt8], _ literal: inout Bool) -> Bool {
+    /// ANSI-C quotes, past `$'`, to the quote that closes them, with their escapes read as bash and zsh read them,
+    /// macOS's bash 3.2 too: `\xE2`, octal, `\n` and the others. `\u` and `\U`, which that bash doesn't read, leave the
+    /// word not literal. What they say ends at a NUL they make, as `\0`, `\x00` or `\c@`, as a shell's strings do:
+    /// `$'push\0…'` is `push`.
+    private mutating func ansiC(_ word: inout [UInt8], _ literal: inout Bool) -> Bool {
+        var value: [UInt8] = []
         while index < bytes.count {
             let byte = bytes[index]
             if byte == .singleQuote {
                 index += 1
+                word += value.prefix { $0 != 0 }
                 return true
             }
             guard byte == .backslash else {
