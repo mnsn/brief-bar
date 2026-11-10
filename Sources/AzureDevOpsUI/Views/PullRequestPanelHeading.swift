@@ -4,7 +4,8 @@ import BriefBarUI
 import SwiftUI
 
 /// The top of a pull request's details: what it is and where, its title, where it stands in a sentence and since when,
-/// its branch and who wrote it, its tags, and ✨ Summarize, as a pull request's page has them.
+/// its branch and who wrote it, its tags, and ✨ Summarize with the actions beside it (`PullRequestActionsRow`), as a pull
+/// request's page has them.
 struct PullRequestPanelHeading<Tags: View>: View {
     let item: PRSnapshot
     let panel: PullRequestPanel
@@ -76,8 +77,7 @@ struct PullRequestPanelHeading<Tags: View>: View {
             }
             facts
             tags()
-            PageSummarizeButton(ref: item.key.linkRef)
-                .controlSize(.small)
+            PullRequestActionsRow(item: item)
         }
         .accessibilityElement(children: .contain)
         // VoiceOver goes to its title as it shows, but while the details are on their way somewhere, which takes it there

@@ -594,17 +594,10 @@ struct PullRequestSessionMenu: View {
             Button("Show Details") { _ = navigation.open(ref) }
             SessionAskPageItem(ref) { _ = navigation.open(ref) }
         }
-        if let run = choice.run, run.isAppSession != true {
-            let entry = copilot.entries.first { $0.id == run.id }
-            Button("Continue in Terminal") {
-                if let entry { copilot.continueInTerminal(entry) }
-            }
-            // Not while Copilot works in it, or in its checkout for another task, as the line says Busy then.
-            .disabled(entry == nil || entry?.status.phase.isActive == true || choice.isUnavailable || !copilot.canSend)
-        } else {
-            Button("Open in Copilot") { Self.openInCopilot(choice, links: links, copilot: copilot) }
-                .disabled(choice.isUnavailable)
-        }
+        // Not while Copilot works in it, or in its checkout for another task, as the line says Busy then.
+        let opening = SessionOpening.of(choice, links: links, copilot: copilot)
+        Button(opening.title) { opening.perform() }
+            .disabled(!opening.isEnabled)
     }
 
     /// Opens a session in the Copilot app: as Copilot's list opens it, while it lists it, where its question is answered;

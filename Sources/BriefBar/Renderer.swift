@@ -87,6 +87,8 @@ enum Renderer {
         while !loaded {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         }
+        // The apps a Copilot session's folder opens in, as a pull request's details offer them: in the demo, made up.
+        model.services.folders.lookForApps()
 
         // Each picture is drawn only when it's in this process's part. Everything else, which sets up what the pictures
         // after it show, happens in every process, as it would in one that draws them all.

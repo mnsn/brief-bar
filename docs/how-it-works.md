@@ -1921,8 +1921,32 @@ session told before BriefBar kept when it began to say it works on something, or
 forgets it. The Send to Copilot window goes there too, unless you choose otherwise
 (`CopilotTasksStore.suggestedChoice`), following what you choose in the details while it's open, and so do agents
 ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
-the pull request, read from nothing else, to look at; with neither, nothing. The demo makes its sessions up from its
+the pull request, to look at, read from nothing else but the folder the one it names works in, for the actions beside
+**✨ Summarize** (below); with neither, nothing. The demo makes its sessions up from its
 own tasks and the Copilot demo's sessions that Show Links links, and reads nothing.
+
+The actions beside **✨ Summarize** in its heading (`PullRequestActionsRow`) do, a click away, what the line's menu and
+the details already do. **Open in Copilot**, or **Continue in Terminal** for a task BriefBar runs
+with the Copilot CLI, opens the session the line shows, as its menu does (`SessionOpening`): not while Copilot works in
+it or in its checkout, and not while the line asks which session it is. The folder buttons open the folder that session
+works in now (`SessionChoice.currentFolder`): an earlier task's worktree, or the folder one of the app's sessions works
+in, from its `workspace.yaml`, as the line reads it with Send Work to Copilot on, which, for a task that went on with one
+of the app's sessions, is that session's, as it may have moved since the task started. Without it, or once the pull request is closed,
+BriefBar reads, with Show Links on, only the folder of the session the line names, the same way: as the details come on
+screen and every ten seconds while they stay there, off the main thread, kept in memory only, until Show Links is off
+(`PullRequestSessions.readLinkedFolder`). The buttons don't show until it's read, nor once it says none or that folder
+is gone. The apps are those BriefBar knows (`FolderApps`), editors then terminals, that
+LaunchServices finds on this Mac, looked for the first time a folder shows and again as BriefBar comes to the front
+(`FolderOpener`); a folder opens in the one you opened one in last, kept in the preferences by its bundle identifier
+(`folders.openWith`), only one BriefBar knows, or else in the first editor found. The app opens the folder as it opens
+one you drop on it, through `ThisMac`, and the Finder in a window of its own that shows what's in it, never opening the
+folder as an app; once the folder or the app is gone, nothing opens, but a beep. **Fill the Page** has the details ask
+for the whole page (`DetailsFillsPageKey`), as a file's page does once you click its **⤢**, with the pages and files'
+pages over them, until they close or **Show the List**, which ends a file's page's filling it too (`DetailsFilling`,
+`PullRequestDetailsStore.detailsFillPage`); their parts are then at most 960 points wide, in the middle. It's offered
+only beside the list on the Pull Requests page: over it in a narrow window, the details cover it already, and a pull
+request's page over a work item's details doesn't offer it. The demo has VS Code and Terminal, made up, and its
+sessions each in a made-up worktree, and opens nothing.
 
 #### Its comment threads
 
@@ -3454,19 +3478,20 @@ demo's are made up (`SentPrompt.demo`).
 shows then, nor in the demo, whose Notifications page lists a made-up one (`CopilotTasksStore.demoNotifications`), and
 it needs Send Work to Copilot and Send Prompts to Copilot Sessions, which are off until you turn them on. Once its turn
 has waited on you a couple of seconds, each time it starts to, one says so, with what Copilot asks, its question or its
-plan's summary, and goes once the turn goes on, or says another still open again once you answer the one it said; a
-permission that a rule grants at once says nothing. Once the turn ends, one says how, in that one's place: done, failed,
-or stopped because the session closed or autopilot reached the most it may spend, never when you stopped it, which takes
-back the one that said it waited on you. Its title is what the pull request's line says, by the session's name as the
-app shows it, a fork's own: "Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but,
-for a comment's fix sent to push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a
-comment in ‘Retry backoff’", as a task's says, once git has told whether it pushed, which its line says, as above;
-then the pull request, "!4102 Add retry
-with backoff", as a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the
-thread a thread's prompt took on, as other notifications about it do; one posted before the list read the pull request,
-as BriefBar starts, names it and the thread, and a click finds them as the list has them by then
-(`CopilotTasksStore.promptLink`). Its record keeps when BriefBar last said its turn waited on you, so that a restart
-doesn't say so again; an end BriefBar learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
+plan's summary, and goes once the turn goes on, or says another still open again once you answer the one it said, or as
+you turn Send Work to Copilot off, as a task's working one does, since no report is read then, to say so again once it's
+back on, if the turn still waits (`CopilotTasksStore.withdrawPromptNotifications`); a permission that a rule grants at
+once says nothing. Once the turn ends, one says how, in that one's place: done, failed, or stopped because the session
+closed or autopilot reached the most it may spend, never when you stopped it, which takes back the one that said it
+waited on you. Its title is what the pull request's line says, by the session's name as the app shows it, a fork's own:
+"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but, for a comment's fix sent to
+push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a comment in ‘Retry
+backoff’", as a task's says, once git has told whether it pushed, which its line says, as above; then the pull request, "!4102 Add retry with backoff", as
+a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
+prompt took on, as other notifications about it do; one posted before the list read the pull request, as BriefBar
+starts, names it and the thread, and a click finds them as the list has them by then (`CopilotTasksStore.promptLink`).
+Its record keeps when BriefBar last said its turn waited on you, so that a restart doesn't say so again; an end BriefBar
+learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
 `CopilotTasksStore.promptNotification`). One BriefBar follows from the session's log says nothing.
 
 A line that says what Copilot does about a thread, a build or the conflicts has ⋯, with what its state allows, in its

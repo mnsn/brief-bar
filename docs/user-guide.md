@@ -416,7 +416,7 @@ only where it's clear, and a split applies whole: to take part of one, Keep Toge
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
-it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
+it, and **✨ Summarize**, with the actions beside it (below); **What's Left**, as its row's line says it, each item saying when it's **Your
 turn**, and taking you to its merge conflicts, comments, builds or reviewers; the files that conflict with
 its target branch, while it has conflicts (below); its comment threads, by file, in the order
 its change lists them, those on the pull request itself first, and in each file the ones that wait on you
@@ -426,13 +426,25 @@ it requires and how each voted; and, with [Show Links](#links) on, the work item
 pull requests linked to it, which open in the details too, one of your pull requests with the same details
 as its own, **‹**, **⌘[** or **Esc** going back. **↗** opens the pull request in Azure DevOps, at the
 comment that needs you, as **Open in Azure DevOps** in its menu does, and ↗ on a thread or a build opens
-that one; **⋯** has the row's menu, with Copilot's actions while Send Work to Copilot is on. The details
+that one; **⋯** has the row's menu, with Copilot's actions while Send Work to Copilot is on, and **Copy Branch Name**,
+to check it out. The details
 show what BriefBar already read, and read nothing more but the code that comments are on, its files and
 which files conflict (below), and showing them sees the pull request, as opening it does: while they show it, what was new in
 its threads stays new, and where it was, rather than folding away as you read it, until you remove it from
 Needs You. Drag their left edge to make them wider
 or narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
 edge brings back the usual one. **✕** or **Esc** closes them.
+
+**One click to what you'd look for in menus.** Beside ✨ Summarize, **Open in Copilot** opens the pull request's
+Copilot session (below) in the Copilot app, or **Continue in Terminal** goes on with a task BriefBar runs with the
+Copilot CLI, as the session's line's **⌄** does, not while Copilot works in it. With Send Work to Copilot or Show
+Links on, **Open in VS Code** opens the folder that session works in, such as its worktree, in the editor or terminal
+you opened one in last, and its **▾** lists the others on your Mac, from VS Code, Cursor, Windsurf, Zed, Rider,
+WebStorm and JetBrains' other IDEs, Xcode, Sublime Text, Nova and BBEdit to Terminal, iTerm, Ghostty and Warp, with
+**Copy Path**; **Open in Finder** shows what's in the folder. To review a pull request in the whole window, **Fill the
+Page** makes its details cover the list, its parts as wide as reads well, and the pages and files you open from it too,
+until you close them or click **Show the List**, or a file's **⤡**; it's there while the details are beside the list,
+which they cover already in a narrow window.
 
 **Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
 about, or, for a review you're asked for or one that waits on its author for the changes you asked for, at
@@ -472,7 +484,8 @@ goes from then on, in the Send to Copilot window too, until a task starts on it 
 Updates from Copilot Sessions and Show Links on, another session starts telling BriefBar it's working on it. **Let
 BriefBar Choose** goes back to BriefBar's choice. BriefBar reads the Copilot app's sessions for the line only
 while the details show in a window you can see: as they come on screen, then every ten seconds. Without Send
-Work to Copilot, the line shows only the sessions Show Links links to it, to look at.
+Work to Copilot, the line shows only the sessions Show Links links to it, to look at, and BriefBar reads only
+the folder the one it names works in, the same way, to open it from beside ✨ Summarize.
 
 **Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
 on, with a few around them, as they were in the update it was made on: their numbers, before and after the
@@ -689,7 +702,7 @@ didn't follow to this one, with the code they were made on. **‹** and **›**,
 the files before and after it, **4 of 9** lists them all, and **⌃⌘↑** and **⌃⌘↓** go through its open
 comments, on to the next file's, from a bar that stays at the top as you scroll. While the details are
 beside the list, **⤢** makes them fill the page,
-for long lines, until you go back to the details or click **⤡**. A file that isn't text, or is longer than
+for long lines, until you go back to the details or click **⤡**, which ends **Fill the Page** (above) too. A file that isn't text, or is longer than
 1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. A file's comments
 open its page too, with **🔍** beside its name in the comments, at the first of them, or **Show in Its
 File's Changes** in a thread's menu, at that one, in all of the change, whatever **Files** shows. **‹**, **⌘[** or **Esc** go back to the details, at the
