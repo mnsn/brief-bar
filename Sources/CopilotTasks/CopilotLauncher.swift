@@ -21,6 +21,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case retargeted(String)
     /// BriefBar couldn't read which branch the pull request merges into now (`Request.targetNow`): why.
     case cantReadTarget(String)
+    /// The pull request was completed or abandoned, as Azure DevOps says now (`Request.targetNow`): nothing goes to it.
+    case notActive(PullRequestNotActive)
 
     public var description: String {
         switch self {
@@ -40,6 +42,29 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
             return "The pull request merges into \(target) now, not the branch its prompt named, so Copilot didn't push from this session. Send Push & Reply again, for a prompt that names \(target)."
         case .cantReadTarget(let why):
             return "BriefBar couldn't read which branch the pull request merges into, so Copilot didn't push from this session: \(why)"
+        case .notActive(let closed):
+            return "\(closed), so Copilot didn't push to it or reply on it."
+        }
+    }
+}
+
+/// A pull request that isn't active any more, as Azure DevOps says now: completed or abandoned. What reads which branch
+/// it merges into, right before a Push & Reply goes (`CopilotLauncher.Request.targetNow`), throws it, so that nothing is
+/// pushed to it, or replied on it, once it's over: completing it may have deleted its branch, which a push would make
+/// again.
+public struct PullRequestNotActive: Error, Sendable, Equatable, CustomStringConvertible {
+    /// As Azure DevOps names it: "completed", "abandoned", or another state.
+    public var status: String
+
+    public init(status: String) {
+        self.status = status
+    }
+
+    /// "The pull request was completed", "The pull request was abandoned"; else "The pull request isn't active".
+    public var description: String {
+        switch status {
+        case "completed", "abandoned": "The pull request was \(status)"
+        default: "The pull request isn't active"
         }
     }
 }
@@ -73,7 +98,8 @@ public struct CopilotLauncher: Sendable {
         /// For Push & Reply, reads the branch the pull request merges into now, as Azure DevOps says, or the list has read
         /// since, when that's another: right before git checks what the session would push against `targetBranch`, the one
         /// its prompt names, and again right before Copilot starts. When it's another, or it throws, as when it can't be
-        /// read, Copilot doesn't start (`LaunchError.retargeted`, `LaunchError.cantReadTarget`). Nil when nothing reads it.
+        /// read, or the pull request is over (`PullRequestNotActive`), Copilot doesn't start (`LaunchError.retargeted`,
+        /// `LaunchError.cantReadTarget`, `LaunchError.notActive`). Nil when nothing reads it.
         public var targetNow: (@Sendable () async throws -> String)?
 
         public init(
@@ -278,15 +304,16 @@ public struct CopilotLauncher: Sendable {
             sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
             denied: request.subject.deniedTools
         )
-        // Going on with a fork, it's still that session's fork.
+        // Going on with a fork, it's still that session's fork, made as its first task started.
         let forkedFrom = request.forking?.id ?? request.continuing?.forkedFrom
+        let forkedAt = request.forking != nil ? now : request.continuing?.forkedAt
         var run: CopilotRun
         switch request.subject {
         case .workItem(let item):
             run = CopilotRun(
                 id: id, workItem: item.reference, options: request.options, repository: repository.root, worktree: worktree,
                 startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: request.continuing?.pullRequest,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt
             )
         case .pullRequest(let pullRequest, let action):
             // Going on with the session of the work item's task that opened it, the run stays that work item's too; a fork
@@ -295,7 +322,7 @@ public struct CopilotLauncher: Sendable {
                 id: id, workItem: request.continuing?.workItem, onPullRequest: pullRequest.reference, action: action,
                 options: request.options, repository: repository.root, worktree: worktree, startedAt: now,
                 process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt
             )
         }
         do {
@@ -314,13 +341,16 @@ public struct CopilotLauncher: Sendable {
         return run
     }
 
-    /// Why Push & Reply mustn't go now, by the branch the pull request merges into as `Request.targetNow` reads it: another
-    /// than the one its prompt names, or none it could read. Nil when it's that one, or nothing reads it.
+    /// Why Push & Reply mustn't go now, by the pull request as `Request.targetNow` reads it: it merges into another branch
+    /// than the one its prompt names, or it's over (`PullRequestNotActive`), or it couldn't be read. Nil when it's that one,
+    /// or nothing reads it.
     static func targetProblem(of request: Request, _ pullRequest: TaskPullRequest) async -> LaunchError? {
         guard let targetNow = request.targetNow else { return nil }
         do {
             let target = try await targetNow()
             return target == pullRequest.targetBranch ? nil : .retargeted(target)
+        } catch let closed as PullRequestNotActive {
+            return .notActive(closed)
         } catch {
             return .cantReadTarget(String(describing: error))
         }

@@ -525,8 +525,10 @@ session as a prompt instead, the way Fix sends its own, where it stays in the se
 pull request, has Copilot address that thread alone, as you say in **Tell Copilot how (optional)**, which it quotes as
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
-push the branch (never with force), and reply on the thread and resolve it, as you; when it changed nothing for it, it
-still pushes what else the session changed, but replies why, and leaves the thread active. It goes as a Push & Reply
+push the branch (never with force), and reply on the thread and resolve it, as you. Like Push & Reply, it commits all the
+session changed, so other fixes there that you haven't pushed go too, without a reply, which the composer names as you
+send it; when it changed nothing for the thread, it doesn't commit or push, but replies why, and leaves the thread
+active. It goes as a Push & Reply
 goes, with the same checks, below, so it doesn't wait in a
 session of the Copilot app that's running a turn: BriefBar says to send it once that's done. The box stays as you last
 left it, for the next Fix or Fix All. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
@@ -544,7 +546,10 @@ thread, a line above its buttons says so, in its state's color, with since when 
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
 couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
-push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’**. One of BriefBar's own tasks, named for what it does, is called a task there,
+push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’** once BriefBar reads the pull request's branch at
+a new commit, which it reads again as the turn ends; until then, and when it stopped before it pushed, as when the tests
+still failed, or the pull request was retargeted, completed or abandoned meanwhile, **Fixed in ‘Retry backoff’, but not
+pushed**, with what Copilot said under it. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
 thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
@@ -560,9 +565,11 @@ backoff’** or **1 fix and the conflicts' resolution ready in ‘Retry backoff�
 with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads they
 fixed, from that session, or **Push…** when they fixed no comment; they stay in the bar when Push & Reply fails or is
 stopped, to try again. A fix sent to push and reply that fails or stops isn't in the bar, since it may not have fixed
-anything: **Try Again** sends it again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
+anything: **Try Again** sends it again; nor is one that wasn't pushed, since it may have replied: **Fix** it again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
 doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails; so does one
-fixed before a fix sent to push and reply. What's Left says
+fixed before a fix sent to push and reply, once BriefBar reads its push, from that session or from a fork of it made
+since, which has the session's changes, but a fork with the CLI only the conflicts' resolution, which its task
+committed. Any push to the branch counts, as BriefBar can't tell whose it was. What's Left says
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
@@ -893,7 +900,7 @@ With it on, **your pull requests' menus send them to Copilot too** (right-click 
 | **Fix Comments with Copilot…** | your pull request with unresolved comments | addresses each one that waits on you, quoted word for word, with its file and line, then builds and tests; it doesn't commit, push or reply |
 | **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and, for a build you opened in its details, the tests that failed and the end of its log, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
 | **Resolve Conflicts with Copilot…** | your pull request with merge conflicts | merges the target branch in and resolves the conflicts, with the files that conflict once its details read them; it may commit the merge, but doesn't push |
-| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the session the fixes are in, one session at a time: commits, pushes the branch (never with force), replies on the threads they fixed and resolves them; **Push with Copilot…** when they fixed no comment. Nothing goes while the session holds a merge of what the branch the pull request merges into doesn't have, as when it was retargeted after Copilot resolved its conflicts, while Azure DevOps or the list says it merges into another branch than the prompt names, or, for a Copilot app session, while a turn runs in it or in its checkout: BriefBar says why |
+| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the session the fixes are in, one session at a time: commits, pushes the branch (never with force), replies on the threads they fixed and resolves them; **Push with Copilot…** when they fixed no comment. Nothing goes while the session holds a merge of what the branch the pull request merges into doesn't have, as when it was retargeted after Copilot resolved its conflicts, while Azure DevOps or the list says it merges into another branch than the prompt names, or that it was completed or abandoned, or, for a Copilot app session, while a turn runs in it or in its checkout: BriefBar says why. Right before it pushes, Copilot checks the pull request again, and stops if it was completed, abandoned or retargeted meanwhile |
 | **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
 
 The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push, which a
