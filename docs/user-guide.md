@@ -360,9 +360,9 @@ mission you focus on comes first in each. To choose which one a slot shows, such
 Board too, and BriefBar remembers it, for the Azure DevOps account you're signed in with, until that pull request moves
 on to another stage, merges or closes, or leaves your lists, as a review once its author completes it, and stays away for
 half an hour while BriefBar runs with Pull Request Order on; then BriefBar chooses again. Back sooner, as when someone
-wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless you've chosen
-another since. While its build runs again, or a session writes it, Fix next shows
-the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
+wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless you've since
+chosen another or let BriefBar choose. While its build runs again, or a session writes it, Fix next shows the next one
+meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
 to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next**
 to fold it, and BriefBar remembers. It changes no group or count.
 
