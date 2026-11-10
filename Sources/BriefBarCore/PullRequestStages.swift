@@ -230,6 +230,15 @@ public struct StageMark: Equatable, Sendable {
     }
 
     public var isYours: Bool { by == nil }
+
+    /// Whether this is a session's Your review that followed one of yours, as `--mcp` keeps one where yours was the latest
+    /// stage set: without votes, so it lasts as yours does, while yours is there (`follows`, `StageRules.counted`).
+    public var followsYours: Bool { !isYours && stage == .yourReview && votes == nil }
+
+    /// Whether this is a session's Your review that followed this one of yours: set after it, keeping no votes.
+    public func follows(_ yours: StageMark) -> Bool {
+        followsYours && yours.isYours && yours.stage == .yourReview && at > yours.at
+    }
 }
 
 /// What a pull request's order says of merging it, for Can merge and Waits.
@@ -337,6 +346,10 @@ public struct StageReading: Equatable, Sendable {
     public var mark: StageMark?
     /// Yours, which a session's later change replaced: Put Yours Back makes it the latest again.
     public var replaced: StageMark?
+    /// Yours, which a session's later Your review followed, as `--mcp` keeps one where yours was the latest stage set, as
+    /// a session that pushed says its work is ready: without votes, so it lasts as yours does. It shows the session's, and
+    /// Let BriefBar Decide forgets both.
+    public var followed: StageMark?
     /// Whether it's on your board: not someone else's that you finished reviewing, until something new needs you there.
     public var isOnBoard: Bool
     /// On yours, a failed build or merge, where a session or a stage you set decides its stage rather than the failure: its
@@ -349,19 +362,24 @@ public struct StageReading: Equatable, Sendable {
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
-        isOnBoard: Bool = true, alsoFailing: String? = nil
+        followed: StageMark? = nil, isOnBoard: Bool = true, alsoFailing: String? = nil
     ) {
         self.stage = stage
         self.why = why
         self.since = since
         self.mark = mark
         self.replaced = replaced
+        self.followed = followed
         self.isOnBoard = isOnBoard
         self.alsoFailing = alsoFailing
     }
 
     /// Whether you set what it shows.
     public var isSetByYou: Bool { mark?.isYours == true }
+
+    /// Whether Let BriefBar Decide applies: to what you set, while it shows, or a session's Your review that followed it
+    /// shows in its place (`followed`).
+    public var canLetBriefBarDecide: Bool { isSetByYou || followed != nil }
 
     /// Whether two readings of a pull request, or none, say the same, whatever names the missions they name: a rename, or
     /// Apple Intelligence's name, changes only their words, not its stage.
@@ -449,7 +467,7 @@ public enum StageRules {
     ) -> StageReading? {
         if facts.state == .merged { return StageReading(stage: .merged, why: .merged, since: facts.since) }
         guard facts.state.isOpen else { return nil }
-        let (mark, replaced) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
+        let (mark, replaced, followed) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
 
         // A session at work on it now, since after what was set. On yours, one writing it puts it in progress: one that
         // waits for you first, else the latest to start. Never on someone else's: there, only a review, such as Copilot's
@@ -476,7 +494,9 @@ public enum StageRules {
                 let why: StageWhy = facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer
                 return StageReading(stage: .teammateReview, why: why, since: mark.at, mark: mark, replaced: replaced)
             default:
-                return StageReading(stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced)
+                return StageReading(
+                    stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced, followed: followed
+                )
             }
         }
 
@@ -507,28 +527,34 @@ public enum StageRules {
         return StageReading(stage: .teammateReview, why: facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer, since: since)
     }
 
-    /// The latest of what was set, while it stands, and yours when a session's later change replaced it with another stage.
-    /// Once the latest ends, none of them counts: BriefBar works the stage out again.
+    /// The latest of what was set, while it stands; yours when a session's later change replaced it with another stage;
+    /// and yours when a session's later Your review followed it (`StageReading.followed`, `StageMark.follows`): one that
+    /// keeps no votes, as `--mcp` keeps it only where yours was the latest stage set. A session's own report, with its
+    /// votes, which came after another stage replaced yours, follows nothing. Once the latest ends, none of them counts:
+    /// BriefBar works the stage out again.
     static func standingMark(
         _ marks: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
-    ) -> (StageMark?, StageMark?) {
+    ) -> (mark: StageMark?, replaced: StageMark?, followed: StageMark?) {
         guard let latest = marks.max(by: { $0.at < $1.at }), stands(latest, facts: facts, sessions: sessions, setters: setters)
-        else { return (nil, nil) }
-        guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }), yours.stage != latest.stage
-        else { return (latest, nil) }
-        return (latest, yours)
+        else { return (nil, nil, nil) }
+        guard !latest.isYours, let yours = marks.filter(\.isYours).max(by: { $0.at < $1.at }) else { return (latest, nil, nil) }
+        if yours.stage != latest.stage { return (latest, yours, nil) }
+        return (latest, nil, latest.follows(yours) ? yours : nil)
     }
 
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
     /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
     /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
-    /// comes back.
+    /// comes back. A session's Your review that followed one of yours counts only while that one of yours is there
+    /// (`StageMark.follows`): once yours is gone, as with Undo, also as you took it away while `--mcp` kept it, it lasts
+    /// no more on its own.
     /// - Parameters:
     ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
     ///   - setters: what those sessions do now, on it or not (`stands`).
     public static func counted(
         yours: StageMark?, theirs: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
     ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
+        let theirs = theirs.filter { !$0.followsYours || yours.map($0.follows) == true }
         let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
         let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
         let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0 }
@@ -622,7 +648,8 @@ public enum StageAction: Hashable, Sendable {
     /// What's offered for a pull request in this stage: Finished My Review in Your review; each stage you can set but the
     /// one it's in, where someone else's that you finished reviewing is in Teammate's review, and but Teammate's review on
     /// someone else's, whose author asks for its reviews: Finished My Review takes it off your board instead; Put Yours Back
-    /// once a session's change replaced yours; Let BriefBar Decide for one you set. Nothing once it merged.
+    /// once a session's change replaced yours; Let BriefBar Decide for one you set, also where a session's Your review that
+    /// followed it shows in its place. Nothing once it merged.
     /// - Parameter isYours: you opened it.
     public static func offered(for reading: StageReading, isYours: Bool = true) -> [StageAction] {
         guard reading.stage != .merged else { return [] }
@@ -631,7 +658,7 @@ public enum StageAction: Hashable, Sendable {
         actions += PullRequestStage.settable.filter { $0 != reading.stage && (isYours || $0 != .teammateReview) }
             .map(StageAction.move)
         if reading.replaced != nil { actions.append(.putYoursBack) }
-        if reading.isSetByYou { actions.append(.letBriefBarDecide) }
+        if reading.canLetBriefBarDecide { actions.append(.letBriefBarDecide) }
         return actions
     }
 }
@@ -709,10 +736,11 @@ public enum StageText {
     }
 
     /// For its tooltip, and its menu's first line: "Your review: ‘Cart’ finished. Worked out by BriefBar.", "Your review:
-    /// ‘Cart’ says it's ready. Set 5m ago."
+    /// ‘Cart’ says it's ready. Set 5m ago.", and "…, after you." where a session's replaced yours.
     public static func sentence(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String {
         let who = reading.mark.map { mark in
             (namesWhoSetIt(reading) ? "Set " : setter(mark, name: name) + " set it ") + agoWords(mark.at, now: now)
+                + (reading.replaced != nil ? ", after you" : "")
         } ?? "Worked out by BriefBar"
         return "\(reading.stage.title): \(why(reading, name: name)). \(who)."
     }

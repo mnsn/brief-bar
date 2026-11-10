@@ -150,7 +150,7 @@ extension CopilotWork {
         switch state {
         case .waiting(copied: true): ("doc.on.clipboard", .needsYou)
         case .waiting(copied: false): ("paperplane", .running)
-        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply ? "arrow.up.circle" : "arrow.triangle.2.circlepath", .running)
+        case .working: (purpose == .explain ? "sparkles" : purpose == .pushAndReply && !fixes ? "arrow.up.circle" : "arrow.triangle.2.circlepath", .running)
         case .needsYou: ("questionmark.circle.fill", .needsYou)
         case .done: ("checkmark.circle.fill", .done)
         case .failed: ("exclamationmark.triangle.fill", .failing)
@@ -706,8 +706,9 @@ struct CopilotAsking {
     /// Reads what its prompts quote before it sends, while it isn't read, such as the code a comment is on: they quote it
     /// once it's read, and it says it's sending meanwhile.
     var prepare: (@MainActor () async -> Void)?
-    /// A fix of it, as you say, with what a session answered with Explain when you include it.
-    var fix: @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix
+    /// A fix of it, as you say, with what a session answered with Explain when you include it, and whether it goes with
+    /// Push and Reply on, as that was when you sent it (`fixAsSent`).
+    var fix: @MainActor (_ how: String, _ answer: CopilotAnswer?, _ ships: Bool) -> CopilotSending.Fix
     /// Explain's question, asked aside: what you asked, following up on what the session answered before.
     var question: @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     /// For a build, the run Explain asks about, and when the attempt of it that it asks about finished, as its check said.
@@ -725,6 +726,28 @@ struct CopilotAsking {
     /// the change suggested in its thread as written: nil once it can go as that fix did, else why not, which its composer
     /// says, for you to check it before it goes (`CopilotPartComposer`). Nil for one that chooses nothing else.
     var restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)?
+    /// A fix of comments goes with Push and Reply on: it commits, pushes and replies once it's done, which its note says.
+    var ships = false
+    /// Push and Reply as it is now, which may have changed since this was made, as when Try Again put back what the fix it
+    /// tries again went with, right before it sends that again. Nil: as `ships`.
+    var shipsNow: (@MainActor () -> Bool)?
+
+    /// Its fix as you send it, before the first wait, such as for what its prompts quote (`prepare`): with Push and Reply as
+    /// it is then (`shipsNow`), however it's set by the time the fix is written, here or in another composer, as you leave it
+    /// for the next fix.
+    @MainActor
+    func fixAsSent() -> @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix {
+        let ships = shipsNow?() ?? self.ships
+        let fix = self.fix
+        return { how, answer in fix(how, answer, ships) }
+    }
+
+    /// What a fix it sends doesn't do, or does besides, for its composer's note: "no commit, push or reply"; with Push and
+    /// Reply on, that it then commits, pushes and replies.
+    var leavesOut: String { ships ? Self.shipsOnceDone : action.leavesOut }
+
+    /// What a comment's fix sent with Push and Reply on does once it's done, for its composer's note.
+    static let shipsOnceDone = "once its tests pass, it commits, pushes and replies, as you"
 
     /// The words a composer says what it does in.
     struct Words {
@@ -757,8 +780,9 @@ struct CopilotAsking {
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
         prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
         head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil, answeredAbout: PullRequestFilesStore.Head? = nil,
-        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil,
-        fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?) -> CopilotSending.Fix,
+        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil, ships: Bool = false,
+        shipsNow: (@MainActor () -> Bool)? = nil,
+        fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?, _ ships: Bool) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
         self.ask = ask
@@ -774,6 +798,8 @@ struct CopilotAsking {
         self.head = head
         self.answeredAbout = answeredAbout
         self.restore = restore
+        self.ships = ships
+        self.shipsNow = shipsNow
         self.fix = fix
         self.question = question
     }
@@ -1011,7 +1037,7 @@ struct CopilotPartComposer<Options: View>: View {
             return ("Asks a copy of \(name) that's deleted after, so nothing changes, and sends its conversation to GitHub Copilot: one premium request.", false)
         }
         guard isLive else { return ("The demo doesn't send anything.", false) }
-        let leavesOut = asking.action.leavesOut
+        let leavesOut = asking.leavesOut
         switch target {
         case nil:
             return ("The sessions that go with this pull request go with it as well as each other: choose where it goes.", false)
@@ -1152,6 +1178,7 @@ struct CopilotPartComposer<Options: View>: View {
         problem = nil
         let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
         let answer = includesAnswer ? answer : nil
+        let fixAsSent = asking.fixAsSent()
         drafts.sends[key] = Task {
             await asking.prepare?()
             guard !Task.isCancelled else { return }
@@ -1163,14 +1190,16 @@ struct CopilotPartComposer<Options: View>: View {
                 SpokenText.announce(asking.answerLeftOut)
                 return
             }
-            let fix = asking.fix(words, answer)
+            let fix = fixAsSent(words, answer)
             // What you wrote goes once it went, though the composer closed or its page went meanwhile, which called this
             // off: a session that took it has it all the same, and Try Again its words. Only what the composer shows waits
             // for it to be there.
             let outcome = await kept.send(words, in: key, of: item.key) {
                 let sent = await sending.fix(fix, to: target, choice: choice)
                 if let takenAt = sent.takenAt {
-                    let attempt = CopilotTasksStore.FixWords(text: words, takenAt: takenAt, answer: answer, suggestion: fix.suggestion)
+                    let attempt = CopilotTasksStore.FixWords(
+                        text: words, takenAt: takenAt, answer: answer, suggestion: fix.suggestion, ships: fix.fixes
+                    )
                     copilot.remember(attempt, for: fix.parts, of: item.key, from: asking.ask)
                 }
                 return sent.outcome
@@ -1204,6 +1233,7 @@ struct CopilotPartComposer<Options: View>: View {
         let asking = asking
         let words = text
         let answer = includesAnswer ? answer : nil
+        let fixAsSent = asking.fixAsSent()
         isSending = asking.prepare != nil
         problem = nil
         drafts.sends[key] = Task {
@@ -1222,7 +1252,7 @@ struct CopilotPartComposer<Options: View>: View {
                 return
             }
             let sending = CopilotSending(item: item, record: record, store: store, copilot: copilot, session: session)
-            sending.openWindow(asking.fix(words, answer), destination: target, choice: choice)
+            sending.openWindow(fixAsSent(words, answer), destination: target, choice: choice)
             done(nil)
         }
     }
@@ -1546,6 +1576,8 @@ struct CopilotActionsPreview {
         var text: String
         var destination: CopilotDestination?
         var appliesSuggestion = false
+        /// Push and Reply, for a comment's fix.
+        var pushesAndReplies = false
     }
 
     var composers: [Composer] = []

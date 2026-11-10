@@ -118,7 +118,7 @@ import Testing
         cartStage.set(StageMark(stage: .inProgress, at: now - 60), of: ref(4093))
         sessionStages.replace(cartStage)
         var archivedStage = SessionStage(session: archived)
-        archivedStage.set(StageMark(stage: .yourReview, at: now - 30), of: ref(4094))
+        archivedStage.set(StageMark(stage: .yourReview, at: now - 30, votes: ""), of: ref(4094))
         sessionStages.replace(archivedStage)
         let kept = OrderKept(
             orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
@@ -145,6 +145,36 @@ import Testing
         #expect(stages.readings[ref(4095)]?.stage == .yourReview)
         #expect(stages.readings[ref(4095)]?.mark == nil)
         #expect(stages.columns[.inProgress] == [ref(4093)])
+    }
+
+    /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps
+    /// in the preferences; one its slot doesn't have, as one in another stage, changes nothing.
+    @Test func whatYouChoseForUpNextComesFirstAsOnTheBoard() async throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        let facts: [ItemRef: StageFacts] = [
+            ref(4131): StageFacts(role: .author, failure: "Build failed", since: now - 7_200),
+            ref(4133): StageFacts(role: .author, changesWanted: "Priya wants changes", since: now - 9_000),
+            ref(4099): StageFacts(role: .author, waitingFor: "Waiting on Priya", since: now),
+        ]
+        func columns(_ picks: UpNextPicks) -> [PullRequestStage: [ItemRef]] {
+            let kept = OrderKept(
+                orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
+                sessionStages: SessionStages(), picks: picks
+            )
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com", now: now
+            ).columns
+        }
+        #expect(columns(UpNextPicks())[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(UpNextPicks([.fix: ref(4133)]))[.inProgress] == [ref(4133), ref(4131)])
+        #expect(columns(UpNextPicks([.fix: ref(4099)]))[.inProgress] == [ref(4131), ref(4133)])
+
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        UpNextPicks([.fix: ref(4133)]).save(to: defaults)
+        let reader = AzureDevOpsReader(demo: false, organizations: [], defaults: defaults)
+        #expect(await reader.orderKept(now: now)?.picks == UpNextPicks([.fix: ref(4133)]))
     }
 
     /// A session's In progress ends for agents too as that session finishes, though the Copilot app doesn't record it on the
@@ -239,6 +269,17 @@ import Testing
         #expect(stages(listedByApp: true).readings[pr]?.mark == nil)
     }
 
+    /// `pull_request_stage` answers from the sessions whose stages count, as agents' stages count them: those the Copilot
+    /// app lists, with the tasks BriefBar sent, also one you haven't opened there; it can't tell without Copilot.
+    @Test func theSessionsWhoseStagesCountAreTheAppsWithTheTasksBriefBarSent() async throws {
+        #expect(await agent.stageSessions() == nil)
+        let listed = try #require(await MCPRelated.$tellers.withValue([Self.copilot]) { await agent.stageSessions() }).listed
+        #expect(listed.contains(DemoPullRequestOrder.retryBackoff))
+        let sent = await agent.reader.copilotTasks().compactMap(PullRequestOrderFacts.session).map(\.ref)
+        #expect(!sent.isEmpty)
+        #expect(listed == Set(sent).union([DemoPullRequestOrder.retryBackoff]))
+    }
+
     /// Agents' words for a stage say what fails too, as the Board does, also where they put Find a reviewer more plainly; and
     /// what a session is called stays on its line, its line breaks written out, as other tools quote what others named.
     @Test func stageWordsSayWhatFailsAndQuoteWhatSessionsAreCalled() throws {
@@ -248,7 +289,7 @@ import Testing
         var marks = StageMarks()
         _ = marks.set(StageMark(stage: .teammateReview, at: now - 7_200, votes: ""), of: ref(4093), for: "robin@contoso.com", at: now)
         var cartStage = SessionStage(session: cart)
-        cartStage.set(StageMark(stage: .yourReview, at: now - 60), of: ref(4094))
+        cartStage.set(StageMark(stage: .yourReview, at: now - 60, votes: ""), of: ref(4094))
         let kept = OrderKept(
             orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
             sessionStages: SessionStages([cartStage])

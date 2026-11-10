@@ -379,7 +379,7 @@ import Testing
         let drafts = CopilotDrafts()
         let asking = CopilotAsking(
             ask: .fix, part: .build(31), action: .fixBuild, row: "build-2",
-            fix: { _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
+            fix: { _, _, _ in CopilotSending.Fix(prompts: ("", ""), action: .fixBuild, parts: [], handOff: nil) }, question: { _, _ in "" }
         )
         #expect(asking.draftKey == second)
         // And so does Ask in the Session's prompt on its way: one row's doesn't call off the other's.
@@ -658,6 +658,84 @@ import Testing
         let refixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: now.addingTimeInterval(-60), copied: false, ended: .finished))
         settings.copilotSentPrompts = [fixed, pushed, refixed, failed]
         #expect(store.work(on: .thread(11), of: key)?.isReadyFix == true)
+    }
+
+    /// A comment's Fix, or Fix All, sent with Push and Reply on is a Push & Reply that fixes what it takes on first
+    /// (`TakenPart.fixes`, `SentPrompt.fixes`): its lines say it fixes them, to push and reply, then that it did all three. One
+    /// that failed or stopped may not have fixed them: Try Again sends it again, rather than Push & Reply. A fix the session
+    /// made before, which it pushes along without replying on it, says just that.
+    @Test func aFixThatShipsSaysItFixesThenPushesAndReplies() throws {
+        func said(_ state: CopilotWork.State, fork: Bool = false) -> String {
+            CopilotWork(
+                part: .thread(11), purpose: .pushAndReply, state: state, session: session, forkedFrom: fork ? task : nil, isTask: false,
+                since: now, fixes: true
+            ).sentence(name: "Retry backoff", forkOf: fork ? "Retry backoff" : nil)
+        }
+        #expect(said(.waiting(copied: false)) == "Sent to ‘Retry backoff’")
+        #expect(said(.waiting(copied: true)) == "Copied for ‘Retry backoff’: paste it there")
+        #expect(said(.working(nil)) == "Copilot is fixing this in ‘Retry backoff’, to push and reply")
+        #expect(said(.working(nil), fork: true) == "Fixing this in a fork of ‘Retry backoff’, to push and reply")
+        #expect(said(.done(nil)) == "Fixed, pushed and replied in ‘Retry backoff’")
+        #expect(said(.failed(nil)) == "Couldn't fix and push it in ‘Retry backoff’")
+        #expect(said(.stopped) == "Stopped in ‘Retry backoff’ before it pushed it")
+        let fixing = CopilotWork(part: .thread(11), purpose: .pushAndReply, state: .working(nil), session: session, isTask: false, since: now, fixes: true)
+        #expect(fixing.look.symbol == "arrow.triangle.2.circlepath")
+        #expect(fixing.isFixing)
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        let name = PullRequestAction.fixPushAndReplyTitle
+        // The task fixed 11, then went on to fix 12 and ship it: 11's fix goes along, without a reply.
+        settings.copilotRuns = [run(task, .pushAndReply, startedAt: now, taken: [
+            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: now, ships: true, fixes: true),
+        ])]
+        #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Copilot is fixing this in the ‘Fix, Push & Reply’ task, to push and reply")
+        #expect(store.isFixing(.thread(12), of: key))
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: name, forkOf: nil) == "Pushing from the ‘Fix, Push & Reply’ task")
+        settings.copilotRuns[0].ended = .finished
+        #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Fixed, pushed and replied in the ‘Fix, Push & Reply’ task")
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: name, forkOf: nil) == "Pushed from the ‘Fix, Push & Reply’ task, without a reply")
+        #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).isEmpty)
+        // One that failed: 12 is to try again, not to push; 11's fix wasn't pushed, so it still is.
+        settings.copilotRuns[0].ended = .failed
+        let failed = try #require(store.work(on: .thread(12), of: key))
+        #expect(failed.sentence(name: name, forkOf: nil) == "Couldn't fix and push it in the ‘Fix, Push & Reply’ task")
+        #expect(!failed.waitsToBePushed)
+        #expect(CopilotTasksStore.canTryAgain(failed))
+        #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
+        settings.copilotRuns[0].ended = .stopped
+        #expect(CopilotTasksStore.canTryAgain(try #require(store.work(on: .thread(12), of: key))))
+        #expect(store.readyFixes(of: key, among: [.thread(12)]).isEmpty)
+        // The same sent to one of the Copilot app's sessions, which keeps that it fixes them first.
+        settings.copilotRuns = []
+        var shipping = about(.pushAndReply, threads: [12])
+        shipping.fixes = true
+        let sent = try #require(SentPrompt(shipping, session: session, sentAt: now, copied: false))
+        #expect(sent.fixes == true)
+        #expect(try #require(SentPrompt(about(.pushAndReply, threads: [12]), session: session, sentAt: now, copied: false)).fixes == nil)
+        var asFix = about(threads: [12])
+        asFix.fixes = true
+        #expect(try #require(SentPrompt(asFix, session: session, sentAt: now, copied: false)).fixes == nil)
+        let fixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
+        settings.copilotSentPrompts = [fixed, sent]
+        #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Sent to ‘Retry backoff’")
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushing from ‘Retry backoff’")
+        var failing = sent
+        failing.ended = .failed
+        settings.copilotSentPrompts = [fixed, failing]
+        #expect(CopilotTasksStore.canTryAgain(try #require(store.work(on: .thread(12), of: key))))
+        #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
+        // Kept as it was sent, after BriefBar restarts; one kept before it had this didn't fix them.
+        let defaults = MemoryDefaults()
+        AppSettings(defaults: defaults).copilotSentPrompts = [sent]
+        #expect(AppSettings(defaults: defaults, now: now).copilotSentPrompts == [sent])
+        var written = try JSONSerialization.jsonObject(with: try JSONEncoder().encode(sent)) as! [String: Any]
+        written["fixes"] = nil
+        let older = try JSONDecoder().decode(SentPrompt.self, from: try JSONSerialization.data(withJSONObject: written))
+        #expect(older.fixes == nil)
+        #expect(CopilotWork.from(older, about: .thread(12), turn: nil).fixes == false)
+        #expect(CopilotWork.from(sent, about: .thread(12), turn: nil).fixes)
     }
 
     /// Going on with a session keeps the Push & Reply tasks that ran there, each with how it ended, on the same pull
@@ -1472,6 +1550,19 @@ import Testing
         entry.taken?.append(TakenPart(.thread(11), since: now, ships: true))
         #expect(!entry.onlyPushes)
         #expect(entry.sentence(now: nil) == "Pushed and replied")
+        // One that fixes them first, as a comment's Fix sent with Push and Reply on, is named for that; not one that ships
+        // what an earlier one in its session fixed so.
+        entry.taken = [TakenPart(.thread(11), since: now, ships: true, fixes: true)]
+        #expect(entry.fixesFirst)
+        #expect(!entry.onlyPushes)
+        #expect(entry.actionTitle == "Fix, Push & Reply")
+        #expect(entry.sentence(now: nil) == "Fixed, pushed and replied")
+        #expect(CopilotTasksStore.startedNotification(entry, subject: "!4102").title == "Copilot is fixing a comment")
+        entry.taken = [TakenPart(.thread(11), since: now, ended: .finished, ships: true, fixes: true), TakenPart(.build(31), since: now, ships: true)]
+        #expect(!entry.fixesFirst)
+        #expect(entry.actionTitle == "Push")
+        #expect(PullRequestAction.pushAndReply.title(taking: [.thread(11)], fixing: true) == "Fix, Push & Reply")
+        #expect(PullRequestAction.fixComments.title(taking: [.thread(11)], fixing: true) == "Fix Comments")
     }
 
     // MARK: Forks

@@ -157,9 +157,10 @@ private struct FollowsScroll<Content: View>: View {
     }
 }
 
-/// By Mission's Board: Up Next's pull request wears Next in its column, and each mission's lane has its header, its next
-/// steps and the Undo line of your last change to one of its pull requests, on the board or not. With Lanes: None, every card
-/// is in one lane. A change that takes a pull request in no mission off the board keeps a lane for its Undo line.
+/// By Mission's Board: Up Next's pull request wears Next in its column, with ✎ where you chose it (`UpNextPicks`), and each
+/// mission's lane has its header, its next steps and the Undo line of your last change to one of its pull requests, on the
+/// board or not. With Lanes: None, every card is in one lane. A change that takes a pull request in no mission off the board
+/// keeps a lane for its Undo line.
 package struct OrderBoardView: View {
     let board: PullRequestBoard
     /// The missions the page shows, as By Mission lists them, for the lanes' headers.
@@ -720,7 +721,8 @@ package struct OrderBoardView: View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
-                card: card, content: content, isNext: board.next[card.stage] == card.ref, isSelected: isSelected(card.ref),
+                card: card, content: content, isNext: board.next[card.stage] == card.ref,
+                isPicked: board.picked[card.stage] == card.ref, isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
@@ -906,14 +908,16 @@ package struct OrderBoardView: View {
 
 // MARK: - A card
 
-/// A card on the Board: the page's content, framed in its stage's color, Next on Up Next's, a click showing its details and
-/// giving it the keyboard's focus, as a field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and
-/// Return or Space shows its details. Tab goes from card to card. It drags to another column, and VoiceOver has every move
-/// among its actions.
+/// A card on the Board: the page's content, framed in its stage's color, Next on Up Next's, with ✎ where you chose it, a
+/// click showing its details and giving it the keyboard's focus, as a field takes it, whatever the Mac's keyboard
+/// navigation: then ⌘→ and ⌘← move it, and Return or Space shows its details. Tab goes from card to card. It drags to another
+/// column, and VoiceOver has every move among its actions, and Make Next.
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
     let isNext: Bool
+    /// You chose it for its Up Next slot (`UpNextPicks`).
+    let isPicked: Bool
     let isSelected: Bool
     @ObservedObject var order: PullRequestOrder
     let now: Date
@@ -953,15 +957,20 @@ private struct BoardCardView: View {
             }
             .overlay(alignment: .topTrailing) {
                 if isNext {
-                    Text("Next")
-                        .font(size: 10, weight: .bold)
-                        .foregroundStyle(card.stage.textColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1.5)
-                        .background(Capsule().fill(card.stage.color.opacity(0.2)))
-                        .padding(7 * textScale)
-                        .help("Up Next: it comes first in its column")
-                        .allowsHitTesting(false)
+                    HStack(spacing: 2) {
+                        if isPicked {
+                            Image(systemName: "pencil")
+                        }
+                        Text("Next")
+                    }
+                    .font(size: 10, weight: .bold)
+                    .foregroundStyle(card.stage.textColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1.5)
+                    .background(Capsule().fill(card.stage.color.opacity(0.2)))
+                    .padding(7 * textScale)
+                    .help(isPicked ? "Up Next: you chose it, until it moves on" : "Up Next: it comes first in its column")
+                    .allowsHitTesting(false)
                 }
             }
             .overlay {
@@ -1016,6 +1025,13 @@ private struct BoardCardView: View {
                 if let setAsNext {
                     Button("Set as Next to Merge", action: setAsNext)
                 }
+                if let slot = UpNextSlot.of(card) {
+                    if isPicked {
+                        Button("Let BriefBar Choose Next") { order.letBriefBarChoose(slot) }
+                    } else {
+                        Button("Make Next") { order.pickNext(card.ref, in: slot) }
+                    }
+                }
                 Button("Show Details", action: select)
             }
             // Its Mission menu's, as its row has them; but for one that waits, Set as Next to Merge is the Board's, above,
@@ -1026,7 +1042,7 @@ private struct BoardCardView: View {
     private var accessibilityValue: String {
         var parts = [StageWords.spoken(card.reading, order: order, now: now)]
         parts += content.details
-        if isNext { parts.append("Up Next") }
+        if isNext { parts.append(isPicked ? "Up Next, you chose it" : "Up Next") }
         return parts.joined(separator: ", ")
     }
 
@@ -1051,5 +1067,30 @@ private struct BoardCardView: View {
                         .strokeBorder(card.stage.color, lineWidth: 1.5)
                 )
         )
+    }
+}
+
+/// Make Next, in a Board card's menu: chooses its pull request for its Up Next slot, which shows it, first in its column,
+/// until it moves on (`UpNextPicks`); checked once you chose it, when it gives the slot back to BriefBar's order. Nothing
+/// for a card in no slot, such as a draft, or one that merged.
+package struct MakeNextToggle: View {
+    let card: BoardCard
+    @ObservedObject var order: PullRequestOrder
+
+    package init(card: BoardCard, order: PullRequestOrder) {
+        self.card = card
+        self.order = order
+    }
+
+    package var body: some View {
+        if let slot = UpNextSlot.of(card) {
+            Toggle("Make Next", isOn: Binding(get: { order.picks[slot] == card.ref }, set: { on in
+                if on {
+                    order.pickNext(card.ref, in: slot)
+                } else {
+                    order.letBriefBarChoose(slot)
+                }
+            }))
+        }
     }
 }

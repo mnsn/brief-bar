@@ -136,8 +136,8 @@ struct PullRequestsPage: View {
         ordering.revealColumn(stage)
     }
 
-    /// A pull request's card on the Board: what it shows, its menu as its row's, and what VoiceOver says of it. With a lane
-    /// for every card, Undo shows at the top.
+    /// A pull request's card on the Board: what it shows, its menu as its row's, with Make Next, and what VoiceOver says of
+    /// it. With a lane for every card, Undo shows at the top.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
         let order = card.step.map {
             OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
@@ -148,6 +148,7 @@ struct PullRequestsPage: View {
             menu: AnyView(Group {
                 Button("Show Details") { select(item) }
                 Button("Open in Azure DevOps") { store.open(item) }
+                MakeNextToggle(card: card, order: ordering)
                 PullRequestMenuItems(
                     item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item),
                     mission: mission, ordering: ordering

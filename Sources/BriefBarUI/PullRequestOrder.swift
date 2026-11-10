@@ -8,9 +8,10 @@ import Foundation
 /// it changed (`AgentChanges`), and of your changes to missions (`OrderChanges`), which only the app writes. It's off until
 /// you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not even the orders it kept, and the sources tell
 /// it nothing. Turned off, it shows nothing again, and keeps the orders, what it saw become of their pull requests, the
-/// mission you focus on, your changes, the names you gave missions and the suggested splits you kept together, unused,
-/// until you forget them. A mission is called by the name you gave it, else the one Apple Intelligence gave it on this
-/// Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives it from its sources.
+/// mission you focus on, your changes, the names you gave missions, the suggested splits you kept together and the pull
+/// requests you chose for Up Next's slots, unused, until you forget them. A mission is called by the name you gave it, else
+/// the one Apple Intelligence gave it on this Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives
+/// it from its sources.
 @MainActor
 package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isOn: Bool
@@ -69,6 +70,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var lanes: BoardLanes
     /// Whether you folded Up Next.
     @Published package private(set) var isUpNextFolded: Bool
+    /// The pull request you chose for each of Up Next's slots, those kept in memory included (`UpNextPicks`): none while
+    /// it's off.
+    @Published package private(set) var picks = UpNextPicks()
     /// The column Up Next's "2 more ›" asked the Board to show, until it has.
     @Published package var revealedColumn: PullRequestStage?
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
@@ -105,6 +109,14 @@ package final class PullRequestOrder: ObservableObject {
     private var changesInMemory = OrderChanges()
     /// What BriefBar saw become of the pull requests that only those changes name, kept in memory as they are.
     private var evidenceInMemory = OrderEvidence()
+    /// The pull requests you chose for Up Next's slots that are listed only because someone sent them in a chat, which never
+    /// go to the preferences: kept while BriefBar runs, Pull Request Order off or on, as your changes about them are.
+    private var picksInMemory = UpNextPicks()
+    /// Since when each pull request you chose for Up Next's slots has been away from where you chose it, as BriefBar saw it
+    /// (`UpNextPicks.moved`): in memory only, while it's on, as what the sources told is, so that once it's on again, or
+    /// BriefBar starts again, each choice has its half hour again, rather than end on what BriefBar reads before it has
+    /// read everything.
+    private var picksAway: [UpNextSlot: UpNextPicks.Away] = [:]
     /// The pull requests a source said it lists only because someone sent them in a chat, while BriefBar runs, until one
     /// lists them otherwise, as yours or one you watch: one that leaves the lists, merged or closed, stays here.
     private var sentInChats: Set<ItemRef> = []
@@ -266,6 +278,8 @@ package final class PullRequestOrder: ObservableObject {
             namer?.stop()
             missions = []
             nextsHeldAgain = [:]
+            picks = UpNextPicks()
+            picksAway = [:]
             marks = StageMarks()
             sessionStages = SessionStages()
             stages = [:]
@@ -280,6 +294,7 @@ package final class PullRequestOrder: ObservableObject {
         marks = StageMarks.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         yourNames = MissionNames.load(from: defaults)
+        picks = UpNextPicks.load(from: defaults).merging(picksInMemory)
         namesCounted = nil
         keptTogether = KeptTogether.load(from: defaults)
         keptCounted = nil
@@ -341,6 +356,13 @@ package final class PullRequestOrder: ObservableObject {
         restage()
     }
 
+    /// Reads what sessions keep now, for Undo and Let BriefBar Decide to take away what followed yours: `--mcp` can keep a
+    /// session's report before the app reads it (`agentChanged`). The demo's are in memory only.
+    private func readSessionStagesNow() {
+        guard !isDemo else { return }
+        sessionStages = SessionStages.load(from: defaults, now: now())
+    }
+
     // MARK: What the sources show
 
     /// What a source shows now, while it's on: the pull requests it lists, with what an order needs of each, the sessions
@@ -385,7 +407,10 @@ package final class PullRequestOrder: ObservableObject {
         told[source] = new
         sentInChats.formUnion(inMemory)
         sentInChats.subtract(Set(pullRequests.map(\.ref)).subtracting(inMemory))
-        if old?.inMemory != new.inMemory || !sameFacts { keep(changes) }
+        if old?.inMemory != new.inMemory || !sameFacts {
+            keep(changes)
+            keepPicks()
+        }
         // How a session looks says whether it works now, which stages follow; and what missions are named from, such as a
         // title, can change.
         if sameFacts {
@@ -408,7 +433,7 @@ package final class PullRequestOrder: ObservableObject {
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
     /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on,
     /// the names you gave missions and the suggestions you kept together, when they're theirs, and the stages you set for its
-    /// pull requests.
+    /// pull requests, and those you chose for Up Next's slots.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -435,6 +460,8 @@ package final class PullRequestOrder: ObservableObject {
         if together.forget(kinds, keepingPlans: plans) { together.save(to: defaults) }
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
+        var picks = UpNextPicks.load(from: defaults)
+        if picks.forget(kinds) { picks.save(to: defaults) }
         forgetInMemory(kinds)
         // What sessions set: on its pull requests, or, with GitHub Copilot, everything, as its sessions told it.
         if !isDemo { SessionStages.forget(kinds, in: defaults, now: now()) }
@@ -449,6 +476,7 @@ package final class PullRequestOrder: ObservableObject {
             self.changes = changes
             self.focus = kept
             self.marks = marks
+            self.picks = picks.merging(picksInMemory)
             if lastOrderChange != nil { lastChange = nil }
             refusal = nil
             yourNames = names
@@ -505,6 +533,49 @@ package final class PullRequestOrder: ObservableObject {
         focus = key
         OrderFocus.save(key, to: defaults)
         rebuild()
+    }
+
+    /// Chooses the pull request an Up Next slot shows, first in its column on the Board, in place of the one you chose
+    /// before, until it moves on (`UpNextPicks`): only one the slot has now. Undo of your last stage change then chooses
+    /// nothing for that slot. False for any other, or while Pull Request Order is off.
+    @discardableResult
+    package func pickNext(_ ref: ItemRef, in slot: UpNextSlot) -> Bool {
+        guard isOn, slot.has(stages[ref]) else { return false }
+        guard picks[slot] != ref else { return true }
+        picks[slot] = ref
+        undoChoosesNothing(for: slot)
+        keepPicks()
+        return true
+    }
+
+    /// Let BriefBar Choose: forgets the pull request you chose for a slot, whether it shows it now or waits for it to come
+    /// back, and BriefBar's order chooses again; Undo of your last stage change then chooses nothing for that slot.
+    package func letBriefBarChoose(_ slot: UpNextSlot) {
+        guard isOn, picks[slot] != nil else { return }
+        picks[slot] = nil
+        undoChoosesNothing(for: slot)
+        keepPicks()
+    }
+
+    /// You decided what a slot shows since your last stage change: its Undo no longer chooses the pull request it changed for
+    /// that slot, whatever becomes of what you decided.
+    private func undoChoosesNothing(for slot: UpNextSlot) {
+        guard case .stage(var change)? = lastChange, change.picked.remove(slot) != nil else { return }
+        lastChange = .stage(change)
+    }
+
+    /// The slots of Up Next you chose a pull request for.
+    private func slots(picking ref: ItemRef) -> Set<UpNextSlot> {
+        Set(picks.refs.filter { $0.value == ref }.keys)
+    }
+
+    /// Keeps the pull requests you chose for Up Next's slots: in the preferences, but one listed only because someone sent
+    /// it in a chat, which stays in memory until BriefBar lists it otherwise. Only while it's on, which has them all.
+    private func keepPicks() {
+        guard isOn else { return }
+        let (inMemory, saved) = picks.split { sentInChats.contains($0) }
+        if saved != UpNextPicks.load(from: defaults) { saved.save(to: defaults) }
+        picksInMemory = inMemory
     }
 
     /// Forget This Order: BriefBar no longer shows it, and an agent that names it is told so. The pull requests you put in
@@ -834,30 +905,35 @@ package final class PullRequestOrder: ObservableObject {
             }
         }
         // The names first, so that the missions show with them, the line that says what it did names them, and Apple
-        // Intelligence isn't asked them again.
+        // Intelligence isn't asked them again; and those they replace, with what it asked them with, for Undo.
         let before = modelNames
+        let replaced = Dictionary(uniqueKeysWithValues: named.keys.map { key in
+            (key, OrderLastChange.ReplacedName(name: modelNames[key], asked: namer?.askedWith(key)))
+        })
         for (key, name) in named { modelNames[key] = name }
         cachedNames = nil
-        guard let done = change(.split(mission.key, moves), in: mission.key), done.canUndo else {
+        guard var done = change(.split(mission.key, moves), in: mission.key), done.canUndo else {
             modelNames = before
             cachedNames = nil
             return refusal?.said
         }
         namer?.adopt(Array(named.keys))
+        done.names = replaced
+        lastChange = .order(done)
         splitsShownAgain.remove(mission.key)
         let undo = missions.contains { $0.key == mission.key }
             ? "on the card of ‘\(title(of: missions.first { $0.key == mission.key } ?? mission))’" : "at the top of the list"
         return OrderText.splitDone(box, undo: undo)
     }
 
-    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something else for
-    /// `KeptTogether.settleFor`, as BriefBar keeps (`order.splits`); Suggested Split… shows it again meanwhile. What
-    /// VoiceOver hears after it.
+    /// Keep Together: the suggestion goes, and comes back only once the mission has been made of something it wasn't for
+    /// `KeptTogether.settleFor` (`MissionSplitQuestion.Contents`), as BriefBar keeps (`order.splits`); Suggested Split…
+    /// shows it again meanwhile. What VoiceOver hears after it.
     @discardableResult
     package func keepTogether(_ mission: OrderMission) -> String {
         guard isOn, let question = splitQuestion(for: mission) else { return OrderText.keptTogether }
         objectWillChange.send()
-        keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+        keptTogether.keep(mission.key, contents: question.contents, at: now())
         keptTogether.save(to: defaults)
         splitsShownAgain.remove(mission.key)
         askNames()
@@ -898,7 +974,7 @@ package final class PullRequestOrder: ObservableObject {
             guard (mission.steps + mission.attached).contains(where: { refs.contains($0.ref) }),
                   let question = splitQuestion(for: mission)
             else { continue }
-            keptTogether.keep(mission.key, makeup: question.makeup, at: now())
+            keptTogether.keep(mission.key, contents: question.contents, at: now())
             kept = true
         }
         guard kept else { return }
@@ -907,7 +983,7 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// What you kept together, as the missions change: each follows its mission as Focus does, by `successor`; those of
-    /// orders BriefBar no longer keeps go, and those whose missions have been made of something else for
+    /// orders BriefBar no longer keeps go, and those whose missions have been made of something they weren't for
     /// `KeptTogether.settleFor`; and the time since BriefBar last saw a mission counts against it while BriefBar could
     /// see it, at most two hours at a time. Then the missions that pull requests a split moved went back to, as an order
     /// took them, which BriefBar noted in this look (`splitsTakenBack`), keep together (`keepTogether(splitBack:)`): the
@@ -925,19 +1001,19 @@ package final class PullRequestOrder: ObservableObject {
         if kept.forget([], keepingPlans: plans) { changed = true }
         let elapsed = keptCounted.map { min(max(date.timeIntervalSince($0), 0), 2 * Self.timeCheckInterval) } ?? 0
         keptCounted = date
-        var makeups: [MissionKey: MissionSplitQuestion.Makeup?] = [:]
+        var contents: [MissionKey: MissionSplitQuestion.Contents?] = [:]
         // Not while a source still reads what it shows, as right after BriefBar starts: until it has, a mission can still be
-        // without some of its own, which join it once read, or seem finished. Nor one whose makeup can't be told, as while
+        // without some of its own, which join it once read, or seem finished. Nor one whose contents can't be told, as while
         // Azure DevOps is off.
         for mission in missions where kept.entries[mission.key] != nil && !facts.isReading {
             guard let question = splitQuestion(for: mission) else {
-                makeups[mission.key] = .some(nil)
+                contents[mission.key] = .some(nil)
                 continue
             }
-            if let makeup = question.makeup { makeups[mission.key] = makeup }
+            if let made = question.contents { contents[mission.key] = made }
         }
         let kindsOn = kindsOn
-        if kept.account(seen: Set(missions.map(\.key)), makeups: makeups, canSee: { key in
+        if kept.account(seen: Set(missions.map(\.key)), contents: contents, canSee: { key in
             MissionNames.canSee(key, plans: plans, kindsOn: kindsOn, readsStories: facts.seesStories)
         }, elapsed: elapsed, at: date) {
             changed = true
@@ -1358,9 +1434,9 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// The Board, Up Next and each mission's next steps, for a page of these kinds, with its lanes as you chose them, or
-    /// these.
+    /// these, and the pull requests you chose for Up Next's slots first.
     package func board(kinds: Set<ItemRef.Kind>, lanes: BoardLanes? = nil) -> PullRequestBoard {
-        PullRequestBoard.make(stages: stages, missions: missions, kinds: kinds, lanes: lanes ?? self.lanes)
+        PullRequestBoard.make(stages: stages, missions: missions, kinds: kinds, lanes: lanes ?? self.lanes, picks: picks)
     }
 
     /// The stage a mission's graph colors a pull request by: its own, or Merged for one BriefBar saw merge whose source
@@ -1382,10 +1458,11 @@ package final class PullRequestOrder: ObservableObject {
         return reading.stage != .merged
     }
 
-    /// Whether BriefBar keeps a stage you or a session set, on or off: for Forget Stages… in Settings.
+    /// Whether BriefBar keeps a stage you or a session set, or a pull request you chose for one of Up Next's slots, on or
+    /// off: for Forget Stages… in Settings.
     package var keepsStages: Bool {
         defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty || SessionStages.keepsAny(in: defaults)
-            || !sessionStages.isEmpty
+            || !sessionStages.isEmpty || defaults.object(forKey: UpNextPicks.defaultsKey) != nil || !picksInMemory.isEmpty
     }
 
     /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
@@ -1412,7 +1489,7 @@ package final class PullRequestOrder: ObservableObject {
                 "BriefBar keeps up to \(StageMarks.mostPerAccount) stages you set. Let BriefBar decide one you no longer need first."
             )
         }
-        lastChange = .stage(StageChange(ref: ref, before: before, after: stage))
+        lastChange = .stage(StageChange(ref: ref, before: before, after: stage, picked: slots(picking: ref)))
         refusal = nil
         restage()
         return .done
@@ -1434,13 +1511,16 @@ package final class PullRequestOrder: ObservableObject {
 
     /// Let BriefBar Decide: forgets the stage you set, and BriefBar works it out again: what sessions set before yours,
     /// which yours replaced, goes too, rather than come back, also what a session the Copilot app doesn't list now set,
-    /// should it list it again. Unchanged when you set none.
+    /// should it list it again; and so do sessions' Your reviews that followed yours (`StageMark.follows`), the one that
+    /// shows in its place (`StageReading.followed`) and those of sessions the Copilot app doesn't list now, so that none
+    /// comes back alone, as sessions keep them now (`readSessionStagesNow`). Unchanged when you set none.
     @discardableResult
     package func letBriefBarDecide(_ ref: ItemRef) -> StageChange.Outcome {
         guard isOn, let facts = stageFacts[ref], let before = yourMark(of: ref, facts: facts) else { return .unchanged }
+        readSessionStagesNow()
         forgetMark(of: ref, facts: facts)
-        end(sessionStages.marks(on: ref, setBy: before.at), of: ref)
-        lastChange = .stage(StageChange(ref: ref, before: before, after: nil))
+        end(sessionStages.marks(on: ref).filter { $0.at <= before.at || $0.follows(before) }, of: ref)
+        lastChange = .stage(StageChange(ref: ref, before: before, after: nil, picked: slots(picking: ref)))
         refusal = nil
         restage()
         return .done
@@ -1457,9 +1537,12 @@ package final class PullRequestOrder: ObservableObject {
         }
     }
 
-    /// Puts back exactly the stage your last change replaced, or none. What it puts back is kept even once the account
+    /// Puts back exactly the stage your last change replaced, or none, and the pull request you'd chosen it for in Up Next's
+    /// slots, but for a slot you've decided for since (`StageChange.picked`). What it puts back is kept even once the account
     /// keeps the most, as when Let BriefBar Decide made room that one waiting in memory took: it waits there in turn, until
-    /// the account has room.
+    /// the account has room. Sessions' Your reviews that followed the one it takes back (`StageMark.follows`) go with it,
+    /// those of sessions the Copilot app doesn't list now too, as sessions keep them now (`readSessionStagesNow`), rather
+    /// than stay, or come back, on their own; a session's own report, which came after another stage replaced yours, stays.
     private func undo(_ change: StageChange) -> Bool {
         guard isOn, let facts = stageFacts[change.ref] else {
             lastChange = nil
@@ -1467,6 +1550,10 @@ package final class PullRequestOrder: ObservableObject {
         }
         lastChange = nil
         refusal = nil
+        readSessionStagesNow()
+        if let yours = yourMark(of: change.ref, facts: facts) {
+            end(sessionStages.marks(on: change.ref).filter { $0.follows(yours) }, of: change.ref)
+        }
         if let before = change.before {
             if !keep(before, of: change.ref, facts: facts) {
                 marksInMemory[change.ref] = StageMarks.Entry(mark: before, listedAt: now())
@@ -1474,12 +1561,18 @@ package final class PullRequestOrder: ObservableObject {
         } else {
             forgetMark(of: change.ref, facts: facts)
         }
+        for slot in change.picked where picks[slot] == nil || picks[slot] == change.ref {
+            picks[slot] = change.ref
+            picksAway[slot] = nil
+        }
         restage()
+        keepPicks()
         return true
     }
 
     /// Puts back exactly what your last change to a mission touched. Undoing a split keeps the mission together as it's made
-    /// again, as Keep Together does.
+    /// again, as Keep Together does, and puts back the names Apple Intelligence had given the missions it named, with what
+    /// it had asked them with, so that they aren't asked again.
     private func undo(_ last: OrderLastChange) -> Bool {
         guard isOn, last.canUndo else { return false }
         var changed = changes
@@ -1492,6 +1585,8 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
         refusal = nil
         evidence = evidence.merging(last.evidence)
+        for (key, replaced) in last.names { modelNames[key] = replaced.name }
+        namer?.restore(last.names.mapValues(\.asked))
         keep(changed)
         rebuild()
         keepTogether(splitBack: splitBack)
@@ -1503,14 +1598,19 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
     }
 
-    /// Forget Stages…: every stage you set, with every account, and every one sessions set, on or off.
+    /// Forget Stages…: every stage you set, with every account, every one sessions set, and the pull requests you chose for
+    /// Up Next's slots, on or off.
     package func forgetStages() {
         objectWillChange.send()
         StageMarks.forgetAll(in: defaults)
         SessionStages.forgetAll(in: defaults)
+        defaults.removeObject(forKey: UpNextPicks.defaultsKey)
         marks = StageMarks()
         marksInMemory = [:]
         sessionStages = SessionStages()
+        picks = UpNextPicks()
+        picksInMemory = UpNextPicks()
+        picksAway = [:]
         if lastStageChange != nil { lastChange = nil }
         restage()
     }
@@ -1570,10 +1670,16 @@ package final class PullRequestOrder: ObservableObject {
         if let account = account(of: ref), marks.clear(ref, for: account) { marks.save(to: defaults) }
     }
 
-    /// Forgets the stages you set that BriefBar kept in memory for pull requests of these kinds, and Undo of one.
+    /// Forgets the stages you set that BriefBar kept in memory for pull requests of these kinds, and Undo of one, and the
+    /// pull requests of these kinds you chose for Up Next's slots that it kept in memory.
     private func forgetInMemory(_ kinds: Set<ItemRef.Kind>) {
         marksInMemory = marksInMemory.filter { !kinds.contains($0.key.kind) }
         if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
+        let gone = picksInMemory.split { kinds.contains($0.kind) }.in
+        picksInMemory.forget(kinds)
+        for (slot, ref) in gone.refs where picks[slot] == ref {
+            picks[slot] = nil
+        }
     }
 
     /// Takes away what sessions set on a pull request, once none of it counts: in memory, and from what each session
@@ -1611,7 +1717,9 @@ package final class PullRequestOrder: ObservableObject {
     /// once it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
     /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
     /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
-    /// list has, still ends as it moves on.
+    /// list has, still ends as it moves on. A pull request you chose for one of Up Next's slots goes from it once it's been
+    /// away from where you chose it for half an hour (`UpNextPicks.awayFor`), in another stage, off your board, merged or
+    /// closed; one its source reads nothing of now waits (`UpNextPicks.moved(by:known:away:now:)`).
     private func restage() {
         guard isOn else {
             if !stages.isEmpty { stages = [:] }
@@ -1674,6 +1782,12 @@ package final class PullRequestOrder: ObservableObject {
             changed = true
         }
         if changed { marks.save(to: defaults) }
+        // What you chose for Up Next's slots stands while its pull request does, where you chose it, or is back there soon.
+        let moved = picks.moved(by: readings, known: Set(all.keys), away: &picksAway, now: now())
+        if !moved.isEmpty {
+            for slot in moved { picks[slot] = nil }
+            keepPicks()
+        }
         if readings != stages { stages = readings }
     }
 
@@ -1747,7 +1861,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 }
 
-/// Your last change to a pull request's stage, for Undo: the stage you'd set before it, and what you set.
+/// Your last change to a pull request's stage, for Undo: the stage you'd set before it, what you set, and the slots of Up
+/// Next you'd chosen it for.
 package struct StageChange: Equatable, Sendable {
     package enum Outcome: Equatable, Sendable {
         case done
@@ -1761,6 +1876,9 @@ package struct StageChange: Equatable, Sendable {
     package var before: StageMark?
     /// What you set; nil for Let BriefBar Decide.
     package var after: PullRequestStage?
+    /// The slots of Up Next you'd chosen it for, as you changed it: Undo chooses it for them again, but not for one you've
+    /// decided for since, choosing another or letting BriefBar choose, whatever became of that.
+    package var picked: Set<UpNextSlot> = []
 
     /// "Moved !4093 to Teammate's review".
     package var words: String {
@@ -1789,13 +1907,22 @@ package struct OrderLastChange: Equatable {
     package let touched: [ItemRef: OrderChange?]
     /// What BriefBar saw become of the pull requests those were about, as it was, for Undo to put back with them.
     package let evidence: OrderEvidence
+    /// The names Apple Intelligence had given the missions a split you confirmed named, by their keys, as they were, with
+    /// what it had asked them with, for Undo to put back with them; empty for any other change.
+    package var names: [MissionKey: ReplacedName] = [:]
+
+    /// A mission's name from Apple Intelligence, nil for none, and what it was asked with, nil for not asked.
+    package struct ReplacedName: Equatable {
+        package var name: String?
+        package var asked: MissionNameInputs?
+    }
 
     /// Whether it was made, and Undo can put back what it touched.
     package var canUndo: Bool { !touched.isEmpty }
 
     /// The same, with what BriefBar saw become of its pull requests since.
     func seeing(_ evidence: OrderEvidence) -> OrderLastChange {
-        OrderLastChange(said: said, refs: refs, mission: mission, touched: touched, evidence: evidence)
+        OrderLastChange(said: said, refs: refs, mission: mission, touched: touched, evidence: evidence, names: names)
     }
 
     /// The same, with the chains it names named as `OrderChanges.moveAnchors` renamed them.
@@ -1806,7 +1933,7 @@ package struct OrderLastChange: Equatable {
         if case .chain(let anchor)? = mission, let new = renamed[anchor] { mission = .chain(new) }
         return OrderLastChange(
             said: said, refs: refs, mission: mission, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
-            evidence: evidence
+            evidence: evidence, names: names
         )
     }
 
@@ -1823,7 +1950,7 @@ package struct OrderLastChange: Equatable {
         guard !renamed.isEmpty || card != mission else { return self }
         return OrderLastChange(
             said: said, refs: refs, mission: card, touched: touched.mapValues { change in change.map { undo[$0.ref] ?? $0 } },
-            evidence: evidence
+            evidence: evidence, names: names
         )
     }
 }

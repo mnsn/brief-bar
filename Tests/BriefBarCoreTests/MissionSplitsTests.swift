@@ -34,6 +34,12 @@ import Testing
         MissionSplitQuestion.Makeup(tells: .init(stories: stories, sessions: sessions), digest: digest)
     }
 
+    /// What a mission is made of, as Keep Together counts it, by made-up digests, as BriefBar tells it: with what its pull
+    /// requests are for, and who opened them, unless it can't tell those.
+    static func c(_ digests: String..., stories: Bool = true, sessions: Bool = true) -> MissionSplitQuestion.Contents {
+        MissionSplitQuestion.Contents(tells: .init(stories: stories, sessions: sessions), digests: Set(digests))
+    }
+
     static let titles: [ItemRef: String] = [
         story: "Checkout coupons",
         pr(4101): "Add the coupon field", item(5102): "Coupon field in checkout",
@@ -247,6 +253,8 @@ import Testing
         #expect(byFirst[Self.pr(4304)]?.refs == [Self.pr(4304), Self.pr(4305)])
         #expect(byFirst[Self.pr(4304)]?.stays == true)
         #expect(byFirst[Self.pr(4306)]?.stays == true)
+        // Of those in no part, GitHub's open one keeps it a mission; the one that merged doesn't.
+        #expect(question.othersStaying == 1)
         // Nothing can move: it isn't asked.
         #expect(!question.isWorthAsking)
     }
@@ -308,6 +316,19 @@ import Testing
         #expect(MissionSplitting.prompt(question).contains("Part 4 (split off before, a mission of its own):\n- “Fix the \"PDF\" export crash”"))
         #expect(MissionSplitting.instructions(for: question) == MissionSplitting.instructionsWithSplitOff)
         #expect(MissionSplitting.instructionsWithSplitOff.contains("A part split off before is already a mission of its own"))
+        // It's made of what was split off it too, as Keep Together counts it.
+        let splitOff = MissionSplitting.digest(["pr \(Self.pr(4120))"])
+        #expect(question.contents?.digests.contains(splitOff) == true)
+        // And still once that mission finished, as its pull request closed: one that reopens isn't new.
+        let closed = StoryMissionsTests.facts(
+            Self.storyFacts().pullRequests.values.sorted { $0.ref < $1.ref } + [Self.ado(4120, state: .closed)]
+        )
+        let missionsClosed = StoryMissionsTests.missions(closed, changes: changes)
+        #expect(missionsClosed.first { $0.key == mine }?.isFinished == true)
+        let storyClosed = try #require(missionsClosed.first { $0.key == .story(Self.story) })
+        let askedClosed = try #require(Self.question(storyClosed, in: missionsClosed, facts: closed, splitFrom: { holding[$0]?.splitFrom }))
+        #expect(askedClosed.parts.allSatisfy { $0.splitOff == nil })
+        #expect(askedClosed.contents?.digests.contains(splitOff) == true)
         // One Move to Mission put there isn't split off it.
         var moved = changes
         moved.remove(Self.pr(4120))
@@ -317,6 +338,7 @@ import Testing
         let storyByMove = try #require(missionsByMove.first { $0.key == .story(Self.story) })
         let asked = try #require(Self.question(storyByMove, in: missionsByMove, facts: facts, splitFrom: { byMove[$0]?.splitFrom }))
         #expect(asked.parts.allSatisfy { $0.splitOff == nil })
+        #expect(asked.contents?.digests.contains(splitOff) == false)
     }
 
     // MARK: Checking and joining the answers
@@ -381,26 +403,27 @@ import Testing
         #expect(MissionSplitting.plan(Self.question([[4105], [4101], [4107]], stays: [0, 1]), grouping: [[0, 1], [2]]) != nil)
     }
 
-    /// A story's mission, or the pull requests opened under a session, left with one pull request would be no mission: a
-    /// split that would leave the one that keeps it so isn't suggested. What no split moves, as one that merged, counts;
-    /// an order's mission stays one with one.
+    /// A story's mission, or the pull requests opened under a session, left with one open pull request would be no mission:
+    /// a split that would leave the one that keeps it so isn't suggested. An open one no split moves, as GitHub's, counts;
+    /// not one that merged, which Done lists only for a while. An order's mission stays one with one.
     @Test func aSplitLeavesWhatKeepsTheMissionAMission() throws {
         #expect(MissionSplitting.plan(Self.question([[4101], [4105], [4107]], leastToStay: 2), grouping: [[0], [1], [2]]) == nil)
-        let merged = try #require(MissionSplitting.plan(
+        let gitHubs = try #require(MissionSplitting.plan(
             Self.question([[4101], [4105], [4107]], othersStaying: 1, leastToStay: 2), grouping: [[0], [1], [2]]
         ))
-        #expect(merged.groups.map(\.goes) == [.keeps, .outside, .outside])
+        #expect(gitHubs.groups.map(\.goes) == [.keeps, .outside, .outside])
         let two = try #require(MissionSplitting.plan(Self.question([[4101], [4105], [4107]], leastToStay: 2), grouping: [[0], [1, 2]]))
         #expect(two.groups[0].refs == [Self.pr(4105), Self.pr(4107)])
         #expect(MissionSplitting.plan(Self.question([[4101], [4105], [4107]]), grouping: [[0], [1], [2]]) != nil)
         // What stays, alone in the group that keeps it: no split either.
         #expect(MissionSplitting.plan(Self.question([[4105, 4107], [4101]], stays: [1], leastToStay: 2), grouping: [[0], [1]]) == nil)
 
-        // As the missions have it: a story's needs two, and one that merged stays in it.
+        // As the missions have it: a story's needs two open ones; the one that merged stays in it, but doesn't count.
         let facts = Self.storyFacts()
         let story = try #require(StoryMissionsTests.missions(facts).first { $0.key == .story(Self.story) })
+        #expect((story.steps + story.attached).contains { $0.ref == Self.pr(4099) })
         let storyQuestion = try #require(Self.question(story, facts: facts))
-        #expect(storyQuestion.leastToStay == 2 && storyQuestion.othersStaying == 1)
+        #expect(storyQuestion.leastToStay == 2 && storyQuestion.othersStaying == 0)
         // The pull requests opened under a session need two; an order's one.
         let open = facts.pullRequests.values.filter { $0.state.isOpen }.map { pullRequest in
             var pullRequest = pullRequest
@@ -587,102 +610,204 @@ import Testing
         }
     }
 
+    /// What Keep Together counts a mission is made of (`MissionSplitQuestion.Contents`): each of its pull requests, whatever
+    /// became of it, each story and work item one is for, and each session that opened one, never a title. A merge, a close,
+    /// a stack or a next you set changes how its parts join, and so its question, but nothing it's made of; one that left,
+    /// or a session BriefBar no longer lists, leaves it made of less; a pull request, a link or a session that opened one
+    /// that it wasn't made of is something else.
+    @Test func whatKeepTogetherCountsIsEachReferenceWhateverBecameOfIt() throws {
+        let opener = [OrderSession(ref: Self.session, pullRequests: [Self.pr(4107)])]
+        let pullRequests = [
+            Self.ado(4101, task: 5102), Self.ado(4105, task: 5104), Self.ado(4107, task: 5105),
+            Self.ado(4099, task: 5106, state: .merged),
+        ]
+        func question(
+            _ pullRequests: [OrderPullRequest], sessions: [OrderSession] = opener, changes: OrderChanges = OrderChanges(),
+            name: @escaping (ItemRef) -> String? = Self.name
+        ) throws -> MissionSplitQuestion {
+            let facts = StoryMissionsTests.facts(pullRequests, sessions: sessions)
+            let missions = StoryMissionsTests.missions(facts, changes: changes)
+            let mission = try #require(missions.first { $0.key == .story(Self.story) })
+            return try #require(Self.question(mission, in: missions, facts: facts, name: name))
+        }
+        let kept = try question(pullRequests)
+        let contents = try #require(kept.contents)
+        #expect(contents.tells == .init(stories: true, sessions: true))
+        #expect(contents.digests.allSatisfy { $0.count == 32 && $0.allSatisfy(\.isHexDigit) })
+        // Each of the four pull requests, its task under the story, the task as a work item, and the session that opened one.
+        #expect(contents.digests.count == 4 * 3 + 1)
+        #expect(try question(pullRequests) { Self.name($0).map { $0 + "!" } }.contents == contents)
+        for state in [PullRequestState.merged, .closed] {
+            var ended = pullRequests
+            ended[1].state = state
+            let after = try question(ended)
+            #expect(after.parts.count == kept.parts.count - 1 && after.makeup != kept.makeup && after.contents == contents)
+        }
+        var stacked = pullRequests
+        stacked[1] = Self.ado(4105, task: 5104, into: Self.on(4101))
+        let afterStack = try question(stacked)
+        #expect(afterStack.parts.count == kept.parts.count - 1 && afterStack.makeup != kept.makeup)
+        #expect(afterStack.contents == contents)
+        let facts = StoryMissionsTests.facts(pullRequests, sessions: opener)
+        var changes = OrderChanges()
+        try changes.apply(
+            .setNext(Self.pr(4101), in: .story(Self.story), true), missions: StoryMissionsTests.missions(facts),
+            orders: DeclaredOrders(), now: t(60)
+        )
+        let afterNext = try question(pullRequests, changes: changes)
+        #expect(afterNext.parts.count == 1 && afterNext.makeup != kept.makeup && afterNext.contents == contents)
+        // The one that merged gone, as Done no longer lists it, and the session that opened one archived: made of less.
+        let less = try #require(try question(Array(pullRequests.prefix(3)), sessions: []).contents)
+        #expect(less.digests.count == 3 * 3 && less.isMadeOf(contents.digests))
+        // A pull request, a work item, or a session that opened one, that it wasn't made of.
+        #expect(try question(pullRequests + [Self.ado(4108, task: 5107)]).contents?.isMadeOf(contents.digests) == false)
+        var linked = pullRequests
+        linked[0].workItems = (linked[0].workItems ?? []) + [Self.item(5199)]
+        #expect(try question(linked).contents?.isMadeOf(contents.digests) == false)
+        let opened = [OrderSession(ref: Self.session, pullRequests: [Self.pr(4107), Self.pr(4105)])]
+        #expect(try question(pullRequests, sessions: opened).contents?.isMadeOf(contents.digests) == false)
+        // Told another way, with Copilot off: compared with none of these.
+        let mission = try #require(StoryMissionsTests.missions(facts).first { $0.key == .story(Self.story) })
+        let copilotOff = try #require(
+            MissionSplitting.question(for: mission, in: [mission], facts: facts, seesSessions: false, name: Self.name)?.contents
+        )
+        #expect(copilotOff.tells == .init(stories: true, sessions: false) && copilotOff.digests.count == 4 * 3)
+    }
+
     // MARK: Keep Together
 
     /// Counts what each mission you kept together is made of now, `at` seconds in.
     static func account(
-        _ kept: inout KeptTogether, _ makeups: [MissionKey: MissionSplitQuestion.Makeup?], at seconds: TimeInterval,
+        _ kept: inout KeptTogether, _ contents: [MissionKey: MissionSplitQuestion.Contents?], at seconds: TimeInterval,
         seen: Set<MissionKey>? = nil
     ) {
-        kept.account(seen: seen ?? Set(makeups.keys), makeups: makeups, canSee: { _ in true }, elapsed: 0, at: t(seconds))
+        kept.account(seen: seen ?? Set(contents.keys), contents: contents, canSee: { _ in true }, elapsed: 0, at: t(seconds))
     }
 
     /// Counts it each hour from `from` seconds in till `to`.
     static func hourly(
-        _ kept: inout KeptTogether, _ makeups: [MissionKey: MissionSplitQuestion.Makeup?], from: TimeInterval,
+        _ kept: inout KeptTogether, _ contents: [MissionKey: MissionSplitQuestion.Contents?], from: TimeInterval,
         to: TimeInterval, seen: Set<MissionKey>? = nil
     ) {
         for seconds in stride(from: from, through: to, by: hour) {
-            account(&kept, makeups, at: seconds, seen: seen)
+            account(&kept, contents, at: seconds, seen: seen)
         }
     }
 
     static let hour: TimeInterval = 3_600
 
-    @Test func keepTogetherHoldsTillTheMakeupHasChangedForThreeHoursOrTheMissionGoesUnseenFor14Days() {
+    @Test func keepTogetherHoldsTillTheMissionIsMadeOfSomethingItWasntForThreeHoursOrGoesUnseenFor14Days() {
         var kept = KeptTogether()
         let key = MissionKey.story(Self.story)
         let hour = Self.hour
         #expect(KeptTogether.settleFor == 3 * hour)
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        kept.keep(key, contents: Self.c("a"), at: t(0))
         #expect(kept.keeps(key))
         // Seen, made of the same: kept, its time unseen back to none.
-        kept.account(seen: [], makeups: [:], canSee: { _ in true }, elapsed: 3_600, at: t(0))
+        kept.account(seen: [], contents: [:], canSee: { _ in true }, elapsed: 3_600, at: t(0))
         #expect(kept.entries[key]?.unseen == 3_600)
-        Self.account(&kept, [key: Self.m("a")], at: 0)
+        Self.account(&kept, [key: Self.c("a")], at: 0)
         #expect(kept.entries[key]?.unseen == 0)
-        // Seen while BriefBar can't tell its makeup yet: kept.
+        // Seen while BriefBar can't tell what it's made of yet: kept.
         Self.account(&kept, [:], at: hour, seen: [key])
         #expect(kept.keeps(key) && kept.differences.isEmpty)
         // Unseen while what makes it is off: it waits.
-        kept.account(seen: [], makeups: [:], canSee: { _ in false }, elapsed: KeptTogether.forgottenAfter, at: t(0))
+        kept.account(seen: [], contents: [:], canSee: { _ in false }, elapsed: KeptTogether.forgottenAfter, at: t(0))
         #expect(kept.keeps(key))
         // 14 days unseen while it could have been seen: gone.
-        kept.account(seen: [], makeups: [:], canSee: { _ in true }, elapsed: KeptTogether.forgottenAfter, at: t(0))
+        kept.account(seen: [], contents: [:], canSee: { _ in true }, elapsed: KeptTogether.forgottenAfter, at: t(0))
         #expect(kept.entries.isEmpty)
-        // Its makeup changed: kept till it's been changed the same for three hours, its time starting again as it changes.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.account(&kept, [key: Self.m("b")], at: 0)
-        #expect(kept.keeps(key) && kept.differences[key]?.makeup == Self.m("b"))
-        Self.hourly(&kept, [key: Self.m("c")], from: hour, to: 3 * hour)
+        // Made of something it wasn't: kept till it's been made of that for three hours, its time starting again as that
+        // changes.
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.account(&kept, [key: Self.c("b")], at: 0)
+        #expect(kept.keeps(key) && kept.differences[key]?.contents == Self.c("b"))
+        Self.hourly(&kept, [key: Self.c("c")], from: hour, to: 3 * hour)
         #expect(kept.keeps(key))
-        let gone = kept.account(seen: [key], makeups: [key: Self.m("c")], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
+        let gone = kept.account(seen: [key], contents: [key: Self.c("c")], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
         #expect(gone && !kept.keeps(key) && kept.differences.isEmpty)
         // Back to what it was made of before the three hours: kept, and its time forgotten.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
-        Self.account(&kept, [key: Self.m("a")], at: 2 * hour + 1)
-        Self.hourly(&kept, [key: Self.m("b")], from: 3 * hour, to: 5 * hour)
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("b")], from: 0, to: 2 * hour)
+        Self.account(&kept, [key: Self.c("a")], at: 2 * hour + 1)
+        Self.hourly(&kept, [key: Self.c("b")], from: 3 * hour, to: 5 * hour)
         #expect(kept.keeps(key))
         // What it was made of at one look holds till the next, as BriefBar looks again as that changes. Asleep for ten
         // hours: an hour of it counts.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.account(&kept, [key: Self.m("b")], at: 0)
-        Self.account(&kept, [key: Self.m("b")], at: 10 * hour)
-        Self.account(&kept, [key: Self.m("b")], at: 20 * hour)
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.account(&kept, [key: Self.c("b")], at: 0)
+        Self.account(&kept, [key: Self.c("b")], at: 10 * hour)
+        Self.account(&kept, [key: Self.c("b")], at: 20 * hour)
         #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour)
         // Then it can't be told, as while a source reads or Azure DevOps is offline: the time till then counts, but none
         // of the time it can't be told, however often BriefBar looks, nor once it can be told again.
         Self.account(&kept, [:], at: 20 * hour + 10 * 60, seen: [key])
         Self.hourly(&kept, [:], from: 21 * hour, to: 30 * hour, seen: [key])
-        Self.account(&kept, [key: Self.m("b")], at: 30 * hour + hour / 2)
+        Self.account(&kept, [key: Self.c("b")], at: 30 * hour + hour / 2)
         #expect(kept.differences[key]?.counted == 2 * hour + 10 * 60)
         // Looked at often: only the time between looks counts.
         for minutes in stride(from: 40.0, through: 50.0, by: 10) {
-            Self.account(&kept, [key: Self.m("b")], at: 30 * hour + minutes * 60)
+            Self.account(&kept, [key: Self.c("b")], at: 30 * hour + minutes * 60)
         }
         #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour + 30 * 60)
         // Three hours told the same, the last of them till it couldn't be told: gone.
         Self.account(&kept, [:], at: 31 * hour + 20 * 60, seen: [key])
         #expect(!kept.keeps(key))
         // Made of something else again, once its time has lasted: that settles first, then what it's made of now counts.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
-        let settled = kept.account(seen: [key], makeups: [key: Self.m("c")], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("b")], from: 0, to: 2 * hour)
+        let settled = kept.account(seen: [key], contents: [key: Self.c("c")], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
         #expect(settled && !kept.keeps(key))
         // Not shown meanwhile: its time starts again.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
-        Self.hourly(&kept, [key: Self.m("b")], from: 0, to: 2 * hour)
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("b")], from: 0, to: 2 * hour)
         Self.account(&kept, [:], at: 3 * hour, seen: [])
-        Self.hourly(&kept, [key: Self.m("b")], from: 4 * hour, to: 6 * hour)
+        Self.hourly(&kept, [key: Self.c("b")], from: 4 * hour, to: 6 * hour)
         #expect(kept.keeps(key))
         // It finished, for three hours: gone.
-        let finished: [MissionKey: MissionSplitQuestion.Makeup?] = [key: nil]
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        let finished: [MissionKey: MissionSplitQuestion.Contents?] = [key: nil]
+        kept.keep(key, contents: Self.c("a"), at: t(0))
         Self.hourly(&kept, finished, from: 0, to: 2 * hour)
         #expect(kept.keeps(key))
         Self.account(&kept, finished, at: 3 * hour)
         #expect(!kept.keeps(key))
+    }
+
+    /// A mission made of nothing it wasn't is made of the same, however long: what merged, closed or left it, or a link or
+    /// a session BriefBar no longer tells, changes nothing. Something it wasn't made of counts, though some of what it was
+    /// made of left it.
+    @Test func keepTogetherHoldsWhileTheMissionIsMadeOfNothingItWasnt() {
+        var kept = KeptTogether()
+        let key = MissionKey.story(Self.story)
+        let hour = Self.hour
+        kept.keep(key, contents: Self.c("a", "b", "c"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("a", "b")], from: 0, to: 5 * hour)
+        #expect(kept.keeps(key) && kept.differences.isEmpty)
+        Self.hourly(&kept, [key: Self.c("a", "b", "c")], from: 6 * hour, to: 7 * hour)
+        #expect(kept.differences.isEmpty)
+        Self.hourly(&kept, [key: Self.c("a", "d")], from: 8 * hour, to: 10 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.contents == Self.c("a", "d"))
+        Self.account(&kept, [key: Self.c("a", "d")], at: 11 * hour)
+        #expect(!kept.keeps(key))
+        // Its time counts from when that came, though some of what it was made of left it meanwhile; it starts again only
+        // as what it wasn't made of changes.
+        kept.keep(key, contents: Self.c("a", "b", "c"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("a", "b", "c", "d")], from: 0, to: hour)
+        Self.account(&kept, [key: Self.c("a", "b", "d")], at: 2 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 2 * hour)
+        Self.account(&kept, [key: Self.c("a", "b", "d")], at: 3 * hour)
+        #expect(!kept.keeps(key))
+        kept.keep(key, contents: Self.c("a", "b", "c"), at: t(0))
+        Self.hourly(&kept, [key: Self.c("a", "b", "c", "d")], from: 0, to: hour)
+        Self.account(&kept, [key: Self.c("a", "b", "e")], at: 2 * hour)
+        #expect(kept.keeps(key) && kept.differences[key]?.counted == 0)
+        // A way told for three hours is kept with it, as it was then: made of less of that, it's the same.
+        let off = Self.c("x", "y", stories: false)
+        kept.keep(key, contents: Self.c("a"), at: t(0))
+        Self.hourly(&kept, [key: off], from: 0, to: 3 * hour)
+        #expect(kept.entries[key]?.contents[off.tells] == ["x", "y"])
+        Self.hourly(&kept, [key: Self.c("y", stories: false)], from: 4 * hour, to: 8 * hour)
+        #expect(kept.keeps(key) && kept.differences.isEmpty)
     }
 
     /// What you kept together is compared only with what BriefBar told the same way: turning Show Links or Copilot off or on
@@ -691,61 +816,61 @@ import Testing
         var kept = KeptTogether()
         let key = MissionKey.plan(Self.planID)
         let hour = Self.hour
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        kept.keep(key, contents: Self.c("a"), at: t(0))
         // Show Links off: told another way, so kept; that way's kept with it once told the same for three hours.
-        let off = Self.m("x", stories: false)
-        let waits = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(0))
-        #expect(!waits && kept.keeps(key) && kept.entries[key]?.makeups.count == 1)
+        let off = Self.c("x", stories: false)
+        let waits = kept.account(seen: [key], contents: [key: off], canSee: { _ in true }, elapsed: 0, at: t(0))
+        #expect(!waits && kept.keeps(key) && kept.entries[key]?.contents.count == 1)
         Self.hourly(&kept, [key: off], from: hour, to: 2 * hour)
-        #expect(kept.entries[key]?.makeups.count == 1)
-        let told = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
-        #expect(told && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"] && kept.differences.isEmpty)
+        #expect(kept.entries[key]?.contents.count == 1)
+        let told = kept.account(seen: [key], contents: [key: off], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
+        #expect(told && kept.entries[key]?.contents == [Self.c("a").tells: ["a"], off.tells: ["x"]] && kept.differences.isEmpty)
         // The same again: nothing to save. Back on, made of what it was: kept.
-        let unchanged = kept.account(seen: [key], makeups: [key: off], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
+        let unchanged = kept.account(seen: [key], contents: [key: off], canSee: { _ in true }, elapsed: 0, at: t(4 * hour))
         #expect(!unchanged && kept.differences.isEmpty)
-        Self.account(&kept, [key: Self.m("a")], at: 4 * hour)
+        Self.account(&kept, [key: Self.c("a")], at: 4 * hour)
         #expect(kept.differences.isEmpty)
         // Changed while off, for three hours: gone.
-        Self.hourly(&kept, [key: Self.m("y", stories: false)], from: 5 * hour, to: 8 * hour)
+        Self.hourly(&kept, [key: Self.c("y", stories: false)], from: 5 * hour, to: 8 * hour)
         #expect(kept.entries.isEmpty)
         // Kept together while BriefBar couldn't tell: kept every way, till it first tells one for three hours, which then
         // counts. Keeping it together again starts that time again.
-        kept.keep(key, makeup: nil, at: t(0))
-        Self.hourly(&kept, [key: Self.m("a")], from: 0, to: 2 * hour)
-        kept.keep(key, makeup: nil, at: t(2 * hour))
-        Self.hourly(&kept, [key: Self.m("a")], from: 3 * hour, to: 5 * hour)
-        #expect(kept.entries[key]?.makeups.isEmpty == true)
-        Self.account(&kept, [key: Self.m("a")], at: 6 * hour)
-        #expect(kept.entries[key]?.makeups == [Self.m("a").tells: "a"])
-        Self.hourly(&kept, [key: Self.m("b")], from: 7 * hour, to: 10 * hour)
+        kept.keep(key, contents: nil, at: t(0))
+        Self.hourly(&kept, [key: Self.c("a")], from: 0, to: 2 * hour)
+        kept.keep(key, contents: nil, at: t(2 * hour))
+        Self.hourly(&kept, [key: Self.c("a")], from: 3 * hour, to: 5 * hour)
+        #expect(kept.entries[key]?.contents.isEmpty == true)
+        Self.account(&kept, [key: Self.c("a")], at: 6 * hour)
+        #expect(kept.entries[key]?.contents == [Self.c("a").tells: ["a"]])
+        Self.hourly(&kept, [key: Self.c("b")], from: 7 * hour, to: 10 * hour)
         #expect(!kept.keeps(key))
         // A way told the same for three hours is kept with it, though the look that ends them tells it's made of
         // something else that way: that counts from then.
-        kept.keep(key, makeup: Self.m("a"), at: t(0))
+        kept.keep(key, contents: Self.c("a"), at: t(0))
         Self.hourly(&kept, [key: off], from: 0, to: 2 * hour)
-        let other = Self.m("y", stories: false)
-        let learned = kept.account(seen: [key], makeups: [key: other], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
-        #expect(learned && kept.entries[key]?.makeups == [Self.m("a").tells: "a", off.tells: "x"])
+        let other = Self.c("y", stories: false)
+        let learned = kept.account(seen: [key], contents: [key: other], canSee: { _ in true }, elapsed: 0, at: t(3 * hour))
+        #expect(learned && kept.entries[key]?.contents == [Self.c("a").tells: ["a"], off.tells: ["x"]])
         let since = try #require(kept.differences[key])
-        #expect(since.makeup == other && since.counted == 0 && since.lookedAt == t(3 * hour) && !since.paused)
+        #expect(since.contents == other && since.counted == 0 && since.lookedAt == t(3 * hour) && !since.paused)
     }
 
     @Test func atTheCapTheOneSeenLongestAgoGoesNotTheOldestKept() {
         var kept = KeptTogether()
         for index in 0..<KeptTogether.mostEntries {
-            kept.keep(.mine(UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", index))!), makeup: Self.m("m"), at: t(Double(index)))
+            kept.keep(.mine(UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", index))!), contents: Self.c("m"), at: t(Double(index)))
         }
         let unseen = MissionKey.mine(UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", 150))!)
         let seen = Set(kept.entries.keys).subtracting([unseen])
-        kept.account(seen: seen, makeups: [:], canSee: { _ in true }, elapsed: 3_600, at: t(0))
+        kept.account(seen: seen, contents: [:], canSee: { _ in true }, elapsed: 3_600, at: t(0))
         let new = MissionKey.story(Self.story)
-        kept.keep(new, makeup: Self.m("n"), at: t(1_000))
+        kept.keep(new, contents: Self.c("n"), at: t(1_000))
         #expect(kept.entries.count == KeptTogether.mostEntries)
         #expect(kept.entries[unseen] == nil)
         #expect(kept.keeps(new))
         // All seen alike: the one kept longest ago.
         let oldest = MissionKey.mine(UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", 0))!)
-        kept.keep(.story(Self.item(5200)), makeup: Self.m("n"), at: t(1_001))
+        kept.keep(.story(Self.item(5200)), contents: Self.c("n"), at: t(1_001))
         #expect(kept.entries[oldest] == nil)
     }
 
@@ -753,12 +878,12 @@ import Testing
         var kept = KeptTogether()
         let family = MissionKey.family(Self.session)
         let story = MissionKey.story(Self.story)
-        kept.keep(family, makeup: Self.m("a"), at: t(0))
+        kept.keep(family, contents: Self.c("a"), at: t(0))
         let followed = kept.follow(family, to: story)
         #expect(followed)
         #expect(kept.keeps(story))
-        kept.keep(family, makeup: Self.m("b"), at: t(0))
-        kept.keep(.plan(Self.planID), makeup: Self.m("c"), at: t(0))
+        kept.keep(family, contents: Self.c("b"), at: t(0))
+        kept.keep(.plan(Self.planID), contents: Self.c("c"), at: t(0))
         let copilotOff = kept.forget([.session])
         #expect(copilotOff)
         #expect(kept.entries[family] == nil)
@@ -780,25 +905,33 @@ import Testing
         let key = MissionKey.story(Self.story)
         let digest = String(repeating: "ab", count: 16)
         let other = String(repeating: "cd", count: 16)
-        kept.keep(key, makeup: Self.m(digest), at: t(0))
-        Self.hourly(&kept, [key: Self.m(other, sessions: false)], from: 0, to: KeptTogether.settleFor)
-        kept.account(seen: [], makeups: [:], canSee: { _ in true }, elapsed: 7_200, at: t(0))
+        kept.keep(key, contents: Self.c(digest), at: t(0))
+        Self.hourly(&kept, [key: Self.c(other, sessions: false)], from: 0, to: KeptTogether.settleFor)
+        kept.account(seen: [], contents: [:], canSee: { _ in true }, elapsed: 7_200, at: t(0))
         kept.save(to: defaults)
         #expect(KeptTogether.load(from: defaults) == kept)
-        #expect(kept.entries[key]?.makeups.count == 2)
+        #expect(kept.entries[key]?.contents.count == 2)
         let saved = try #require(defaults.data(forKey: KeptTogether.defaultsKey).map { String(decoding: $0, as: UTF8.self) })
         #expect(saved.contains("story/workItem/contoso/5101") && saved.contains(digest) && saved.contains(other))
         #expect(!saved.contains("Checkout"))
-        // What can't be read goes: another program's record, or a makeup that isn't a digest.
+        // What can't be read goes: another program's record, or a digest that isn't one. What an earlier build wrote, one
+        // digest of the whole, which can't be compared now, stays kept, to learn what its mission is made of again.
+        let session = { (number: Int) in
+            MissionKey.family(ItemRef.session(String(format: "00000000-0000-4000-8000-%012d", number))!).description
+        }
         defaults.set(Data("""
-            [{"key":"story/workItem/contoso/5101","makeups":[{"stories":true,"sessions":false,"digest":"\(digest)"}],"keptAt":0},
+            [{"key":"story/workItem/contoso/5101","makeups":[{"stories":true,"sessions":false,"digests":["\(digest)","\(other)"]}],"keptAt":0},
             {"key":"nonsense","makeups":[],"keptAt":0},
-            {"key":"plan/\(Self.planID.uuidString)","makeups":[{"stories":true,"sessions":true,"digest":"Checkout coupons"}],"keptAt":0},
-            {"key":3},{"key":"family/session/00000000-0000-4000-8000-000000000301","makeup":"\(digest)","keptAt":0}]
+            {"key":"plan/\(Self.planID.uuidString)","makeups":[{"stories":true,"sessions":true,"digests":["Checkout coupons"]}],"keptAt":0},
+            {"key":"\(session(302))","makeups":[{"stories":true,"sessions":true}],"keptAt":0},
+            {"key":"\(session(303))","makeups":[{"stories":false,"sessions":true,"digest":"\(digest)"}],"keptAt":0},
+            {"key":"\(session(304))","makeups":[{"stories":true,"sessions":true,"digest":"Checkout coupons"}],"keptAt":0},
+            {"key":3},{"key":"\(session(301))","makeup":"\(digest)","keptAt":0}]
             """.utf8), forKey: KeptTogether.defaultsKey)
         let loaded = KeptTogether.load(from: defaults)
-        #expect(loaded.entries.keys.map(\.description) == ["story/workItem/contoso/5101"])
-        #expect(loaded.entries[key]?.makeups == [Self.m(digest, sessions: false).tells: digest])
+        #expect(Set(loaded.entries.keys.map(\.description)) == ["story/workItem/contoso/5101", session(303)])
+        #expect(loaded.entries[key]?.contents == [Self.c(digest, sessions: false).tells: [digest, other]])
+        #expect(loaded.entries[try #require(MissionKey(session(303)))]?.contents.isEmpty == true)
         KeptTogether().save(to: defaults)
         #expect(defaults.data(forKey: KeptTogether.defaultsKey) == nil)
         kept.save(to: defaults)

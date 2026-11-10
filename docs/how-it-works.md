@@ -485,9 +485,10 @@ title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); 
 while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
 stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
 a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
-`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**
-and its summary under them, written as the page opens, as a work item's details do, unless one that's current is there;
-then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**, and, for a
+Copilot session while Send Work to Copilot is on, **Ask…** ([Asking a session aside](#asking-a-session-aside)), with what
+it answered under them; then its summary, written as the page opens, as a work item's details do, unless one that's
+current is there; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
 to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
 Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
@@ -1225,7 +1226,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
@@ -1254,8 +1255,9 @@ so a pull request's details (policies and threads, two requests) are fetched on 
 
 Requests honor `Retry-After`, in seconds or as the date to wait until (`RetryAfter`): when Azure DevOps asks to
 slow down, nothing is sent until the time it gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`).
-When nothing can be read (offline, for example), refreshes back off up to ten minutes, and waking the Mac or getting
-back online refreshes right away.
+When nothing can be read (offline, for example), your organizations' lists or, with none to watch, the pull requests you
+watch or were sent, refreshes say so and back off up to ten minutes, and waking the Mac or getting back online refreshes
+right away.
 
 Each request goes only where it's sent, with the Azure CLI's token: no redirect is followed (`RedirectGuard`). One to
 another host fails with an error that says so (`ADOError.redirected`), and one on the same host is an HTTP error like
@@ -1426,28 +1428,29 @@ yours names a chain by; or one another mission has too, as another order names i
 one as well, with that order's lines: only open Azure DevOps pull requests that this mission alone has and no change of
 yours is about move.
 
-It's asked after the names on screen, one mission at a time, once what the mission is made of has stayed the same for
-five seconds, once the sources have read what they show, and again only when that changes, or BriefBar tells it another
-way, as with Show Links off: its pull requests, their work items and stories, and the sessions that opened them, never a
-title alone. It's asked twice, with the likeliest words: its parts in order after the story or session it's for, then in
-reverse order without it, and only what both answers separate counts; the first answer that sees one piece of work
-settles it. Between one answer and the next, its own or a group's name's, it stops once the mission has left the screen,
-keeping what it found for when it's back and settled, the first question's answer too, so that only the second is asked
-then, as when Apple Intelligence was busy; or once what it finds can't count: the mission changed, or Pull Request Order
-or the source it's from went off. On made-up missions, before this shipped, that suggested splitting none of 40 that
-were one piece of work, also with stacked parts and with their tasks' titles to hand, and caught 6 of 18 that had
-drifted, each grouped right: it's often quiet rather than often wrong. Each title is quoted as data, never a name you
-gave. The answer comes in a set shape, by guided generation (`OnDeviceModel.Shape.split`): whether it's one piece of
-work, then two or three groups of the parts' numbers; one that doesn't place each part once gives no suggestion. Which
-group keeps the mission, its key, its Focus and the name you gave it, BriefBar chooses the same way each time, never the
-model: the one with what stays, else the one with the most open pull requests, then the one opened earliest. Each other
-group goes into the mission split off it before that's in it, else to a new mission of your own when it has two pull
-requests or more, else out of missions. There's no suggestion where what stays is in two groups, a group has two
-missions split off before, or the one that keeps the mission has one: a split never joins missions. Nor is there one
-that would leave a story's mission, or the pull requests opened under a session, with one pull request, merged ones
-counted, as that's no mission. The groups' names, the kept one's unless you named it and each new mission's, are asked
-as a mission's are, and are the names those missions get, Apple Intelligence's, in memory. A suggestion is kept in
-memory only, and none of it goes to the log, but how many groups it has, nor to agents.
+It's asked after the names on screen, one mission at a time, once what it's asked of has stayed the same for five
+seconds, once the sources have read what they show, and again only when that changes, or BriefBar tells it another way,
+as with Show Links off: its parts as they join, their open pull requests, their work items and stories, and the sessions
+that opened them, never a title alone (`MissionSplitQuestion.Makeup`). It's asked twice, with the likeliest words: its
+parts in order after the story or session it's for, then in reverse order without it, and only what both answers
+separate counts; the first answer that sees one piece of work settles it. Between one answer and the next, its own or a
+group's name's, it stops once the mission has left the screen, keeping what it found for when it's back and settled, the
+first question's answer too, so that only the second is asked then, as when Apple Intelligence was busy; or once what it
+finds can't count: the mission changed, or Pull Request Order or the source it's from went off. On made-up missions,
+before this shipped, that suggested splitting none of 40 that were one piece of work, also with stacked parts and with
+their tasks' titles to hand, and caught 6 of 18 that had drifted, each grouped right: it's often quiet rather than often
+wrong. Each title is quoted as data, never a name you gave. The answer comes in a set shape, by guided generation
+(`OnDeviceModel.Shape.split`): whether it's one piece of work, then two or three groups of the parts' numbers; one that
+doesn't place each part once gives no suggestion. Which group keeps the mission, its key, its Focus and the name you
+gave it, BriefBar chooses the same way each time, never the model: the one with what stays, else the one with the most
+open pull requests, then the one opened earliest. Each other group goes into the mission split off it before that's in
+it, else to a new mission of your own when it has two pull requests or more, else out of missions. There's no suggestion
+where what stays is in two groups, a group has two missions split off before, or the one that keeps the mission has one:
+a split never joins missions. Nor is there one that would leave a story's mission, or the pull requests opened under a
+session, with one open pull request, as that's no mission once Done no longer lists those that merged or closed. The
+groups' names, the kept one's unless you named it and each new mission's, are asked as a mission's are, and are the
+names those missions get, Apple Intelligence's, in memory. A suggestion is kept in memory only, and none of it goes to
+the log, but how many groups it has, nor to agents.
 
 **Split** is one change of yours (`OrderEdit.split`), with one **Undo**: each pull request it moves keeps the mission it
 came from (`OrderChange.splitFrom`), and what each waits for doesn't change. It goes by the orders as agents last told
@@ -1458,29 +1461,37 @@ from a story's mission or a session's pull requests, it has no order known. **Ke
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
 moved, one told while BriefBar was closed too, which BriefBar notes as it starts (`OrderChanges.noteOverrides`), each
 keep the mission it's in together as it's made now, or, while BriefBar can't tell yet, as it's made once it can: in the
-preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of, never a title,
-until it has been made of something else for three hours (`KeptTogether.settleFor`), or two weeks after BriefBar last
-saw the mission, counted as names' are. Those three hours count only while BriefBar can tell what the mission is made
-of: it looks again whenever what it reads changes, and every hour, so what it told at one look holds till the next, of
-which at most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac sleeps: so a read that fails, tried again
-each hour, or a source that tells less for a while, as when BriefBar starts before the network's up, doesn't bring a
-suggestion back. How long one has differed is kept in memory, and starts again as it's made of something else again, as
-it isn't shown, or as you keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not
-which story each pull request is for, so those for a story are among the pull requests opened under a session; with
-Copilot off, not who opened them. So it keeps a digest for each way it has told the mission, Show Links and Copilot each
-on or off, and compares each only with what it told the same way: turning either off or on isn't a change, and a way it
-tells the mission, the same for three hours, is kept with it, so a change from then on counts. A change within three
-hours of a way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long
-that takes: till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each
-pull request is for, and Copilot has read which pull requests its sessions opened, from the app's database where there
-is one (`OrderFacts.isReading`); nor while Azure DevOps is off, or the latest refresh that tried to read anything read
-nothing, neither an organization's lists nor a pull request sent to you, as offline, signed out, or with every
-organization in a directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another
-way, by its parts alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen
-longest ago going first, which only brings back a suggestion you can keep together again. Turning a source off forgets
-those of its missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets
-them. **Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again
-if BriefBar restarted since. A split applies whole: to take part of one, Keep Together, then Move to Mission.
+preferences (`KeptTogether`, as `order.splits`), by its key, as digests (SHA-256) of what it's made of
+(`MissionSplitQuestion.Contents`), one for each of its Azure DevOps pull requests and those of the missions split off
+it, whatever became of them, each story, with its task, and each work item one is for, and each session that opened one,
+never a title, until it has been made of something it wasn't for three hours (`KeptTogether.settleFor`), or two weeks
+after BriefBar last saw the mission, counted as names' are. Made of less, as a pull request merged, closed or left it,
+or a link or a session BriefBar no longer tells, it's made of the same, and so it is however its pull requests relate,
+as a next you set or an order's line joins its parts, which its question is asked of. Those three hours count only while
+BriefBar can tell what the mission is made of: it looks again whenever what it reads changes, and every hour, so what it
+told at one look holds till the next, of which at most an hour counts (`KeptTogether.mostAtOnce`), as while the Mac
+sleeps: so a read that fails, tried again each hour, or a source that tells less for a while, as when BriefBar starts
+before the network's up, doesn't bring a suggestion back. How long one has differed is kept in memory, and starts again
+as it's made of something else it wasn't, but not as something it was made of leaves it, as it isn't shown, or as you
+keep it together again. What it's made of is what BriefBar can tell: with Show Links off, not which story each pull
+request is for, so those for a story are among the pull requests opened under a session; with Copilot off, not who
+opened them. So it keeps digests for each way it has told the mission, Show Links and Copilot each on or off, and
+compares each only with what it told the same way: turning either off or on isn't a change, and a way it tells the
+mission, the same for three hours, is kept with it, so a change from then on counts. A change within three hours of a
+way it hadn't told before isn't seen. Nothing counts while a source still reads what it shows, however long that takes:
+till Azure DevOps has read an organization's lists since BriefBar started, Show Links has read what each pull request is
+for, and Copilot has read which pull requests its sessions opened, from the app's database where there is one
+(`OrderFacts.isReading`); nor while Azure DevOps is off, or the latest refresh that tried to read anything read nothing,
+neither an organization's lists nor a pull request sent to you, as offline, signed out, or with every organization in a
+directory the Azure CLI isn't signed in to. A suggestion on screen holds the same way: told another way, by its parts
+alone. Each follows its mission as Focus does (`OrderBoard.successor`); at most 200, the one seen longest ago going
+first, which only brings back a suggestion you can keep together again. Turning a source off forgets those of its
+missions, turning Pull Request Order off keeps them, their days waiting, and **Forget All Orders…** forgets them.
+**Suggested Split…**, in the mission's **⋯**, shows one you kept together again, asking Apple Intelligence again if
+BriefBar restarted since, or its parts changed, as one merged. A split applies whole: to take part of one, Keep
+Together, then Move to Mission. A split's Undo puts back the names Apple Intelligence had given the missions it named,
+with what it had asked them with, so that they aren't asked again (`OrderLastChange.names`); Undo Your Changes to It or
+to This Mission doesn't, and the mission is asked its name again once it shows.
 
 ### A pull request's stage
 
@@ -1521,12 +1532,14 @@ review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours
 (a digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's,
 until your own vote changes or new commits come; Your review until you change it; merging or closing ends any.
 **Finished My Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure
-DevOps, or something new needs you there. Sessions never put someone else's pull request in progress. BriefBar never
+DevOps, or something new needs you there. Sessions never put someone else's pull request in progress, whether they work
+on it or set its stage. BriefBar never
 votes or changes anything in Azure DevOps for a stage.
 
 **What sessions set.** With agents on too, Copilot sessions tell BriefBar the stages of the Azure DevOps pull requests
 they work on, with `--mcp`'s `pull_request_stage` ([below](#what-it-answers)), without you asking: In progress as they
-start fixing one, Your review once they've pushed their work, Teammate's review once you tell them you've reviewed it.
+start fixing one of yours, Your review once they've pushed their work, Teammate's review once you tell them you've
+reviewed it.
 The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
 it, and its words say who, naming the session once (`StageText.namesWhoSetIt`): **‘Cart’ says it's ready · set 5m ago**,
 on its row and card, in its details and tooltips, and to VoiceOver, and they say after you where it replaced yours,
@@ -1537,16 +1550,32 @@ the pull request in progress. A Your review a session set ends as the votes chan
 review does, unlike one you set, which stands until you change it: the session said its work was ready for you, as
 **‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
 Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
-caused ends nothing. Votes and commits end what a session set only as BriefBar read them after it set it, since the
+caused ends nothing. One that follows a Your review you set before the session read the pull request, with nothing set
+since but such Your reviews, keeps no votes, and lasts as yours does, while yours is there (`OrderKeeper.setStages`,
+`StageMark.follows`): it shows at once, as the session's, also
+over that session's own work since yours, which would put it in progress, and a Your review you set outlasts the session
+that pushed and says it's ready, as BriefBar's prompts ask, once a teammate approves, kept under it. Its menu has
+**Let BriefBar Decide**, as yours alone would, which forgets both, and Undo of yours takes it with yours, rather than
+leave it lasting on its own, also while the Copilot app doesn't list the session, so that it doesn't come back alone
+once it's listed again, and also one `--mcp` kept since the app last read what sessions keep, as both read that again
+first (`StageReading.followed`). Once yours is gone any other way, as when `--mcp` keeps the session's just as you undo
+yours, it counts no more (`StageRules.counted`). Once a session's
+other stage replaced yours, what it says later counts as any stage does, Undo of yours leaves it, and once the latest
+ends none does, yours neither.
+Votes and commits end what a session set only as BriefBar read them after it set it, since the
 session read the pull request itself just then, and what it sets is timed as that read ended. BriefBar reads them as the
 refresh that read its organization's lists started, or as it was read by its link, a time a pull request kept as it was
 while those couldn't be read keeps (`StageFacts.readAt`, `PulseSnapshot.readAt(of:)`). What a session set counts only
 while the Copilot app lists the session (`MCPRelated.StageSessions`, `PullRequestOrder.listedSessionsDoing`), so an
-archived one's goes with it. Once the latest of them no longer stands, or the pull request merges or closes, none
+archived one's goes with it: the app's chats and project sessions, and the tasks BriefBar sent, but not a session run in
+a terminal, which the app's database doesn't have, so `pull_request_stage` keeps nothing for one; where BriefBar has
+never read that database, such as without the Copilot app, every session that worked in the last day instead
+(`SessionStateScanner`). Once the latest of them no longer stands, or the pull request merges or closes, none
 counts: yours goes, and BriefBar takes away from what each session keeps what it set before the latest, or all of it
 once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one never comes back, also once
-an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, listed
-or not. Can merge, Waits and Merged come only from what BriefBar sees, whatever a session says.
+an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, and
+the Your reviews that followed it, listed or not. Can merge, Waits and Merged come only from what BriefBar sees,
+whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
 for each pull request: its number, the stage, when, and only what would end it (`StageRules.mark`): the commit, for In
@@ -1572,8 +1601,9 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first in its column's order, which wears **Next** on the Board. The mission you focus on comes first
-in each stage, but in In progress, what needs you comes before it, so that Fix next is always its column's first:
+request is always the first in its column's order, which wears **Next** on the Board. The pull request you chose for a
+slot comes first in its column (below); then the mission you focus on comes first in each stage, but in In progress, what
+needs you comes before it, so that Fix next is always its column's first:
 
 | Stage | Which comes first |
 |---|---|
@@ -1592,6 +1622,35 @@ against (`BoardCard.waitingForIt`, `OrderMission.stackedBases(of:)`), not those 
 wait for each other. It's only between open pull requests: nothing waits through one that merged or closed, as its order
 then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
 other missions have waited, as Up Next does.
+
+**The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
+each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
+actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
+one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
+(`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
+needs you, so that what needs you still comes first;
+the slot shows it with ✎, and its card wears **✎ Next**. It stands while its pull request is on your board in that stage
+(`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away, and once it's
+been away for half an hour (`UpNextPicks.awayFor`), BriefBar forgets it as it works stages out again, back by then or not,
+as when the Mac wakes (`UpNextPicks.moved`); back sooner, it's still yours. Half an hour is long enough for what BriefBar
+reads to catch up: as Pull Request Order turns on, which pull requests the Copilot app's sessions are on can come after
+Azure DevOps' lists, so for a moment a pull request a session asks you about reads as waiting on a teammate; and while
+Azure DevOps throttles BriefBar, a failed build shows only once it lets BriefBar read the pull request's details again. When it
+went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again, or
+BriefBar starts again, each choice has its half hour again. One whose source reads nothing of it now, such as while its
+organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's off, is
+neither away nor back, and waits. In progress without needing you, as while its build runs again or a session writes
+it, Fix next's waits too, and comes first again once it needs you. Undo of a stage you changed chooses its pull request
+again where you'd chosen it, gone by then or not, but not for a slot you've decided for since, choosing another or with
+Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, or
+unchecking Make Next forgets it at once, whether the slot shows it then or waits for it to come back; there's no Undo
+line, as for Focus. It's kept in the preferences as each slot's name and its pull request's reference
+(`order.upNextPicks`), but for a pull request listed only because someone sent it in a chat, which stays in memory while
+BriefBar runs, Pull Request Order off or on, as your changes to its mission do, until BriefBar lists it otherwise, and
+goes when another account signs in.
+**Forget Stages…** forgets them all, and turning Azure DevOps off forgets its own. `needs_me` reads those kept in the
+preferences, and lists each first in its stage, as the Board does.
+
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
 only a card dragged from its own board, never text from another app that names a pull request. A drop, and the columns
@@ -2697,7 +2756,10 @@ posts nothing; only **Push & Reply** commits what's left, pushes the commit it c
 without force (`git push origin <commit>:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to
 that whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 `--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
-build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
+build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. A comment's **Fix**, or
+**Fix All**, sent with **Push and reply once it's fixed** checked ([below](#about-a-comment)) is a Push & Reply that
+fixes its threads first: its prompt is the fix's, then Push & Reply's own steps, and it goes as a Push & Reply, with
+nothing denied it and every check below. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
 takes the branch from a checkout that has it. The composer already knows and shows the remote
 repository. **Choose Local Clone…** selects its folder on this Mac, not which repository the PR belongs to.
@@ -2721,8 +2783,9 @@ prompt names, lists the merges in what `origin/<branch>` doesn't have yet, and a
 (`MERGE_HEAD`), and requires that what each merged in is in `origin/<target>` (as `git merge-base --is-ancestor`
 would). Otherwise nothing goes, and it says why. A merge of the pull request's own branch, as `git pull` makes,
 doesn't pass either: from history alone it can't be told from a merge of the branch into another, and BriefBar's prompts
-rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, before
-Copilot starts (`LaunchError.foreignMerge`), and the task fails with why; for the Copilot app's sessions the window
+rebase rather than merge. For BriefBar's own tasks the launcher checks the session's worktree, or its fork's, or a new
+session's, as a comment's fix that pushes and replies may start, before Copilot starts (`LaunchError.foreignMerge`),
+and the task fails with why, its new worktree removed; for the Copilot app's sessions the window
 checks the folder the session works in before the prompt is sent or copied, and says why it didn't send it
 (`CopilotTasksStore.deliver(_:to:forking:handOff:about:at:checkingPush:)`). The prompt names the branch it merges into,
 as the window wrote it, so the branch BriefBar checks against is the one the prompt names, and a Push & Reply goes only
@@ -2752,7 +2815,12 @@ prompt's own turn, is left to Copilot's own check. When BriefBar can't check, no
 isn't a clone of the pull request's repository; where what it would push has a commit without parents, as where a
 shallow clone's history stops, which git takes for a root though it may be a merge, of anything; or while a merge is
 going on whose `MERGE_HEAD` it can't read, such as a link, which it doesn't follow. The check needs only the clone's
-`origin`, not a branch new work would start from (`Git.checkClone(at:of:)`).
+`origin`, not a branch new work would start from (`Git.checkClone(at:of:)`). A comment's fix sent to push and reply to a
+fork of one of the app's sessions goes from the fork, which the app makes with the session's commits and changes, in a
+worktree of its own: BriefBar checks the session's folder before the fork is made, and watches the session, and its
+checkout, until it is; then, once BriefBar took the fork for the prompt, the fork, and the worktree it works in, as its
+state says, rather than the session, until the fork's extension takes the prompt, or right before BriefBar copies the
+prompt for the fork (`CopilotTasksStore.PushOnItsWay.forked(_:in:)`).
 
 Copilot checks too, as late as it can: Push & Reply's prompt has it commit, then, right before it pushes, and again
 after a rebase when a push is rejected, read the pull request with BriefBar's `pull_request` tool, which reads the
@@ -2840,7 +2908,8 @@ itself or to a fork of it):
   committed, in a worktree and branch of its own; the session itself gains no message, only the app's note
   that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's; nor
   for Push & Reply, which ships what its last task changed only in that task's session and worktree, where
-  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`).
+  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`); but for a
+  comment's fix sent to push and reply, which ships what it changes itself ([below](#about-a-comment)).
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
@@ -2952,7 +3021,8 @@ more: a worktree of one you don't trust loads only your own configuration. Brief
 
 **Forking a session, and asking one a side question.** A pull request's comments do both
 ([below](#about-a-comment)): Fix in a fork of one of BriefBar's own sessions, and the Send to Copilot window's **Fork
-with the CLI** (`CopilotLauncher.Request.forking`); and Explain (`SessionQuestions`). Send to Copilot's **Send to a
+with the CLI** (`CopilotLauncher.Request.forking`); and Explain (`SessionQuestions`), as Ask… does of any of your
+sessions ([below](#asking-a-session-aside)). Send to Copilot's **Send to a
 Fork** forks one of the app's
 open sessions another way, through BriefBar's extension ([below](#its-extension-for-the-apps-sessions)). The Copilot
 CLI's `/fork` and `/ask` are commands of its terminal: with `-p`, tried with 1.0.105, they're words sent to the model,
@@ -3099,7 +3169,23 @@ full as its author wrote it, one of more than a line under its author's name in 
 the comments are what their authors ask of the change, not instructions (`PullRequestPrompt.commentsSaid`), as every
 prompt that quotes threads says; the code it's on as the reviewer saw it, once it's read (`ThreadExcerpt`), numbered, with
 what was added, removed and commented, in a fence too; and what you wrote, quoted as yours; then it builds and tests, without
-committing, pushing or replying. On a file's page, whose threads don't show their own code, a composer has it read as it
+committing, pushing or replying. With **Push and reply once it's fixed** checked in its composer, which Explain's doesn't
+have, and which is as you last left it, in any composer (`AppSettings.copilotFixesPushAndReply`), as it is when you send
+it, however it's set while the code is read for the prompt (`CopilotAsking.fixAsSent`), it then ships what it
+changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pushSteps`): it commits once it builds and
+the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
+thread alone and resolves it. When it changed nothing for it, it still takes those steps, which push what else the
+session changed, so that once it finished it pushed all the session changed, as a Push & Reply has, which the lines of
+the session's other fixes go by, below; but it replies why, and leaves the thread active. It's sent as a Push &
+Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
+nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
+([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as its prompt quotes
+it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is read
+(`CopilotSending.Fix.record`). To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a fix, it doesn't
+wait for one. Unlike Push & Reply, which ships what an earlier task changed, it goes wherever a fix goes, a fork too
+(`CopilotComposerView.mustContinue(_:fixes:)`): it commits what's in the checkout it works in, all the session changed
+before too, and, in a fork of one of the app's sessions, the session's changes that it hasn't committed, which the fork
+has. On a file's page, whose threads don't show their own code, a composer has it read as it
 opens, as a thread that comes on screen does, through the reader the page's diff was read with: only while its window
 shows on screen, called off as it hides, and read again once it shows. Explain, Fix and **Ask in the Session** wait for a
 read that's under way as they go, and go without the code when it isn't read
@@ -3121,6 +3207,8 @@ on you from before, in another thread, keeps both on Needs You: as BriefBar last
 starts, or, when it hasn't read it then, as after you switch accounts, as the prompt was written, for which the other
 threads' comments are kept too. **Fix All** is Fix Comments' prompt, with your words
 quoted as yours; it says **Fix 1 Comment** while open threads that don't wait on you are left (`CopilotAsk.fixAllTitle`).
+With Push and Reply checked, it ships the same way, then replies on each thread it lists alone, and resolves each it
+changed (`PullRequestPrompt.fixComments(_:workplace:note:ships:)`).
 
 **Explain** (`PullRequestPrompt.explainThread`) quotes the thread and its code the same way, with your question, and asks
 the session you chose, aside, why the reviewer wrote it, what they want, how the code relates, and ways to address it
@@ -3144,7 +3232,12 @@ session fixed and hasn't pushed, which its push takes along, however it's sent (
 commits and pushes all the session changed, whatever its prompt lists, so the other threads the session fixed before it
 say they're pushed too, without a reply, while it pushes and once it has: **Pushed from ‘Retry backoff’, without a
 reply** (`CopilotWork.replies`); not once it failed or stopped, which pushed nothing, nor while it's copied for you to
-paste. A thread whose own Push & Reply failed or stopped is pushed along so too. Once one such push finished, the fix
+paste. A thread whose own Push & Reply failed or stopped is pushed along so too. A comment's fix sent to push and reply
+takes on its threads alone, and says it fixes them first (`CopilotWork.fixes`): "Copilot is fixing this in ‘Retry
+backoff’, to push and reply", then "Fixed, pushed and replied in ‘Retry backoff’", while the session's other fixes it
+pushes along say they're pushed, without a reply, as above. One that failed or stopped may not have fixed them, so,
+unlike a Push & Reply that did, it doesn't make them ready to push: Try Again sends it again
+(`CopilotWork.waitsToBePushed`, `CopilotTasksStore.canTryAgain`). Once one such push finished, the fix
 stays pushed, whatever comes after it, such as a push that fails or one copied for you to paste, and even once what that
 push listed is taken on again: a task keeps the Push & Reply tasks that ran in its session, on the same pull request,
 with when each started and how it ended (`CopilotRun.pushes`); only fixing the thread again makes it ready to push.
@@ -3223,8 +3316,9 @@ Fix All's either, written for all the threads it took on, which Try Again on one
 the session it was to fork, or a new session; never a new fork of the session that a fork it went to forked, which
 wouldn't have what the fork did (`CopilotSessionNames.retryDestination`). Its ▾ leads with that session, so that it's
 there to send to, even when it isn't the pull request's (`retryLead`). It quotes the answer that fix quoted, and no other,
-as **Include the answer above** was then, and applies the change suggested in its thread as written, as that fix did,
-or doesn't (`CopilotTasksStore.FixWords`, `CopilotAsking.restore`). What the composer does as it opens is one decision
+as **Include the answer above** was then, applies the change suggested in its thread as written, as that fix did,
+or doesn't, and pushes and replies once it's fixed, or doesn't, as that fix was sent, though Push and Reply for the next
+fix stays as you last left it (`CopilotTasksStore.FixWords`, `CopilotAsking.restore`). What the composer does as it opens is one decision
 (`CopilotDrafts.plan`): it sends at once only right after Try Again (`retryWait`), and only while what that fix quoted,
 or applied, still shows as it did; else its words come back all the same, going there, and it says why it waits for
 you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which
@@ -3365,6 +3459,46 @@ what Copilot took on of them before then is over, for good, as a build's is once
 session, of a merge of the old target, isn't ready to push, nor where Resolve goes, once the pull request conflicts
 again; not while Copilot is at it (`CopilotTasksStore.endWorkThatsOver`). The demo makes its answer up
 (`DemoData.conflictsExplanation`), and runs nothing.
+
+#### Asking a session aside
+
+**Ask…** asks one of your Copilot sessions where it stands, or your own question, aside, as Explain asks about a thread,
+and shows the answer where you asked: under the session's row in Copilot's list (`SessionRowView`), and under the
+heading of its page in a work item's or a pull request's details (`ItemPageView`), whose heading has **Ask…** beside ✨
+Summarize (`SessionAskButton`), while a source says what the session is (`Links.isDescribed`): not once only its
+reference is left, as with GitHub Copilot turned off while an app session's page is open. The row's menus have it
+(`SessionAskMenuItems`), and so does **⌄** on a pull request's Copilot line, beside Show Details, which opens the field,
+then the session's page (`SessionAskPageItem`), only where that page can open; while the session is asked, **⌄** has
+**Stop Asking** instead, as the row's menus do, since asking it there would throw that question away for another premium
+request. In menus, and VoiceOver's actions, trying a failed question again is **Try Asking Again**, not to be taken for
+a failed summary's **Try Again** beside it. Copilot's list and the pages are shared views, which read nothing of Azure
+DevOps: what was asked and answered is kept by the session's `ItemRef` in `AppServices.sessionAsks` (`SessionAsks`), so
+it shows wherever the session does, and stays as a row moves to another group, which draws it anew; so is the one field
+that's open, with what you wrote in it, one at a time, as Explain's composer is, and never for a session that's being
+asked (`SessionAsks.openField`). Its **✕** has Esc's shortcut, and while it's open the details it's in leave Esc to it
+(`InlineComposerOpen`). The widgets show none of it (`offersAsks`), as they show no summary.
+
+It asks only through what the app gives it (`SessionAsks.setAsker`): Azure DevOps' `CopilotQuestions` gives it a way
+while Send Work to Copilot is on, and takes it away as that's turned off or Azure DevOps stops, which stops what's being
+asked, deleting its fork, forgets every question, answer and what you wrote, and hides Ask…. Turning GitHub Copilot off
+does the same for its sessions, as their summaries go with what it said, and for those that left its list since they
+were asked (`SessionAsks.forgetSessions`), but not for the tasks BriefBar sent, which Azure DevOps lists. It asks as
+Explain asks (`SessionQuestions`): in a fork with no tools, deleted after, with the session's own model, as one premium
+request. The question is written in BriefBarCore (`SessionAskPrompt`): your words, quoted as yours, or else where it
+stands, what's done, what's left, and what or whom it waits on, from what it knows of its work in its conversation,
+briefly; it reads nothing else. **Ask More** follows up on the answer that shows, quoting it, cut to 6,000 characters,
+in a fence nothing in it closes (`QuotedText.fenced`), since the next fork never saw it, and it may quote what the
+session read, such as a comment, which anyone who can comment can write; left empty, it asks where the session stands
+now, and what changed. Asking again, of the same session, stops what's still being asked of it. The answer is drawn from
+its Markdown by a small reader of BriefBarUI's own (`AnswerMarkdown`, `AnswerText`): paragraphs, headings, points,
+numbered points, code, quotes and tables, links as their words only, a long one's beginning until **Show More**. Its
+**↗** opens the session itself, as its row does, even where opening the session opens the one that asks you its
+question: in the Copilot app, or in Terminal without it, as its tooltip says (`LinkedItem.openItself`,
+`SessionStore.opensItselfHelp`), told again as the app is installed or removed, though no session changed. A task's
+answer has none, as its row and page open its pull request or work item.
+VoiceOver hears once that it answered, or why it couldn't, however many places show it (`SessionAsks.announcesOnce`).
+The log says only that a session was asked, never what, nor what it answered. The demo makes its answers up
+(`DemoData.sessionAnswer`), and runs nothing.
 
 ### Notifications
 
@@ -3927,7 +4061,8 @@ Azure DevOps starts. The demo keeps them in memory.
 #### Stages for agents
 
 While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
-stage but Merged, what's next first, each pull request with its number, title and repository and why it's there, in
+stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
+the preferences, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back. `--mcp` works them out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what
 the lists read, the sessions the Copilot app lists, with the tasks BriefBar sent, as the app lists them, unnamed: those
@@ -3940,16 +4075,26 @@ Pull Request Order's tools, listed only while it was on as `--mcp` started and e
 `order_pull_requests`, `pull_request_order` and `forget_pull_request_order`, for the orders sessions tell, and
 `pull_request_stage` (`PullRequestOrderMCP`), for stages, while Copilot is on too. `pull_request_stage` takes
 `in_progress`, `user_review`, `teammate_review` or `clear`, for at most 20 Azure DevOps pull requests at once, by their
-links, or their numbers with `organization`, as `working_on` takes them. It's the calling session's, as `working_on`
-finds it (`SessionUpdatesMCP.session`): `session` names it only when BriefBar can't tell, and only one the Copilot app
-lists. It refuses a GitHub pull request ("Stages are for Azure DevOps' pull requests only, for now"), Can merge, Waits
-and Merged, which come only from what BriefBar sees, and everything while Azure DevOps, Copilot or Pull Request Order is
-off. Before it sets a stage, it reads each pull request again, one GET each, so that what would end it is kept as it is
-now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`), and set as of when it's read them; clearing reads nothing. Just
-before it keeps anything, it checks again that agents, Azure DevOps, Copilot and Pull Request Order are still on, as
-reading takes a while (`OrderKeeper.changeStages`, `MCPStages.refusal`). It answers with what BriefBar shows now, set by
-that session, and, where it replaced a stage you set that still stood, that you can put yours back; and names those it
-didn't set, such as one no list has now, one that merged or one that was abandoned. The order tools' answers also tell
+links, or their numbers with `organization`, as `working_on` takes them. It's listed only where the Copilot CLI names the
+session that started `--mcp` (`COPILOT_AGENT_SESSION_ID`), and sets only that session's stages: VS Code's and Cursor's
+agents, which aren't Copilot sessions, don't get it, and `--mcp`'s instructions ask them for no stage. It takes no
+`session`, and refuses one that names another. It refuses a GitHub pull request ("Stages are for Azure DevOps' pull
+requests only, for now"), Can merge, Waits and Merged, which come only from what BriefBar sees, a session the Copilot app
+doesn't list, such as one run in a terminal, whose stages BriefBar wouldn't show, and everything while Azure DevOps,
+Copilot or Pull Request Order is off. Before it sets a stage, it reads each pull request again, one GET each, so that
+what would end it is kept as it is now (`AzureDevOpsAgent.stages(of:)`, `StageRules.mark`), and set as of when it's read
+them; where that GET fails, it keeps what the lists read, up to a minute older, so a vote or commit in that minute ends
+it at BriefBar's next read. Clearing reads nothing. Just before it keeps anything, it checks again that agents, Azure
+DevOps, Copilot and Pull Request Order are still on, as reading takes a while (`OrderKeeper.changeStages`,
+`MCPStages.refusal`). It answers with what BriefBar shows now, set by that session, from the sessions `--mcp` reads
+that the app lists, as agents' stages count them (`MCPStages.sessions`), or, where it can't tell, as with
+`--source ado`, that BriefBar shows it while the app lists the session; and, where it replaced a stage you set that
+still stood, as the app works it out, with the Copilot app's sessions on it, that you can put yours back; where its
+Your review follows yours, that it lasts as yours does, and goes with it; where you set a stage after it read the pull
+request, that BriefBar shows yours, the later; and names those it didn't set, such as one no list has now, one
+that merged, one that was abandoned, or someone else's to put in progress, which BriefBar never does. It works out
+whether a Your review follows yours as it keeps the stages, in one step (`OrderKeeper.setStages`), as each call runs on
+its own, so that another call of the session's that lands in between counts. The order tools' answers also tell
 the session what you changed in its orders that still holds (`OrderText.userChanges`), to keep, and that a later change
 of its that goes against one shows instead of yours, until you put yours back. Their answers name pull requests by
 number and organization, never by title; none of them makes or undoes your changes, or answers with missions. `--mcp`
@@ -3959,8 +4104,10 @@ stage](#a-pull-requests-stage)), and the demo keeps them in memory, where its `n
 
 What tells sessions to call it, so nobody has to ask: `--mcp`'s instructions, while it's listed; the tools'
 descriptions; Pull Request Order's skill, `briefbar-pr-order`, which says the session that did the work tells its stage,
-`user_review` at the end of a turn that pushed it, `in_progress` as it starts fixing it again, and `teammate_review`
-once you say you've reviewed it, and keeps what you set unless you and the session decided otherwise; a line in
+`user_review` at the end of a turn that pushed it, `in_progress` as it starts fixing one of yours again, and
+`teammate_review` once you say you've reviewed it, adding reviewers in Azure DevOps only if you ask it to, and keeps
+what you set unless you and the session decided otherwise, and leaves stages to BriefBar once it's told the Copilot app
+doesn't list it; a line in
 `briefbar-updates`; and, while Pull Request Order is on, the last line of BriefBar's own prompts that change code, Send
 Work to Copilot's, and a pull request's Fix Comments, Fix the Build, Resolve Conflicts and Push & Reply, wherever they
 go, `pull_request_prompt`'s and `--wait`'s too (`PromptTemplate.stageLine`), which a review's never has.

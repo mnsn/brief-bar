@@ -2,8 +2,9 @@ import Foundation
 
 // What's next on Azure DevOps' Pull Requests page, several at once: Up Next's slots, the Board's columns and lanes, and each
 // mission's next steps, from the pull requests' stages and the missions. Which comes first in a stage (`BoardOrder`) is one
-// order for all three, so Up Next's pull request is always the first card in its column. Only how they're shown: nothing
-// here changes a group, a count, What's Left or the menu bar, and nothing is read for it.
+// order for all three, so Up Next's pull request, the one you chose for its slot or BriefBar's, is always the first card in
+// its column. Only how they're shown: nothing here changes a group, a count, What's Left or the menu bar, and nothing is
+// read for it.
 
 // MARK: - Cards
 
@@ -75,9 +76,10 @@ extension PullRequestStage {
 
 // MARK: - Which comes first
 
-/// Which comes first in a stage: on the Board, in Up Next and in a mission's next steps. The mission you focus on first, in
-/// every stage but In progress, where what needs you comes before it, so that Fix next is always its column's first card;
-/// then, in each:
+/// Which comes first in a stage: on the Board, in Up Next and in a mission's next steps. The pull request you chose for Up
+/// Next's slot in its column, while the slot has it (`UpNextPicks`); then BriefBar's own order: the mission you focus on
+/// first, in every stage but In progress, where what needs you comes before it, so that Fix next is always its column's
+/// first card; then, in each:
 /// - **In progress:** what needs you first, as Fix next has it, the mission you focus on first among it: a session that
 ///   asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you focus on
 ///   first, as By Mission lists them.
@@ -91,9 +93,24 @@ extension PullRequestStage {
 /// - **Merged:** the latest first.
 public enum BoardOrder {
     /// These cards, all in `stage`, in the order they come in it.
-    /// - Parameter stages: every pull request's stage, for what a card in Waits waits for, and how long those that build on
-    ///   one in Your review have waited, whatever their lane.
-    public static func sorted(_ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading]) -> [BoardCard] {
+    /// - Parameters:
+    ///   - stages: every pull request's stage, for what a card in Waits waits for, and how long those that build on one in
+    ///     Your review have waited, whatever their lane.
+    ///   - picked: the pull request you chose for Up Next's slot in this column, which comes first where the slot has it:
+    ///     in In progress, only while it needs you, so that what needs you still comes first.
+    public static func sorted(
+        _ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading], first picked: ItemRef? = nil
+    ) -> [BoardCard] {
+        var sorted = briefBarsOrder(cards, in: stage, stages: stages)
+        if let picked, let slot = UpNextSlot.first(in: stage),
+           let index = sorted.firstIndex(where: { $0.ref == picked && slot.takes($0) }) {
+            sorted.insert(sorted.remove(at: index), at: 0)
+        }
+        return sorted
+    }
+
+    /// These cards in BriefBar's own order, whatever you chose.
+    static func briefBarsOrder(_ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading]) -> [BoardCard] {
         switch stage {
         case .inProgress:
             return cards.sorted { lhs, rhs in
@@ -283,7 +300,33 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
 
     /// Whether a card of its stage is in it: every one, but Fix next's, which has only what needs you.
     func takes(_ card: BoardCard) -> Bool {
-        self == .fix ? card.reading.fixRank != nil : true
+        has(card.reading)
+    }
+
+    /// Whether a pull request is in it, as its stage reads now: what you can choose for it. In its stage, on your board,
+    /// and for Fix next, needing you.
+    public func has(_ reading: StageReading?) -> Bool {
+        guard let reading, keeps(reading) else { return false }
+        return self != .fix || reading.fixRank != nil
+    }
+
+    /// Whether the pull request you chose for it still stands there, as its stage reads now: on your board, in its stage.
+    /// Fix next's waits while it's in progress without needing you, as while a session writes it or a build runs, and
+    /// comes first again once it needs you.
+    public func keeps(_ reading: StageReading?) -> Bool {
+        guard let reading else { return false }
+        return reading.isOnBoard && reading.stage == stage
+    }
+
+    /// The slot a card is in, which Make Next chooses it for: its column's, but In progress's only while it needs you; nil
+    /// for one in none, such as a draft, or one that merged.
+    public static func of(_ card: BoardCard) -> UpNextSlot? {
+        allCases.first { $0.stage == card.stage && $0.takes(card) }
+    }
+
+    /// The slot whose pull request comes first in a column: Fix next's in In progress; nil for Merged.
+    public static func first(in stage: PullRequestStage) -> UpNextSlot? {
+        allCases.first { $0.stage == stage }
     }
 }
 
@@ -292,12 +335,17 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
 public struct UpNext: Equatable, Sendable {
     public struct Slot: Equatable, Sendable, Identifiable {
         public var kind: UpNextSlot
-        /// Its pull request: the first card in its column.
+        /// Its pull request: the first card in its column, the one you chose for it or BriefBar's.
         public var card: BoardCard
-        /// How many it has, that one included.
-        public var count: Int
+        /// Every pull request it has, in its column's order, that one first: what you can choose from.
+        public var cards: [BoardCard]
+        /// You chose its pull request (`UpNextPicks`), rather than BriefBar's order.
+        public var isPicked: Bool
 
         public var id: UpNextSlot { kind }
+
+        /// How many it has, that one included.
+        public var count: Int { cards.count }
 
         /// "1 more", "2 more"; nil when it's the only one.
         public var more: String? {
@@ -316,6 +364,9 @@ public struct UpNext: Equatable, Sendable {
     /// What it says when nothing's next.
     public static let nothingNext = "Nothing's next for you"
 
+    /// What a slot's tooltip says of the pull request you chose for it.
+    public static let pickedHelp = "You chose it, until it moves on. Let BriefBar Choose, under ⌄, gives it back to BriefBar's order"
+
     /// Whether you folded it, remembered.
     public static let foldedKey = "order.upNextFolded"
 
@@ -328,6 +379,127 @@ public struct UpNext: Equatable, Sendable {
             defaults.set(true, forKey: foldedKey)
         } else {
             defaults.removeObject(forKey: foldedKey)
+        }
+    }
+}
+
+/// The pull request you chose for each of Up Next's slots, with its ⌄ or a Board card's Make Next: the slot shows it, it's
+/// first in its column on the Board, and `needs_me` lists it first, rather than the one BriefBar's order puts first
+/// (`BoardOrder`). It stands until its pull request moves on to another stage, leaves your board, merges or closes, and
+/// stays away for `awayFor` (`moved(by:known:away:now:)`), or you choose another, or Let BriefBar Choose; then
+/// BriefBar's order chooses again. Kept in the preferences by reference, but for a pull request listed only because
+/// someone sent it in a chat, which stays in memory, as what you change of its mission does.
+public struct UpNextPicks: Equatable, Sendable {
+    public static let defaultsKey = "order.upNextPicks"
+
+    /// How long the pull request you chose can be away from where you chose it and still be the one you chose once it's
+    /// back: long enough for what BriefBar reads to catch up, such as a pull request's details, which say its build failed,
+    /// once Azure DevOps lets BriefBar read them again, or which pull requests the Copilot app's sessions are on, which say a
+    /// session asks you about one, and can come after Azure DevOps' lists as Pull Request Order turns on.
+    public static let awayFor: TimeInterval = 30 * 60
+
+    /// Since when the pull request you chose for a slot has been away from where you chose it, as BriefBar saw it: in memory
+    /// only, so that once BriefBar starts again, each choice has its half hour again, rather than end on what it reads
+    /// before it has read everything.
+    public struct Away: Equatable, Sendable {
+        public var ref: ItemRef
+        public var since: Date
+
+        public init(ref: ItemRef, since: Date) {
+            self.ref = ref
+            self.since = since
+        }
+    }
+
+    public private(set) var refs: [UpNextSlot: ItemRef]
+
+    public init(_ refs: [UpNextSlot: ItemRef] = [:]) {
+        self.refs = refs.filter { $0.value.kind.isPullRequest }
+    }
+
+    public var isEmpty: Bool { refs.isEmpty }
+
+    public subscript(slot: UpNextSlot) -> ItemRef? {
+        get { refs[slot] }
+        set { refs[slot] = newValue.flatMap { $0.kind.isPullRequest ? $0 : nil } }
+    }
+
+    /// The pull request you chose for the slot whose pull request comes first in a column.
+    public func first(in stage: PullRequestStage) -> ItemRef? {
+        UpNextSlot.first(in: stage).flatMap { refs[$0] }
+    }
+
+    /// The slots whose pull request moved on, as these stages read now: it's been away from where you chose it
+    /// (`UpNextSlot.keeps`), in another stage, off your board, merged or closed, for `awayFor`, whether it's back now or
+    /// not. One back sooner is still the one you chose. `away` notes since when each is away, and forgets one once it's
+    /// back, and what it noted of a slot you chose another for. One whose source reads nothing of it now, such as while its
+    /// organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's
+    /// off, is neither away nor back, and waits.
+    /// - Parameters:
+    ///   - readings: each listed pull request's stage.
+    ///   - known: the pull requests whose source reads them now, listed or not.
+    ///   - away: since when each one has been away.
+    public func moved(
+        by readings: [ItemRef: StageReading], known: Set<ItemRef>, away: inout [UpNextSlot: Away], now: Date
+    ) -> Set<UpNextSlot> {
+        away = away.filter { refs[$0.key] == $0.value.ref }
+        var moved: Set<UpNextSlot> = []
+        for (slot, ref) in refs where known.contains(ref) {
+            let since = away[slot]?.since
+            if let since, now.timeIntervalSince(since) >= Self.awayFor {
+                moved.insert(slot)
+                away[slot] = nil
+            } else if slot.keeps(readings[ref]) {
+                away[slot] = nil
+            } else if since == nil {
+                away[slot] = Away(ref: ref, since: now)
+            }
+        }
+        return moved
+    }
+
+    /// Forgets those of the sources you turned off. True when that forgot something.
+    @discardableResult
+    public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
+        let count = refs.count
+        refs = refs.filter { !kinds.contains($0.value.kind) }
+        return refs.count != count
+    }
+
+    /// Those whose pull requests these are, and the rest.
+    public func split(_ isIn: (ItemRef) -> Bool) -> (in: UpNextPicks, rest: UpNextPicks) {
+        (UpNextPicks(refs.filter { isIn($0.value) }), UpNextPicks(refs.filter { !isIn($0.value) }))
+    }
+
+    /// Both, this one's where both chose for a slot.
+    public func merging(_ other: UpNextPicks) -> UpNextPicks {
+        UpNextPicks(refs.merging(other.refs) { mine, _ in mine })
+    }
+
+    /// What was saved, without what can't be read, such as what another program wrote.
+    public static func load(from defaults: some SettingsStorage) -> UpNextPicks {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return UpNextPicks() }
+        var refs: [UpNextSlot: ItemRef] = [:]
+        for (slot, ref) in saved {
+            guard let slot = UpNextSlot(rawValue: slot), let ref = (ref as? String).flatMap(ItemRef.init) else { continue }
+            refs[slot] = ref
+        }
+        return UpNextPicks(refs)
+    }
+
+    /// Saves them as each slot's name and its pull request's reference; none removes the key.
+    public func save(to defaults: some SettingsStorage) {
+        guard !refs.isEmpty else {
+            defaults.removeObject(forKey: Self.defaultsKey)
+            return
+        }
+        let saved = Dictionary(uniqueKeysWithValues: refs.map { ($0.key.rawValue, $0.value.description) })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        if let data = try? encoder.encode(saved) {
+            defaults.set(data, forKey: Self.defaultsKey)
         }
     }
 }
@@ -468,14 +640,10 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var isEmpty: Bool { columns.values.allSatisfy(\.isEmpty) }
 
     /// Its next steps that are yours, in the order Up Next takes them: what a session asks you, what to fix, reviews, finding
-    /// a reviewer, completing; in each, as its column has them.
+    /// a reviewer, completing; in each, as its column has them, the one you chose for Up Next's slot first.
     public var nextSteps: [MissionNextStep] {
-        let steps = cards.compactMap(MissionNextStep.of)
-        let fixRanks = Dictionary(cards.map { ($0.ref, $0.reading.fixRank ?? 0) }, uniquingKeysWith: { first, _ in first })
-        return steps.enumerated().sorted { lhs, rhs in
+        cards.compactMap(MissionNextStep.of).enumerated().sorted { lhs, rhs in
             if lhs.element.kind != rhs.element.kind { return lhs.element.kind < rhs.element.kind }
-            let left = fixRanks[lhs.element.ref] ?? 0, right = fixRanks[rhs.element.ref] ?? 0
-            if left != right { return left < right }
             return lhs.offset < rhs.offset
         }.map(\.element)
     }
@@ -502,6 +670,8 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var counts: [PullRequestStage: Int]
     /// The pull request that wears Next in each column: Up Next's, the first in its column's order, across the lanes.
     public var next: [PullRequestStage: ItemRef]
+    /// Of those, the ones you chose for Up Next's slots (`UpNextPicks`), which wear Next as yours.
+    public var picked: [PullRequestStage: ItemRef]
     public var upNext: UpNext
     /// Each pull request on the board, once.
     public var refs: Set<ItemRef>
@@ -511,12 +681,14 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var mode: BoardLanes
 
     public init(
-        lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [PullRequestStage: ItemRef] = [:], upNext: UpNext = UpNext(),
-        refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [], mode: BoardLanes = .missions
+        lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [PullRequestStage: ItemRef] = [:],
+        picked: [PullRequestStage: ItemRef] = [:], upNext: UpNext = UpNext(), refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [],
+        mode: BoardLanes = .missions
     ) {
         self.lanes = lanes
         self.counts = counts
         self.next = next
+        self.picked = picked
         self.upNext = upNext
         self.refs = refs
         self.kinds = kinds
@@ -528,8 +700,11 @@ public struct PullRequestBoard: Equatable, Sendable {
     ///   - missions: the missions, as By Mission lists them.
     ///   - kinds: the kinds of pull request the page lists.
     ///   - lanes: a lane for each mission, or one for all.
+    ///   - picks: the pull requests you chose for Up Next's slots, each first in its column, in every lane that has it,
+    ///     while its slot has it.
     public static func make(
-        stages: [ItemRef: StageReading], missions: [OrderMission], kinds: Set<ItemRef.Kind>, lanes: BoardLanes = .missions
+        stages: [ItemRef: StageReading], missions: [OrderMission], kinds: Set<ItemRef.Kind>, lanes: BoardLanes = .missions,
+        picks: UpNextPicks = UpNextPicks()
     ) -> PullRequestBoard {
         let shown = missions.filter { $0.shows(kinds) }
         let onBoard = stages.filter { kinds.contains($0.key.kind) && $0.value.isOnBoard }
@@ -569,8 +744,9 @@ public struct PullRequestBoard: Equatable, Sendable {
 
         var counts: [PullRequestStage: Int] = [:]
         var next: [PullRequestStage: ItemRef] = [:]
+        var picked: [PullRequestStage: ItemRef] = [:]
         var slots: [UpNext.Slot] = []
-        let sorted = columns(all, stages: stages)
+        let sorted = columns(all, stages: stages, picks: picks)
         for stage in PullRequestStage.columns {
             let cards = sorted[stage] ?? []
             if !cards.isEmpty { counts[stage] = cards.count }
@@ -578,25 +754,27 @@ public struct PullRequestBoard: Equatable, Sendable {
         for kind in UpNextSlot.allCases {
             let taken = (sorted[kind.stage] ?? []).filter(kind.takes)
             guard let card = taken.first else { continue }
-            slots.append(UpNext.Slot(kind: kind, card: card, count: taken.count))
+            let isPicked = picks[kind] == card.ref
+            slots.append(UpNext.Slot(kind: kind, card: card, cards: taken, isPicked: isPicked))
             next[kind.stage] = card.ref
+            if isPicked { picked[kind.stage] = card.ref }
         }
 
         var boardLanes: [BoardLane] = []
         switch lanes {
         case .missions:
             for (mission, cards) in zip(shown, laneCards) {
-                boardLanes.append(BoardLane(kind: .mission(mission.key), columns: columns(cards, stages: stages)))
+                boardLanes.append(BoardLane(kind: .mission(mission.key), columns: columns(cards, stages: stages, picks: picks)))
             }
             if !outside.isEmpty {
-                boardLanes.append(BoardLane(kind: .notInAMission, columns: columns(outside, stages: stages)))
+                boardLanes.append(BoardLane(kind: .notInAMission, columns: columns(outside, stages: stages, picks: picks)))
             }
         case .none:
             if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted)) }
         }
         return PullRequestBoard(
-            lanes: boardLanes, counts: counts, next: next, upNext: UpNext(slots: slots), refs: Set(onBoard.keys), kinds: kinds,
-            mode: lanes
+            lanes: boardLanes, counts: counts, next: next, picked: picked, upNext: UpNext(slots: slots), refs: Set(onBoard.keys),
+            kinds: kinds, mode: lanes
         )
     }
 
@@ -702,9 +880,15 @@ public struct PullRequestBoard: Equatable, Sendable {
         return all
     }
 
-    static func columns(_ cards: [BoardCard], stages: [ItemRef: StageReading]) -> [PullRequestStage: [BoardCard]] {
+    /// Each column's cards in its order, the pull request you chose for its Up Next slot first where the slot has it.
+    static func columns(
+        _ cards: [BoardCard], stages: [ItemRef: StageReading], picks: UpNextPicks = UpNextPicks()
+    ) -> [PullRequestStage: [BoardCard]] {
         let byStage = Dictionary(grouping: cards, by: \.stage)
-        return byStage.mapValues { cards in BoardOrder.sorted(cards, in: cards[0].stage, stages: stages) }
+        return byStage.mapValues { cards in
+            let stage = cards[0].stage
+            return BoardOrder.sorted(cards, in: stage, stages: stages, first: picks.first(in: stage))
+        }
     }
 }
 
@@ -823,11 +1007,14 @@ public enum BoardRules {
 /// What the Board and Up Next say, in BriefBar's words: pull requests by their numbers, sessions by their names.
 public enum BoardText {
     /// Who set a card's stage, and how long ago, when someone did: "You · 2h", "‘Cart’ · 5m"; only when, where why it's in
-    /// its stage, which the card says too, names the session already (`StageText.namesWhoSetIt`): "set 5m ago".
+    /// its stage, which the card says too, names the session already (`StageText.namesWhoSetIt`): "set 5m ago". Where a
+    /// session's replaced yours, "after you" too: "‘Cart’ · 5m, after you".
     public static func setter(_ reading: StageReading, now: Date, name: (ItemRef) -> String?) -> String? {
         guard let mark = reading.mark else { return nil }
-        if StageText.namesWhoSetIt(reading) { return "set " + StageText.agoWords(mark.at, now: now) }
-        return StageText.setter(mark, name: name) + " · " + Elapsed.short(since: mark.at, now: now)
+        let words = StageText.namesWhoSetIt(reading)
+            ? "set " + StageText.agoWords(mark.at, now: now)
+            : StageText.setter(mark, name: name) + " · " + Elapsed.short(since: mark.at, now: now)
+        return reading.replaced != nil ? words + ", after you" : words
     }
 
     /// The line under the Board: "3 more in your lists aren't on the board"; nil for none.

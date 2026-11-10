@@ -13,6 +13,9 @@ struct OrderKept: Sendable {
     var marks: StageMarks
     /// The stages sessions set (`SessionStages`).
     var sessionStages: SessionStages
+    /// The pull requests you chose for Up Next's slots, which come first in their columns, as on the Board: those the app
+    /// keeps in the preferences, not those only sent to you in a chat, which it keeps in memory.
+    var picks = UpNextPicks()
     /// The demo's stages, as if you and its sessions had set them then, each keeping what would end it as the pull request
     /// is now, as the app's demo has them (`PullRequestOrder.tellDemo`).
     var demoMarks: [ItemRef: StageMark] = [:]
@@ -58,6 +61,33 @@ extension AzureDevOpsAgent {
         )
     }
 
+    /// The sessions whose stages count now, as `stages` counts them: those the Copilot app lists, with the tasks
+    /// BriefBar sent, as the app lists them, and those on each pull request; nil when `--mcp` can't tell, such as without
+    /// Copilot among its sources. What `pull_request_stage` answers from, so it says BriefBar shows a stage only where
+    /// it does, and works out whether a stage you set still stands as `stages` would.
+    func stageSessions(now: Date = Date()) async -> MCPStages.Sessions? {
+        guard var copilot = await MCPRelated.stageSessions() else { return nil }
+        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        let setters = Self.setters(&copilot, sentTasks: tasks.compactMap(PullRequestOrderFacts.session))
+        return MCPStages.Sessions(listed: Set(setters.keys), on: copilot.onPullRequests)
+    }
+
+    /// What each session whose stages count does now, or how it ended, and since when: those the Copilot app lists,
+    /// and the tasks BriefBar sent, which the app lists with them, unnamed, until you open one there, or, while it
+    /// can't read the app's database, in place of their folders, which `copilot` then loses (`SessionStore`).
+    static func setters(
+        _ copilot: inout MCPRelated.StageSessions, sentTasks: [StageSession]
+    ) -> [ItemRef: StageSession] {
+        if !copilot.listedByApp {
+            for task in sentTasks { copilot.listed[task.ref] = nil }
+        }
+        var setters = copilot.doing
+        for task in sentTasks where setters[task.ref] == nil {
+            setters[task.ref] = StageSession(ref: task.ref, activity: task.activity, since: task.since)
+        }
+        return setters
+    }
+
     /// The same, from what was read: as `PullRequestOrder` rebuilds its missions and works its stages out, but noting and
     /// ending nothing, only in memory.
     /// - Parameter sentTasks: the tasks BriefBar sent to Copilot, which the app lists with the Copilot app's sessions,
@@ -68,9 +98,7 @@ extension AzureDevOpsAgent {
         sentTasks: [StageSession] = [], kept: OrderKept, account: String?, now: Date
     ) -> AgentStages {
         var copilot = copilot
-        if !copilot.listedByApp {
-            for task in sentTasks { copilot.listed[task.ref] = nil }
-        }
+        let setters = Self.setters(&copilot, sentTasks: sentTasks)
         let orderFacts = OrderFacts(pullRequests: pullRequests, sessions: copilot.sessions, sourcesOn: [.pullRequest])
         var changes = kept.changes
         changes.noteOverrides(in: kept.orders, now: now)
@@ -89,10 +117,6 @@ extension AzureDevOpsAgent {
             var stage = sessionStages[session] ?? SessionStage(session: session)
             stage.set(StageRules.mark(set.stage, at: set.at, facts: fact, by: session), of: ref)
             sessionStages.replace(stage)
-        }
-        var setters = copilot.doing
-        for task in sentTasks where setters[task.ref] == nil {
-            setters[task.ref] = StageSession(ref: task.ref, activity: task.activity, since: task.since)
         }
         let theirs = sessionStages.marks(listed: Set(setters.keys), now: now)
         let sessionsOn = copilot.onPullRequests
@@ -115,7 +139,7 @@ extension AzureDevOpsAgent {
                 readings[ref] = reading
             }
         }
-        let board = PullRequestBoard.make(stages: readings, missions: missions, kinds: [.pullRequest], lanes: .none)
+        let board = PullRequestBoard.make(stages: readings, missions: missions, kinds: [.pullRequest], lanes: .none, picks: kept.picks)
         var columns: [PullRequestStage: [ItemRef]] = [:]
         for (stage, cards) in board.lanes.first?.columns ?? [:] {
             columns[stage] = cards.map(\.ref)
@@ -146,7 +170,7 @@ extension AgentText {
         return "Stages, as BriefBar's Board shows them, what's next first:\n" + lines.joined(separator: "\n")
     }
 
-    /// `pull_request`'s stage: "Its stage: Your review: ‘Cart’ says it's ready (‘Cart’ set it 5m ago, after you). You'd set
+    /// `pull_request`'s stage: "Its stage: Your review: ‘Cart’ says it's ready (set 5m ago, after you). You'd set
     /// Teammate's review 2h ago, which a session's later change replaced: you can put yours back."
     static func stage(_ reading: StageReading, stages: AgentStages) -> String {
         var line = "Its stage: \(reading.stage.title): \(words(reading, stages: stages))."

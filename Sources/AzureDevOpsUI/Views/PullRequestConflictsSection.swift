@@ -678,7 +678,7 @@ private struct ConflictsComposer: View {
         return CopilotAsking(
             ask: ask, part: .conflicts, action: .resolveConflicts, prepare: prepare,
             head: { current().map { PullRequestFilesStore.Head($0.record.pullRequest) } }, answeredAbout: answeredAbout,
-            fix: { how, answer in
+            fix: { how, answer, _ in
                 guard let now = current() else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .resolveConflicts, parts: [], handOff: nil)
                 }

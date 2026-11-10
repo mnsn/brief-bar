@@ -236,9 +236,11 @@ public struct CopilotLauncher: Sendable {
             throw error
         }
         // Push & Reply pushes what the session's checkout holds: never a merge of commits the branch the pull request merges
-        // into doesn't have, as when it was retargeted after its conflicts were resolved there. A new session's worktree
-        // starts at the branch's latest commit, with nothing to push yet.
-        if case .pullRequest(let pullRequest, .pushAndReply) = request.subject, request.continuing != nil || request.forking != nil {
+        // into doesn't have, as when it was retargeted after its conflicts were resolved there. A new session's too, which a
+        // comment's fix that pushes and replies may start: its worktree starts at the branch's latest commit, which git
+        // finds no merge in, but it pushes what it fixes there, so it goes only while the pull request merges into the
+        // branch its prompt names, as the rest do.
+        if case .pullRequest(let pullRequest, .pushAndReply) = request.subject {
             // Against the branch the prompt names, while the pull request merges into it, as Azure DevOps says now: the
             // list may not have read a retarget yet.
             var refusal = await Self.targetProblem(of: request, pullRequest)

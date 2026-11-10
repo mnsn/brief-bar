@@ -14,8 +14,8 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
-| **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, as described in [Privacy](#privacy) |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
+| **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, and **Ask…**, with Send Work to Copilot on, a session's conversation and your question, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in, as each account it's signed in to: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query for each account each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
@@ -332,15 +332,18 @@ it out from Azure DevOps and your Copilot sessions. With [agents](#agents) on to
 your pull requests tell BriefBar their stages themselves, without you asking, such as Your review once they've pushed
 their work, or Teammate's review once you tell them you've reviewed it: **‘Cart’ says it's ready**. The latest stage
 set wins, yours or a session's, and the label says who set it; where a session's replaced yours, **Put Yours Back** is
-in its menu. What a session set counts only while the Copilot app lists the session. Where a session or a stage you
+in its menu. What a session set counts only while the Copilot app lists the session, so a session you run in a
+terminal sets none. Where a session or a stage you
 set decides it while your build failed, it says that too: **‘Cart’ asks you · build failed**. Click the label to pick
 another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it to
 your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you or
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
 progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
-set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it;
+set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, as
+does a session's that says the same after yours, once it pushed;
 merging or closing it
-ends any. **Let BriefBar Decide** forgets it, and **Undo** puts back your last change. Can merge and Waits come only
+ends any. **Let BriefBar Decide** forgets it, with a session's Your review that followed it, and **Undo**
+puts back your last change. Can merge and Waits come only
 from what Azure DevOps and its order show: nobody, you or a session, can set them. Its details show the whole track
 under its heading, with its next step, such as **Finished My Review** or **Add Reviewers in Azure DevOps**. Stages
 only label rows: groups, Needs You, counts, notifications and the brief stay as they were. On someone else's pull
@@ -353,14 +356,21 @@ how many it has. **Fix next** is what needs you to fix or answer: a session that
 failed, then changes someone wants. **Your next review** is the one that has waited longest, one that others
 build on counting as long as they've waited, as they can't merge before it; **Next for a teammate**, one of yours
 that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
-mission you focus on comes first in each. Click one for its details; **2 more ›** shows the rest on the Board.
-Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
+mission you focus on comes first in each. To choose which one a slot shows, such as a more urgent fix, click its title,
+**Fix next ⌄**, and pick it from its pull requests, each with why it's there: it shows with ✎, first in its column on the
+Board too, and BriefBar remembers it until that pull request moves on to another stage, merges or closes, and stays away
+for half an hour; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and
+**Undo**, after you move its card, chooses it again. While its build runs again, or a session writes it, Fix next shows
+the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
+to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next**
+to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
 click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
 **Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
-one. Up Next's pull request wears **Next** in its column. Each column puts the mission you focus on first, but In
+one. Up Next's pull request wears **Next** in its column, **✎ Next** where you chose it: right-click a card and choose
+**Make Next** to choose it for its slot. Each column puts the mission you focus on first, but In
 progress puts what needs you before it, so that Fix next's is its first card. Click a card, or press **Return** or
 **Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
 Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
@@ -385,18 +395,18 @@ in the List, on the Map and in its Board lane, suggests splitting it. It says wh
 its Focus and the name you gave it, and where the others go: to a new mission of your own, with the name it suggests,
 for two or more; out of missions for one; or into the mission you split off it before. Click a number for that pull
 request's details. The button says what it does, such as **Split in Two**, **Split in Three** or **Take Out !4120**, and
-does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until what the mission is
-made of has changed for three hours, its pull requests, their work items and story, or the sessions that opened them,
-not a title alone, nor Show Links or Copilot turned off or on, nor a read that fails for a while; time offline or asleep
-doesn't count. Undo counts as Keep Together, and so does a session's order that takes back what a split moved, even one
-told while BriefBar was closed, so the two don't undo each other. Meanwhile, **Suggested Split…** in the mission's **⋯**
-shows it again. Apple Intelligence never splits a mission itself, and nothing moves until you click. It looks at a
-story's mission, a session's order and the pull requests opened under a session, with three open Azure DevOps pull
-requests or more, never a chain, a stack or a mission of your own; pull requests that merged or closed, GitHub's, those
-you changed, there or in another mission, and those another session's order names too, stay where they are, and related
-ones, such as stacked ones, stay together, and a story's mission, or a session's pull requests, keeps two at least. It's
-often quiet, as it suggests a split only where it's clear, and a split applies whole: to take part of one, Keep
-Together, then **Move to Mission**.
+does it as one change of yours, with **Undo**; **Keep Together** keeps the suggestion away until something new has been
+in the mission for three hours: a pull request, a work item or story one is for, or a session that opened one; not one
+that merges, closes or leaves, a next you set, a title alone, Show Links or Copilot turned off or on, or a read that
+fails for a while; time offline or asleep doesn't count. Undo counts as Keep Together, and so does a session's order
+that takes back what a split moved, even one told while BriefBar was closed, so the two don't undo each other.
+Meanwhile, **Suggested Split…** in the mission's **⋯** shows it again. Apple Intelligence never splits a mission itself,
+and nothing moves until you click. It looks at a story's mission, a session's order and the pull requests opened under a
+session, with three open Azure DevOps pull requests or more, never a chain, a stack or a mission of your own; pull
+requests that merged or closed, GitHub's, those you changed, there or in another mission, and those another session's
+order names too, stay where they are, and related ones, such as stacked ones, stay together, and a story's mission, or a
+session's pull requests, keeps two open ones at least. It's often quiet, as it suggests a split only where it's clear,
+and a split applies whole: to take part of one, Keep Together, then **Move to Mission**.
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
@@ -449,7 +459,8 @@ nothing more goes there until that's done. **⌄** says first how work would get
 window would send it: with the Copilot CLI, for a task BriefBar runs; or in the Copilot app, where BriefBar
 sends the prompt itself with [Send Prompts to Copilot Sessions](#agents) on, or copies it for you to paste.
 It opens the session in Copilot, or **Continue in Terminal** for a task BriefBar runs with the Copilot CLI;
-and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
+with Show Links on, **Show Details** shows its page, and **Ask…** opens it with a field to ask the session where it
+stands, or anything else, aside ([Asking a session where it stands](#asking-a-session-where-it-stands)); and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
 stands, the app's other sessions, and **New Session**: the one you check is where the pull request's work
 goes from then on, in the Send to Copilot window too, until a task starts on it in another session, or, with
 Updates from Copilot Sessions and Show Links on, another session starts telling BriefBar it's working on it. **Let
@@ -512,7 +523,12 @@ can't ask aside, or doesn't have the session, the thread says why, and **Ask in 
 session as a prompt instead, the way Fix sends its own, where it stays in the session's history. **Fix**, on your own
 pull request, has Copilot address that thread alone, as you say in **Tell Copilot how (optional)**, which it quotes as
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
-below. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
+below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
+push the branch (never with force), and reply on the thread and resolve it, as you; when it changed nothing for it, it
+still pushes what else the session changed, but replies why, and leaves the thread active. It goes as a Push & Reply
+goes, with the same checks, below, so it doesn't wait in a
+session of the Copilot app that's running a turn: BriefBar says to send it once that's done. The box stays as you last
+left it, for the next Fix or Fix All. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
 Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
 **▾** away: the session that worked on the thread, if one did, else the pull request's, first and chosen; for a fix, a
 fork of it, with its history, in a worktree of its own, while it stays as it is, which goes first while one of
@@ -521,18 +537,20 @@ Copilot app's. Each says how a prompt would get there, with the CLI or in Copilo
 itself, or that it's busy, and the composer says what happens once you send it, as the Send to Copilot window would send
 it ([below](#sending-to-a-session-thats-already-there)). **Edit the Whole Prompt…**, last in **▾**, opens that window
 with it, for the whole prompt, the model and more. **Fix All**, at the top of the comments, is Fix Comments, through the
-same composer; it says **Fix 1 Comment** when others wait on someone else, which it leaves. Once Copilot works on a
+same composer; it says **Fix 1 Comment** when others wait on someone else, which it leaves, and has the same box, which
+has it reply on each thread it fixed. Once Copilot works on a
 thread, a line above its buttons says so, in its state's color, with since when and the step it's at: **Copilot is
 explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Retry backoff’ · 2m**, **Fixed in ‘Retry
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
-couldn't; click it to see the session. One of BriefBar's own tasks, named for what it does, is called a task there,
+couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
+push and reply**, then **Fixed, pushed and replied in ‘Retry backoff’**. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. When you send a session something else
 before it's done with what you sent it, BriefBar can't tell from the session which of them ended how, so the earlier
 thread says **Sent to ‘Retry backoff’ · see the session** instead, as it does once a session hasn't finished in twelve
 hours, such as one that waited overnight for your answer. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
-which sends it again with the same words, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
+which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
 lets the line go. **Fix** waits while Copilot fixes the
 thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
@@ -540,8 +558,10 @@ page over a work item's or another pull request's, says what's ready, by what it
 backoff’** or **1 fix and the conflicts' resolution ready in ‘Retry backoff’**, which takes you to what they fixed,
 with **Push & Reply…**, which opens the Send to Copilot window to commit them, push, and reply on the threads they
 fixed, from that session, or **Push…** when they fixed no comment; they stay in the bar when Push & Reply fails or is
-stopped, to try again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
-doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails. What's Left says
+stopped, to try again. A fix sent to push and reply that fails or stops isn't in the bar, since it may not have fixed
+anything: **Try Again** sends it again. Push & Reply commits all that session changed, so a comment it fixed before that Push & Reply
+doesn't list says **Pushed from ‘Retry backoff’, without a reply**, and stays so after a later push fails; so does one
+fixed before a fix sent to push and reply. What's Left says
 **Copilot's on it** while Copilot fixes, or pushes, its comments, a build or its conflicts, whether with one of
 BriefBar's tasks or a prompt to one of the Copilot app's sessions, and **Copilot asks you** while that session waits for
 your answer in the app. **Esc** closes a composer, then the details; closing a composer while it sends calls the send
@@ -877,8 +897,8 @@ With it on, **your pull requests' menus send them to Copilot too** (right-click 
 | **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the session the fixes are in, one session at a time: commits, pushes the branch (never with force), replies on the threads they fixed and resolves them; **Push with Copilot…** when they fixed no comment. Nothing goes while the session holds a merge of what the branch the pull request merges into doesn't have, as when it was retargeted after Copilot resolved its conflicts, while Azure DevOps or the list says it merges into another branch than the prompt names, or, for a Copilot app session, while a turn runs in it or in its checkout: BriefBar says why |
 | **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
 
-The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push,
-and a review can't change files or commit. Each works in a worktree detached at the pull request's latest
+The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push, which a
+comment's fix sent to push and reply goes as, and a review can't change files or commit. Each works in a worktree detached at the pull request's latest
 commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. As with a work item, a notification says Copilot is
@@ -916,9 +936,9 @@ Choose **New Session** for a new worktree instead.
 | Send | What happens |
 |---|---|
 | **Send to Session** | BriefBar sends the prompt to the session in the Copilot app, as your own message, and opens it there. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it; a session that's working takes it once it's done. The default for the app's sessions. |
-| **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats, nor **Push & Reply**, which pushes what its last task changed from that task's own session. |
+| **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats, nor **Push & Reply**, which pushes what its last task changed from that task's own session. A comment's fix sent to push and reply can go to one, and pushes from the fork, with the changes the session hasn't committed. |
 | **Run with the CLI** | The Copilot CLI goes on with the session now, on its own, in the folder it works in, and BriefBar follows it as it does a new task, with the same limits on what the action may do. The default for BriefBar's own tasks. |
-| **Fork with the CLI** | For BriefBar's own tasks: the Copilot CLI forks the session, with its history, into a worktree of its own, at the commit its checkout has, without the changes it hasn't committed, and goes on with the fork on its own, while the session stays as it is. Not for **Push & Reply**. |
+| **Fork with the CLI** | For BriefBar's own tasks: the Copilot CLI forks the session, with its history, into a worktree of its own, at the commit its checkout has, without the changes it hasn't committed, and goes on with the fork on its own, while the session stays as it is. Not for **Push & Reply**, but for a comment's fix sent to push and reply, which pushes from the fork. |
 
 To send prompts to the app's sessions itself, BriefBar needs **Send Prompts to Copilot Sessions**, off until
 you turn it on in Settings › Agents, which adds BriefBar's extension to the sessions that start afterwards.
@@ -1004,6 +1024,30 @@ a work item's task opens its work item, or on GitHub, for a pull request Copilot
 says too. Right-click it for the other way to its pull request, where there's one, **Show Pull Request in BriefBar**
 or **Open Pull Request in Azure DevOps**, then the task's own menu. The same **Move Viewed
 Sessions to Idle** setting controls whether opening a finished task dismisses it.
+
+#### Asking a session where it stands
+
+With **Send Work to Copilot** on, in [Azure DevOps](#azure-devops)' settings, you can ask any of your
+sessions, a task BriefBar sent too, where it stands, or why it changed something, without opening it. Right-click
+it, or use its **⋯**, and choose **Ask…**: a field opens under its row. Write your question and click **Ask**, or
+press Return; left empty, it asks **Where do you stand?**, which has it say what's done, what's left, and what or whom
+it waits on. While it's asked, a line under the row says so, with **Stop**; then its answer shows there, as
+Explain's does under a comment, its first few lines until **Show More**, with **Copy**, **↗** to open the session,
+and **✕** to dismiss it; a task's has no **↗**, as its row opens its pull request or work item instead. **Ask More**
+follows up on what it said; left empty, it asks where the session stands now. When it can't answer, the line says
+why, such as that you're out of premium requests, with **Try Again**, which its menus call **Try Asking Again**. A
+session's page, from a work item's or a pull request's details with Show Links on, has **Ask…** in its heading,
+and its answer shows under it; and **⌄** on a pull request's Copilot line has **Ask…**, which opens that page
+with the field ready, or **Stop Asking** while the session is asked. One field is open at a time, and **Esc** or
+its **✕** closes it.
+
+It's asked aside, as Explain asks about a comment: in a copy of the session's conversation that the Copilot CLI
+makes with no tools and deletes after, with the session's own model, so it changes no file and the session's
+history stays as it was. It sends the conversation, with your question, to GitHub Copilot, as one premium
+request, and needs the Copilot CLI 1.0.95 or later. What you asked and what it answered stay in memory only,
+wherever the session shows, until you dismiss them, BriefBar quits, or Send Work to Copilot is turned off;
+turning GitHub Copilot off stops and forgets them too, but for the tasks BriefBar sent. The
+widgets show neither, and the demo makes its answers up.
 
 ### GitHub
 
@@ -1275,7 +1319,7 @@ DevOps' gear menu has its own too: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set, and what you chose in Up Next |
 | Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1334,8 +1378,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
   item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
-  servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
-  choose, with git, and Copilot's log of that session; and, as the window that sends one opens, and while
+  servers, pushes a branch and opens a pull request. **Explain** and **Ask…** start it too, when you ask a
+  session something: aside, in a fork with no tools, which changes nothing. BriefBar itself reads only the
+  repository you choose, with git, and Copilot's log of the session it works in; and, as the window that sends one opens, and while
   a pull request's details show in a window you can see, every ten seconds, the Copilot app's sessions its work could go to,
   read-only: their names, projects, branches, the pull requests the app records with them and which run a
   turn now, from its database; the folder each works in, from its session state; which ones the app has
@@ -1349,12 +1394,13 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   sends a session's conversation, which the Copilot CLI copies into a fork it deletes after, with the comment
   and its code, with what BriefBar read of a failed build (its errors, the tests that failed with what each
   said, and the last lines of its log), or with which files conflict and how, to GitHub Copilot, and keeps the
-  answer in memory only; a build's **Fix** quotes the same in its prompt, and **Resolve** lists the same files. For
+  answer in memory only; **Ask…** sends a session's conversation, copied the same way, with your question, and keeps
+  its answer in memory only too; a build's **Fix** quotes the same in its prompt, and **Resolve** lists the same files. For
   a prompt about a pull request's comments, builds or conflicts sent to one of the Copilot app's sessions, BriefBar
   reads that session's log, from then until Copilot is done with it. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; the session you choose for a pull request's work, by its ID only; the comment
   threads, builds and conflicts each task or prompt took on, and which session a prompt about them went to and when, by
-  their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, until they're deleted;
+  their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, or with Ask…, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
@@ -1423,7 +1469,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
   missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
   splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
-  once its mission has been made of something else for three hours or hasn't shown for 14 days; and its settings.
+  once its mission has had something new in it for three hours or hasn't shown for 14 days; and its settings.
   Turning a source off deletes what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,

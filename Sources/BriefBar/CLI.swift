@@ -200,7 +200,10 @@ enum CLI {
         }
         let orderTools = orderTools(options, stages: sources.lazy.compactMap(\.stages).first?.guarded(by: consent))
         let updateTools = updateTools(options)
-        let tools = MCPSource.tools(sources, refusal: consent) + (orderTools + updateTools).map { $0.guarded(by: consent) }
+        // Pull Request Order's tools can ask the sources what they know too, such as which sessions the app lists.
+        let tellers = sources.compactMap(\.related)
+        let tools = MCPSource.tools(sources, refusal: consent)
+            + orderTools.map { $0.guarded(by: consent).telling(tellers) } + updateTools.map { $0.guarded(by: consent) }
         let tellsStages = orderTools.contains { $0.name == "pull_request_stage" }
         var changes = ["the pull requests it watches", "the pipelines it pins"]
         if !orderTools.isEmpty {
@@ -251,8 +254,9 @@ enum CLI {
 
     /// Pull Request Order's tools, while it's on in the app, as it's off until you turn it on; the demo's always are, and
     /// keep their orders, and the stages they're told, in memory, the stages where Azure DevOps' tools read them
-    /// (`CommandLineOptions.demoStages`). An order says which Copilot session told it: the one
-    /// that started `--mcp`, as the Copilot CLI says, unless the agent names another; a stage, only that one.
+    /// (`CommandLineOptions.demoStages`). An order says which Copilot session told it: the one that started `--mcp`, as
+    /// the Copilot CLI says, unless the agent names another. `pull_request_stage` is there only where the Copilot CLI
+    /// says which session that is, never in VS Code or Cursor, and sets only that session's stages.
     /// - Parameter stages: what Azure DevOps tells of its pull requests' stages, with it among the sources, for
     ///   `pull_request_stage`, which is there only with it.
     private static func orderTools(_ options: CommandLineOptions, stages: MCPStages?) -> [MCPTool] {

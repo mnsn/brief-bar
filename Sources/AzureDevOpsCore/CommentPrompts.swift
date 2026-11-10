@@ -54,16 +54,20 @@ public struct CopilotAnswer: Sendable, Equatable {
 /// code it's on as its reviewer saw it when that's read, and what you wrote, as yours.
 extension PullRequestPrompt {
     /// Addresses one thread and nothing else, as you say, or by applying a suggested change as it's written: then builds and
-    /// tests, without committing, pushing or replying, as Fix Comments does. Its entry for the thread is the one Fix
-    /// Comments lists it with, which the hand-off for it looks for (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`).
+    /// tests; and then, as you chose, leaves it for you to check, without committing, pushing or replying, as Fix Comments
+    /// does, or ships it, as Push & Reply would (`ships`). Its entry for the thread is the one Fix Comments lists it with,
+    /// which the hand-off for it looks for (`CommentHandOff.init(_:thread:dismissedCutoff:account:)`).
     /// - Parameters:
     ///   - code: the lines it's on, as its reviewer saw them, once read.
     ///   - how: what you want, in your words; nothing for nil or blank.
     ///   - suggestion: a suggested change to apply as it's written.
     ///   - answer: what a session said of it with Explain, which what you want may point to, such as "the second way".
+    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), then replies on the thread and
+    ///     resolves it, as Fix asks with Push and Reply on; when it changed nothing for it, it still pushes what else the
+    ///     session changed, as Push & Reply would, but replies why, and leaves the thread active.
     public static func fixThread(
         _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, how: String?, applying suggestion: CommentSuggestion? = nil,
-        answer: CopilotAnswer? = nil, workplace: Workplace = .worktree
+        answer: CopilotAnswer? = nil, workplace: Workplace = .worktree, ships: Bool = false
     ) -> String {
         var parts = [
             header(record, workplace: workplace), "Address this review comment thread, and only this one:", quoted(thread, record: record), commentsSaid,
@@ -76,10 +80,27 @@ extension PullRequestPrompt {
         if let how = yours(how) {
             parts.append((suggestion == nil ? "How I want it fixed, in my own words:" : "And, in my own words:") + "\n\n" + how)
         }
-        parts.append("""
+        let fix = """
             Make the change, or say briefly why not. Keep to this thread: leave the others, and the rest of the code, as \
-            they are. Build, and run the tests that cover what you changed. Don't commit, push or reply on the pull \
-            request: end with a short summary of what you changed for it, so I can check it before it goes out.
+            they are. Build, and run the tests that cover what you changed.
+            """
+        guard ships else {
+            parts.append(fix + " " + """
+                Don't commit, push or reply on the pull request: end with a short summary of what you changed for it, so I \
+                can check it before it goes out.
+                """)
+            return parts.joined(separator: "\n\n")
+        }
+        parts.append(fix + " Then ship it, in \(workplace.here):")
+        parts.append(numbered(pushSteps(record.pullRequest, workplace: workplace) + ["""
+            On the pull request, with your Azure DevOps tools, reply to this thread, saying what you changed, and resolve it. \
+            Don't reply on the pull request's other threads.
+            """]))
+        parts.append("""
+            If you didn't change anything for it, still take the steps above, which push what else you changed here, if \
+            anything, but reply on the thread why, and leave it active. Don't complete, approve or abandon the pull request, \
+            and don't change pipelines. End with a short summary of what you changed for it, the commit you pushed and what \
+            you replied.
             """)
         return parts.joined(separator: "\n\n")
     }

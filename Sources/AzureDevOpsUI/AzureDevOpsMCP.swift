@@ -132,7 +132,7 @@ actor AzureDevOpsReader {
         return OrderKept(
             orders: DeclaredOrders.load(from: defaults), evidence: OrderEvidence.load(from: defaults),
             focus: OrderFocus.load(from: defaults), changes: OrderChanges.load(from: defaults), marks: StageMarks.load(from: defaults),
-            sessionStages: SessionStages.load(from: defaults, now: now)
+            sessionStages: SessionStages.load(from: defaults, now: now), picks: UpNextPicks.load(from: defaults)
         )
     }
 
@@ -716,7 +716,10 @@ struct AzureDevOpsAgent: Sendable {
     static let freshForStages: TimeInterval = 10
 
     var source: MCPSource {
-        MCPSource(name: "Azure DevOps", tools: tools, stages: MCPStages { refs in try await stages(of: refs) }) { try await needsYou() }
+        MCPSource(
+            name: "Azure DevOps", tools: tools,
+            stages: MCPStages(read: { refs in try await stages(of: refs) }, sessions: { await stageSessions() })
+        ) { try await needsYou() }
     }
 
     /// What `pull_request_stage` reads of these pull requests: what each one's stage is worked out from, as the app's

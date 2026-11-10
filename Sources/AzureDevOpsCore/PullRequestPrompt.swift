@@ -51,7 +51,8 @@ public struct FailedBuildReport: Sendable, Equatable {
 /// The prompts that ask Copilot to work on a pull request: what it is, what to do, and what BriefBar already knows,
 /// such as the comments that wait on you, word for word, or where its build failed. Copilot works in a worktree
 /// detached at the pull request's latest commit, on its own, or for an agent that asks through `--mcp`, wherever that
-/// agent is: each prompt says what it may change, and only Push & Reply pushes or writes on the pull request. A fix runs
+/// agent is: each prompt says what it may change, and only Push & Reply, or a comment's fix that ships (`fixComments`,
+/// `fixThread`, with `ships`), which then does as Push & Reply would (`pushSteps`), pushes or writes on the pull request. A fix runs
 /// with every tool, so what a prompt quotes from Azure DevOps, a build or an earlier answer, which others wrote, stays
 /// quoted: on its line (`oneLine`) or in a fence nothing in it closes (`fenced`), with what it is, such as what the
 /// comments' authors wrote (`commentsSaid`), never instructions; and a branch's name, in a command, runs nothing (`branch`).
@@ -86,20 +87,48 @@ public enum PullRequestPrompt {
         return waiting.isEmpty ? open : waiting
     }
 
-    /// - Parameter note: what you want, in your words, quoted as yours; nothing for nil or blank.
-    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil) -> String {
+    /// - Parameters:
+    ///   - note: what you want, in your words, quoted as yours; nothing for nil or blank.
+    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), even when it changed nothing,
+    ///     then replies on each thread it lists and resolves each it changed, as a fix sent with Push and Reply on asks; else
+    ///     it doesn't commit, push or reply, for you to check its changes first.
+    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil, ships: Bool = false) -> String {
         let threads = waitingThreads(record)
         let how = yours(note).map { "\n\nHow I want them fixed, in my own words:\n\n\($0)" } ?? ""
-        return """
+        let fixed = """
             \(header(record, workplace: workplace))
 
             Address these review comments:
 
             \(threads.isEmpty ? "(There are no unresolved comment threads right now.)" : listed(threads, record: record))\(how)
-
+            """
+        let fix = """
             For each thread, make the change, or say briefly why not. Keep the changes focused. Build, and run the \
-            tests that cover what you changed. Don't commit, push or reply on the pull request: end with a short \
-            summary for each thread, so I can check your changes before they go out.
+            tests that cover what you changed.
+            """
+        guard ships else {
+            return """
+                \(fixed)
+
+                \(fix) Don't commit, push or reply on the pull request: end with a short summary for each thread, so I \
+                can check your changes before they go out.
+                """
+        }
+        let steps = numbered(pushSteps(record.pullRequest, workplace: workplace) + ["""
+            On the pull request, with your Azure DevOps tools, reply to each of the comment threads above, saying what you \
+            changed, and resolve it. For one you didn't change, reply why, and leave it active. Don't reply on the pull \
+            request's other threads.
+            """])
+        return """
+            \(fixed)
+
+            \(fix) Then ship them, in \(workplace.here):
+
+            \(steps)
+
+            If you didn't change anything, still take the steps above, which push what else you changed here, if anything. \
+            Don't complete, approve or abandon the pull request, and don't change pipelines. End with a short summary for \
+            each thread, the commit you pushed and the threads you replied to.
             """
     }
 
@@ -169,11 +198,52 @@ public enum PullRequestPrompt {
     ///   replies on those alone, and on none when they took on none, as a build's fix alone. Nil for the pull request's.
     public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree, threads only: [Int]? = nil) -> String {
         let pr = record.pullRequest
-        let source = branch(pr.sourceBranch)
         let scoped = only != nil
         let threads = shippedThreads(record, only: only)
         // Fixes of none of its threads, such as of a build: nothing to reply on.
         let repliesOnNone = scoped && threads.isEmpty
+        var steps = pushSteps(pr, workplace: workplace)
+        if repliesOnNone {
+            steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
+        } else {
+            steps.append(scoped
+                ? """
+                On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
+                addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
+                it active. Don't reply on its other threads: other changes take care of them.
+                """
+                : """
+                On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
+                you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
+                """)
+        }
+        let shipped = """
+            Ship what you changed for pull request !\(pr.key.number) “\(oneLine(pr.title))”, in \(workplace.here):
+            \(pr.webURL.absoluteString)
+
+            \(numbered(steps))
+
+            Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
+            pushed\(repliesOnNone ? "." : " and the threads you replied to.")
+            """
+        guard !repliesOnNone else { return shipped }
+        return """
+            \(shipped)
+
+            \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
+
+            \(threads.isEmpty ? "(none)" : listed(threads, record: record, full: false))
+            """
+    }
+
+    /// The steps that commit and push what Copilot changed for the pull request, in `workplace`, before it replies on its
+    /// threads: Push & Reply's, and a comment's fix's that ships, once it's made. Where Copilot works on its own, wherever
+    /// that is, it first checks that what it would commit and push was made for the pull request; then it commits, once it
+    /// builds and the tests pass; checks, right before the push, that the pull request still merges into the branch the
+    /// prompt names, and that no merge brings in another branch's work; and pushes the commit it checked, by its ID, never
+    /// with force.
+    static func pushSteps(_ pr: PullRequest, workplace: Workplace) -> [String] {
+        let source = branch(pr.sourceBranch)
         var steps: [String] = []
         // A merge of another branch, such as one it targeted before, would bring that branch's work into the pull request
         // with a push nothing stops, and only a force push could take it back: right before each push, after the commit and
@@ -212,38 +282,12 @@ public enum PullRequestPrompt {
             Push the commit you checked, by its ID, without force: git push origin <commit>:refs/heads/\(source), where \
             <commit> is what git rev-parse HEAD says. \(ifRejected)
             """)
-        if repliesOnNone {
-            steps.append("Don't reply on the pull request's comment threads: none that's still open is among what these changes take care of.")
-        } else {
-            steps.append(scoped
-                ? """
-                On the pull request, with your Azure DevOps tools, reply to each of the comment threads below that you \
-                addressed, saying what you changed, and resolve it. For one of them you didn't change, reply why, and leave \
-                it active. Don't reply on its other threads: other changes take care of them.
-                """
-                : """
-                On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
-                you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
-                """)
-        }
-        let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        let shipped = """
-            Ship what you changed for pull request !\(pr.key.number) “\(oneLine(pr.title))”, in \(workplace.here):
-            \(pr.webURL.absoluteString)
+        return steps
+    }
 
-            \(numbered)
-
-            Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
-            pushed\(repliesOnNone ? "." : " and the threads you replied to.")
-            """
-        guard !repliesOnNone else { return shipped }
-        return """
-            \(shipped)
-
-            \(scoped ? "The comment threads these changes take care of:" : "Its unresolved comment threads:")
-
-            \(threads.isEmpty ? "(none)" : listed(threads, record: record, full: false))
-            """
+    /// Steps, each on a line of its own, numbered: "1. …".
+    static func numbered(_ steps: [String]) -> String {
+        steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
     }
 
     // MARK: Parts

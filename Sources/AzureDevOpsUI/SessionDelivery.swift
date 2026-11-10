@@ -108,13 +108,15 @@ extension SessionFallback {
 }
 
 /// Why a Push & Reply mustn't go to a session as BriefBar sends it (`CopilotTasksStore.turnProblem`): read whenever it's
-/// asked, but at most once a second, from a task that may run anywhere.
+/// asked, but at most once a second, from a task that may run anywhere; of the fork it goes to instead, and the checkout
+/// that works in, once BriefBar took the fork for it (`watch`).
 private final class TurnWatch: Sendable {
-    private let read: @Sendable () -> String?
-    private let state = Mutex<(at: ContinuousClock.Instant?, problem: String?)>((nil, nil))
+    private let read: @Sendable (CopilotTasksStore.PushOnItsWay) -> String?
+    private let state: Mutex<(push: CopilotTasksStore.PushOnItsWay, at: ContinuousClock.Instant?, problem: String?)>
 
-    init(_ read: @escaping @Sendable () -> String?) {
+    init(_ push: CopilotTasksStore.PushOnItsWay, read: @escaping @Sendable (CopilotTasksStore.PushOnItsWay) -> String?) {
         self.read = read
+        state = Mutex((push: push, at: nil, problem: nil))
     }
 
     /// The last read, while it's less than a second old; a new one otherwise.
@@ -122,9 +124,19 @@ private final class TurnWatch: Sendable {
         let now = ContinuousClock.now
         let last = state.withLock { $0 }
         if let at = last.at, now - at < .seconds(1) { return last.problem }
-        let problem = read()
-        state.withLock { $0 = (now, problem) }
+        let problem = read(last.push)
+        // Unless it watches another session since.
+        state.withLock {
+            guard $0.push.session == last.push.session else { return }
+            $0.at = now
+            $0.problem = problem
+        }
         return problem
+    }
+
+    /// Watches the session the push goes to instead from now on, and the checkout it works in: read anew when next asked.
+    func watch(_ push: CopilotTasksStore.PushOnItsWay) {
+        state.withLock { $0 = (push: push, at: nil, problem: nil) }
     }
 
     var lastProblem: String? {
@@ -261,10 +273,12 @@ extension CopilotTasksStore {
     ///     goes.
     ///   - checkingPush: the pull request a Push & Reply pushes to, as the window wrote its prompt: nothing goes, not even
     ///     copied, while Copilot runs a turn in the session, or in its checkout (`turnProblem`), up to the moment the
-    ///     session's extension takes the prompt, or BriefBar copies it; nor while the folder the session works in holds a
-    ///     merge of commits that the branch the prompt names, its `targetBranch`, doesn't have, or that can't be checked
-    ///     (`pushProblem`); nor once the pull request merges into another branch, as Azure DevOps says right before git
-    ///     checks, and again after (`freshTargetProblem`), or as the list reads later (`retargetProblem`).
+    ///     session's extension takes the prompt, or BriefBar copies it; sent to a fork, as a comment's fix sent to push and
+    ///     reply may be, in the fork, or in the checkout it works in, once BriefBar took the fork for it, or copies the
+    ///     prompt for it; nor while the folder the session works in holds a merge of commits that the branch the prompt
+    ///     names, its `targetBranch`, doesn't have, or that can't be checked (`pushProblem`); nor once the pull request
+    ///     merges into another branch, as Azure DevOps says right before git checks, and again after
+    ///     (`freshTargetProblem`), or as the list reads later (`retargetProblem`).
     /// - Returns: sent; forked and sent, with the fork; why it fell back; or why nothing went.
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil,
@@ -334,7 +348,7 @@ extension CopilotTasksStore {
         let homes = await sessionHomes()
         let appHome = appHome
         // Read right before the request is written, and at most once a second while it waits for the extension to take it.
-        let watch = push.map { push in TurnWatch { Self.turnProblem(push, home: appHome) } }
+        let watch = push.map { TurnWatch($0) { Self.turnProblem($0, home: appHome) } }
         let effects = SessionSender.Effects(
             open: { [weak self] id in
                 await MainActor.run {
@@ -365,7 +379,7 @@ extension CopilotTasksStore {
                 let folder = AppSessions.folder(of: fork, home: appHome)
                 let key = folder.map(Self.checkoutKey)
                 let isOwn = key != nil && key == checkout.map(Self.checkoutKey)
-                return await MainActor.run { () -> SendFailure? in
+                let refused = await MainActor.run { () -> SendFailure? in
                     guard let self, !self.delivering.contains(fork) else { return .busy }
                     if let folder, !isOwn, self.isWorking(inFolder: folder) { return .checkoutBusy }
                     if let folder { self.deliveringFolders[fork] = folder }
@@ -373,6 +387,11 @@ extension CopilotTasksStore {
                     reserved.ids.insert(fork)
                     return nil
                 }
+                // A push goes from the fork from now on, which has the session's changes, in a worktree of its own: until the
+                // fork's extension takes the prompt, it's the fork, and the checkout it works in, that mustn't run a turn,
+                // read anew right before the request is written (`mayGoOn`).
+                if refused == nil, let push { watch?.watch(push.forked(fork, in: folder)) }
+                return refused
             }
         )
         let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
@@ -417,8 +436,10 @@ extension CopilotTasksStore {
         case .forkedNotSent(let fork, let why):
             Log.app.error("Forked a session in the Copilot app, but couldn't send the fork a prompt: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
+            // Pasted in the fork, a push goes from there: it's the fork, and the checkout it works in, that mustn't run a turn.
+            let forked = push.map { $0.forked(fork, in: AppSessions.folder(of: fork, home: appHome)) }
             return await fallBack(
-                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone, push: push
+                prompt, in: fork, forking: forking, fork: fork, reason: why.description, mayHaveSent: why.mayHaveGone, push: forked
             )
         }
     }
@@ -430,6 +451,12 @@ extension CopilotTasksStore {
         var session: String
         var name: String
         var checkout: URL?
+
+        /// The same push, on its way to a fork of the session instead, as a comment's fix sent to push and reply goes: the
+        /// fork, "a fork of ‘Retry backoff’", and the worktree of its own it works in, when its state says which.
+        func forked(_ fork: String, in folder: URL?) -> PushOnItsWay {
+            PushOnItsWay(pullRequest: pullRequest, session: fork, name: "a fork of \(name)", checkout: folder)
+        }
     }
 
     /// Why a Push & Reply on its way mustn't go now: the list has read that its pull request merges into another branch than

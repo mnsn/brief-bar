@@ -182,7 +182,7 @@ struct PullRequestBoardCard: View {
                     Text(who)
                         .font(size: 11)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 2)
                 }
             }
@@ -228,12 +228,12 @@ struct PullRequestBoardCard: View {
     }
 
     /// The first Copilot session that told BriefBar it works on it (`SessionUpdates`), unless its stage names it already,
-    /// as "‘Cart’ is writing it" does.
+    /// as "‘Cart’ is writing it" does, and "‘Cart’ is on it" does of the session that set it (`StageText.namesWhoSetIt`).
     @MainActor
     static func worker(on ref: ItemRef, besides reading: StageReading, ordering: PullRequestOrder) -> LinkedItem? {
         let named: ItemRef? = switch reading.why {
         case .working(let session), .asksYou(let session), .finished(let session), .preReviewing(let session): session.ref
-        default: nil
+        default: StageText.namesWhoSetIt(reading) ? reading.mark?.by : nil
         }
         return ordering.sessionsWorking(on: ref).filter { $0 != named }.lazy.compactMap(ordering.describe).first
     }

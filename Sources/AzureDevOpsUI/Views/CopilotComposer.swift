@@ -33,10 +33,11 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     ///   - handOff: what a pull request's prompt takes off Needs You once it's sent, as it was written.
     ///   - start: where it goes to begin with, as a composer in place chose it, rather than BriefBar's suggestion.
     ///   - parts: what of the pull request it takes on, its threads, builds or conflicts, for each to say what became of it.
+    ///   - fixes: a Push & Reply that fixes the threads it takes on first, as a comment's fix sent with Push and Reply on.
     func show(
         subject: TaskSubject, prompt: String?, sessionPrompt: String? = nil, createdAt: Date? = nil, options: CopilotRunOptions,
         continuing: CopilotRun?, handOff: CommentHandOff? = nil, session start: ComposerStart? = nil, parts: [PullRequestPart] = [],
-        store: CopilotTasksStore
+        fixes: Bool = false, store: CopilotTasksStore
     ) {
         // Another task in its place stops the last one's prompt, which may be on its way to a session.
         stopSending()
@@ -45,7 +46,7 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
         let view = CopilotComposerView(
             subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt,
             sessionPrompt: sessionPrompt, createdAt: createdAt, continuing: continuing, handOff: handOff, start: start, parts: parts,
-            asksForStage: store.asksForStage, sending: { [weak self] sending in
+            fixes: fixes, asksForStage: store.asksForStage, sending: { [weak self] sending in
                 guard self?.shown == task else { return sending.cancel() }
                 self?.sending = sending
             }
@@ -135,6 +136,9 @@ struct CopilotComposerView: View {
     let handOff: CommentHandOff?
     /// What of the pull request it takes on, its threads, builds or conflicts: what each says Copilot does about it.
     let parts: [PullRequestPart]
+    /// A Push & Reply that fixes the threads it takes on first, as a comment's fix sent with Push and Reply on: it goes
+    /// wherever a fix goes, rather than only on with the session whose changes it ships.
+    let fixes: Bool
     /// A work item's prompt for a new session, with placeholders, from Settings.
     let template: String
     /// Its prompt ends asking the session to tell BriefBar the pull request's stage once it pushed, as Pull Request Order
@@ -201,18 +205,21 @@ struct CopilotComposerView: View {
     ///     `--render`, which finds nothing.
     ///   - start: where it goes to begin with, as a composer in place chose it, which BriefBar's suggestions don't change.
     ///   - parts: what of the pull request it takes on, its threads, builds or conflicts.
+    ///   - fixes: a Push & Reply that fixes the threads it takes on first, as a comment's fix sent with Push and Reply on.
     ///   - asksForStage: Pull Request Order is on: its prompt ends asking for the stage, unless it's a review's.
     init(
         subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, sessionPrompt: String? = nil,
         createdAt: Date? = nil, continuing: CopilotRun? = nil, handOff: CommentHandOff? = nil,
         session: (choice: SessionChoice, reach: SessionReach?)? = nil, start: ComposerStart? = nil, parts: [PullRequestPart] = [],
-        asksForStage: Bool = false, sending: @escaping (Task<Void, Never>) -> Void = { _ in }, close: @escaping () -> Void
+        fixes: Bool = false, asksForStage: Bool = false, sending: @escaping (Task<Void, Never>) -> Void = { _ in },
+        close: @escaping () -> Void
     ) {
         self.subject = subject
         self.asksForStage = asksForStage
         self.continuing = continuing
         self.handOff = handOff
         self.parts = parts
+        self.fixes = fixes
         self.template = template
         self.createdAt = createdAt
         self.sending = sending
@@ -304,11 +311,18 @@ struct CopilotComposerView: View {
     }
 
     /// Push & Reply ships what an earlier run changed: only in its session, and its worktree.
-    private var mustContinue: Bool { pullRequest?.1 == .pushAndReply }
+    private var mustContinue: Bool { Self.mustContinue(pullRequest?.1, fixes: fixes) }
+
+    /// Whether a task must go on with the session whose changes it ships, as Push & Reply does: not one that fixes the
+    /// threads it takes on first, which ships what it changes itself, wherever a fix goes.
+    static func mustContinue(_ action: PullRequestAction?, fixes: Bool) -> Bool {
+        action == .pushAndReply && !fixes
+    }
 
     /// A Push & Reply that replies on no thread, as of a build's fix alone: it only pushes, and says so.
     private var onlyPushes: Bool {
-        pullRequest?.1 == .pushAndReply && PullRequestAction.pushAndReply.title(taking: parts) != PullRequestAction.pushAndReply.title
+        pullRequest?.1 == .pushAndReply && !fixes
+            && PullRequestAction.pushAndReply.title(taking: parts) != PullRequestAction.pushAndReply.title
     }
 
     /// Send to a Fork is there for the session: the Copilot app can fork it, and it isn't for Push & Reply, which ships what
@@ -366,9 +380,12 @@ struct CopilotComposerView: View {
     /// What it does, in Copilot's colors, and what it's for. Dragging it moves the window.
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            ComposerTile(symbol: onlyPushes ? "arrow.up.circle.fill" : pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
+            ComposerTile(
+                symbol: onlyPushes ? "arrow.up.circle.fill" : fixes ? PullRequestAction.fixComments.symbol : pullRequest?.1.symbol ?? "paperplane.fill",
+                fill: .copilot, size: 44
+            )
             VStack(alignment: .leading, spacing: 4) {
-                Text(pullRequest.map { "\($0.1.title(taking: parts)) with Copilot" } ?? "Send to Copilot")
+                Text(pullRequest.map { "\($0.1.title(taking: parts, fixing: fixes)) with Copilot" } ?? "Send to Copilot")
                     .font(size: 20, weight: .bold)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -831,6 +848,8 @@ struct CopilotComposerView: View {
         switch pullRequest?.1 {
         case nil:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
+        case .pushAndReply? where fixes:
+            text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It addresses the comments, then commits, pushes the pull request's branch, and replies on their threads, as you."
         case .pushAndReply? where onlyPushes:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits and pushes the pull request's branch, as you, and replies on none of its threads."
         case .pushAndReply?:
@@ -1145,10 +1164,12 @@ struct CopilotComposerView: View {
     /// What it takes on, going to `session`, as the prompt you send still lists it: a thread whose entry you took out isn't;
     /// its builds and conflicts are. A Push & Reply also takes on the builds and conflicts whose fixes are done and not
     /// pushed in the session it goes on with, which its push takes along, though it replies on none of them
-    /// (`CopilotTasksStore.unpushedParts`), so that each says it's pushed, however it was sent.
+    /// (`CopilotTasksStore.unpushedParts`), so that each says it's pushed, however it was sent; not one that fixes the
+    /// threads it takes on first, which says it fixed those, and which the session's fixes go along with all the same
+    /// (`CopilotTasksStore.work(on:of:for:)`).
     private func sentParts(to session: String?) -> [PullRequestPart] {
         var parts = Self.sentParts(self.parts, in: prompt)
-        if case .pullRequest(let pullRequest, .pushAndReply) = subject, let session {
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject, !fixes, let session {
             for part in store.unpushedParts(of: PRKey(pullRequest.organization, pullRequest.id), in: session) where !parts.contains(part) {
                 parts.append(part)
             }
@@ -1164,7 +1185,7 @@ struct CopilotComposerView: View {
 
     /// What a prompt sent to one of the Copilot app's sessions, or to a fork of it, is about, for each to say what became of
     /// it: a fix of some of its threads, builds or conflicts, or Push & Reply, even of none of them, which pushes what the
-    /// session changed, for the fixes there to say they're pushed.
+    /// session changed, for the fixes there to say they're pushed, and which may fix the threads it takes on first.
     private func aboutParts(to session: String?) -> SentPrompt.About? {
         let parts = sentParts(to: session)
         guard case .pullRequest(let pullRequest, let action) = subject, !parts.isEmpty || action == .pushAndReply else { return nil }
@@ -1175,7 +1196,8 @@ struct CopilotComposerView: View {
         case .review: return nil
         }
         return SentPrompt.About(
-            pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts, target: pullRequest.targetBranch
+            pullRequest: PRKey(pullRequest.organization, pullRequest.id), purpose: purpose, parts: parts, target: pullRequest.targetBranch,
+            fixes: fixes
         )
     }
 
@@ -1190,13 +1212,16 @@ struct CopilotComposerView: View {
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
-            store.send(subject, prompt: prompt, options: options, repository: folder, parts: sentParts(to: nil), handOff: handOff)
+            store.send(subject, prompt: prompt, options: options, repository: folder, parts: sentParts(to: nil), handOff: handOff, fixing: fixes)
             close()
             return
         }
         // A fork of one of BriefBar's own sessions, which works in a worktree of its own, however the session stands.
         if delivery == .cliFork, case .task(let run) = target.kind {
-            store.send(subject, prompt: prompt, options: options, repository: run.repository, forking: run, parts: sentParts(to: nil), handOff: handOff)
+            store.send(
+                subject, prompt: prompt, options: options, repository: run.repository, forking: run, parts: sentParts(to: nil), handOff: handOff,
+                fixing: fixes
+            )
             close()
             return
         }
@@ -1215,7 +1240,7 @@ struct CopilotComposerView: View {
             case .task(let run):
                 store.send(
                     subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts(to: run.id),
-                    handOff: handOff
+                    handOff: handOff, fixing: fixes
                 )
             case .app(let session):
                 guard let run = store.appRun(for: session, subject: subject, options: options) else {
@@ -1225,7 +1250,7 @@ struct CopilotComposerView: View {
                 }
                 store.send(
                     subject, prompt: prompt, options: options, repository: run.repository, continuing: run, parts: sentParts(to: session.id),
-                    handOff: handOff
+                    handOff: handOff, fixing: fixes
                 )
             }
         }

@@ -6,7 +6,8 @@ import SwiftUI
 /// One session: status icon, name, state line, optional detail, how long it's been in that state, and,
 /// if turned on, how full its context window is. A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens
 /// what it's for, and has its own menu. With Nest Sessions Under Their Parents, a session is indented under the one
-/// that started it, or, where it isn't, has a ↳ tag that names that session and opens it.
+/// that started it, or, where it isn't, has a ↳ tag that names that session and opens it. Under it, what you asked it
+/// with Ask… and what it answered, and its summary.
 struct SessionRowView: View {
     let session: SessionSnapshot
     let now: Date
@@ -33,6 +34,11 @@ struct SessionRowView: View {
         let task = store.task(for: session.id)
         VStack(alignment: .leading, spacing: 0) {
             row(task)
+            // What you asked it with Ask…, and its field, then its summary: each under the row, as far in as its name.
+            SessionAskPart(ref: ref, name: session.displayName, isTask: task != nil, place: .row, open: answerOpener(task))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
             RowSummary(subject: ref)
                 .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                 .padding(.trailing, 8)
@@ -59,6 +65,7 @@ struct SessionRowView: View {
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
+            SessionAskMenuItems(ref)
             SummarizeMenuItems(ref)
             if let ref {
                 LinkMenuItems(ref)
@@ -68,6 +75,13 @@ struct SessionRowView: View {
 
     /// What it's linked and summed up by.
     private var ref: ItemRef? { ItemRef.session(session.id) }
+
+    /// What ↗ on its Ask… answer does: opens the session itself, as **Open This Session** does; nothing for a task, whose
+    /// row and menu have their own ways to it.
+    private func answerOpener(_ task: SentTask?) -> (perform: () -> Void, help: String)? {
+        guard task == nil else { return nil }
+        return ({ store.openItself(session) }, store.opensItselfHelp)
+    }
 
     private func row(_ task: SentTask?) -> some View {
         Button(action: action) {
@@ -169,12 +183,13 @@ struct SessionRowView: View {
         .accessibilityHint(
             task.map(hint)
                 ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
-                ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal")
+                ?? store.opensItselfHelp
         )
         .accessibilityActions {
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
+            SessionAskMenuItems(ref, divided: false)
             SummarizeMenuItems(ref, divided: false)
         }
         .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
@@ -187,6 +202,7 @@ struct SessionRowView: View {
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
+            SessionAskMenuItems(ref)
             SummarizeMenuItems(ref)
             if let ref {
                 LinkMenuItems(ref)

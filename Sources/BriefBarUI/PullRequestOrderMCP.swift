@@ -23,8 +23,9 @@ package enum PullRequestOrderMCP {
     /// - Parameters:
     ///   - defaults: the app's settings, or the demo's.
     ///   - sourcesOn: the kinds of pull request whose source is on in the app, asked with each order told.
-    ///   - session: the Copilot session that started `--mcp`, whose order it is when the agent doesn't say, and the only
-    ///     one whose stages it sets.
+    ///   - session: the Copilot session that started `--mcp`, as the Copilot CLI says, whose order it is when the agent
+    ///     doesn't say; `pull_request_stage` is there only with it, and sets only its stages, so never in VS Code or
+    ///     Cursor, whose agents aren't Copilot sessions.
     ///   - stages: what Azure DevOps tells of its pull requests' stages, for `pull_request_stage`, which is there only with
     ///     it.
     ///   - copilotOn: whether GitHub Copilot is on in the app, asked with each stage set: what a session sets shows only
@@ -119,17 +120,18 @@ package enum PullRequestOrderMCP {
                 try await forget(arguments, keeper: keeper)
             },
         ]
-        if let stages {
+        if let stages, let session {
             tools.append(MCPTool(
                 name: "pull_request_stage",
                 title: "Pull Request Stage",
                 description: """
                     Tells BriefBar what stage pull requests you work on are in, so that the user sees at a glance what's \
-                    next for them: in_progress as you start writing or fixing its code; user_review once you've pushed \
-                    your work and it's the user's turn to review it; teammate_review once the user has reviewed it, as \
-                    they told you or you reviewed it together, and it's their teammates' turn; clear to leave it to \
-                    BriefBar. The latest stage set wins, whether the user set it or a session did, and BriefBar shows who. \
-                    Azure DevOps pull requests only, for now. It changes nothing in Azure DevOps.
+                    next for them: in_progress as you start writing or fixing the code of one of the user's own; \
+                    user_review once you've pushed your work and it's the user's turn to review it; teammate_review \
+                    once the user has reviewed it, as they told you or you reviewed it together, and it's their \
+                    teammates' turn; clear to leave it to BriefBar. The latest stage set wins, whether the user set it \
+                    or a session did, and BriefBar shows who. Azure DevOps pull requests only, for now. It changes \
+                    nothing in Azure DevOps.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_requests": array(
@@ -138,11 +140,12 @@ package enum PullRequestOrderMCP {
                     ),
                     "stage": MCPSchema.string("Their stage", oneOf: stageNames.map(\.name)),
                     "organization": MCPSchema.string("The Azure DevOps organization of the numbers, such as contoso"),
-                    "session": MCPSchema.string("Your Copilot session's ID, only when BriefBar can't tell which session you are"),
                 ], required: ["pull_requests", "stage"]),
                 readOnly: false
             ) { arguments in
-                try await setStage(arguments, keeper: keeper, stages: stages, copilotOn: copilotOn, started: session, now: now)
+                try await setStage(
+                    arguments, keeper: keeper, stages: stages, copilotOn: copilotOn, session: session, now: now
+                )
             })
         }
         return tools.map { tool in
@@ -240,15 +243,21 @@ package enum PullRequestOrderMCP {
         return "BriefBar forgot order \(forgotten.value.id.uuidString.lowercased())."
     }
 
-    /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that session's,
-    /// or clears what it set, as Azure DevOps reads them now, at the time it's read them. Refused, saying why, while GitHub
-    /// Copilot is off, as what a session sets shows only while the Copilot app lists it; for GitHub's pull requests; for
-    /// more than `SessionStages.mostAtOnce`; and when BriefBar can't tell which session it is. Whether it may is asked
-    /// again just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One
-    /// BriefBar doesn't list, or that merged or closed, is left as it is, with a line that says why.
+    /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that
+    /// session's, or clears what it set, as Azure DevOps reads them now, at the time it's read them. Refused, saying
+    /// why, while GitHub Copilot is off, as what a session sets shows only while the Copilot app lists it; for GitHub's
+    /// pull requests; for more than `SessionStages.mostAtOnce`; for another session; and for a session the Copilot app
+    /// doesn't list, such as one run in a terminal, whose stages BriefBar wouldn't show. Whether it may is asked again
+    /// just before it keeps anything, as reading Azure DevOps takes a while (`OrderKeeper.changeStages`). One BriefBar
+    /// doesn't list, one that merged or closed, and someone else's to put in progress, which BriefBar never does, are
+    /// left as they are, each with a line that says why. It says BriefBar shows what it set only where it can tell
+    /// (`MCPStages.sessions`), and not where the user set a stage after it read the pull request, which shows as the
+    /// later. A Your review it sets where the latest stage set is a Your review the user set before it
+    /// read the pull request keeps no votes, saying so: it lasts as theirs does, while theirs is there, rather than end
+    /// theirs as someone else votes (`OrderKeeper.setStages`).
     static func setStage(
         _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
-        started: ItemRef?, now: @Sendable () -> Date
+        session: ItemRef, now: @Sendable () -> Date
     ) async throws -> String {
         let noCopilot = AgentAccess.refusal(source: "GitHub Copilot")
         guard copilotOn() else { throw MCPToolError(noCopilot) }
@@ -269,9 +278,8 @@ package enum PullRequestOrderMCP {
         guard refs.count <= SessionStages.mostAtOnce else {
             throw MCPToolError("Name at most \(SessionStages.mostAtOnce) pull requests at once.")
         }
-        guard let session = try SessionUpdatesMCP.session(arguments, started: started) else {
-            throw MCPToolError("BriefBar can't tell which Copilot session you are: send session, your session's ID.")
-        }
+        // Only its own: `session`, which it doesn't ask for, can only repeat it.
+        _ = try SessionUpdatesMCP.session(arguments, started: session)
         let demo = keeper.demo ? " (The demo keeps it in memory.)" : ""
         guard let stage else {
             let (before, _) = try await keeper.changeStages(session, now: now(), unless: refusal) { set in
@@ -293,6 +301,19 @@ package enum PullRequestOrderMCP {
         let read = try await stages.read(refs)
         // Set as it's read: what the app reads after this counts against it, and nothing it started reading before.
         let now = now()
+        let sessions = await stages.sessions()
+        if let sessions, !sessions.listed.contains(session) {
+            throw MCPToolError("""
+                The Copilot app doesn't list this session, as with one run in a terminal, and BriefBar shows only the \
+                stages of sessions it lists: it kept none.
+                """)
+        }
+        // Whether what the user set stands, as the app works it out, with the Copilot app's sessions on it too.
+        let (facts, on) = (read.facts, sessions?.on ?? [:])
+        let standing: (StageMark, ItemRef) -> Bool = { theirs, ref in
+            guard let fact = facts[ref] else { return false }
+            return StageRules.stands(theirs, facts: fact, sessions: PullRequestOrder.merged(fact.sessions, on[ref] ?? []))
+        }
         var marks: [ItemRef: StageMark] = [:]
         var notSet: [String] = []
         for ref in refs {
@@ -304,28 +325,55 @@ package enum PullRequestOrderMCP {
                 notSet.append("Not \(labels([ref])): it \(facts.state == .merged ? "merged" : "was abandoned").")
                 continue
             }
+            guard stage != .inProgress || facts.isYours else {
+                notSet.append(
+                    "Not \(labels([ref])): it isn't the user's, and BriefBar puts only the user's own pull requests in "
+                        + "progress."
+                )
+                continue
+            }
             marks[ref] = StageRules.mark(stage, at: now, facts: facts, by: session)
         }
         guard !marks.isEmpty else { throw MCPToolError(notSet.joined(separator: "\n")) }
-        // What the user set that this replaces, while it stands: they can put it back.
-        let yours = await keeper.userMarks(of: Array(marks.keys), account: read.account)
-        let set = marks
-        try await keeper.changeStages(session, now: now, unless: refusal) { kept in
-            for (ref, mark) in set { kept.set(mark, of: ref) }
-        }
+        let (yours, following) = try await keeper.setStages(
+            marks, of: session, account: read.account, listed: sessions?.listed, now: now, unless: refusal
+        )
         let told = refs.filter { marks[$0] != nil }
-        var lines = [
-            "BriefBar shows \(labels(told)) in \(stage.title) now, set by this session; the user sees who set it, and can "
-                + "change it.\(demo)",
-        ]
+        // What the user set after this session read them, the later, which shows rather than what it says.
+        let later = Set(told.filter { yours[$0].map { $0.at > now } == true })
+        let shown = told.filter { !later.contains($0) }
+        var lines: [String] = []
+        if !shown.isEmpty {
+            let them = shown.count == 1 ? "it" : "them"
+            let shows = if sessions == nil {
+                "BriefBar keeps \(labels(shown)) in \(stage.title), set by this session, and shows \(them) while the "
+                    + "Copilot app lists this session"
+            } else {
+                "BriefBar shows \(labels(shown)) in \(stage.title) now, set by this session"
+            }
+            lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
+        }
+        // What the user set that this replaces, while it stands, which they can put back; their Your review that this
+        // follows, which it lasts as; or what they set since it read it, which shows.
         for ref in told {
-            guard let theirs = yours[ref], theirs.stage != stage, let facts = read.facts[ref],
-                  StageRules.stands(theirs, facts: facts, sessions: facts.sessions) else { continue }
+            guard let theirs = yours[ref] else { continue }
             let on = told.count > 1 ? " on \(labels([ref]))" : ""
-            lines.append(
-                "The user had set \(theirs.stage.title)\(on) \(StageText.agoWords(theirs.at, now: now)); yours replaces it, "
-                    + "and they can put theirs back."
-            )
+            let ago = StageText.agoWords(theirs.at, now: now)
+            if later.contains(ref) {
+                lines.append(
+                    "The user set \(theirs.stage.title) on \(labels([ref])) \(ago), after this session read it: BriefBar "
+                        + "shows theirs, the later."
+                )
+            } else if following.contains(ref) {
+                lines.append(
+                    "The user had set \(theirs.stage.title)\(on) \(ago) already; yours lasts as theirs does, and goes with "
+                        + "it, rather than end once someone else votes."
+                )
+            } else if theirs.stage != stage, standing(theirs, ref) {
+                lines.append(
+                    "The user had set \(theirs.stage.title)\(on) \(ago); yours replaces it, and they can put theirs back."
+                )
+            }
         }
         return (lines + notSet).joined(separator: "\n")
     }
@@ -536,7 +584,7 @@ actor OrderKeeper {
     }
 
     /// The stages the user set on these pull requests, as the app keeps them for the account they were read with.
-    func userMarks(of refs: [ItemRef], account: String?) -> [ItemRef: StageMark] {
+    private func userMarks(of refs: [ItemRef], account: String?) -> [ItemRef: StageMark] {
         guard let account else { return [:] }
         let marks = StageMarks.load(from: defaults)
         var found: [ItemRef: StageMark] = [:]
@@ -544,6 +592,19 @@ actor OrderKeeper {
             found[ref] = marks.mark(of: ref, for: account)
         }
         return found
+    }
+
+    /// When a session last set a stage on each of these pull requests, of those the Copilot app lists, or of all of them
+    /// where `--mcp` can't tell, as their keys have them now, but for a Your review that followed the user's
+    /// (`StageMark.followsYours`); none where none did.
+    private func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
+        let stages = SessionStages.load(from: defaults, now: now)
+        let marks = stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now)
+        var latest: [ItemRef: Date] = [:]
+        for ref in refs {
+            latest[ref] = marks[ref]?.filter { !$0.followsYours }.map(\.at).max()
+        }
+        return latest
     }
 
     /// Changes what a session set on its pull requests' stages, saving it under its own key, and tells the app when that
@@ -556,6 +617,46 @@ actor OrderKeeper {
     ) throws -> (before: SessionStage?, after: SessionStage) {
         if let refusal = refusal() { throw MCPToolError(refusal) }
         guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
+        return keep(session, now: now, body)
+    }
+
+    /// Sets these stages as this session's. A Your review where the latest stage set on the pull request is a Your review
+    /// the user set before the session read it, later than what every listed session set there but a Your review that
+    /// followed theirs this way, keeps no votes (`StageMark.follows`): it lasts as theirs does, while theirs is there,
+    /// rather than end as someone else votes, and theirs with it, as the latest set. One the user set as the session read
+    /// the pull request came after what it says, so it keeps its votes, as anywhere. It decides as it keeps them, in one
+    /// step, so that a call of this session's in between can't make it go stale. Refused, changing nothing, while Pull
+    /// Request Order is off, or `refusal` gives an answer, asked just before.
+    /// - Returns: the stages the user set on them, as it read them, and those whose Your review follows theirs.
+    func setStages(
+        _ marks: [ItemRef: StageMark], of session: ItemRef, account: String?, listed: Set<ItemRef>?, now: Date,
+        unless refusal: @Sendable () -> String? = { nil }
+    ) throws -> (yours: [ItemRef: StageMark], following: Set<ItemRef>) {
+        if let refusal = refusal() { throw MCPToolError(refusal) }
+        guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
+        let refs = Array(marks.keys)
+        let yours = userMarks(of: refs, account: account)
+        let latest = latestSessionMarks(on: refs, listed: listed, now: now)
+        let following = Set(refs.filter { ref in
+            guard var mark = marks[ref], let theirs = yours[ref] else { return false }
+            mark.votes = nil
+            return mark.follows(theirs) && theirs.at > (latest[ref] ?? .distantPast)
+        })
+        keep(session, now: now) { kept in
+            for (ref, mark) in marks {
+                var mark = mark
+                if following.contains(ref) { mark.votes = nil }
+                kept.set(mark, of: ref)
+            }
+        }
+        return (yours, following)
+    }
+
+    /// Saves what a session set under its own key, and tells the app when that changed it.
+    @discardableResult
+    private func keep(
+        _ session: ItemRef, now: Date, _ body: (inout SessionStage) -> Void
+    ) -> (before: SessionStage?, after: SessionStage) {
         var before = SessionStages.load(session, from: defaults)
         before?.expire(now: now)
         let after = SessionStages.change(session, in: defaults, now: now, body)

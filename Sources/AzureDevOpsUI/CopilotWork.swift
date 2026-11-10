@@ -21,12 +21,14 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     }
 
     /// What it's about, as it's sent: the pull request, what for, and what of it it takes on, with the pull request's target
-    /// branch, which the conflicts it takes on are with.
+    /// branch, which the conflicts it takes on are with; and, for Push & Reply, whether it fixes what it takes on first, as a
+    /// comment's Fix sent with Push and Reply on does.
     struct About: Equatable, Sendable {
         var pullRequest: PRKey
         var purpose: Purpose
         var parts: [PullRequestPart]
         var target: String? = nil
+        var fixes = false
     }
 
     /// The pull request.
@@ -43,6 +45,9 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// For the conflicts, the pull request's target branch as it was sent: with another, they're other conflicts
     /// (`CopilotTasksStore.endWorkThatsOver`). Nil otherwise, and for prompts BriefBar kept before it had this.
     var target: String?
+    /// A Push & Reply that fixes the threads it takes on first, as a comment's Fix sent with Push and Reply on does
+    /// (`TakenPart.fixes`). Nil otherwise, and for prompts BriefBar kept before it had this.
+    var fixes: Bool?
     var sentAt: Date
     /// BriefBar copied it for you to paste, rather than sending it itself.
     var copied: Bool
@@ -81,6 +86,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         purpose = about.purpose
         parts = about.parts
         target = about.parts.contains(.conflicts) ? about.target.flatMap { $0.isEmpty ? nil : $0 } : nil
+        fixes = about.purpose == .pushAndReply && about.fixes ? true : nil
         self.sentAt = sentAt
         self.copied = copied
         self.ended = ended
@@ -96,6 +102,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         purpose = try container.decode(Purpose.self, forKey: .purpose)
         parts = try container.decode([PullRequestPart].self, forKey: .parts)
         target = try container.decodeIfPresent(String.self, forKey: .target)
+        fixes = try container.decodeIfPresent(Bool.self, forKey: .fixes)
         sentAt = try container.decode(Date.self, forKey: .sentAt)
         copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
         ended = try container.decodeIfPresent(RunPhase.self, forKey: .ended)
@@ -202,6 +209,10 @@ struct CopilotWork: Equatable {
     /// For Push & Reply on a thread: it replies on it, as its prompt lists it. False for a thread whose fix it pushes along
     /// with all else its session changed, without replying on it (`CopilotTasksStore.work(on:of:for:)`).
     var replies = true
+    /// For Push & Reply: it fixed what it's about first, as a comment's Fix, or Fix All, sent with Push and Reply on does
+    /// (`TakenPart.fixes`, `SentPrompt.fixes`), so its sentences say it fixed it, and one that failed or stopped isn't
+    /// offered to push, as a fix that did isn't. False for a fix it pushes along with all else its session changed.
+    var fixes = false
 
     /// Ongoing, rather than over.
     var isActive: Bool {
@@ -218,10 +229,11 @@ struct CopilotWork: Equatable {
     }
 
     /// What was changed for it isn't pushed: a fix that's done, or a Push & Reply of it that failed or stopped, to try
-    /// again.
+    /// again; not one that fixed it first, whose fix may not be done.
     var waitsToBePushed: Bool {
         switch (purpose, state) {
-        case (.fix, .done), (.pushAndReply, .failed), (.pushAndReply, .stopped): true
+        case (.fix, .done): true
+        case (.pushAndReply, .failed), (.pushAndReply, .stopped): !fixes
         default: false
         }
     }
@@ -245,7 +257,9 @@ struct CopilotWork: Equatable {
 
     /// What it says on what it's about, in a sentence: "Copilot is fixing this in ‘Retry backoff’", "Fixing this build in a
     /// fork of ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it in ‘Retry backoff’", "Pushed from
-    /// ‘Retry backoff’, without a reply". What Copilot said as it ended, such as why it couldn't, goes under it (`said`).
+    /// ‘Retry backoff’, without a reply"; for a Push & Reply that fixes it first (`fixes`), "Copilot is fixing this in ‘Retry
+    /// backoff’, to push and reply", "Fixed, pushed and replied in ‘Retry backoff’". What Copilot said as it ended, such as
+    /// why it couldn't, goes under it (`said`).
     /// - Parameters:
     ///   - name: the session's name; nil when it isn't known.
     ///   - forkOf: for a fork, the name of the session it forked.
@@ -256,6 +270,11 @@ struct CopilotWork: Equatable {
         switch (purpose, state) {
         case (_, .waiting(copied: true)):
             return "Copied for \(place): paste it there"
+        case (.pushAndReply, .working) where fixes:
+            let fixing = "\(words.fixing) in \(place), \(words.toShip)"
+            return fork ? Self.capitalized(fixing) : "Copilot is \(fixing)"
+        case (.pushAndReply, .waiting(copied: false)) where fixes:
+            return "Sent to \(place)"
         case (.pushAndReply, .waiting), (.pushAndReply, .working):
             return "\(words.pushing) from \(place)"
         case (_, .waiting(copied: false)):
@@ -270,10 +289,12 @@ struct CopilotWork: Equatable {
             return "\(words.fixed) in \(place), not pushed"
         case (.explain, .done):
             return "Answered in \(place)"
+        case (.pushAndReply, .done) where fixes:
+            return "\(words.fixedAndPushed) in \(place)"
         case (.pushAndReply, .done):
             return "\(words.pushed) from \(place)" + (part.thread != nil && !replies ? ", without a reply" : "")
         case (_, .failed):
-            let what = purpose == .explain ? "explain it" : purpose == .pushAndReply ? "push it" : words.fixIt
+            let what = purpose == .explain ? "explain it" : purpose == .pushAndReply ? (fixes ? words.fixAndPushIt : "push it") : words.fixIt
             return "Couldn't \(what) in \(place)"
         case (_, .stopped):
             let what = purpose == .explain ? "answered" : purpose == .pushAndReply ? "pushed it" : words.fixedIt
@@ -298,36 +319,50 @@ struct CopilotWork: Equatable {
         /// "Pushing and replying", for a thread its Push & Reply replies on; "Pushing" for the rest.
         var pushing: String
         var pushed: String
+        /// For a Push & Reply that fixes it first: what for, "to push and reply", for a thread; "to push" for the rest.
+        var toShip: String
+        /// For a Push & Reply that fixes it first: "Fixed, pushed and replied", "Fixed and pushed", "Resolved and pushed".
+        var fixedAndPushed: String
+        /// For a Push & Reply that fixes it first: "fix and push it", "resolve and push them".
+        var fixAndPushIt: String
 
         /// - Parameter replies: for a thread, its Push & Reply replies on it.
         init(_ part: PullRequestPart, replies: Bool = true) {
             switch part {
             case .thread:
-                self.init(
-                    fixing: "fixing this", explaining: "explaining this", fixed: "Fixed", fixIt: "fix it", fixedIt: "fixed it",
-                    pushing: replies ? "Pushing and replying" : "Pushing", pushed: replies ? "Pushed and replied" : "Pushed"
-                )
+                fixing = "fixing this"
+                explaining = "explaining this"
+                fixed = "Fixed"
+                fixIt = "fix it"
+                fixedIt = "fixed it"
+                pushing = replies ? "Pushing and replying" : "Pushing"
+                pushed = replies ? "Pushed and replied" : "Pushed"
+                toShip = replies ? "to push and reply" : "to push"
+                fixedAndPushed = replies ? "Fixed, pushed and replied" : "Fixed and pushed"
+                fixAndPushIt = "fix and push it"
             case .build:
-                self.init(
-                    fixing: "fixing this build", explaining: "explaining the failure", fixed: "Fixed", fixIt: "fix it",
-                    fixedIt: "fixed it", pushing: "Pushing", pushed: "Pushed"
-                )
+                fixing = "fixing this build"
+                explaining = "explaining the failure"
+                fixed = "Fixed"
+                fixIt = "fix it"
+                fixedIt = "fixed it"
+                pushing = "Pushing"
+                pushed = "Pushed"
+                toShip = "to push"
+                fixedAndPushed = "Fixed and pushed"
+                fixAndPushIt = "fix and push it"
             case .conflicts:
-                self.init(
-                    fixing: "resolving the conflicts", explaining: "explaining the conflicts", fixed: "Resolved",
-                    fixIt: "resolve them", fixedIt: "resolved them", pushing: "Pushing", pushed: "Pushed"
-                )
+                fixing = "resolving the conflicts"
+                explaining = "explaining the conflicts"
+                fixed = "Resolved"
+                fixIt = "resolve them"
+                fixedIt = "resolved them"
+                pushing = "Pushing"
+                pushed = "Pushed"
+                toShip = "to push"
+                fixedAndPushed = "Resolved and pushed"
+                fixAndPushIt = "resolve and push them"
             }
-        }
-
-        init(fixing: String, explaining: String, fixed: String, fixIt: String, fixedIt: String, pushing: String, pushed: String) {
-            self.fixing = fixing
-            self.explaining = explaining
-            self.fixed = fixed
-            self.fixIt = fixIt
-            self.fixedIt = fixedIt
-            self.pushing = pushing
-            self.pushed = pushed
         }
     }
 
@@ -336,11 +371,12 @@ struct CopilotWork: Equatable {
     }
 
     /// From a task of BriefBar's that took it on (`CopilotRun.taken`), to fix it, or to push its fix, and reply on a
-    /// thread, as it stands, or as it ended once a later task went on with its session.
+    /// thread, or to fix it first then do so, as it stands, or as it ended once a later task went on with its session.
     static func from(_ entry: CopilotTaskEntry, taken: TakenPart) -> CopilotWork {
         let isTask = entry.run?.isAppSession != true
         // Push & Reply ships what it took on; the others it has, it doesn't reply on, and they stay as they were.
         let purpose: Purpose = taken.ships == true ? .pushAndReply : .fix
+        let fixes = purpose == .pushAndReply && taken.fixes == true
         // Taken on by an earlier task in the session, which a later one went on with.
         if let before = taken.ended {
             let state: State = switch before {
@@ -350,13 +386,13 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since, takenAt: taken.since
+                since: taken.since, takenAt: taken.since, fixes: fixes
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CopilotWork(
             part: taken.part, purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since
+            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since, fixes: fixes
         )
     }
 
@@ -399,7 +435,7 @@ struct CopilotWork: Equatable {
         if prompt.overlapped || prompt.lostTrack { state = .unknown(copied: prompt.copied) }
         return CopilotWork(
             part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since,
-            takenAt: prompt.sentAt
+            takenAt: prompt.sentAt, fixes: purpose == .pushAndReply && prompt.fixes == true
         )
     }
 }
@@ -497,7 +533,9 @@ extension CopilotTasksStore {
             consider(prompt.sentAt, CopilotWork.from(prompt, about: fix.part, turn: turn))
         }
         guard var push = (pushed ?? pushing)?.work else { return nil }
+        // It pushed this fix along, without replying on it, whatever it fixed itself first.
         push.replies = false
+        push.fixes = false
         return push
     }
 
@@ -951,9 +989,10 @@ extension CopilotTasksStore {
         work(on: part, of: key, for: [.fix, .pushAndReply])?.isFixing == true
     }
 
-    /// Whether a line's Try Again sends what it says again, with the same words: a fix that failed or stopped.
+    /// Whether a line's Try Again sends what it says again, with the same words: a fix that failed or stopped, whether or
+    /// not it was to push and reply.
     static func canTryAgain(_ work: CopilotWork) -> Bool {
-        guard work.purpose == .fix else { return false }
+        guard work.purpose == .fix || (work.purpose == .pushAndReply && work.fixes) else { return false }
         switch work.state {
         case .failed, .stopped: return true
         case .waiting, .working, .needsYou, .done, .unknown: return false

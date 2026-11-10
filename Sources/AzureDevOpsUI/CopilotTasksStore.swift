@@ -246,13 +246,14 @@ final class CopilotTasksStore: ObservableObject {
     /// Again to send them again only for that fix (`retryWords(for:of:)`): in memory only.
     var fixWords: [PartKey: FixWords] = [:]
     /// Words a fix was sent with, and when it took on what it's about: its task's start, or its prompt's `sentAt`, which
-    /// tells that attempt from any other; what a session answered that it quoted, if it quoted that; and, for a thread's,
-    /// the change suggested there that it applied as written, if it did.
+    /// tells that attempt from any other; what a session answered that it quoted, if it quoted that; for a thread's, the
+    /// change suggested there that it applied as written, if it did; and whether it was to push and reply once done.
     struct FixWords: Equatable {
         var text: String
         var takenAt: Date
         var answer: CopilotAnswer? = nil
         var suggestion: CommentSuggestion? = nil
+        var ships = false
     }
     /// What Clear let go of in the demo, whose made-up work is made anew each time: in memory only.
     var clearedInDemo: Set<PartKey> = []
@@ -515,12 +516,15 @@ final class CopilotTasksStore: ObservableObject {
     /// one of BriefBar's own sessions, with its history, into a worktree of its own, where Copilot works on it while the
     /// session stays as it is (`CopilotLauncher.Request.forking`). Once it has started, what `handOff` says its prompt took
     /// care of leaves Needs You, and its run keeps what of the pull request it takes on (`CopilotRun.taken`).
-    /// - Parameter parts: what of the pull request it takes on: its comment threads, builds or conflicts.
+    /// - Parameters:
+    ///   - parts: what of the pull request it takes on: its comment threads, builds or conflicts.
+    ///   - fixing: a Push & Reply that fixes the threads it takes on first, as a comment's Fix sent with Push and Reply on
+    ///     does (`TakenPart.fixes`).
     /// - Returns: when it took them on, which is the task's, as its parts' `since`; nil when nothing starts.
     @discardableResult
     func send(
         _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
-        forking: CopilotRun? = nil, parts: [PullRequestPart] = [], handOff: CommentHandOff? = nil
+        forking: CopilotRun? = nil, parts: [PullRequestPart] = [], handOff: CommentHandOff? = nil, fixing: Bool = false
     ) -> Date? {
         // Not once Azure DevOps stopped, as it may have while an inline Fix looked for where to send it.
         guard canSend, isOn, !hasStopped, continuing == nil || forking == nil else { return nil }
@@ -558,7 +562,9 @@ final class CopilotTasksStore: ObservableObject {
         // What it keeps, with what the session it goes on with took on before, as that session is kept now.
         let keptRun = continuing.flatMap { continuing in settings.copilotRuns.first { $0.id == continuing.id } }
         let previous = keptRun ?? continuing
-        let kept = CopilotRun.taken(goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target)
+        let kept = CopilotRun.taken(
+            goingOnWith: previous, on: entry.onPullRequest, taking: parts, for: action, at: now, target: target, fixing: fixing
+        )
         entry.taken = kept
         // The pushes that ran there, as BriefBar kept its runs: not one of the app's sessions' only about to start.
         let pushes = CopilotRun.pushes(goingOnWith: keptRun, on: entry.onPullRequest)
@@ -880,6 +886,7 @@ final class CopilotTasksStore: ObservableObject {
         case .finished where entry.action != nil:
             switch entry.action {
             case .review?: heading = "Copilot's review is ready"
+            case .pushAndReply? where entry.fixesFirst: heading = "Copilot fixed, pushed and replied"
             case .pushAndReply?: heading = entry.onlyPushes ? "Copilot pushed" : "Copilot pushed and replied"
             default: heading = "Copilot's changes are ready"
             }
@@ -935,6 +942,11 @@ final class CopilotTasksStore: ObservableObject {
         case .review?:
             heading = "Copilot is reviewing the pull request"
             body = "It drafts your review, and changes or posts nothing."
+        case .pushAndReply? where entry.fixesFirst:
+            // Fix, or Fix All, sent with Push and Reply on.
+            let fixing = entry.taken?.filter { $0.ended == nil && $0.part.thread != nil }.count
+            heading = fixing == 1 ? "Copilot is fixing a comment" : "Copilot is fixing the comments"
+            body = "It works on its own, then commits, pushes the branch and replies on the threads it fixed, as you."
         case .pushAndReply?:
             heading = entry.onlyPushes ? "Copilot is pushing" : "Copilot is pushing and replying"
             body = entry.onlyPushes

@@ -176,18 +176,27 @@ struct CopilotSending {
 
     /// What a fix sends: its prompts, for a worktree of BriefBar's, detached at the pull request's latest commit, and for a
     /// session that works wherever it is; what it asks Copilot to do, which says what it may, such as Fix the Build, which
-    /// doesn't commit or push; what it takes on; and what it takes off Needs You once it's sent.
+    /// doesn't commit or push, or a comment's fix sent with Push and Reply on, a Push & Reply that fixes them first
+    /// (`fixes`); what it takes on; and what it takes off Needs You once it's sent.
     struct Fix {
         var prompts: (worktree: String, session: String)
         var action: PullRequestAction
         var parts: [PullRequestPart]
         var handOff: CommentHandOff?
-        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are
-        /// in, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as the branch its conflicts
-        /// are with, and the task it starts, go by it too. Nil for the pull request as the fix was asked for.
+        /// The pull request as its prompts quote it, when they're written after a wait, as for the files its conflicts are in,
+        /// or the code a comment is on, pushed to or retargeted meanwhile or not: what's kept with what it takes on, such as
+        /// the branch its conflicts are with, and the task it starts, go by it too, as do the checks of a push, against the
+        /// branch its prompt names, though its sender read the pull request again since, as Edit the Whole Prompt… does.
+        /// Nil for the pull request as the fix was asked for.
         var record: PRRecord?
         /// For a thread's fix, the change suggested in it that it applies as written, for Try Again to apply it again.
         var suggestion: CommentSuggestion?
+        /// A Push & Reply that fixes the threads it takes on first, then commits, pushes and replies on them: a comment's
+        /// fix sent with Push and Reply on (`TakenPart.fixes`). It goes as Push & Reply goes, with its checks.
+        var fixes = false
+
+        /// It pushes: Push & Reply, or a fix sent to push and reply, which goes only once what it would push is checked.
+        var pushes: Bool { action == .pushAndReply }
 
         /// Its prompts as they're sent: ending asking the session to tell BriefBar the pull request's stage once it pushed,
         /// while Pull Request Order is on (`asksForStage`), unless it's a review.
@@ -214,19 +223,23 @@ struct CopilotSending {
         let record = fix.record ?? self.record
         let task = PullRequestTasks.task(for: record)
         let prompts = fix.sent(asksForStage: copilot.asksForStage)
-        let about = SentPrompt.About(pullRequest: item.key, purpose: .fix, parts: fix.parts, target: record.pullRequest.targetBranch)
+        let about = SentPrompt.About(
+            pullRequest: item.key, purpose: fix.pushes ? .pushAndReply : .fix, parts: fix.parts, target: record.pullRequest.targetBranch,
+            fixes: fix.fixes
+        )
         let subject = TaskSubject.pullRequest(task, fix.action)
         let options = copilot.settings.copilotOptions
         // A task it starts: when, or, once nothing starts, that it can't send now.
         func started(_ at: Date?) -> (outcome: Outcome, takenAt: Date?) {
             at.map { (.sent, $0) } ?? (.notSent(CopilotTasksStore.cantSendNow), nil)
         }
-        // A prompt it delivers, as delivering it starts.
+        // A prompt it delivers, as delivering it starts: one that pushes, only once what the session's folder would push is
+        // checked, as Push & Reply's.
         func delivered(forking: Bool = false, to choice: SessionChoice) async -> (outcome: Outcome, takenAt: Date?) {
             let at = Date()
-            let outcome = Self.outcome(
-                await copilot.deliver(prompts.session, to: choice, forking: forking, handOff: fix.handOff, about: about, at: at)
-            )
+            let outcome = Self.outcome(await copilot.deliver(
+                prompts.session, to: choice, forking: forking, handOff: fix.handOff, about: about, at: at, checkingPush: fix.pushes ? task : nil
+            ))
             switch outcome {
             case .sent, .copied: return (outcome, at)
             case .notSent, .needsWindow: return (outcome, nil)
@@ -252,7 +265,7 @@ struct CopilotSending {
                 if let busy = copilot.busyReason(for: choice) { return (.notSent(busy), nil) }
                 return started(copilot.send(
                     subject, prompt: run.worksInPullRequestWorktree ? prompts.worktree : prompts.session, options: options,
-                    repository: run.repository, continuing: run, parts: fix.parts, handOff: fix.handOff
+                    repository: run.repository, continuing: run, parts: fix.parts, handOff: fix.handOff, fixing: fix.fixes
                 ))
             case .app:
                 return await delivered(to: choice)
@@ -264,7 +277,7 @@ struct CopilotSending {
             if CopilotDestinations.forksWithTheCLI(choice), let run = choice.run {
                 return started(copilot.send(
                     subject, prompt: prompts.session, options: options, repository: run.repository, forking: run, parts: fix.parts,
-                    handOff: fix.handOff
+                    handOff: fix.handOff, fixing: fix.fixes
                 ))
             }
             return await delivered(forking: true, to: choice)
@@ -273,7 +286,8 @@ struct CopilotSending {
             guard !Task.isCancelled else { return (.notSent(Self.calledOff), nil) }
             guard let repository else { return (.needsWindow, nil) }
             return started(copilot.send(
-                subject, prompt: prompts.worktree, options: options, repository: repository.root, parts: fix.parts, handOff: fix.handOff
+                subject, prompt: prompts.worktree, options: options, repository: repository.root, parts: fix.parts, handOff: fix.handOff,
+                fixing: fix.fixes
             ))
         }
     }
@@ -298,7 +312,7 @@ struct CopilotSending {
             sessionPrompt: fix.prompts.session, createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
             continuing: copilot.continuable(forPullRequest: item.key), handOff: fix.handOff,
             session: destination == .newSession ? .newSession : choice.map { .session($0, forking: forking) },
-            parts: fix.parts, store: copilot
+            parts: fix.parts, fixes: fix.fixes, store: copilot
         )
     }
 
@@ -330,14 +344,22 @@ extension CopilotSending {
     /// A comment's fix: of one thread, as you say, by applying a suggested change, building on what a session answered of it
     /// with Explain; or, without one, of those that wait on you, as Fix Comments does. It takes on the thread, or those Fix
     /// Comments lists, and takes what waits on you in them off Needs You, as its prompt is written now, on your own pull
-    /// request only.
+    /// request only. Sent with Push and Reply on (`ships`), it's a Push & Reply that fixes them first, which commits, pushes
+    /// and replies on them once it's done, and goes as Push & Reply does, with its checks; else it leaves its changes for
+    /// you to check, then push with Push & Reply.
     func commentFix(
-        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: CopilotAnswer? = nil, excerpt: ThreadExcerpt?
+        _ thread: ReviewThread?, how: String?, suggestion: CommentSuggestion?, answer: CopilotAnswer? = nil, excerpt: ThreadExcerpt?,
+        ships: Bool = false
     ) -> Fix {
+        let action: PullRequestAction = ships ? .pushAndReply : .fixComments
         guard let thread else {
             return Fix(
-                prompts: (PullRequestPrompt.fixComments(record, workplace: .worktree, note: how), PullRequestPrompt.fixComments(record, workplace: .agent, note: how)),
-                action: .fixComments, parts: PullRequestTasks.parts(.fixComments, for: record), handOff: store.commentHandOff(.fixComments, for: record)
+                prompts: (
+                    PullRequestPrompt.fixComments(record, workplace: .worktree, note: how, ships: ships),
+                    PullRequestPrompt.fixComments(record, workplace: .agent, note: how, ships: ships)
+                ),
+                action: action, parts: PullRequestTasks.parts(.fixComments, for: record), handOff: store.commentHandOff(.fixComments, for: record),
+                record: record, fixes: ships
             )
         }
         var handOff: CommentHandOff?
@@ -349,10 +371,14 @@ extension CopilotSending {
         }
         return Fix(
             prompts: (
-                PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree),
-                PullRequestPrompt.fixThread(record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent)
+                PullRequestPrompt.fixThread(
+                    record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .worktree, ships: ships
+                ),
+                PullRequestPrompt.fixThread(
+                    record, thread: thread, code: excerpt, how: how, applying: suggestion, answer: answer, workplace: .agent, ships: ships
+                )
             ),
-            action: .fixComments, parts: [.thread(thread.id)], handOff: handOff, suggestion: suggestion
+            action: action, parts: [.thread(thread.id)], handOff: handOff, record: record, suggestion: suggestion, fixes: ships
         )
     }
 }
