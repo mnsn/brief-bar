@@ -304,6 +304,26 @@ import Testing
         #expect(Self.why(reading) == "‘Cart’ says it's ready")
     }
 
+    /// A session's Your review that followed one of yours, keeping no votes, counts only while that one of yours is there:
+    /// not on its own, as once you took yours away, nor under another of yours, which it didn't follow. A session's own,
+    /// with its votes, counts as any does.
+    @Test func aSessionsYourReviewThatFollowedYoursCountsOnlyWhileYoursIsThere() {
+        let facts = StageFacts(role: .author, votes: "")
+        let yours = StageMark(stage: .yourReview, at: t(10))
+        let followed = StageMark(stage: .yourReview, at: t(20), by: Self.cart)
+        #expect(followed.follows(yours))
+        #expect(StageRules.counted(yours: yours, theirs: [followed], facts: facts, sessions: []).theirs == [followed])
+        #expect(StageRules.counted(yours: nil, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let later = StageMark(stage: .yourReview, at: t(30))
+        #expect(!followed.follows(later))
+        #expect(StageRules.counted(yours: later, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let teammate = StageMark(stage: .teammateReview, at: t(5), votes: "")
+        #expect(StageRules.counted(yours: teammate, theirs: [followed], facts: facts, sessions: []).theirs.isEmpty)
+        let own = StageMark(stage: .yourReview, at: t(20), by: Self.cart, votes: "")
+        #expect(!own.follows(yours))
+        #expect(StageRules.counted(yours: nil, theirs: [own], facts: facts, sessions: []).theirs == [own])
+    }
+
     @Test func aSetTeammatesReviewEndsAsOthersVotesChange() {
         let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
         #expect(StageRules.stands(mark, facts: StageFacts(role: .author, votes: "0", commit: "e4f5a6b"), sessions: []))
@@ -595,8 +615,9 @@ import Testing
     }
 
     /// VoiceOver offers, on a row or a card, Finished My Review in Your review, each stage you can set but the one it's
-    /// in, Put Yours Back once a session's change replaced yours, and Let BriefBar Decide for one you set; nothing once it
-    /// merged. Someone else's that you finished reviewing is in Teammate's review: moving it there again would do nothing.
+    /// in, Put Yours Back once a session's change replaced yours, and Let BriefBar Decide for one you set, also where a
+    /// session's Your review that says the same shows in its place; nothing once it merged. Someone else's that you
+    /// finished reviewing is in Teammate's review: moving it there again would do nothing.
     @Test func voiceOverOffersWhatCanBeDoneToItsStage() {
         let finished = Self.reading(StageFacts(role: .author), sessions: [Self.session(.finished, at: 10)])!
         #expect(StageAction.offered(for: finished).map(\.title) ==
@@ -610,6 +631,31 @@ import Testing
             marks: [StageMark(stage: .teammateReview, at: t(10)), StageMark(stage: .inProgress, at: t(20), by: Self.cart)]
         )!
         #expect(StageAction.offered(for: replaced) == [.move(.yourReview), .move(.teammateReview), .putYoursBack])
+
+        // A session's later Your review that followed yours, as one that pushed says its work is ready, keeps no votes, and
+        // shows in its place: Let BriefBar Decide forgets both. A session's own, with its votes, follows nothing; another
+        // stage that says the same ends as yours would anyway.
+        let yours = StageMark(stage: .yourReview, at: t(10))
+        let followed = Self.reading(StageFacts(role: .author), marks: [yours, StageMark(stage: .yourReview, at: t(20), by: Self.cart)])!
+        #expect(followed.mark?.by == Self.cart && followed.replaced == nil && followed.followed == yours)
+        #expect(followed.canLetBriefBarDecide && !followed.isSetByYou)
+        #expect(StageAction.offered(for: followed) == [.finishedReview, .move(.inProgress), .move(.teammateReview), .letBriefBarDecide])
+        let own = Self.reading(StageFacts(role: .author), marks: [yours, StageMark(stage: .yourReview, at: t(20), by: Self.cart, votes: "")])!
+        #expect(own.mark?.by == Self.cart && own.followed == nil && !own.canLetBriefBarDecide)
+        let same = Self.reading(
+            StageFacts(role: .author),
+            marks: [StageMark(stage: .teammateReview, at: t(10)), StageMark(stage: .teammateReview, at: t(20), by: Self.cart)]
+        )!
+        #expect(same.followed == nil && !same.canLetBriefBarDecide)
+        #expect(StageAction.offered(for: same) == [.move(.inProgress), .move(.yourReview)])
+        let onIt = Self.reading(
+            StageFacts(role: .author),
+            marks: [StageMark(stage: .inProgress, at: t(10)), StageMark(stage: .inProgress, at: t(20), by: Self.cart)]
+        )!
+        #expect(onIt.followed == nil && !onIt.canLetBriefBarDecide)
+        #expect(StageAction.offered(for: onIt) == [.move(.yourReview), .move(.teammateReview)])
+        let alone = Self.reading(StageFacts(role: .author), marks: [StageMark(stage: .yourReview, at: t(20), by: Self.cart)])!
+        #expect(alone.followed == nil && !alone.canLetBriefBarDecide)
 
         let reviewed = Self.reading(
             StageFacts(role: .reviewer, asksYou: "Sam asked you", commit: "c1"), marks: [StageMark(stage: .teammateReview, at: t(10), commit: "c1")]

@@ -55,14 +55,15 @@ briefbar-order_pull_requests.
 ## Each one's stage
 
 - Only the session that did the work on a pull request tells its stage, with `pull_request_stage`: Azure DevOps' pull
-  requests only, for now. If `pull_request_stage` isn't there, leave stages to BriefBar, which works them out itself.
+  requests only, for now. If `pull_request_stage` isn't there, leave stages to BriefBar, which works them out itself,
+  and do the same for the rest of this session once it answers that the Copilot app doesn't list this session.
 - `user_review` at the end of a turn that pushed the work: it's the user's turn to review it.
-- `in_progress` as you start fixing it again.
-- `teammate_review` once the user tells you they've reviewed it, or you reviewed it together. If they name reviewers,
-  add them in Azure DevOps with your own tools: BriefBar sees them there.
+- `in_progress` as you start fixing it again, on the user's own pull requests only: BriefBar never puts someone else's
+  in progress.
+- `teammate_review` once the user tells you they've reviewed it, or you reviewed it together. If they ask you to add
+  reviewers, add them in Azure DevOps with your own tools: BriefBar sees them there.
 - `clear` to leave its stage to BriefBar again.
-- `pull_requests`: each by its link, or its number with `organization`. Leave `session` out: BriefBar knows which
-  session you are.
+- `pull_requests`: each by its link, or its number with `organization`.
 - Never claim a pull request can merge, waits or merged: BriefBar sees those itself, from Azure DevOps and the order.
 
 ## Stories

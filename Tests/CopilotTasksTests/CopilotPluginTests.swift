@@ -329,14 +329,18 @@ import Testing
         return responsible.path != nil || responsible.pid != getpid()
     }
 
-    /// The tools that the built `BriefBar --demo --mcp` lists to an agent, started plainly, as an agent starts it.
+    /// The tools that the built `BriefBar --demo --mcp` lists to an agent, started plainly, as the Copilot CLI starts it.
     static func listedTools() async throws -> [[String: Any]] {
         try await demoServer().tools
     }
 
+    /// The demo's "Add dark mode to settings" session, as the Copilot CLI names the session that starts `--mcp`.
+    static let demoSession = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"
+
     /// What the built `BriefBar --demo --mcp` tells an agent as it starts, started plainly, as an agent starts it: its
     /// instructions, and the tools it lists.
-    static func demoServer() async throws -> (instructions: String, tools: [[String: Any]]) {
+    /// - Parameter session: the Copilot session that starts it, as the Copilot CLI says; nil as VS Code or Cursor start it.
+    static func demoServer(session: String? = demoSession) async throws -> (instructions: String, tools: [[String: Any]]) {
         let binary = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent().appendingPathComponent("BriefBar")
         try #require(FileManager.default.isExecutableFile(atPath: binary.path), "Build BriefBar first (swift build): \(binary.path)")
         let copilot = try makeTemporaryDirectory()
@@ -346,9 +350,10 @@ import Testing
             #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
             #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
         ]
+        var environment = ["PATH": "/usr/bin:/bin", "HOME": copilot.path, "BRIEFBAR_COPILOT_DIR": copilot.path]
+        environment["COPILOT_AGENT_SESSION_ID"] = session
         let answer = try await Self.runPlainly(
-            binary, arguments: ["--demo", "--mcp"],
-            environment: ["PATH": "/usr/bin:/bin", "HOME": copilot.path, "BRIEFBAR_COPILOT_DIR": copilot.path],
+            binary, arguments: ["--demo", "--mcp"], environment: environment,
             input: Data((messages.joined(separator: "\n") + "\n").utf8)
         )
         var instructions: String?
@@ -433,6 +438,18 @@ import Testing
         ))
     }
 
+    /// Started as VS Code or Cursor start it, with no Copilot session, `--mcp` lists no `pull_request_stage`, whose stages
+    /// would show as another session's or never, and its instructions ask for no stage; the orders' tools stay.
+    @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    func withoutACopilotSessionThereAreNoStagesToTell() async throws {
+        let server = try await Self.demoServer(session: nil)
+        let names = Set(server.tools.compactMap { $0["name"] as? String })
+        #expect(names.isSuperset(of: Self.orderTools.subtracting(["pull_request_stage"])))
+        #expect(!names.contains("pull_request_stage"))
+        #expect(!server.instructions.contains("pull_request_stage"))
+        #expect(server.instructions.contains("When you open pull requests that must merge in an order, tell BriefBar"))
+    }
+
     /// Pull Request Order's skill names only its tools, what they take, a session's todos and the tools that tell a story,
     /// which BriefBar lists too, and tells agents about every one of its tools.
     @Test(.timeLimit(.minutes(5)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
@@ -450,6 +467,18 @@ import Testing
         #expect(unknown.isEmpty, "Pull Request Order's skill names what its tools don't have: \(unknown.sorted())")
         let missing = Self.orderTools.filter { !text.contains("`\($0)`") }
         #expect(missing.isEmpty, "Pull Request Order's skill doesn't mention \(missing.sorted())")
+    }
+
+    /// Pull Request Order's skill has a session add reviewers in Azure DevOps only when the user asks it to, never because
+    /// they named someone, since that asks a teammate for work; and says what `pull_request_stage` refuses: someone
+    /// else's in progress, and a session the Copilot app doesn't list, which then leaves stages to BriefBar.
+    @Test func orderSkillAddsReviewersOnlyWhenAsked() throws {
+        let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(text.contains("If they ask you to add reviewers, add them in Azure DevOps with your own tools"))
+        #expect(!text.contains("If they name reviewers"))
+        #expect(text.contains("`in_progress` as you start fixing it again, on the user's own pull requests only"))
+        #expect(text.contains("once it answers that the Copilot app doesn't list this session"))
     }
 
     /// Updates from Copilot Sessions' skill names only its tools, what they take, and Pull Request Order's tool, and tells
