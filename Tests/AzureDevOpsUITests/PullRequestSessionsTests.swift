@@ -11,8 +11,9 @@ import Testing
 
 /// The Copilot session of a pull request whose details show (`PullRequestSessions`), kept up to date while they show it: as
 /// you choose another, as Send Work to Copilot goes off and on, as the Copilot app opens it and as BriefBar's tasks work in
-/// its checkout; only what Show Links knows without Send Work to Copilot, and nothing without either; and the demo's, made
-/// up. On the demo's made-up !4088, with made-up sessions in a folder of their own.
+/// its checkout; only what Show Links knows without Send Work to Copilot, with the folder the session it names works in,
+/// and nothing without either; and the demo's, made up. On the demo's made-up !4088, with made-up sessions in a folder of
+/// their own.
 @MainActor
 @Suite(.opensNothing) struct PullRequestSessionsTests {
     private let now = Date()
@@ -654,11 +655,17 @@ import Testing
     }
 
     /// A closed pull request's work goes nowhere: its details show the sessions Show Links links to it, to look at, and
-    /// nothing of Copilot's is read for it, though Send Work to Copilot is on.
-    @Test func readsNothingForAClosedPullRequest() async throws {
+    /// nothing of Copilot's is read for it, though Send Work to Copilot is on, but the folder the one they name works in, to
+    /// open it from there.
+    @Test func readsOnlyTheFolderOfItsSessionForAClosedPullRequest() async throws {
         let home = try folder()
-        defer { try? FileManager.default.removeItem(at: home) }
+        let worktree = try folder()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: worktree)
+        }
         try database(at: home)
+        try sessionState(onBranch, home: home, folder: worktree)
         let store = copilot(home: home)
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
         links.setOn(true)
@@ -681,11 +688,13 @@ import Testing
 
         try await until { sessions.session(for: item.key) != nil }
         try await Task.sleep(for: .milliseconds(300))
+        try await until { sessions.session(for: item.key)?.session?.folder != nil }
         let session = try #require(sessions.session(for: item.key))
         #expect(!session.canChoose)
         #expect(session.basis == .recordedByCopilot)
         #expect(session.delivery == nil)
         #expect(checked == 0 && read == 0)
+        #expect(session.session?.folder?.path == worktree.path)
     }
 
     /// A pull request that's completed while its details show goes nowhere from the next turn on: what was read for it goes,
@@ -779,7 +788,8 @@ import Testing
     // MARK: Without Send Work to Copilot
 
     /// Only what Show Links knows: the sessions it links to it, to look at, with nothing to choose; nothing of Copilot's is
-    /// read for it. Without Show Links either, nothing.
+    /// read for it but the folder the one its details name works in, which isn't there here. Without Show Links either,
+    /// nothing.
     @Test func showsOnlyShowLinksSessionsWithoutSending() async throws {
         let store = copilot(home: URL(fileURLWithPath: "/nonexistent"))
         store.settings.copilotEnabled = false
@@ -808,11 +818,51 @@ import Testing
         #expect(standing.state == .needsYou)
         #expect(standing.phrase(now: now) == "waiting for your answer")
         #expect(PullRequestSessionLine.shows(session))
+        #expect(session.session?.folder == nil)
 
         // Show Links off too: nothing.
         links.setOn(false)
         try await until { sessions.session(for: key) == nil }
         #expect(sessions.session(for: key) == nil)
+    }
+
+    /// The folder the session Show Links names works in, as its session state says, read while its details show, for them
+    /// to open it from there without Send Work to Copilot: none once that folder is gone, as when its session's worktree is
+    /// removed.
+    @Test func readsTheFolderOfTheSessionShowLinksNamesWithoutSending() async throws {
+        let home = try folder()
+        let worktree = try folder()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: worktree)
+        }
+        try sessionState(onBranch, home: home, folder: worktree)
+        let store = copilot(home: home)
+        store.settings.copilotEnabled = false
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let sessions = PullRequestSessions(copilot: store, links: links)
+        sessions.refreshEvery = refresh
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        let ref = try #require(ItemRef.session(onBranch))
+        links.publish(.copilot, links: [try #require(ItemLink(ref, key.linkRef, origin: .branch))], items: [LinkedItem(
+            ref: ref, label: "Delivery estimates", title: "Delivery estimates", symbol: "waveform.path.ecg", color: .pink,
+            status: "Idle", place: "shop-web · delivery-estimates", date: now
+        )])
+
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { sessions.session(for: key)?.session?.folder != nil }
+        let session = try #require(sessions.session(for: key))
+        #expect(!session.canChoose)
+        #expect(session.session?.folder?.path == worktree.path)
+        #expect(SessionShortcuts.of(session)?.folder?.path == worktree.path)
+
+        try FileManager.default.removeItem(at: worktree)
+        try await until { sessions.session(for: key)?.session?.folder == nil }
+        #expect(sessions.session(for: key)?.session?.name == "Delivery estimates")
+        #expect(sessions.session(for: key)?.session?.folder == nil)
     }
 
     // MARK: The demo

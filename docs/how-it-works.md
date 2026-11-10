@@ -1864,16 +1864,20 @@ session told before BriefBar kept when it began to say it works on something, or
 forgets it. The Send to Copilot window goes there too, unless you choose otherwise
 (`CopilotTasksStore.suggestedChoice`), following what you choose in the details while it's open, and so do agents
 ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
-the pull request, read from nothing else, to look at; with neither, nothing. The demo makes its sessions up from its
+the pull request, to look at, read from nothing else but the folder the one it names works in, for the actions beside
+**✨ Summarize** (below); with neither, nothing. The demo makes its sessions up from its
 own tasks and the Copilot demo's sessions that Show Links links, and reads nothing.
 
 The actions beside **✨ Summarize** in its heading (`PullRequestActionsRow`) do, a click away, what the line's menu and
-the details already do, and read nothing more. **Open in Copilot**, or **Continue in Terminal** for a task BriefBar runs
+the details already do. **Open in Copilot**, or **Continue in Terminal** for a task BriefBar runs
 with the Copilot CLI, opens the session the line shows, as its menu does (`SessionOpening`): not while Copilot works in
 it or in its checkout, and not while the line asks which session it is. The folder buttons open the folder that session
-works in, as the line read it with Send Work to Copilot on (`SessionChoice.folder`): an earlier task's worktree, or the
-folder one of the app's sessions works in, from its `workspace.yaml`. Without Send Work to Copilot, BriefBar doesn't
-read it, so they don't show. The apps are those BriefBar knows (`FolderApps`), editors then terminals, that
+works in (`SessionChoice.folder`): an earlier task's worktree, or the folder one of the app's sessions works in, from its
+`workspace.yaml`, as the line reads it with Send Work to Copilot on. Without it, or once the pull request is closed,
+BriefBar reads, with Show Links on, only the folder of the session the line names, the same way: as the details come on
+screen and every ten seconds while they stay there, off the main thread, kept in memory only, until Show Links is off
+(`PullRequestSessions.readLinkedFolder`). The buttons don't show until it's read, nor once it says none or that folder
+is gone. The apps are those BriefBar knows (`FolderApps`), editors then terminals, that
 LaunchServices finds on this Mac, looked for the first time a folder shows and again as BriefBar comes to the front
 (`FolderOpener`); a folder opens in the one you opened one in last, kept in the preferences by its bundle identifier
 (`folders.openWith`), only one BriefBar knows, or else in the first editor found. The app opens the folder as it opens

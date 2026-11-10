@@ -11,8 +11,9 @@ import Foundation
 /// to, read only while a window shows their details' page on screen (`setVisible`), as it does and every ten seconds while
 /// it does (`CopilotTasksStore.sessionChoices`), and how work would reach its own
 /// (`CopilotTasksStore.delivery(to:for:checksRepository:)`); with it off, only the sessions Show Links links to it, with
-/// nothing to choose; with neither, none. The demo makes them up from its own tasks and the sessions Show Links links to
-/// it, and reads nothing.
+/// nothing to choose, and the folder the one they name works in, to open it, read while they show on screen
+/// (`readLinkedFolder`); with neither, none. The demo makes them up from its own tasks and the sessions Show Links links
+/// to it, and reads nothing.
 @MainActor
 final class PullRequestSessions: ObservableObject {
     /// The session of each pull request followed, as found last.
@@ -60,6 +61,16 @@ final class PullRequestSessions: ObservableObject {
     static let keptLimit = 8
     /// Which of the Copilot app's sessions mention each pull request, and when that was read (`mentionsFreshFor`).
     private var mentionsRead: [PRKey: (at: Date, ids: Set<String>)] = [:]
+    /// The folder each session that Show Links links to a pull request, and that its details name, works in, as read last,
+    /// by its ID (`readLinkedFolder`): in memory only, until Show Links is off.
+    private var linkedFolders: [String: LinkedFolder] = [:]
+    /// The sessions whose folders are read now.
+    private var readingFolders: Set<String> = []
+
+    /// The folder a session works in, as its session state said: none when it doesn't say, or that folder isn't there.
+    private struct LinkedFolder: Equatable {
+        var url: URL?
+    }
     /// What's read or checked for each pull request outside the task that follows it, as things change, to stop it with
     /// that task (`stop(following:)`, `stopAll`).
     private var spawned: [PRKey: [UUID: Task<Void, Never>]] = [:]
@@ -182,6 +193,7 @@ final class PullRequestSessions: ObservableObject {
         kept = []
         sessions = [:]
         mentionsRead = [:]
+        linkedFolders = [:]
     }
 
     /// A window started or stopped showing, on screen, a page where a pull request's details can show
@@ -305,6 +317,8 @@ final class PullRequestSessions: ObservableObject {
         guard !reading.contains(key) else { return }
         guard isReadable(key, forPictures: forPictures), let state = followed[key], let record = current(state, key) else {
             update(key)
+            // Without Send Work to Copilot, or once it's closed: the folder of the session Show Links names, to open it.
+            await readLinkedFolder(key, forPictures: forPictures)
             return
         }
         reading.insert(key)
@@ -399,8 +413,16 @@ final class PullRequestSessions: ObservableObject {
             followed[key] = state
             mentionsRead = [:]
         }
+        // What was read of the folders Show Links' sessions work in goes once it's off.
+        if !links.isOn, !linkedFolders.isEmpty { linkedFolders = [:] }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
+        // The folder of a session Show Links names that hasn't been read, as when it's just been linked: now, rather than
+        // after the pause.
+        if let session, !session.canChoose, let choice = session.session, linkedFolders[choice.id] == nil,
+           !readingFolders.contains(choice.id), isOnScreen(state) {
+            spawn(for: key) { [weak self] in await self?.readLinkedFolder(key) }
+        }
         guard isReadable(key) else { return false }
         if state.found == nil {
             // One under way may be one called off, as its details closed and showed again: then once it ends.
@@ -483,7 +505,8 @@ final class PullRequestSessions: ObservableObject {
     // MARK: Show Links' sessions
 
     /// What Show Links knows, for a pull request without Send Work to Copilot, or that's closed: the sessions it links to
-    /// it, the one you chose for it if it's one of them, and nothing to choose. Nil while it's off, or links none.
+    /// it, the one you chose for it if it's one of them, and nothing to choose; and, once read, the folder each works in
+    /// (`readLinkedFolder`). Nil while it's off, or links none.
     private func linked(_ key: PRKey, chosen: PullRequestSessionChoice?) -> PullRequestSession? {
         let choices = linkedChoices(key)
         guard !choices.isEmpty else { return nil }
@@ -491,7 +514,7 @@ final class PullRequestSessions: ObservableObject {
     }
 
     /// The sessions Show Links links to a pull request, each as the Copilot app's, with why, the likeliest first: what the
-    /// source that lists each says of it is all that's known.
+    /// source that lists each says of it is all that's known, but for the folder one its details name works in, once read.
     private func linkedChoices(_ key: PRKey) -> [SessionChoice] {
         guard links.isOn else { return [] }
         let told = copilot.toldSince(key.linkRef)
@@ -514,10 +537,28 @@ final class PullRequestSessions: ObservableObject {
             )
             return SessionChoice(
                 kind: .app(session), name: item.label, place: item.place, lastActive: item.date, reasons: reasons.sorted(),
-                toldSince: told[item.ref.id]
+                appFolder: linkedFolders[item.ref.id]?.url, toldSince: told[item.ref.id]
             )
         }
         return CopilotTasksStore.sorted(choices, createdAt: nil)
+    }
+
+    /// The folder that the session a pull request's details name from Show Links works in, to open it from there, without
+    /// Send Work to Copilot or once it's closed: what its session state says (`AppSessions.folder(of:home:)`), read-only and
+    /// off the main thread, as they come on screen, as another session comes to be named, and every ten seconds while they
+    /// stay there; once, for pictures. Never in the demo, whose folders are made up. With Send Work to Copilot on, an open
+    /// pull request's sessions are read with the folders they work in (`read`).
+    private func readLinkedFolder(_ key: PRKey, forPictures: Bool = false) async {
+        guard !hasStopped, !Task.isCancelled, links.isOn, copilot.mode == .live, forPictures || isOnScreen(key),
+              let session = sessions[key], !session.canChoose, let id = session.session?.id, readingFolders.insert(id).inserted
+        else { return }
+        defer { readingFolders.remove(id) }
+        let home = copilot.appHome
+        let folder = await Task.detached(priority: .userInitiated) { AppSessions.folder(of: id, home: home) }.value
+        // Nothing's kept once Show Links is off.
+        guard !hasStopped, links.isOn, linkedFolders[id] != LinkedFolder(url: folder) else { return }
+        linkedFolders[id] = LinkedFolder(url: folder)
+        updateAll()
     }
 
     // MARK: The demo

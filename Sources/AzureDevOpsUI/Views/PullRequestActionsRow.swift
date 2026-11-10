@@ -37,8 +37,8 @@ struct PullRequestActionsRow: View {
 struct SessionShortcuts: Equatable {
     var choice: SessionChoice
     var way: SessionOpening.Way
-    /// An earlier task's worktree, or the folder one of the Copilot app's sessions works in, as read with Send Work to
-    /// Copilot on; nil otherwise, as for a session only Show Links links to it, whose folder BriefBar doesn't read.
+    /// An earlier task's worktree, or the folder one of the Copilot app's sessions works in, as its session state says, read
+    /// with Send Work to Copilot or Show Links on; nil until it's read, and when it says none or that folder isn't there.
     var folder: URL?
 
     static func of(_ session: PullRequestSession?) -> SessionShortcuts? {

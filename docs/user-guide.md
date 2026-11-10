@@ -430,14 +430,14 @@ edge brings back the usual one. **✕** or **Esc** closes them.
 
 **One click to what you'd look for in menus.** Beside ✨ Summarize, **Open in Copilot** opens the pull request's
 Copilot session (below) in the Copilot app, or **Continue in Terminal** goes on with a task BriefBar runs with the
-Copilot CLI, as the session's line's **⌄** does, not while Copilot works in it. While BriefBar knows the folder that
-session works in, with Send Work to Copilot on, **Open in VS Code** opens it in the editor or terminal you opened one
-in last, and its **▾** lists the others on your Mac, from VS Code, Cursor, Windsurf, Zed, Rider, WebStorm and
-JetBrains' other IDEs, Xcode, Sublime Text, Nova and BBEdit to Terminal, iTerm, Ghostty and Warp, with **Copy Path**;
-**Open in Finder** shows what's in the folder. To review a pull request in the whole window, **Fill the Page** makes
-its details cover the list, its parts as wide as reads well, and the pages and files you open from it too, until you
-close them or click **Show the List**, or a file's **⤡**; it's there while the details are beside the list, which
-they cover already in a narrow window.
+Copilot CLI, as the session's line's **⌄** does, not while Copilot works in it. With Send Work to Copilot or Show
+Links on, **Open in VS Code** opens the folder that session works in, such as its worktree, in the editor or terminal
+you opened one in last, and its **▾** lists the others on your Mac, from VS Code, Cursor, Windsurf, Zed, Rider,
+WebStorm and JetBrains' other IDEs, Xcode, Sublime Text, Nova and BBEdit to Terminal, iTerm, Ghostty and Warp, with
+**Copy Path**; **Open in Finder** shows what's in the folder. To review a pull request in the whole window, **Fill the
+Page** makes its details cover the list, its parts as wide as reads well, and the pages and files you open from it too,
+until you close them or click **Show the List**, or a file's **⤡**; it's there while the details are beside the list,
+which they cover already in a narrow window.
 
 **Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
 about, or, for a review you're asked for or one that waits on its author for the changes you asked for, at
@@ -477,7 +477,8 @@ goes from then on, in the Send to Copilot window too, until a task starts on it 
 Updates from Copilot Sessions and Show Links on, another session starts telling BriefBar it's working on it. **Let
 BriefBar Choose** goes back to BriefBar's choice. BriefBar reads the Copilot app's sessions for the line only
 while the details show in a window you can see: as they come on screen, then every ten seconds. Without Send
-Work to Copilot, the line shows only the sessions Show Links links to it, to look at.
+Work to Copilot, the line shows only the sessions Show Links links to it, to look at, and BriefBar reads only
+the folder the one it names works in, the same way, to open it from beside ✨ Summarize.
 
 **Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
 on, with a few around them, as they were in the update it was made on: their numbers, before and after the

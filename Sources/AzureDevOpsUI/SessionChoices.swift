@@ -66,7 +66,8 @@ struct SessionChoice: Identifiable, Equatable {
     /// one (`CopilotTasksStore.checkoutKey`): nothing goes to it until that's done, or their work would mix.
     var isFolderBusy = false
 
-    /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened.
+    /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened; or, for one Show Links
+    /// links to a pull request whose details name it, as read while they show it (`PullRequestSessions`).
     var appFolder: URL?
 
     /// Nothing goes to it now: Copilot works in it, or in its checkout.
