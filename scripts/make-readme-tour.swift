@@ -2,9 +2,9 @@
 // with ffmpeg (brew install ffmpeg). make readme-tour runs it, as does make screenshots when ffmpeg is installed:
 //   swift scripts/make-readme-tour.swift build/screenshots docs/images
 // Both play like a short visit to BriefBar on a Mac's desktop, under its menu bar, and each click opens what clicking
-// there opens in the app. The tour opens BriefBar's list from its item in the menu bar, then the window's Overview, a
-// story on the Sprint page with its summary, and sends a task to Copilot. The trail follows a story's bug to its pull
-// request and the Copilot session that opened it.
+// there opens in the app. The tour opens Copilot's sessions, then your pull requests, from their items in the menu bar,
+// then the window's Pull Requests page at Up Next, and the Board. The trail follows a story's bug to its pull request
+// and the Copilot session that opened it.
 import AppKit
 
 let arguments = CommandLine.arguments
@@ -14,8 +14,8 @@ let framesRoot = URL(fileURLWithPath: arguments.count > 3 ? arguments[3] : "buil
 
 let fps = 25
 // In points from the top left, like the pictures. The desktop, 1020 × 728 points as the renderer draws it, fills the
-// card. A window opens on it below the menu bar, where window pictures (1960 × 1360) fill it; the Sprint page's, a
-// little wider, lose their bottom edge.
+// card. A window opens on it below the menu bar, where window pictures (1960 × 1360) fill it; the pages' own, a little
+// wider, lose their bottom edge.
 let captionHeight: CGFloat = 56
 let card = CGRect(x: 12, y: captionHeight, width: 936, height: 668)
 let width = 960, height = Int(card.maxY) + 12
@@ -52,68 +52,41 @@ struct Scene {
     let caption: String
     /// The whole desktop, rather than a window open on the bare one.
     var isDesktop = false
-    /// The picture while the pointer is over `hoverArea`, in the picture's pixels.
-    var hovered: CGImage? = nil
-    var hoverArea: CGRect = .null
-    /// A taller picture of the same page, which `scrollArea`, in the picture's pixels, scrolls through. Its bottom
-    /// corners are rounded like the panel it's in.
-    var taller: CGImage? = nil
-    var scrollArea: CGRect = .null
+    /// Part of the desktop's menu bar, magnified under it.
+    var loupe: Loupe? = nil
     /// Where the picture goes.
     var frame: CGRect { isDesktop ? card : windowFrame }
     var scale: CGFloat { frame.width / CGFloat(image.width) }
     /// Where a point of the picture, in its pixels, lands in the frame.
     func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: frame.minX + x * scale, y: frame.minY + y * scale) }
-    func isHovered(at cursor: CGPoint) -> Bool {
-        hovered != nil && hoverArea.contains(CGPoint(x: (cursor.x - frame.minX) / scale, y: (cursor.y - frame.minY) / scale))
-    }
 }
 
-// In the desktop's pictures: BriefBar's item in the menu bar, and the top of its list, which opens the window's
-// Overview.
-let menuBarItem = CGPoint(x: 1_440, y: 26)
-let overviewLink = CGPoint(x: 1_790, y: 108)
-
-// The pull request's page: below its header, its panel scrolls, through the taller picture, to the Copilot session
-// that opened it.
-let pullRequestPanel = CGRect(x: 1_172, y: 252, width: 798, height: 1_159)
-let panelRadius: CGFloat = 32
-let openedBySession = CGPoint(x: 1_440, y: 1_468)
-
-// Task 5104's row on the Sprint page, in the picture's pixels. Pointing at a task highlights its row and puts the
-// Send to Copilot button where its avatar was.
-let taskRow = CGRect(x: 532, y: 809, width: 652, height: 57)
-let taskAvatar = CGPoint(x: 1_154, y: 837.5)
-
-func hoveredRow(on board: CGImage, dark: Bool) -> CGImage {
-    let width = board.width, height = board.height
-    let context = CGContext(
-        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    )!
-    let all = CGRect(x: 0, y: 0, width: width, height: height)
-    context.draw(board, in: all)
-    func flip(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: CGFloat(height) - rect.maxY, width: rect.width, height: rect.height) }
-
-    // The avatar, and its ring, give way to the row's background, stretched from just right of it.
-    let avatar = CGRect(x: taskAvatar.x - 26, y: taskAvatar.y - 27, width: 52, height: 54)
-    let background = board.cropping(to: CGRect(x: avatar.maxX, y: avatar.minY, width: 10, height: avatar.height))!
-    context.draw(background, in: flip(avatar))
-    context.addPath(CGPath(roundedRect: flip(taskRow), cornerWidth: 16, cornerHeight: 16, transform: nil))
-    context.setFillColor((dark ? NSColor.white : NSColor.black).withAlphaComponent(0.07).cgColor)
-    context.fillPath()
-
-    // CopilotSendButton: paperplane at 11.5 pt, medium, in a borderless button's gray; the picture is at 2×.
-    let symbol = NSImage(systemSymbolName: "paperplane", accessibilityDescription: nil)!
-        .withSymbolConfiguration(.init(pointSize: 23, weight: .medium)
-            .applying(.init(paletteColors: [NSColor(white: dark ? 0.67 : 0.57, alpha: 1)])))!
-    let size = symbol.size
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-    symbol.draw(in: flip(CGRect(x: taskAvatar.x - size.width / 2, y: taskAvatar.y - size.height / 2, width: size.width, height: size.height)))
-    NSGraphicsContext.restoreGraphicsState()
-    return context.makeImage()!
+/// A part of a desktop's menu bar, `area` in the picture's pixels, magnified in a card at `frame`, in the tour's points,
+/// with what each item is under it, centered on the item's middle, in the picture's pixels.
+struct Loupe {
+    let area: CGRect
+    let frame: CGRect
+    let labels: [(text: String, midX: CGFloat)]
 }
+
+// In the desktop's pictures: Copilot's and Azure DevOps' items in the menu bar, and the title of Azure DevOps' list, Pull
+// Requests ›, which opens the window's page; and where the pointer starts and ends.
+let copilotItem = CGPoint(x: 1_147, y: 24)
+let pullRequestsItem = CGPoint(x: 888, y: 24)
+let pullRequestsTitle = CGPoint(x: 690, y: 178)
+let desktopRest = CGPoint(x: 1_640, y: 700)
+// The two items, magnified in a card right of the widget.
+let itemsLoupe = Loupe(
+    area: CGRect(x: 762, y: 0, width: 542, height: 48), frame: CGRect(x: 365, y: 92, width: 560, height: 98),
+    labels: [("Azure DevOps pull requests", pullRequestsItem.x), ("Copilot sessions", copilotItem.x)]
+)
+
+// On the window's Pull Requests page: 2 more › under Up Next's Fix next, which shows the rest on the Board.
+let fixNextMore = CGPoint(x: 585, y: 627)
+
+// A story's pull request's page: the line under its heading, which names the Copilot session that opened it, shows the
+// session's page.
+let openedBySession = CGPoint(x: 1_480, y: 666)
 
 // Scenes change with a cut, as they do in the app. A cross-fade would cost many full frames.
 struct Frame {
@@ -121,14 +94,9 @@ struct Frame {
     var cursor: CGPoint
     /// Frames since the last click, while its ripple shows.
     var ripple: Int? = nil
-    /// How far the Send to Copilot window has opened, over the scene.
-    var sheet: Double = 0
-    var hover = false
-    /// How far the scene's scrolling area is scrolled down, in its picture's pixels.
-    var scroll: CGFloat = 0
 
     var key: String {
-        "\(scene) \(Int(cursor.x * 4)) \(Int(cursor.y * 4)) \(ripple ?? -1) \(Int(sheet * 1000)) \(hover) \(Int(scroll))"
+        "\(scene) \(Int(cursor.x * 4)) \(Int(cursor.y * 4)) \(ripple ?? -1)"
     }
 }
 
@@ -139,21 +107,16 @@ func frames(_ seconds: Double) -> Int { max(1, Int((seconds * Double(fps)).round
 
 /// The frames of a visit, as the pointer moves, clicks and opens what it clicks.
 struct Visit {
-    let scenes: [Scene]
     var timeline: [Frame] = []
     var cursor: CGPoint
     var ripple: Int?
-    var sheet = 0.0
-    var scroll: CGFloat = 0
 
-    init(_ scenes: [Scene], from start: CGPoint) {
-        self.scenes = scenes
+    init(from start: CGPoint) {
         cursor = start
     }
 
     mutating func append(_ scene: Int) {
-        timeline.append(Frame(scene: scene, cursor: cursor, ripple: ripple, sheet: sheet,
-                              hover: scenes[scene].isHovered(at: cursor), scroll: scroll))
+        timeline.append(Frame(scene: scene, cursor: cursor, ripple: ripple))
         if let age = ripple { ripple = age < 10 ? age + 1 : nil }
     }
     mutating func hold(_ scene: Int, _ seconds: Double) {
@@ -167,84 +130,58 @@ struct Visit {
             append(scene)
         }
     }
-    /// Scrolls the scene's scrolling area down `distance` pixels of its picture, as a trackpad does under the pointer.
-    mutating func scroll(_ scene: Int, by distance: CGFloat, _ seconds: Double) {
-        let from = scroll, count = frames(seconds)
-        for index in 1...count {
-            scroll = from + distance * CGFloat(ease(Double(index) / Double(count)))
-            append(scene)
-        }
-    }
     /// A click, and what it opens.
     mutating func click(_ scene: Int, opening next: Int) {
         ripple = 0
         hold(scene, 0.12)
-        scroll = 0
         append(next)
-    }
-    /// A click that opens Send to Copilot's window over the scene.
-    mutating func clickOpeningSheet(_ scene: Int) {
-        ripple = 0
-        hold(scene, 0.12)
-        for index in 1...frames(0.24) {
-            sheet = ease(Double(index) / Double(frames(0.24)))
-            append(scene)
-        }
     }
 }
 
-/// From BriefBar's list to the window, a story's summary, and a task sent to Copilot. It starts as the list opens, from
-/// BriefBar's item in the menu bar, and ends as the item is clicked again, so it loops.
+/// From BriefBar's items in the menu bar, to Copilot's sessions, your pull requests, and their page in the window: Up
+/// Next, then the Board. It starts and ends on the desktop with no list open, the pointer where it was, so it loops.
 func tour(_ scenes: [Scene]) -> [Frame] {
-    let item = scenes[0].point(menuBarItem.x, menuBarItem.y)
-    var visit = Visit(scenes, from: item)
-    // The end's click, still rippling.
-    visit.ripple = 3
-    visit.hold(1, 0.4)
-    visit.move(1, to: scenes[1].point(1_560, 420), 0.7)
-    visit.hold(1, 1.7)
-    // The window, at the Overview, then the Sprint page from its sidebar.
-    visit.move(1, to: scenes[1].point(overviewLink.x, overviewLink.y), 0.7)
+    let rest = scenes[0].point(desktopRest.x, desktopRest.y)
+    var visit = Visit(from: rest)
+    visit.hold(0, 2.0)
+    // Copilot's sessions, from its item: those that wait for you, then those running.
+    visit.move(0, to: scenes[0].point(copilotItem.x, copilotItem.y), 0.8)
+    visit.click(0, opening: 1)
+    visit.move(1, to: scenes[1].point(1_420, 368), 0.6)
+    visit.hold(1, 1.8)
+    // Your pull requests, from Azure DevOps' item.
+    visit.move(1, to: scenes[1].point(pullRequestsItem.x, pullRequestsItem.y), 0.7)
     visit.click(1, opening: 2)
-    visit.hold(2, 0.5)
-    visit.move(2, to: scenes[2].point(165, 522), 0.8)
+    visit.move(2, to: scenes[2].point(1_100, 670), 0.6)
+    visit.hold(2, 1.8)
+    // Their page in the window, from the list's title: Up Next.
+    visit.move(2, to: scenes[2].point(pullRequestsTitle.x, pullRequestsTitle.y), 0.6)
     visit.click(2, opening: 3)
-    // Story 5101's details, and the summary of where it stands.
-    visit.hold(3, 0.4)
-    visit.move(3, to: scenes[3].point(760, 566), 0.7)
+    visit.move(3, to: scenes[3].point(1_250, 770), 0.7)
+    visit.hold(3, 1.6)
+    // Fix next's 2 more ›: the Board, where its pull request leads In progress.
+    visit.move(3, to: scenes[3].point(fixNextMore.x, fixNextMore.y), 0.6)
     visit.click(3, opening: 4)
-    visit.move(4, to: scenes[4].point(1_560, 700), 0.6)
-    visit.hold(4, 2.1)
-    // Closing them, pointing at a task offers to send it to Copilot, where its avatar was.
-    visit.move(4, to: scenes[4].point(1_928, 204), 0.6)
-    visit.click(4, opening: 5)
-    visit.move(5, to: scenes[5].point(taskAvatar.x + 8, taskAvatar.y + 9), 0.8)
-    visit.clickOpeningSheet(5)
-    visit.move(5, to: scenes[5].point(1_050, 700), 0.5)
-    visit.hold(5, 2.2)
-    // Back on the desktop, the list opens from the menu bar again.
-    visit.sheet = 0
+    visit.move(4, to: scenes[4].point(345, 1_000), 0.7)
+    visit.hold(4, 2.6)
+    // Back on the desktop, where it started.
     visit.hold(0, 0.3)
-    visit.move(0, to: item, 0.8)
-    visit.ripple = 0
-    visit.hold(0, 0.12)
+    visit.move(0, to: rest, 0.6)
     return visit.timeline
 }
 
-/// From a story to its bug, the bug's pull request and, down its page, the Copilot session that opened it.
+/// From a story to its bug, the bug's pull request and the Copilot session that opened it.
 func trail(_ scenes: [Scene]) -> [Frame] {
-    var visit = Visit(scenes, from: scenes[0].point(1_560, 700))
+    var visit = Visit(from: scenes[0].point(1_560, 700))
     visit.hold(0, 1.4)
     visit.move(0, to: scenes[0].point(470, 1_290), 0.8)
     visit.click(0, opening: 1)
     visit.hold(1, 1.0)
     visit.move(1, to: scenes[1].point(1_500, 1_072), 0.6)
     visit.click(1, opening: 2)
-    visit.hold(2, 1.0)
-    visit.move(2, to: scenes[2].point(1_560, 1_000), 0.4)
-    let distance: CGFloat = 300
-    visit.scroll(2, by: distance, 0.45)
-    visit.move(2, to: scenes[2].point(openedBySession.x, openedBySession.y - distance), 0.5)
+    visit.move(2, to: scenes[2].point(1_560, 1_000), 0.5)
+    visit.hold(2, 1.2)
+    visit.move(2, to: scenes[2].point(openedBySession.x, openedBySession.y), 0.6)
     visit.click(2, opening: 3)
     visit.move(3, to: scenes[3].point(1_560, 620), 0.6)
     visit.hold(3, 2.4)
@@ -270,13 +207,14 @@ func drawCaption(_ caption: String, in context: CGContext) {
 }
 
 /// The card: the desktop, or the bare one with the scene's window open on it.
-func drawScene(_ scene: Scene, hover: Bool, desktop: CGImage, dark: Bool, in context: CGContext) {
+func drawScene(_ scene: Scene, desktop: CGImage, dark: Bool, in context: CGContext) {
     context.saveGState()
     context.addPath(roundedRect(card, radius: 12))
     context.clip()
-    let image = hover ? scene.hovered ?? scene.image : scene.image
+    let image = scene.image
     if scene.isDesktop {
         context.draw(image, in: flipped(card))
+        if let loupe = scene.loupe { drawLoupe(loupe, of: scene, dark: dark, in: context) }
         context.restoreGState()
         return
     }
@@ -300,53 +238,43 @@ func drawScene(_ scene: Scene, hover: Bool, desktop: CGImage, dark: Bool, in con
     context.restoreGState()
 }
 
-/// The scene's scrolling area, scrolled down `offset` pixels of its picture through the taller picture. Above the
-/// area, such as a panel's header, nothing moves.
-func drawScrolled(_ scene: Scene, by offset: CGFloat, in context: CGContext) {
-    guard let taller = scene.taller, offset > 0 else { return }
-    let area = scene.scrollArea
-    let shown = CGRect(origin: scene.point(area.minX, area.minY), size: CGSize(width: area.width * scene.scale, height: area.height * scene.scale))
-    // Inside the window, square at the top, where the header is, and rounded at the bottom like the panel.
-    let radius = panelRadius * scene.scale
-    let rounded = CGRect(x: shown.minX, y: shown.minY - radius, width: shown.width, height: shown.height + radius)
+/// The loupe's card, its caret pointing up at the part of the menu bar it magnifies, with that part and its labels.
+func drawLoupe(_ loupe: Loupe, of scene: Scene, dark: Bool, in context: CGContext) {
+    guard let part = scene.image.cropping(to: loupe.area) else { return }
+    let frame = loupe.frame
+    let zoom = (frame.width - 32) / loupe.area.width
+    let anchor = scene.point(loupe.area.midX, loupe.area.maxY)
+    let outline = CGMutablePath()
+    outline.addPath(roundedRect(frame, radius: 12))
+    outline.addLines(between: [CGPoint(x: anchor.x - 9, y: frame.minY + 1), CGPoint(x: anchor.x, y: frame.minY - 8),
+                               CGPoint(x: anchor.x + 9, y: frame.minY + 1)].map(flipped))
+    outline.closeSubpath()
     context.saveGState()
-    context.addPath(roundedRect(scene.frame, radius: windowRadius))
-    context.clip()
-    context.clip(to: flipped(shown))
-    context.addPath(roundedRect(rounded, radius: radius))
-    context.clip()
-    let size = CGSize(width: CGFloat(taller.width) * scene.scale, height: CGFloat(taller.height) * scene.scale)
-    context.draw(taller, in: flipped(CGRect(origin: CGPoint(x: scene.frame.minX, y: scene.frame.minY - offset * scene.scale), size: size)))
-    context.restoreGState()
-}
-
-/// Send to Copilot's window, over the window it was opened from, which dims at once.
-func drawSheet(_ composer: CGImage, scene: Scene, progress: Double, dark: Bool, in context: CGContext) {
-    guard progress > 0 else { return }
-    let shown = CGFloat(progress)
-    context.saveGState()
-    context.addPath(roundedRect(windowFrame, radius: windowRadius))
-    context.clip()
-    context.setFillColor(NSColor.black.withAlphaComponent(dark ? 0.4 : 0.2).cgColor)
-    context.fill(flipped(windowFrame))
-    context.restoreGState()
-
-    let scale = scene.scale * (0.94 + 0.06 * shown)
-    let size = CGSize(width: CGFloat(composer.width) * scale, height: CGFloat(composer.height) * scale)
-    let frame = CGRect(x: windowFrame.midX - size.width / 2, y: windowFrame.midY - size.height / 2, width: size.width, height: size.height)
-    context.saveGState()
-    context.setAlpha(shown)
-    context.beginTransparencyLayer(auxiliaryInfo: nil)
-    context.setShadow(offset: CGSize(width: 0, height: -8), blur: 28, color: NSColor.black.withAlphaComponent(0.4).cgColor)
-    context.addPath(roundedRect(frame, radius: 10))
-    context.setFillColor(NSColor(white: dark ? 0.18 : 0.93, alpha: 1).cgColor)
+    context.setShadow(offset: CGSize(width: 0, height: -4), blur: 16, color: NSColor.black.withAlphaComponent(dark ? 0.5 : 0.25).cgColor)
+    context.addPath(outline)
+    context.setFillColor(NSColor(white: dark ? 0.17 : 0.97, alpha: 1).cgColor)
     context.fillPath()
-    context.setShadow(offset: .zero, blur: 0, color: nil)
-    context.addPath(roundedRect(frame, radius: 10))
-    context.clip()
-    context.draw(composer, in: flipped(frame))
-    context.endTransparencyLayer()
     context.restoreGState()
+
+    let bar = CGRect(x: frame.minX + 16, y: frame.minY + 12, width: loupe.area.width * zoom, height: loupe.area.height * zoom)
+    context.saveGState()
+    context.addPath(roundedRect(bar, radius: 8))
+    context.clip()
+    context.draw(part, in: flipped(bar))
+    context.restoreGState()
+
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    for label in loupe.labels {
+        let text = NSAttributedString(string: label.text, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor(white: dark ? 0.82 : 0.3, alpha: 1),
+        ])
+        let size = text.size()
+        let x = bar.minX + (label.midX - loupe.area.minX) * zoom - size.width / 2
+        text.draw(at: flipped(CGPoint(x: x, y: bar.maxY + 8 + size.height)))
+    }
+    NSGraphicsContext.restoreGraphicsState()
 }
 
 /// The arrow pointer, its tip at `tip`, a little smaller while pressed, with a ripple where it clicked.
@@ -414,23 +342,22 @@ func writePNG(_ image: CGImage, to url: URL) {
 }
 
 /// Draws each different frame of `timeline` once, and encodes them, each shown for as long as it lasts, as `name`.gif.
-func encode(_ timeline: [Frame], scenes: [Scene], desktop: CGImage, composer: CGImage, dark: Bool, name: String) throws {
+func encode(_ timeline: [Frame], scenes: [Scene], desktop: CGImage, dark: Bool, name: String) throws {
     let directory = framesRoot.appendingPathComponent(name)
     try? FileManager.default.removeItem(at: directory)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-    // Each scene under the pointer, with its caption, drawn once.
+    // Each scene, with its caption, drawn once.
     let background = backdrop(dark: dark)
-    var drawn: [String: CGImage] = [:]
+    var drawn: [Int: CGImage] = [:]
     func base(_ frame: Frame) -> CGImage {
-        let key = "\(frame.scene) \(frame.hover)"
-        if let image = drawn[key] { return image }
+        if let image = drawn[frame.scene] { return image }
         let context = makeContext()
         context.draw(background, in: CGRect(x: 0, y: 0, width: width, height: height))
         drawCaption(scenes[frame.scene].caption, in: context)
-        drawScene(scenes[frame.scene], hover: frame.hover, desktop: desktop, dark: dark, in: context)
+        drawScene(scenes[frame.scene], desktop: desktop, dark: dark, in: context)
         let image = context.makeImage()!
-        drawn[key] = image
+        drawn[frame.scene] = image
         return image
     }
 
@@ -442,8 +369,6 @@ func encode(_ timeline: [Frame], scenes: [Scene], desktop: CGImage, composer: CG
         }
         let context = makeContext()
         context.draw(base(frame), in: CGRect(x: 0, y: 0, width: width, height: height))
-        drawScrolled(scenes[frame.scene], by: frame.scroll, in: context)
-        drawSheet(composer, scene: scenes[frame.scene], progress: frame.sheet, dark: dark, in: context)
         drawCursor(at: frame.cursor, ripple: frame.ripple, in: context)
 
         let file = String(format: "%04d.png", frames.count)
@@ -480,29 +405,26 @@ func encode(_ timeline: [Frame], scenes: [Scene], desktop: CGImage, composer: CG
 for appearance in ["light", "dark"] {
     let dark = appearance == "dark"
     let shot = { (name: String) in loadImage("\(name)-\(appearance)") }
-    let board = shot("window-azureDevOps.sprint")
     let story = shot("azureDevOps-sprint-details")
     let desktop = shot("desktop-bare")
-    let composer = shot("azureDevOps-copilot-composer")
 
     let tourScenes = [
-        Scene(image: shot("desktop-closed"), caption: "Counted in your menu bar, and on your desktop", isDesktop: true),
-        Scene(image: shot("desktop"), caption: "One click: a brief, and everything that needs you", isDesktop: true),
-        Scene(image: shot("window-overview"), caption: "The whole picture in a window"),
-        Scene(image: board, caption: "Your sprint, with its pull requests and Copilot sessions"),
-        Scene(image: story, caption: "Open a story: where it stands, summarized by AI"),
-        Scene(image: board, caption: "Hand the next task to Copilot", hovered: hoveredRow(on: board, dark: dark), hoverArea: taskRow),
+        Scene(image: shot("desktop-closed"), caption: "Your pull requests and Copilot sessions, live in your menu bar",
+              isDesktop: true, loupe: itemsLoupe),
+        Scene(image: shot("desktop-copilot.sessions"), caption: "Copilot sessions waiting for you, and those still running",
+              isDesktop: true),
+        Scene(image: shot("desktop-azureDevOps.pullRequests"), caption: "Pull requests that need your review, a reply or a fix",
+              isDesktop: true),
+        Scene(image: shot("window-azureDevOps.pullRequests"), caption: "Up Next: what to fix, review and merge next"),
+        Scene(image: shot("azureDevOps-pull-requests-board-window"), caption: "Every pull request's stage, on a Board"),
     ]
-    try encode(tour(tourScenes), scenes: tourScenes, desktop: desktop, composer: composer, dark: dark,
-               name: "readme-tour-\(appearance)")
+    try encode(tour(tourScenes), scenes: tourScenes, desktop: desktop, dark: dark, name: "readme-tour-\(appearance)")
 
     let trailScenes = [
         Scene(image: story, caption: "Every work item links to its pull requests and sessions"),
         Scene(image: shot("azureDevOps-sprint-bug-details"), caption: "Open a bug: who it's waiting on, and why"),
-        Scene(image: shot("azureDevOps-sprint-pull-request-page"), caption: "Click through to its pull request…",
-              taller: shot("azureDevOps-sprint-pull-request-page-tall"), scrollArea: pullRequestPanel),
+        Scene(image: shot("azureDevOps-sprint-pull-request-page"), caption: "Click through to its pull request…"),
         Scene(image: shot("azureDevOps-sprint-deep-page"), caption: "…and the Copilot session that opened it"),
     ]
-    try encode(trail(trailScenes), scenes: trailScenes, desktop: desktop, composer: composer, dark: dark,
-               name: "readme-trail-\(appearance)")
+    try encode(trail(trailScenes), scenes: trailScenes, desktop: desktop, dark: dark, name: "readme-trail-\(appearance)")
 }
