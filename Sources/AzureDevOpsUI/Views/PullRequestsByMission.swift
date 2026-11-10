@@ -244,8 +244,9 @@ extension PullRequestsByMission {
     /// on the Board, Up Next above each, also with text at 150%, and in a narrow window, its header's controls their
     /// symbols alone, also all the way down to a mission of your own; every mission, a story's among them, with the
     /// split Apple Intelligence suggests for it, wide, narrow and at 150%, in the List and on the Board; the Board with
-    /// Lanes: None; and By Status, Up Next above it, with the order's capsules on the rows, also narrow and with text
-    /// at 150%, where Up Next's slots wrap. And the line at By Mission's foot while Show Links is off.
+    /// Lanes: None, and at about a window's size, for the README, down to its first mission; and By Status, Up Next above
+    /// it, with the order's capsules on the rows, also narrow and with text at 150%, where Up Next's slots wrap. And the
+    /// line at By Mission's foot while Show Links is off.
     @MainActor
     static func renderings(
         store: PRStore, services: AppServices, environment: (AnyView) -> AnyView
@@ -270,6 +271,7 @@ extension PullRequestsByMission {
             ("pull-requests-board-all-narrow", .byMission, .board, .missions, nil, CGSize(width: 560, height: 2_100)),
             ("pull-requests-board-all-150", .byMission, .board, .missions, 1.5, CGSize(width: 1_200, height: 2_600)),
             ("pull-requests-board-lanes-none", .byMission, .board, BoardLanes.none, nil, CGSize(width: 1_200, height: 900)),
+            ("pull-requests-board-window", .byMission, .board, .missions, nil, CGSize(width: 1_080, height: 750)),
             ("pull-requests-by-status-order", .status, .list, nil, nil, CGSize(width: 1_000, height: 2_400)),
             ("pull-requests-up-next-narrow", .status, .list, nil, nil, CGSize(width: 560, height: 900)),
             ("pull-requests-up-next-150", .status, .list, nil, 1.5, CGSize(width: 1_000, height: 900)),

@@ -17,11 +17,13 @@ MAKE_TEAMS_DEMO_DATA := swift scripts/make-teams-demo-data.swift "$(DEMO_DIR)/te
 MAKE_COPILOT_DEMO_DATA := swift scripts/make-copilot-demo-data.swift "$(DEMO_DIR)/copilot"
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
 BRIEFBAR = $(shell swift build --arch arm64 --show-bin-path)/BriefBar
-SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
-	menubar-by-state-light menubar-by-state-dark widget-all-medium-light widget-all-medium-dark
+SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-copilot.sessions-light menubar-copilot.sessions-dark \
+	menubar-combined-light menubar-combined-dark menubar-by-state-light menubar-by-state-dark \
+	widget-all-medium-light widget-all-medium-dark
 # Window and detail pictures, as JPEG: their backgrounds would make PNGs several times larger.
 WINDOW_SHOTS := window-overview-light window-overview-dark \
 	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark \
+	azureDevOps-pull-requests-board-window-light azureDevOps-pull-requests-board-window-dark \
 	rows-summary-pull-requests-light rows-summary-pull-requests-dark \
 	azureDevOps-copilot-composer-light azureDevOps-copilot-composer-dark
 
