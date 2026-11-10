@@ -3257,7 +3257,7 @@ has all the session changed by the time it was made, its changes that aren't com
 BriefBar's tasks makes with the CLI starts at the commit the task's checkout has, so only the conflicts' resolution,
 which Resolve Conflicts commits, goes with it; neither has a fix done after it was made. A task's fork keeps when it was
 made, as its first task started (`CopilotRun.forkedAt`), and one of the app's, the prompt that made it, whatever for,
-which a later prompt sent there goes on from; a fix an earlier task in the session took on was done by when the next one
+which a later prompt sent there, or a task that goes on with it, goes on from; a fix an earlier task in the session took on was done by when the next one
 there started, which it keeps as the session goes on (`TakenPart.overBy`), so a fork made while a fix was under way
 isn't taken to have it. One that failed or stopped may
 not have fixed them, so, unlike a Push & Reply that did, it doesn't make them ready to push: Try Again sends it again

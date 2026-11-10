@@ -562,13 +562,23 @@ extension CopilotTasksStore {
             guard forkedFrom == fix.session, madeAt > over, !committedOnly || fix.part == .conflicts else { return nil }
             return over
         }
+        // The Copilot app's forks, each made as the prompt that made it went, whatever for, with all its session changed: a
+        // prompt sent to one since, or a task that goes on with it, goes on in it.
+        var forks: [String: (from: String, madeAt: Date)] = [:]
+        for prompt in settings.copilotSentPrompts {
+            guard let from = prompt.forkedFrom, forks[prompt.session].map({ prompt.sentAt < $0.madeAt }) ?? true else { continue }
+            forks[prompt.session] = (from, prompt.sentAt)
+        }
         for entry in entries where entry.isOn(key) {
             // A fork's session was made as its first task started (`CopilotRun.forkedAt`); for one kept before BriefBar had
-            // that, the earliest it kept.
+            // that, the earliest it kept; for one of the app's, as the prompt that made it went.
             let kept = (entry.pushes ?? []).map(\.since) + (entry.taken ?? []).map(\.since)
-            let madeAt = entry.run?.forkedAt ?? kept.reduce(entry.startedAt, min)
+            let fork = entry.forkedFrom.map { (from: $0, madeAt: entry.run?.forkedAt ?? kept.reduce(entry.startedAt, min)) }
+                ?? forks[entry.id]
             let committedOnly = entry.run?.isAppSession != true
-            let carrying = carried(by: entry.id, forkedFrom: entry.forkedFrom, madeAt: madeAt, committedOnly: committedOnly)
+            let carrying = carried(
+                by: entry.id, forkedFrom: fork?.from, madeAt: fork?.madeAt ?? entry.startedAt, committedOnly: committedOnly
+            )
             guard let after = carrying else { continue }
             if entry.action == .pushAndReply {
                 let ships = TakenPart(
@@ -587,13 +597,6 @@ extension CopilotTasksStore {
             for push in before {
                 consider(push.since, CopilotWork.from(entry, taken: push), after: after)
             }
-        }
-        // The Copilot app's forks, each made as the prompt that made it went, whatever for, with all its session changed: a
-        // prompt sent to one since goes on in it.
-        var forks: [String: (from: String, madeAt: Date)] = [:]
-        for prompt in settings.copilotSentPrompts {
-            guard let from = prompt.forkedFrom, forks[prompt.session].map({ prompt.sentAt < $0.madeAt }) ?? true else { continue }
-            forks[prompt.session] = (from, prompt.sentAt)
         }
         for (prompt, turn) in prompts(about: key) where prompt.purpose == .pushAndReply {
             let fork = prompt.forkedFrom.map { (from: $0, madeAt: prompt.sentAt) } ?? forks[prompt.session]

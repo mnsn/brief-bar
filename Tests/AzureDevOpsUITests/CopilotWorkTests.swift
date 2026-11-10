@@ -1238,6 +1238,12 @@ import Testing
         )
         try await settle { asks.count == 1 }
         await #expect(throws: PullRequestNotActive(status: "completed")) { try await asks[0]?() }
+        // Nor once the list read it completed meanwhile, though Azure DevOps answered from before.
+        store.readTarget = { _ in "main" }
+        #expect(try await asks[0]?() == "main")
+        store.pullRequestIsOpen = { _ in false }
+        await #expect(throws: PullRequestNotActive.self) { try await asks[0]?() }
+        store.pullRequestIsOpen = { _ in true }
 
         // The window, as the list has read it.
         #expect(store.closedProblem(pullRequest) == nil)
@@ -1857,6 +1863,17 @@ import Testing
         ))
         settings.copilotSentPrompts = [fixed, madeEarly, wentOn]
         #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
+        // So does a task that goes on with that fork with the CLI.
+        var withTheCLI = run(fork, .pushAndReply, startedAt: now, ended: .finished, taken: [
+            TakenPart(.thread(12), since: now, ships: true, fixes: true, head: "c1"),
+        ])
+        withTheCLI.isAppSession = true
+        settings.copilotSentPrompts = [fixed, madeIt]
+        settings.copilotRuns = [withTheCLI]
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).isEmpty)
+        settings.copilotSentPrompts = [fixed, madeEarly]
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
+        settings.copilotRuns = []
 
         // One of BriefBar's tasks fixed 11, then resolved the conflicts, which it committed; a fork of it with the CLI
         // fixed 12 and pushed: the conflicts' resolution went along, but not 11's fix, which wasn't committed.
