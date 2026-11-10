@@ -317,6 +317,10 @@ import Testing
         #expect(reads.read == ["main", "main"])
         #expect(ship.worktree.path == worktree.path)
         #expect(ship.action == .pushAndReply)
+        // Where the branch was in its worktree as it started, once git fetched it: what a push of its own adds to.
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment)
+        let branchHead = await git.remoteHead(of: worktree, branch: pullRequest.sourceBranch)
+        #expect(ship.head != nil && ship.head == branchHead)
         let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
         #expect(arguments.contains("Fix the comment, then push and reply"))
         // It commits and pushes: the CLI denies it nothing.
@@ -332,10 +336,12 @@ import Testing
         defer { fixture.remove() }
         let (launcher, argumentsFile) = try launcher(fixture)
         let prompt = #"Apply it as it's written: var reference = $"refs/heads/{baseBranch}";"#
-        _ = try await launch(launcher, CopilotLauncher.Request(
+        let fix = try await launch(launcher, CopilotLauncher.Request(
             subject: .pullRequest(pullRequest, .fixComments), prompt: prompt, options: CopilotModel.standard,
             repository: fixture.checkout, worktreesFolder: nil
         ), id: "8c3f2e4d-5dae-4f1a-8d6b-4a5b6c7d8e9f")
+        // It doesn't push: nothing reads where the branch was for it.
+        #expect(fix.head == nil)
         let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
         #expect(arguments.prefix(2) == ["-p", prompt])
     }
@@ -669,6 +675,17 @@ import Testing
             TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
             TakenPart(.thread(12), since: second, ended: .finished, ships: true, fixes: true, overBy: third), TakenPart(.thread(14), since: third),
         ])
+        // What it fixed first keeps whether it pushed a commit of its own, as its run kept as it finished; what had ended
+        // before it isn't its.
+        for pushed in [false, true] {
+            var fixed = run(.pushAndReply, ended: .finished, taken: fixing)
+            fixed.pushed = pushed
+            #expect(taken(fixed, [.thread(14)], for: .fixComments, at: third) == [
+                TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+                TakenPart(.thread(12), since: second, ended: .finished, ships: true, fixes: true, pushed: pushed, overBy: third),
+                TakenPart(.thread(14), since: third),
+            ])
+        }
         #expect(CopilotRun.taken(goingOnWith: nil, on: pullRequest.reference, taking: [.thread(11)], for: .fixComments, at: first, fixing: true)
             == [TakenPart(.thread(11), since: first)])
         // Once it's done, a later task keeps what it had and didn't ship, still not pushed, and what it shipped, pushed, for

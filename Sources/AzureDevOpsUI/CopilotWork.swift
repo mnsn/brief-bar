@@ -23,14 +23,15 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
 
     /// What it's about, as it's sent: the pull request, what for, and what of it it takes on, with the pull request's target
     /// branch, which the conflicts it takes on are with; and, for Push & Reply, whether it fixes what it takes on first, as a
-    /// comment's Fix sent with Push and Reply on does, with the commit the pull request's branch is at as it goes, as the
-    /// list has read it, which `CopilotTasksStore.keep` fills in.
+    /// comment's Fix sent with Push and Reply on does, with the pull request's branch, `source`, and the commit it's at in
+    /// the session's checkout as it goes, once git fetched it there, `head`, which `CopilotTasksStore.deliver` fills in.
     struct About: Equatable, Sendable {
         var pullRequest: PRKey
         var purpose: Purpose
         var parts: [PullRequestPart]
         var target: String? = nil
         var fixes = false
+        var source: String? = nil
         var head: String? = nil
     }
 
@@ -51,11 +52,19 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// A Push & Reply that fixes the threads it takes on first, as a comment's Fix sent with Push and Reply on does
     /// (`TakenPart.fixes`). Nil otherwise, and for prompts BriefBar kept before it had this.
     var fixes: Bool?
-    /// For one that fixes them first, the commit the pull request's branch was at as it was sent, as the list had read it
-    /// (`PullRequest.sourceCommit`): once its turn finished, it pushed only if the list reads another since, as its prompt
-    /// has it stop before it pushes when the tests don't pass, say (`CopilotTasksStore.seesPush(since:of:)`). Nil otherwise,
-    /// when the list didn't have it, and for prompts BriefBar kept before it had this.
+    /// For one that fixes them first, the pull request's branch, and the commit it was at in the session's checkout as it
+    /// was sent, once git fetched it there (`Git.remoteHead(of:branch:)`): what a push of its own adds to, which BriefBar
+    /// looks for there once its turn finished (`pushed`). Nil otherwise, when git couldn't read it, and for prompts BriefBar
+    /// kept before it had this.
+    var source: String?
     var head: String?
+    /// For one that fixes them first, whether it pushed a commit of its own from the session's checkout since `head`, as
+    /// git there said once its turn finished (`Git.pushedItsOwn(in:branch:since:)`): kept once, whatever moves the branch
+    /// since, as someone else's push, or a later one from the session. Its prompt has it stop before it pushes when the
+    /// tests don't pass, the pull request was retargeted or closed, or its push was rejected, and finish all the same. Nil
+    /// while it's under way, once it ended otherwise, when git couldn't tell, and for prompts BriefBar kept before it had
+    /// this.
+    var pushed: Bool?
     var sentAt: Date
     /// BriefBar copied it for you to paste, rather than sending it itself.
     var copied: Bool
@@ -105,6 +114,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         parts = about.parts
         target = about.parts.contains(.conflicts) ? about.target.flatMap { $0.isEmpty ? nil : $0 } : nil
         fixes = about.purpose == .pushAndReply && about.fixes ? true : nil
+        source = fixes == true ? about.source.flatMap { $0.isEmpty ? nil : $0 } : nil
         head = fixes == true ? about.head.flatMap { $0.isEmpty ? nil : $0 } : nil
         self.sentAt = sentAt
         self.copied = copied
@@ -123,7 +133,9 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         parts = try container.decode([PullRequestPart].self, forKey: .parts)
         target = try container.decodeIfPresent(String.self, forKey: .target)
         fixes = try container.decodeIfPresent(Bool.self, forKey: .fixes)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
         head = try container.decodeIfPresent(String.self, forKey: .head)
+        pushed = try container.decodeIfPresent(Bool.self, forKey: .pushed)
         sentAt = try container.decode(Date.self, forKey: .sentAt)
         copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
         ended = try container.decodeIfPresent(RunPhase.self, forKey: .ended)
@@ -242,13 +254,10 @@ struct CopilotWork: Equatable {
     /// (`TakenPart.fixes`, `SentPrompt.fixes`), so its sentences say it fixed it, and one that failed or stopped isn't
     /// offered to push, as a fix that did isn't. False for a fix it pushes along with all else its session changed.
     var fixes = false
-    /// For one that fixed it first, the commit the pull request's branch was at as it was sent (`TakenPart.head`,
-    /// `SentPrompt.head`); nil when that isn't known.
-    var head: String?
-    /// For one that fixed it first, done: the list has read the pull request's branch at another commit since it was sent
-    /// (`CopilotTasksStore.seesPush(since:of:)`), which says it pushed. Its prompt has it stop before it pushes, as when the
-    /// tests don't pass, or the pull request was retargeted, and end its turn all the same: without this, it says it fixed
-    /// it, but that it's not pushed.
+    /// For one that fixed it first, done: it pushed a commit of its own from its session's checkout, as git there said once
+    /// it finished, which BriefBar keeps (`CopilotRun.pushed`, `TakenPart.pushed`, `SentPrompt.pushed`). Its prompt has it
+    /// stop before it pushes, as when the tests don't pass, the pull request was retargeted, or its push was rejected, and
+    /// end its turn all the same: without this, it says it fixed it, but that it's not pushed.
     var pushSeen = false
 
     /// Ongoing, rather than over.
@@ -257,6 +266,13 @@ struct CopilotWork: Equatable {
         case .waiting, .working, .needsYou: true
         case .done, .failed, .stopped, .unknown: false
         }
+    }
+
+    /// One that fixed it first, and finished without pushing (`pushSeen`): what it changed is still in its session, for a
+    /// later push from there to take along, though it's not ready to push on its own, since it may have replied.
+    var shipsUnpushed: Bool {
+        if purpose == .pushAndReply, fixes, !pushSeen, case .done = state { return true }
+        return false
     }
 
     /// A fix that's done, and not pushed.
@@ -415,7 +431,6 @@ struct CopilotWork: Equatable {
         // Push & Reply ships what it took on; the others it has, it doesn't reply on, and they stay as they were.
         let purpose: Purpose = taken.ships == true ? .pushAndReply : .fix
         let fixes = purpose == .pushAndReply && taken.fixes == true
-        let head = fixes ? taken.head : nil
         // Taken on by an earlier task in the session, which a later one went on with.
         if let before = taken.ended {
             let state: State = switch before {
@@ -425,13 +440,14 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since, takenAt: taken.since, overBy: taken.overBy ?? entry.startedAt, fixes: fixes, head: head
+                since: taken.since, takenAt: taken.since, overBy: taken.overBy ?? entry.startedAt, fixes: fixes,
+                pushSeen: fixes && taken.pushed == true
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CopilotWork(
             part: taken.part, purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since, fixes: fixes, head: head
+            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since, fixes: fixes, pushSeen: fixes && entry.pushSeen
         )
     }
 
@@ -471,11 +487,17 @@ struct CopilotWork: Equatable {
             case .stopped, .preparing, .working: .stopped
             }
         }
-        if prompt.overlapped || prompt.lostTrack { state = .unknown(copied: prompt.copied) }
         let fixes = purpose == .pushAndReply && prompt.fixes == true
+        // A fix sent with Push and Reply on whose turn finished stands as it did until git has told whether it pushed, which
+        // ends it, as a task does: it isn't said, or heard, not to have pushed meanwhile.
+        if fixes, prompt.ended == nil, case .finished? = turn?.phase {
+            state = .working(nil)
+            since = prompt.sentAt
+        }
+        if prompt.overlapped || prompt.lostTrack { state = .unknown(copied: prompt.copied) }
         return CopilotWork(
             part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since,
-            takenAt: prompt.sentAt, fixes: fixes, head: fixes ? prompt.head : nil
+            takenAt: prompt.sentAt, fixes: fixes, pushSeen: fixes && prompt.pushed == true
         )
     }
 }
@@ -504,9 +526,10 @@ extension CopilotTasksStore {
     /// says it: a task of BriefBar's that took it on, or a prompt sent to one of the Copilot app's sessions about it, whichever
     /// took it on last. A fix done in a session, or a Push & Reply of it there that failed or stopped, is pushed with the
     /// rest of what the session changed by a Push & Reply that went on with the session since, or by a fix that pushed from
-    /// a fork of it made since, though that replies only on the threads its prompt lists (`pushCarrying`). One that fixed it
-    /// first, done, says it pushed only once the list reads the push (`CopilotWork.pushSeen`). Nil when none did, while Send
-    /// Work to Copilot is off, and for what the demo made nothing up for.
+    /// a fork of it made since, though that replies only on the threads its prompt lists (`pushCarrying`); so is one that
+    /// fixed it first, and finished without pushing what it changed (`CopilotWork.shipsUnpushed`), which says it pushed only
+    /// once it pushed a commit of its own (`CopilotWork.pushSeen`). Nil when none did, while Send Work to Copilot is off, and
+    /// for what the demo made nothing up for.
     /// - Parameter purposes: only work for these, such as fixes and shipping them, past a question asked since.
     func work(on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>? = nil) -> CopilotWork? {
         guard isOn, mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) else { return nil }
@@ -523,9 +546,11 @@ extension CopilotTasksStore {
         for (prompt, turn) in prompts(about: key) where prompt.parts.contains(part) {
             consider(prompt.sentAt, CopilotWork.from(prompt, about: part, turn: turn))
         }
-        guard var work = latest?.work else { return nil }
-        if work.waitsToBePushed, purposes?.contains(.pushAndReply) != false, let push = pushCarrying(work, of: key) { return push }
-        if work.fixes, case .done = work.state { work.pushSeen = seesPush(since: work.head, of: key) }
+        guard let work = latest?.work else { return nil }
+        if work.waitsToBePushed || work.shipsUnpushed, purposes?.contains(.pushAndReply) != false,
+           let push = pushCarrying(work, of: key) {
+            return push
+        }
         return work
     }
 
@@ -548,8 +573,8 @@ extension CopilotTasksStore {
     /// Conflicts commits, and no other fix, which nothing else commits. The first that finished, which pushed it, whatever
     /// came after it, such as one that failed; else the latest still under way; nil when none did, or each failed, stopped,
     /// waits for you to paste it, or went BriefBar doesn't know how. One that fixed what it took on first pushed only once
-    /// the list read its push (`seesPush(since:of:)`), since its prompt has it stop before it pushes, as when the tests
-    /// don't pass.
+    /// it pushed a commit of its own (`CopilotWork.pushSeen`), since its prompt has it stop before it pushes, as when the
+    /// tests don't pass.
     private func pushCarrying(_ fix: CopilotWork, of key: PRKey) -> CopilotWork? {
         var pushed: (since: Date, work: CopilotWork)?
         var pushing: (since: Date, work: CopilotWork)?
@@ -559,7 +584,7 @@ extension CopilotTasksStore {
             guard since > after else { return }
             switch work.state {
             case .done:
-                guard !work.fixes || seesPush(since: work.head, of: key) else { return }
+                guard !work.fixes || work.pushSeen else { return }
                 if pushed.map({ since < $0.since }) ?? true { pushed = (since, work) }
             case .waiting(copied: false), .working, .needsYou:
                 if pushing.map({ since > $0.since }) ?? true { pushing = (since, work) }
@@ -597,17 +622,15 @@ extension CopilotTasksStore {
             )
             guard let after = carrying else { continue }
             if entry.action == .pushAndReply {
-                let ships = TakenPart(
-                    fix.part, since: entry.startedAt, ships: true, fixes: entry.fixesFirst ? true : nil, head: entry.fixingHead
-                )
+                let ships = TakenPart(fix.part, since: entry.startedAt, ships: true, fixes: entry.fixesFirst ? true : nil)
                 consider(entry.startedAt, CopilotWork.from(entry, taken: ships), after: after)
             }
             var before = (entry.pushes ?? []).map { push in
-                TakenPart(fix.part, since: push.since, ended: push.ended, ships: true, fixes: push.fixes, head: push.head)
+                TakenPart(fix.part, since: push.since, ended: push.ended, ships: true, fixes: push.fixes, pushed: push.pushed)
             }
             for shipped in entry.taken ?? [] where shipped.ships == true && shipped.ended != nil {
                 before.append(TakenPart(
-                    fix.part, since: shipped.since, ended: shipped.ended, ships: true, fixes: shipped.fixes, head: shipped.head
+                    fix.part, since: shipped.since, ended: shipped.ended, ships: true, fixes: shipped.fixes, pushed: shipped.pushed
                 ))
             }
             for push in before {
@@ -837,9 +860,6 @@ extension CopilotTasksStore {
         copying text: String? = nil, handOff: CommentHandOff? = nil, report: String? = nil
     ) -> SentPrompt? {
         guard canSend, isOn, !hasStopped else { return nil }
-        // Where the pull request's branch is as a fix sent with Push and Reply on goes: it pushed once the list reads another.
-        var about = about
-        if let sent = about, sent.purpose == .pushAndReply, sent.fixes { about?.head = currentHead(sent.pullRequest) }
         let prompt: SentPrompt?
         switch outcome {
         case .sent:
@@ -878,11 +898,14 @@ extension CopilotTasksStore {
     /// (`SentPrompt.overlapped`). One seen over only once may be the end of the turn that ran as it was sent, so it isn't
     /// taken as its own. One copied for you to paste that BriefBar didn't see pasted isn't handed off: whether you pasted it
     /// can't be told either. One whose extension reports its turn goes on being followed: its report is of its own message.
+    /// One whose end was seen, which waits for git to tell whether it pushed (`tellWhetherPushed`, `promptsFinishedAt`),
+    /// ended before.
     func overlap(promptsIn session: String, before date: Date) {
         guard canSend, isOn, !hasStopped else { return }
         var prompts = settings.copilotSentPrompts
         for index in prompts.indices where prompts[index].session == session && prompts[index].isFollowed
-            && !prompts[index].awaitsFork && prompts[index].report == nil && prompts[index].sentAt < date {
+            && !prompts[index].awaitsFork && prompts[index].report == nil && prompts[index].sentAt < date
+            && !promptsBeingTold.contains(prompts[index].id) && promptsFinishedAt[prompts[index].id] == nil {
             prompts[index].overlapped = true
             promptTurns[prompts[index].id] = nil
             promptsOver[prompts[index].id] = nil
@@ -914,17 +937,22 @@ extension CopilotTasksStore {
     /// pasted it: its turn starts there, and what it takes care of leaves Needs You; another message, sent before it or
     /// instead, is the session's own. One not pasted, or whose fork isn't made, after half an hour, goes, with nothing
     /// handed off. One whose log hasn't shown its end after `SentPrompt.followLimit` isn't followed any more, and says
-    /// BriefBar doesn't know how it went. Only while Send Work to Copilot is on, never in the demo, and, from its log, not
-    /// while another prompt is being sent to its session (`pauseFollowing`).
+    /// BriefBar doesn't know how it went. A fix sent with Push and Reply on whose turn finished ends once git in the
+    /// checkout its session works in says whether it pushed a commit of its own, which the prompt keeps, on its own
+    /// (`tellWhetherPushed`). Only while Send Work to Copilot is on, never in the demo, and, from its log, not while
+    /// another prompt is being sent to its session (`pauseFollowing`).
     func followSentPrompts(now: Date = Date()) {
         guard mode == .live, canSend, isOn, !hasStopped, !isFollowingPrompts else { return }
-        let open = settings.copilotSentPrompts.filter { $0.isFollowed && ($0.report != nil || followingPaused[$0.session] == nil) }
+        let open = settings.copilotSentPrompts.filter {
+            $0.isFollowed && ($0.report != nil || followingPaused[$0.session] == nil) && !promptsBeingTold.contains($0.id)
+        }
         guard !open.isEmpty else { return }
         isFollowingPrompts = true
         let home = appHome
         let monitor = promptMonitor
         let outbox = outbox
         let copied = copiedPrompts.mapValues(\.text)
+        let finished = promptsFinishedAt
         Task {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
             // have been pasted in.
@@ -939,7 +967,16 @@ extension CopilotTasksStore {
                 var read: [Read] = []
                 for prompt in open {
                     if let report = prompt.report {
-                        read.append(Read(prompt: prompt, reported: Self.readReport(report, sentTo: prompt.session, in: outbox)))
+                        let reported = Self.readReport(report, sentTo: prompt.session, in: outbox)
+                        // A fix sent with Push and Reply on whose turn its report says finished: where git tells whether it
+                        // pushed a commit of its own, the checkout its session works in (`applyReport`).
+                        var probe: PushProbe?
+                        if prompt.fixes == true, let said = reported.report, said.isOver, said.state == .finished,
+                           let branch = prompt.source, let start = prompt.head,
+                           let folder = homes.lazy.compactMap({ AppSessions.folder(of: prompt.session, home: $0) }).first {
+                            probe = PushProbe(folder: folder, branch: branch, start: start, end: said.since)
+                        }
+                        read.append(Read(prompt: prompt, reported: reported, probe: probe))
                         continue
                     }
                     var session: String? = prompt.session
@@ -954,7 +991,9 @@ extension CopilotTasksStore {
                         }.first
                     }
                     guard let session, let found else {
-                        read.append(Read(prompt: prompt, fork: fork, turn: nil, pasted: copied[prompt.id].map { _ in false }))
+                        // One seen to finish ends as it did, though git can't be asked in its checkout now.
+                        let turn = finished[prompt.id].map { SessionTurn(phase: .finished(summary: nil), since: $0) }
+                        read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: copied[prompt.id].map { _ in false }))
                         continue
                     }
                     let (sessionHome, events) = found
@@ -969,7 +1008,16 @@ extension CopilotTasksStore {
                         turn = pastedAt.map { SessionTurn.of(sentAt: $0, log: log, isRunning: isRunning, isOpen: isOpen) }
                             ?? SessionTurn(phase: .waiting, since: prompt.sentAt)
                     }
-                    read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: pasted))
+                    // Seen to finish before git told whether it pushed: as it finished, whatever its session did since.
+                    if let end = finished[prompt.id] { turn = SessionTurn(phase: .finished(summary: nil), since: end) }
+                    // A fix sent with Push and Reply on whose turn finished: where git tells whether it pushed a commit of
+                    // its own, the checkout the session works in, once the read that ends its turn asks (`applyTurns`).
+                    var probe: PushProbe?
+                    if prompt.fixes == true, turn.isOver, case .finished = turn.phase, let branch = prompt.source,
+                       let start = prompt.head, let folder = AppSessions.folder(of: session, home: sessionHome) {
+                        probe = PushProbe(folder: folder, branch: branch, start: start, end: turn.since)
+                    }
+                    read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: pasted, probe: probe))
                 }
                 return read
             }.value
@@ -982,13 +1030,24 @@ extension CopilotTasksStore {
 
     /// What `followSentPrompts` read of a prompt: the fork made for one copied as `/fork`, its turn, and, for one copied
     /// for you to paste, whether a message sent the session since holds what BriefBar copied; nil when BriefBar didn't know
-    /// what it copied as it read. For one its extension reports, what its report said (`reported`).
+    /// what it copied as it read. For one its extension reports, what its report said (`reported`). For a fix sent with
+    /// Push and Reply on whose turn finished, where git tells whether it pushed a commit of its own (`SentPrompt.pushed`).
     private struct Read: Sendable {
         var prompt: SentPrompt
         var fork: String?
         var turn: SessionTurn?
         var pasted: Bool?
         var reported: Reported?
+        var probe: PushProbe? = nil
+    }
+
+    /// Where git tells whether a fix sent with Push and Reply on pushed a commit of its own: the checkout its session works
+    /// in, the pull request's branch, the commit that branch was at there as the fix went, and when its turn ended.
+    struct PushProbe: Sendable {
+        var folder: URL
+        var branch: String
+        var start: String
+        var end: Date?
     }
 
     /// What a prompt's report said of its turn, and whether the extension that writes it still ran, so that it may say
@@ -1019,7 +1078,9 @@ extension CopilotTasksStore {
             // Gone, or overlapped by another since it was read: what it read isn't its.
             guard let index = prompts.firstIndex(where: { $0.id == prompt.id }), prompts[index].isFollowed else { continue }
             if let reported = item.reported {
-                if let requestId = applyReport(reported, to: &prompts[index], now: now) { taken.append(requestId) }
+                if let requestId = applyReport(reported, to: &prompts[index], probe: item.probe, now: now) {
+                    taken.append(requestId)
+                }
                 continue
             }
             // Nor, from its log, while another prompt is being sent to its session, since it was read: what it read may be
@@ -1035,8 +1096,9 @@ extension CopilotTasksStore {
             let id = prompts[index].id
             // Read before BriefBar knew what it copied, as it was being kept: the next look tells whether you pasted it.
             if pasted == nil, copiedPrompts[id] != nil { continue }
-            // Only once it changed: what shows it redraws as it does.
-            if let turn, promptTurns[id] != turn { promptTurns[id] = turn }
+            // Only once it changed: what shows it redraws as it does. One seen to finish before keeps what Copilot said then.
+            let finishedAt = promptsFinishedAt[id]
+            if let turn, promptTurns[id] != turn, finishedAt == nil || promptTurns[id]?.isOver != true { promptTurns[id] = turn }
             // Copied for you to paste, and seen in a message sent the session since: you pasted it, and what it takes care
             // of leaves Needs You.
             if pasted == true, let copied = copiedPrompts.removeValue(forKey: id), let handOff = copied.handOff {
@@ -1044,17 +1106,22 @@ extension CopilotTasksStore {
             }
             let waited = now.timeIntervalSince(prompt.sentAt)
             if turn?.isOver == true {
-                // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows.
-                if let first = promptsOver[id], now.timeIntervalSince(first) >= 2 {
-                    prompts[index].ended = Self.phase(of: turn)
-                    promptsOver[id] = nil
+                // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows. Or
+                // seen to finish before git told whether it pushed.
+                if finishedAt != nil || promptsOver[id].map({ now.timeIntervalSince($0) >= 2 }) == true {
+                    let phase = Self.phase(of: turn)
+                    if prompts[index].fixes == true, phase == .finished, let probe = item.probe {
+                        // It ends once git has told whether it pushed, as of when it finished, kept till then
+                        // (`tellWhetherPushed`).
+                        promptsFinishedAt[id] = probe.end
+                        tellWhetherPushed(id, probe)
+                    } else {
+                        prompts[index].ended = phase
+                        promptsOver[id] = nil
+                        promptsFinishedAt[id] = nil
+                    }
                 } else if promptsOver[id] == nil {
                     promptsOver[id] = now
-                    // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at
-                    // its next refresh.
-                    if prompt.fixes == true, case .finished? = turn?.phase, let number = prompt.pullRequest.number {
-                        rereadPullRequest(PRKey(prompt.pullRequest.scope, number))
-                    }
                 }
             } else {
                 promptsOver[id] = nil
@@ -1081,12 +1148,56 @@ extension CopilotTasksStore {
         }
     }
 
+    /// Ends a fix sent with Push and Reply on, whose turn was seen to finish, once git in the checkout its session works in
+    /// tells whether it pushed a commit of its own, which it keeps (`SentPrompt.pushed`): once, whatever moves the branch
+    /// since. On its own: git fetches the branch first, which may wait on the network, and the other prompts' reads don't
+    /// wait for it. Its turn's end was seen, so meanwhile it isn't read again, which would take what its session does next
+    /// for its own, nor taken for one whose end wasn't seen as another prompt is sent its session (`overlap`). Once Send
+    /// Work to Copilot is off, or BriefBar stopped, git isn't asked, and nothing it told is kept: it's read again once it's
+    /// on. One its extension reports is notified then, as it ends (`notifyPrompt`), and its report goes. Once, while one is
+    /// under way.
+    private func tellWhetherPushed(_ id: String, _ probe: PushProbe, report: OutboxReport? = nil) {
+        guard promptsBeingTold.insert(id).inserted else { return }
+        let forTests = pushedForTests
+        Task {
+            defer { promptsBeingTold.remove(id) }
+            guard canSend, isOn, !hasStopped else { return }
+            let git = await git()
+            guard canSend, isOn, !hasStopped else { return }
+            let pushed = await Self.pushedItsOwn(
+                in: probe.folder, branch: probe.branch, since: probe.start, at: probe.end, git: git, forTests: forTests
+            )
+            guard canSend, isOn, !hasStopped else { return }
+            // Gone, or cleared, meanwhile.
+            guard let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
+                  settings.copilotSentPrompts[index].isFollowed
+            else {
+                promptsFinishedAt[id] = nil
+                return
+            }
+            var prompt = settings.copilotSentPrompts[index]
+            prompt.ended = .finished
+            prompt.pushed = pushed
+            promptsOver[id] = nil
+            promptsFinishedAt[id] = nil
+            if let report { notifyPrompt(&prompt, report: report) }
+            settings.copilotSentPrompts[index] = prompt
+            // Once what it said is kept, as `applyTurns` removes the others.
+            if report != nil, let requestId = prompt.report {
+                let outbox = outbox
+                Task.detached(priority: .utility) { outbox.removeReport(of: requestId) }
+            }
+        }
+    }
+
     /// What a prompt's report said, on the prompt: how its turn stands, which what shows it says, words and all, while
     /// BriefBar runs; once it's over, how it ended, which the prompt keeps. It's notified once it waits on you, as each time
-    /// it starts to, and once it ends (`notifyPrompt`). One whose extension stopped, or whose report went, before it said
-    /// how it ended, BriefBar no longer follows, and says it doesn't know how it went.
+    /// it starts to, and once it ends (`notifyPrompt`). A fix sent with Push and Reply on whose turn finished ends, and is
+    /// notified, once git in the checkout its session works in has told whether it pushed a commit of its own, from
+    /// `probe` (`tellWhetherPushed`): without one, it ends now, not pushed. One whose extension stopped, or whose report
+    /// went, before it said how it ended, BriefBar no longer follows, and says it doesn't know how it went.
     /// - Returns: the report's request, for BriefBar to remove it, once BriefBar has taken what it said.
-    private func applyReport(_ reported: Reported, to prompt: inout SentPrompt, now: Date) -> String? {
+    private func applyReport(_ reported: Reported, to prompt: inout SentPrompt, probe: PushProbe?, now: Date) -> String? {
         let id = prompt.id
         guard let requestId = prompt.report, let report = reported.report, reported.follows || report.isOver else {
             prompt.lostTrack = true
@@ -1097,13 +1208,13 @@ extension CopilotTasksStore {
         let turn = SessionTurn(report)
         if promptTurns[id] != turn { promptTurns[id] = turn }
         if report.isOver {
+            // Its report stays until then, for it to be read again, should git not tell, as once Send Work to Copilot is off.
+            if prompt.fixes == true, report.state == .finished, let probe {
+                tellWhetherPushed(id, probe, report: report)
+                return nil
+            }
             prompt.ended = Self.phase(of: turn)
             notifyPrompt(&prompt, report: report)
-            // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at its next
-            // refresh, as for one followed from its log.
-            if prompt.fixes == true, report.state == .finished, let number = prompt.pullRequest.number {
-                rereadPullRequest(PRKey(prompt.pullRequest.scope, number))
-            }
             return requestId
         }
         if report.state == .needsYou {

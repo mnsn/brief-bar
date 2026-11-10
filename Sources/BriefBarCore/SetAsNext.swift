@@ -75,8 +75,10 @@ extension OrderBoard {
             guard case .plan? = change.first, let first = change.first, change.holds(in: orders) else { continue }
             for other in StageOrder.holders(of: ref, in: missions) where other != first {
                 var then = changes
-                guard (try? then.apply(.setNext(ref, in: other, true), missions: missions, orders: orders, stacked: stacked, now: now))
-                    != nil
+                guard (try? then.apply(
+                    .setNext(ref, in: other, true), missions: missions, orders: orders, stacked: stacked, now: now,
+                    status: statuses(facts, evidence: evidence)
+                )) != nil
                 else { continue }
                 let made = Self.missions(facts: facts, orders: orders, evidence: evidence, changes: then, now: now)
                 if StageOrder.holders(of: ref, in: made).contains(first) { held[ref, default: [:]][other] = first }

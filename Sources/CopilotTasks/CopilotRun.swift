@@ -74,24 +74,30 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// keeps only what they took on; and for runs that BriefBar kept before it had this.
     public var workLetGo: Bool?
     /// A Push & Reply that fixes what it takes on first, as a comment's Fix sent with Push and Reply on does
-    /// (`TakenPart.fixes`), kept apart from what it took on, which Clear lets go of: it pushed only once the list reads its
-    /// pull request's branch at another commit than `head`, however much of what it took on is let go. Nil otherwise, and
-    /// for runs that BriefBar kept before it had this.
+    /// (`TakenPart.fixes`), kept apart from what it took on, which Clear lets go of: whether it pushed is `pushed`, however
+    /// much of what it took on is let go. Nil otherwise, and for runs that BriefBar kept before it had this.
     public var fixes: Bool?
-    /// For one that fixes them first (`fixes`), the commit the pull request's branch was at as it was sent
-    /// (`TakenPart.head`).
+    /// For one that fixes them first (`fixes`), the commit the pull request's branch was at in its checkout as it started,
+    /// once git fetched it there (`Git.remoteHead(of:branch:)`, `CopilotLauncher.launch`): what a push of its own adds to.
+    /// Nil otherwise, when git couldn't read it, and for runs that BriefBar kept before it had this.
     public var head: String?
     /// BriefBar's check stopped a push it made (`PushStop`), as BriefBar saw in its log: so that it failed even when the
     /// part of its log BriefBar reads after a restart no longer has that. Only that it did, not why, which names
     /// branches. Nil otherwise, and for runs that BriefBar kept before it had this.
     public var pushStopped: Bool?
+    /// For one that fixes them first, whether it pushed a commit of its own from its checkout since `head`, as git there
+    /// said once it finished (`Git.pushedItsOwn(in:branch:since:)`): kept once, whatever moves the branch since, as someone
+    /// else's push, or a later one from its session. Its prompt has it stop before it pushes when the tests don't pass, the
+    /// pull request was retargeted or closed, or its push was rejected, and finish all the same. Nil while it's under way,
+    /// once it ended otherwise, when git couldn't tell, and for runs that BriefBar kept before it had this.
+    public var pushed: Bool?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
         forkedFrom: String? = nil, forkedAt: Date? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil,
-        workLetGo: Bool? = nil, fixes: Bool? = nil, head: String? = nil, pushStopped: Bool? = nil
+        workLetGo: Bool? = nil, fixes: Bool? = nil, head: String? = nil, pushed: Bool? = nil, pushStopped: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -113,6 +119,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.workLetGo = workLetGo
         self.fixes = fixes
         self.head = head
+        self.pushed = pushed
         self.pushStopped = pushStopped
     }
 
@@ -162,17 +169,16 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// older fix of it, elsewhere, not to be taken as its latest again. Push & Reply takes on what it ships
     /// (`TakenPart.ships`), the threads its prompt lists, to reply on, whether its runs or prompts sent to the session fixed
     /// them, or it fixes them first (`fixing`); the others stay as they were, since it doesn't reply on them. Nil when it
-    /// keeps nothing, unless it's a Push & Reply (`keeping(_:for:)`).
+    /// keeps nothing, unless it's a Push & Reply (`keeping(_:for:)`). What `previous` fixed first and was to push, it keeps
+    /// with whether it pushed (`pushed`).
     /// - Parameters:
     ///   - pullRequest: the pull request it's on, if it's on one.
     ///   - target: the pull request's target branch, which the conflicts it takes on are with (`TakenPart.target`).
     ///   - fixing: a Push & Reply that fixes what it takes on first, as a comment's Fix sent with Push and Reply on does
     ///     (`TakenPart.fixes`).
-    ///   - head: for one that fixes them first, the commit the pull request's branch is at now, as BriefBar's list has read
-    ///     it (`TakenPart.head`).
     public static func taken(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking parts: [PullRequestPart],
-        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false, head: String? = nil
+        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false
     ) -> [TakenPart]? {
         var kept: [TakenPart] = []
         if let previous, let before = previous.taken, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
@@ -183,6 +189,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
                 if taken.ended == nil {
                     taken.ended = previous.ended ?? .stopped
                     taken.overBy = now
+                    if taken.fixes == true { taken.pushed = previous.pushed }
                 }
                 return taken
             }
@@ -194,9 +201,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         let ships: Bool? = action == .pushAndReply ? true : nil
         let fixes: Bool? = action == .pushAndReply && fixing ? true : nil
         kept = kept.filter { !taking.contains($0.part) } + taking.map { part in
-            TakenPart(
-                part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil, head: fixes == true ? head : nil
-            )
+            TakenPart(part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil)
         }
         return keeping(kept, for: action)
     }
@@ -210,9 +215,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
 
     /// The Push & Reply tasks that ran in a session before the task that goes on with it, `previous` as BriefBar keeps it,
     /// on `pullRequest` (`pushes`): those `previous` kept, and `previous` itself when it's one, with how it ended, or, not
-    /// seen to end, that it stopped, and whether it fixed what it took on first, with the commit the branch was at as it
-    /// was sent, as its run keeps them (`fixes`, `head`), or, for one kept before it had those, what it took on does. Only
-    /// on the same pull request; nil when none did.
+    /// seen to end, that it stopped, and whether it fixed what it took on first, and then pushed, as its run keeps them
+    /// (`fixes`, `pushed`), or, for one kept before it had those, what it took on does. Only on the same pull request; nil
+    /// when none did.
     public static func pushes(goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?) -> [SessionPush]? {
         guard let previous, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true else { return nil }
         var pushes = previous.pushes ?? []
@@ -220,8 +225,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
             let fixing = previous.taken?.first { $0.ended == nil && $0.fixes == true }
             let fixes = previous.fixes == true || fixing != nil
             pushes.append(SessionPush(
-                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixes ? true : nil,
-                head: fixes ? previous.head ?? fixing?.head : nil
+                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixes ? true : nil, pushed: fixes ? previous.pushed : nil
             ))
         }
         return pushes.isEmpty ? nil : pushes

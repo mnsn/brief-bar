@@ -124,9 +124,15 @@ struct RepositoryFixture {
     }
 
     /// Runs git on `TestThreads`, as a repository made beforehand would be: in Swift's cooperative pool, starting it and
-    /// waiting for it would hold up every other test.
-    func git(_ arguments: [String]) async throws {
-        let result = try await withTaskExecutorPreference(TestThreads.shared) {
+    /// waiting for it would hold up every other test. With `seconds`, as at that many seconds since 1970: what it commits,
+    /// and its logs of where refs were, say so.
+    func git(_ arguments: [String], at seconds: Int? = nil) async throws {
+        var environment = environment
+        if let seconds {
+            environment["GIT_COMMITTER_DATE"] = "\(seconds) +0000"
+            environment["GIT_AUTHOR_DATE"] = "\(seconds) +0000"
+        }
+        let result = try await withTaskExecutorPreference(TestThreads.shared) { [environment] in
             try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
         }
         guard result.status == 0 else { throw TestError("git \(arguments.joined(separator: " ")): \(String(decoding: result.stderr, as: UTF8.self))") }
