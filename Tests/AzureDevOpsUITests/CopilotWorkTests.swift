@@ -1186,6 +1186,65 @@ import Testing
         #expect(settings.copilotSentPrompts.first { $0.parts == [.thread(13)] }?.isFollowed == true)
     }
 
+    /// A fix sent to push and reply whose session's log said it finished, whose git probe was dropped as Send Work to
+    /// Copilot went off, is asked about again once it's on, as of when it finished, and keeps what Copilot said then,
+    /// though its session went on meanwhile with a turn of its own, which pushed: its log can't tell that turn from the
+    /// fix's, whose push it isn't.
+    @Test func aFixSeenToFinishIsAskedAboutAgainAsItFinished() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sent = Date()
+        let checkout = home.appendingPathComponent("payments-api", isDirectory: true)
+        try finishedLog(of: session, in: home, after: sent, working: checkout)
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.appHomeForTests = home
+        let answers = PushAnswers([checkout.path: false])
+        let gate = Gate()
+        store.pushedForTests = { folder, branch, start, end in
+            let answer = await answers.answer(folder, branch, start, end)
+            await gate.wait()
+            return answer
+        }
+        var shipping = about(.pushAndReply, threads: [12])
+        shipping.fixes = true
+        shipping.source = "payments-retry"
+        shipping.head = "c1"
+        settings.copilotSentPrompts = [try #require(SentPrompt(shipping, session: session, sentAt: sent, copied: false))]
+        func follow(at seconds: TimeInterval) async throws {
+            store.followSentPrompts(now: sent.addingTimeInterval(seconds))
+            try await settle { !store.isFollowingPrompts }
+        }
+        try await follow(at: 3)
+        try await follow(at: 6)
+        try await waitUntilAsked(gate)
+        settings.copilotEnabled = false
+        await gate.open()
+        try await settle { store.promptsBeingTold.isEmpty }
+        #expect(settings.copilotSentPrompts.first?.ended == nil)
+        // Meanwhile you ask the session for more in the app, and that turn finishes, pushing.
+        let stamp = { (seconds: TimeInterval) in sent.addingTimeInterval(seconds).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+        let log = try FileHandle(forWritingTo: home.appendingPathComponent("session-state/\(session)/events.jsonl"))
+        try log.seekToEnd()
+        try log.write(contentsOf: Data((
+            #"{"type":"user.message","data":{"content":"Push it"},"id":"c","timestamp":"\#(stamp(20))","parentId":null}"# + "\n"
+                + #"{"type":"session.task_complete","data":{"summary":"Pushed","success":true},"id":"d","timestamp":"\#(stamp(21))","parentId":null}"#
+                + "\n"
+        ).utf8))
+        try log.close()
+        settings.copilotEnabled = true
+        try await follow(at: 30)
+        try await settle { settings.copilotSentPrompts.first?.ended != nil }
+        let ends = await answers.ends
+        #expect(ends.count == 2)
+        #expect(ends.allSatisfy { $0.map { abs($0.timeIntervalSince(sent.addingTimeInterval(2))) < 0.001 } == true })
+        #expect(settings.copilotSentPrompts.first?.pushed == false)
+        let work = try #require(store.work(on: .thread(12), of: key))
+        #expect(work.sentence(name: "Retry backoff", forkOf: nil) == "Fixed in ‘Retry backoff’, but not pushed")
+        #expect(work.said == "Done")
+        #expect(store.promptsFinishedAt.isEmpty)
+    }
+
     /// Whether a fix sent with Push and Reply on pushed is kept as it finished, so another push since doesn't change it
     /// (the review of #170's M1): one by another session while it fixed, which rejected its push; one of the session's other
     /// fix since, from the session, which takes along what it changed, without replying on it; or anything pushed after a

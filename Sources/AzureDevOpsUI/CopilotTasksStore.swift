@@ -265,6 +265,11 @@ final class CopilotTasksStore: ObservableObject {
     /// fetches the branch first, which may wait on the network, and the others' reads don't wait for it.
     var runsBeingTold: Set<String> = []
     var promptsBeingTold: Set<String> = []
+    /// When the turns of those prompts that their sessions' logs said finished ended, until git has told whether they
+    /// pushed: should it not tell, as once Send Work to Copilot was turned off meanwhile, it's asked again as of then, and
+    /// they stand as they finished, whatever their sessions did since, which their logs can't tell from them. In memory
+    /// only: once BriefBar restarts, their logs say again.
+    var promptsFinishedAt: [String: Date] = [:]
     /// Each prompt copied for you to paste, as BriefBar copied it, with what it takes off Needs You, by the prompt
     /// (`SentPrompt.id`), until it's seen in a message sent the session, which says you pasted it (`followSentPrompts`): in
     /// memory only. One that BriefBar stops following first, or forgets, hands nothing off.

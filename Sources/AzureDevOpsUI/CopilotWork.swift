@@ -898,13 +898,14 @@ extension CopilotTasksStore {
     /// (`SentPrompt.overlapped`). One seen over only once may be the end of the turn that ran as it was sent, so it isn't
     /// taken as its own. One copied for you to paste that BriefBar didn't see pasted isn't handed off: whether you pasted it
     /// can't be told either. One whose extension reports its turn goes on being followed: its report is of its own message.
-    /// One whose end was seen, which waits for git to tell whether it pushed (`tellWhetherPushed`), ended before.
+    /// One whose end was seen, which waits for git to tell whether it pushed (`tellWhetherPushed`, `promptsFinishedAt`),
+    /// ended before.
     func overlap(promptsIn session: String, before date: Date) {
         guard canSend, isOn, !hasStopped else { return }
         var prompts = settings.copilotSentPrompts
         for index in prompts.indices where prompts[index].session == session && prompts[index].isFollowed
             && !prompts[index].awaitsFork && prompts[index].report == nil && prompts[index].sentAt < date
-            && !promptsBeingTold.contains(prompts[index].id) {
+            && !promptsBeingTold.contains(prompts[index].id) && promptsFinishedAt[prompts[index].id] == nil {
             prompts[index].overlapped = true
             promptTurns[prompts[index].id] = nil
             promptsOver[prompts[index].id] = nil
@@ -951,6 +952,7 @@ extension CopilotTasksStore {
         let monitor = promptMonitor
         let outbox = outbox
         let copied = copiedPrompts.mapValues(\.text)
+        let finished = promptsFinishedAt
         Task {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
             // have been pasted in.
@@ -989,7 +991,9 @@ extension CopilotTasksStore {
                         }.first
                     }
                     guard let session, let found else {
-                        read.append(Read(prompt: prompt, fork: fork, turn: nil, pasted: copied[prompt.id].map { _ in false }))
+                        // One seen to finish ends as it did, though git can't be asked in its checkout now.
+                        let turn = finished[prompt.id].map { SessionTurn(phase: .finished(summary: nil), since: $0) }
+                        read.append(Read(prompt: prompt, fork: fork, turn: turn, pasted: copied[prompt.id].map { _ in false }))
                         continue
                     }
                     let (sessionHome, events) = found
@@ -1004,6 +1008,8 @@ extension CopilotTasksStore {
                         turn = pastedAt.map { SessionTurn.of(sentAt: $0, log: log, isRunning: isRunning, isOpen: isOpen) }
                             ?? SessionTurn(phase: .waiting, since: prompt.sentAt)
                     }
+                    // Seen to finish before git told whether it pushed: as it finished, whatever its session did since.
+                    if let end = finished[prompt.id] { turn = SessionTurn(phase: .finished(summary: nil), since: end) }
                     // A fix sent with Push and Reply on whose turn finished: where git tells whether it pushed a commit of
                     // its own, the checkout the session works in, once the read that ends its turn asks (`applyTurns`).
                     var probe: PushProbe?
@@ -1090,8 +1096,9 @@ extension CopilotTasksStore {
             let id = prompts[index].id
             // Read before BriefBar knew what it copied, as it was being kept: the next look tells whether you pasted it.
             if pasted == nil, copiedPrompts[id] != nil { continue }
-            // Only once it changed: what shows it redraws as it does.
-            if let turn, promptTurns[id] != turn { promptTurns[id] = turn }
+            // Only once it changed: what shows it redraws as it does. One seen to finish before keeps what Copilot said then.
+            let finishedAt = promptsFinishedAt[id]
+            if let turn, promptTurns[id] != turn, finishedAt == nil || promptTurns[id]?.isOver != true { promptTurns[id] = turn }
             // Copied for you to paste, and seen in a message sent the session since: you pasted it, and what it takes care
             // of leaves Needs You.
             if pasted == true, let copied = copiedPrompts.removeValue(forKey: id), let handOff = copied.handOff {
@@ -1099,15 +1106,19 @@ extension CopilotTasksStore {
             }
             let waited = now.timeIntervalSince(prompt.sentAt)
             if turn?.isOver == true {
-                // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows.
-                if let first = promptsOver[id], now.timeIntervalSince(first) >= 2 {
+                // Over twice in a row: not the end of a turn that ran as it was sent, which the prompt's own follows. Or
+                // seen to finish before git told whether it pushed.
+                if finishedAt != nil || promptsOver[id].map({ now.timeIntervalSince($0) >= 2 }) == true {
                     let phase = Self.phase(of: turn)
                     if prompts[index].fixes == true, phase == .finished, let probe = item.probe {
-                        // It ends once git has told whether it pushed (`tellWhetherPushed`).
+                        // It ends once git has told whether it pushed, as of when it finished, kept till then
+                        // (`tellWhetherPushed`).
+                        promptsFinishedAt[id] = probe.end
                         tellWhetherPushed(id, probe)
                     } else {
                         prompts[index].ended = phase
                         promptsOver[id] = nil
+                        promptsFinishedAt[id] = nil
                     }
                 } else if promptsOver[id] == nil {
                     promptsOver[id] = now
@@ -1156,13 +1167,19 @@ extension CopilotTasksStore {
             let pushed = await Self.pushedItsOwn(
                 in: probe.folder, branch: probe.branch, since: probe.start, at: probe.end, git: git, forTests: forTests
             )
-            guard canSend, isOn, !hasStopped, let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
+            guard canSend, isOn, !hasStopped else { return }
+            // Gone, or cleared, meanwhile.
+            guard let index = settings.copilotSentPrompts.firstIndex(where: { $0.id == id }),
                   settings.copilotSentPrompts[index].isFollowed
-            else { return }
+            else {
+                promptsFinishedAt[id] = nil
+                return
+            }
             var prompt = settings.copilotSentPrompts[index]
             prompt.ended = .finished
             prompt.pushed = pushed
             promptsOver[id] = nil
+            promptsFinishedAt[id] = nil
             if let report { notifyPrompt(&prompt, report: report) }
             settings.copilotSentPrompts[index] = prompt
             // Once what it said is kept, as `applyTurns` removes the others.
@@ -1172,7 +1189,6 @@ extension CopilotTasksStore {
             }
         }
     }
-
 
     /// What a prompt's report said, on the prompt: how its turn stands, which what shows it says, words and all, while
     /// BriefBar runs; once it's over, how it ended, which the prompt keeps. It's notified once it waits on you, as each time

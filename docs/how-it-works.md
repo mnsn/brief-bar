@@ -3367,7 +3367,10 @@ told, each on its own, so that the other tasks' and prompts' reads don't wait on
 (`CopilotTasksStore.tellWhetherPushed`, `CopilotWork.from(_:about:turn:)`); a task gone on with meanwhile, which takes its place, isn't told what was read
 of the one before; and a prompt whose turn was seen to end isn't read again meanwhile, nor taken, as another prompt is
 sent its session, for one whose end wasn't seen. Once Send Work to Copilot is off, or BriefBar stops, git isn't asked,
-and what it told isn't kept: it's asked again once the feature's on. BriefBar keeps what git
+and what it told isn't kept: it's asked again once the feature's on, for a prompt as of when its log said the turn
+finished, which BriefBar keeps in memory till then, with what Copilot said, so that a turn its session ran meanwhile,
+which its log can't tell from the fix's, doesn't count (`CopilotTasksStore.promptsFinishedAt`); once BriefBar
+restarts, its log says again. BriefBar keeps what git
 said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,
