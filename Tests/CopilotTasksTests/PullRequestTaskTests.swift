@@ -170,8 +170,9 @@ import Testing
     }
 
     /// A comment's fix that pushes and replies, sent to a new session, goes as Push & Reply does: only while Azure DevOps
-    /// says, right before git checks and right before Copilot starts, that the pull request merges into the branch its
-    /// prompt names. When it says another, or can't be read, nothing starts, and the worktree made for it goes.
+    /// says, right before git checks and right before Copilot starts, that the pull request is active, and merges into the
+    /// branch its prompt names. When it says another, or that it was completed or abandoned, or can't be read, nothing
+    /// starts, and the worktree made for it goes.
     @Test(.timeLimit(.minutes(5)))
     func aNewSessionThatPushesGoesOnlyWhileThePullRequestMergesIntoItsTarget() async throws {
         let fixture = try await repositoryWithBranch()
@@ -201,6 +202,17 @@ import Testing
             try await launcher.launch(request(["main"]), id: id) { _ in }
         }
         #expect(reads.read == ["main", "unread"])
+        // Completed or abandoned while Copilot would fix it: before git checks, or after.
+        await #expect(throws: LaunchError.notActive(PullRequestNotActive(status: "completed"))) {
+            try await launcher.launch(request(["completed"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["completed"])
+        await #expect(throws: LaunchError.notActive(PullRequestNotActive(status: "abandoned"))) {
+            try await launcher.launch(request(["main", "abandoned"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["main", "abandoned"])
+        #expect(LaunchError.notActive(PullRequestNotActive(status: "completed")).description
+            == "The pull request was completed, so Copilot didn't push to it or reply on it.")
         #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
 
@@ -665,6 +677,8 @@ private final class TargetReads: Sendable {
         let target = answers.withLock { $0.isEmpty ? "unread" : $0.removeFirst() }
         reads.withLock { $0.append(target) }
         guard target != "unread" else { throw TestError("Azure DevOps didn't answer in time.") }
+        // Completed or abandoned meanwhile.
+        if target == "completed" || target == "abandoned" { throw PullRequestNotActive(status: target) }
         return target
     }
 }

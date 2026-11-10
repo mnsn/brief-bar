@@ -77,6 +77,12 @@ extension CopilotTaskEntry {
         action == .pushAndReply && taken?.contains { $0.ended == nil && $0.fixes == true } == true
     }
 
+    /// For one that fixes them first, the commit the pull request's branch was at as it was sent (`TakenPart.head`).
+    var fixingHead: String? {
+        guard action == .pushAndReply else { return nil }
+        return taken?.first { $0.ended == nil && $0.fixes == true }?.head
+    }
+
     /// A Push & Reply that replies on no thread, as one that ships a build's fix alone: it only pushes.
     var onlyPushes: Bool {
         action == .pushAndReply && !fixesFirst && actionTitle != action?.title

@@ -22,13 +22,15 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
 
     /// What it's about, as it's sent: the pull request, what for, and what of it it takes on, with the pull request's target
     /// branch, which the conflicts it takes on are with; and, for Push & Reply, whether it fixes what it takes on first, as a
-    /// comment's Fix sent with Push and Reply on does.
+    /// comment's Fix sent with Push and Reply on does, with the commit the pull request's branch is at as it goes, as the
+    /// list has read it, which `CopilotTasksStore.keep` fills in.
     struct About: Equatable, Sendable {
         var pullRequest: PRKey
         var purpose: Purpose
         var parts: [PullRequestPart]
         var target: String? = nil
         var fixes = false
+        var head: String? = nil
     }
 
     /// The pull request.
@@ -48,6 +50,11 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
     /// A Push & Reply that fixes the threads it takes on first, as a comment's Fix sent with Push and Reply on does
     /// (`TakenPart.fixes`). Nil otherwise, and for prompts BriefBar kept before it had this.
     var fixes: Bool?
+    /// For one that fixes them first, the commit the pull request's branch was at as it was sent, as the list had read it
+    /// (`PullRequest.sourceCommit`): once its turn finished, it pushed only if the list reads another since, as its prompt
+    /// has it stop before it pushes when the tests don't pass, say (`CopilotTasksStore.seesPush(since:of:)`). Nil otherwise,
+    /// when the list didn't have it, and for prompts BriefBar kept before it had this.
+    var head: String?
     var sentAt: Date
     /// BriefBar copied it for you to paste, rather than sending it itself.
     var copied: Bool
@@ -87,6 +94,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         parts = about.parts
         target = about.parts.contains(.conflicts) ? about.target.flatMap { $0.isEmpty ? nil : $0 } : nil
         fixes = about.purpose == .pushAndReply && about.fixes ? true : nil
+        head = fixes == true ? about.head.flatMap { $0.isEmpty ? nil : $0 } : nil
         self.sentAt = sentAt
         self.copied = copied
         self.ended = ended
@@ -103,6 +111,7 @@ struct SentPrompt: Codable, Equatable, Sendable, Identifiable {
         parts = try container.decode([PullRequestPart].self, forKey: .parts)
         target = try container.decodeIfPresent(String.self, forKey: .target)
         fixes = try container.decodeIfPresent(Bool.self, forKey: .fixes)
+        head = try container.decodeIfPresent(String.self, forKey: .head)
         sentAt = try container.decode(Date.self, forKey: .sentAt)
         copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
         ended = try container.decodeIfPresent(RunPhase.self, forKey: .ended)
@@ -213,6 +222,14 @@ struct CopilotWork: Equatable {
     /// (`TakenPart.fixes`, `SentPrompt.fixes`), so its sentences say it fixed it, and one that failed or stopped isn't
     /// offered to push, as a fix that did isn't. False for a fix it pushes along with all else its session changed.
     var fixes = false
+    /// For one that fixed it first, the commit the pull request's branch was at as it was sent (`TakenPart.head`,
+    /// `SentPrompt.head`); nil when that isn't known.
+    var head: String?
+    /// For one that fixed it first, done: the list has read the pull request's branch at another commit since it was sent
+    /// (`CopilotTasksStore.seesPush(since:of:)`), which says it pushed. Its prompt has it stop before it pushes, as when the
+    /// tests don't pass, or the pull request was retargeted, and end its turn all the same: without this, it says it fixed
+    /// it, but that it's not pushed.
+    var pushSeen = false
 
     /// Ongoing, rather than over.
     var isActive: Bool {
@@ -258,8 +275,9 @@ struct CopilotWork: Equatable {
     /// What it says on what it's about, in a sentence: "Copilot is fixing this in ‘Retry backoff’", "Fixing this build in a
     /// fork of ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it in ‘Retry backoff’", "Pushed from
     /// ‘Retry backoff’, without a reply"; for a Push & Reply that fixes it first (`fixes`), "Copilot is fixing this in ‘Retry
-    /// backoff’, to push and reply", "Fixed, pushed and replied in ‘Retry backoff’". What Copilot said as it ended, such as
-    /// why it couldn't, goes under it (`said`).
+    /// backoff’, to push and reply", then "Fixed, pushed and replied in ‘Retry backoff’" once its push is seen (`pushSeen`),
+    /// else "Fixed in ‘Retry backoff’, but not pushed". What Copilot said as it ended, such as why it couldn't, goes under
+    /// it (`said`).
     /// - Parameters:
     ///   - name: the session's name; nil when it isn't known.
     ///   - forkOf: for a fork, the name of the session it forked.
@@ -290,7 +308,7 @@ struct CopilotWork: Equatable {
         case (.explain, .done):
             return "Answered in \(place)"
         case (.pushAndReply, .done) where fixes:
-            return "\(words.fixedAndPushed) in \(place)"
+            return pushSeen ? "\(words.fixedAndPushed) in \(place)" : "\(words.fixed) in \(place), but not pushed"
         case (.pushAndReply, .done):
             return "\(words.pushed) from \(place)" + (part.thread != nil && !replies ? ", without a reply" : "")
         case (_, .failed):
@@ -377,6 +395,7 @@ struct CopilotWork: Equatable {
         // Push & Reply ships what it took on; the others it has, it doesn't reply on, and they stay as they were.
         let purpose: Purpose = taken.ships == true ? .pushAndReply : .fix
         let fixes = purpose == .pushAndReply && taken.fixes == true
+        let head = fixes ? taken.head : nil
         // Taken on by an earlier task in the session, which a later one went on with.
         if let before = taken.ended {
             let state: State = switch before {
@@ -386,13 +405,13 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since, takenAt: taken.since, fixes: fixes
+                since: taken.since, takenAt: taken.since, fixes: fixes, head: head
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
         return CopilotWork(
             part: taken.part, purpose: purpose, state: state(of: entry.status), session: entry.id, forkedFrom: entry.forkedFrom,
-            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since, fixes: fixes
+            isTask: isTask, since: ended ?? taken.since, takenAt: taken.since, fixes: fixes, head: head
         )
     }
 
@@ -433,9 +452,10 @@ struct CopilotWork: Equatable {
             }
         }
         if prompt.overlapped || prompt.lostTrack { state = .unknown(copied: prompt.copied) }
+        let fixes = purpose == .pushAndReply && prompt.fixes == true
         return CopilotWork(
             part: part, purpose: purpose, state: state, session: prompt.session, forkedFrom: prompt.forkedFrom, isTask: false, since: since,
-            takenAt: prompt.sentAt, fixes: purpose == .pushAndReply && prompt.fixes == true
+            takenAt: prompt.sentAt, fixes: fixes, head: fixes ? prompt.head : nil
         )
     }
 }
@@ -463,9 +483,10 @@ extension CopilotTasksStore {
     /// Copilot's latest work on something of a pull request, a comment thread, a build or its conflicts, as its status line
     /// says it: a task of BriefBar's that took it on, or a prompt sent to one of the Copilot app's sessions about it, whichever
     /// took it on last. A fix done in a session, or a Push & Reply of it there that failed or stopped, is pushed with the
-    /// rest of what the session changed by a Push & Reply that went on with the session since, though that replies only on
-    /// the threads its prompt lists (`pushCarrying`). Nil when none did, while Send Work to Copilot is off, and for what the
-    /// demo made nothing up for.
+    /// rest of what the session changed by a Push & Reply that went on with the session since, or by a fix that pushed from
+    /// a fork of it made since, though that replies only on the threads its prompt lists (`pushCarrying`). One that fixed it
+    /// first, done, says it pushed only once the list reads the push (`CopilotWork.pushSeen`). Nil when none did, while Send
+    /// Work to Copilot is off, and for what the demo made nothing up for.
     /// - Parameter purposes: only work for these, such as fixes and shipping them, past a question asked since.
     func work(on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>? = nil) -> CopilotWork? {
         guard isOn, mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) else { return nil }
@@ -482,8 +503,9 @@ extension CopilotTasksStore {
         for (prompt, turn) in prompts(about: key) where prompt.parts.contains(part) {
             consider(prompt.sentAt, CopilotWork.from(prompt, about: part, turn: turn))
         }
-        guard let work = latest?.work else { return nil }
+        guard var work = latest?.work else { return nil }
         if work.waitsToBePushed, purposes?.contains(.pushAndReply) != false, let push = pushCarrying(work, of: key) { return push }
+        if work.fixes, case .done = work.state { work.pushSeen = seesPush(since: work.head, of: key) }
         return work
     }
 
@@ -499,17 +521,25 @@ extension CopilotTasksStore {
     /// that failed or stopped, was taken on; or that pushes it now. It commits and pushes all that the session changed,
     /// whatever its prompt lists, so it pushes a fix it doesn't list along with the rest, though it doesn't reply on it
     /// (`CopilotWork.replies`). A task of BriefBar's, the session's now or one that ran there before (`CopilotRun.pushes`,
-    /// and, for runs kept before BriefBar had that, what each shipped), or a prompt sent to the session. The first that
-    /// finished, which pushed it, whatever came after it, such as one that failed; else the latest still under way; nil
-    /// when none did, or each failed, stopped, waits for you to paste it, or went BriefBar doesn't know how.
+    /// and, for runs kept before BriefBar had that, what each shipped), or a prompt sent to the session; or a fix sent with
+    /// Push and Reply on to a fork of the session made once the fix was over, which pushes what the fork has of it: the
+    /// Copilot app's fork has all the session changed, its changes that aren't committed too, but a fork the Copilot CLI
+    /// made of one of BriefBar's tasks starts at the commit its checkout had, with the conflicts' resolution, which Resolve
+    /// Conflicts commits, and no other fix, which nothing else commits. The first that finished, which pushed it, whatever
+    /// came after it, such as one that failed; else the latest still under way; nil when none did, or each failed, stopped,
+    /// waits for you to paste it, or went BriefBar doesn't know how. One that fixed what it took on first pushed only once
+    /// the list read its push (`seesPush(since:of:)`), since its prompt has it stop before it pushes, as when the tests
+    /// don't pass.
     private func pushCarrying(_ fix: CopilotWork, of key: PRKey) -> CopilotWork? {
-        let after = fix.takenAt ?? fix.since
         var pushed: (since: Date, work: CopilotWork)?
         var pushing: (since: Date, work: CopilotWork)?
-        func consider(_ since: Date, _ work: CopilotWork) {
+        /// - Parameter after: when what it pushes was there to push: in the session, once the fix was taken on; in a fork,
+        ///   made once the fix was over.
+        func consider(_ since: Date, _ work: CopilotWork, after: Date) {
             guard since > after else { return }
             switch work.state {
             case .done:
+                guard !work.fixes || seesPush(since: work.head, of: key) else { return }
                 if pushed.map({ since < $0.since }) ?? true { pushed = (since, work) }
             case .waiting(copied: false), .working, .needsYou:
                 if pushing.map({ since > $0.since }) ?? true { pushing = (since, work) }
@@ -517,20 +547,45 @@ extension CopilotTasksStore {
                 break
             }
         }
-        for entry in entries where entry.id == fix.session && entry.isOn(key) {
+        /// When what a push from a session would push of the fix was there: in the session itself, once the fix was taken
+        /// on; in a fork of it made once the fix was over, as it was made, unless it's one the Copilot CLI made of one of
+        /// BriefBar's tasks, which has only what the session committed, and the fix isn't the conflicts' resolution. Nil
+        /// when it has none of it.
+        func carried(by session: String, forkedFrom: String?, madeAt: Date, committedOnly: Bool) -> Date? {
+            if session == fix.session { return fix.takenAt ?? fix.since }
+            guard forkedFrom == fix.session, madeAt > fix.since, !committedOnly || fix.part == .conflicts else { return nil }
+            return fix.since
+        }
+        for entry in entries where entry.isOn(key) {
+            // A fork's session was made as its first task started, the earliest it kept.
+            let kept = (entry.pushes ?? []).map(\.since) + (entry.taken ?? []).map(\.since)
+            let madeAt = kept.reduce(entry.startedAt, min)
+            let committedOnly = entry.run?.isAppSession != true
+            let carrying = carried(by: entry.id, forkedFrom: entry.forkedFrom, madeAt: madeAt, committedOnly: committedOnly)
+            guard let after = carrying else { continue }
             if entry.action == .pushAndReply {
-                consider(entry.startedAt, CopilotWork.from(entry, taken: TakenPart(fix.part, since: entry.startedAt, ships: true)))
+                let ships = TakenPart(
+                    fix.part, since: entry.startedAt, ships: true, fixes: entry.fixesFirst ? true : nil, head: entry.fixingHead
+                )
+                consider(entry.startedAt, CopilotWork.from(entry, taken: ships), after: after)
             }
-            var before = (entry.pushes ?? []).map { (since: $0.since, ended: $0.ended) }
-            for shipped in entry.taken ?? [] where shipped.ships == true {
-                if let ended = shipped.ended { before.append((shipped.since, ended)) }
+            var before = (entry.pushes ?? []).map { push in
+                TakenPart(fix.part, since: push.since, ended: push.ended, ships: true, fixes: push.fixes, head: push.head)
+            }
+            for shipped in entry.taken ?? [] where shipped.ships == true && shipped.ended != nil {
+                before.append(TakenPart(
+                    fix.part, since: shipped.since, ended: shipped.ended, ships: true, fixes: shipped.fixes, head: shipped.head
+                ))
             }
             for push in before {
-                consider(push.since, CopilotWork.from(entry, taken: TakenPart(fix.part, since: push.since, ended: push.ended, ships: true)))
+                consider(push.since, CopilotWork.from(entry, taken: push), after: after)
             }
         }
-        for (prompt, turn) in prompts(about: key) where prompt.session == fix.session && prompt.purpose == .pushAndReply {
-            consider(prompt.sentAt, CopilotWork.from(prompt, about: fix.part, turn: turn))
+        for (prompt, turn) in prompts(about: key) where prompt.purpose == .pushAndReply {
+            // The Copilot app's fork, made as the prompt went, with all the session changed.
+            let carrying = carried(by: prompt.session, forkedFrom: prompt.forkedFrom, madeAt: prompt.sentAt, committedOnly: false)
+            guard let after = carrying else { continue }
+            consider(prompt.sentAt, CopilotWork.from(prompt, about: fix.part, turn: turn), after: after)
         }
         guard var push = (pushed ?? pushing)?.work else { return nil }
         // It pushed this fix along, without replying on it, whatever it fixed itself first.
@@ -746,6 +801,9 @@ extension CopilotTasksStore {
         copying text: String? = nil, handOff: CommentHandOff? = nil
     ) -> SentPrompt? {
         guard canSend, isOn, !hasStopped else { return nil }
+        // Where the pull request's branch is as a fix sent with Push and Reply on goes: it pushed once the list reads another.
+        var about = about
+        if let sent = about, sent.purpose == .pushAndReply, sent.fixes { about?.head = currentHead(sent.pullRequest) }
         let prompt: SentPrompt?
         switch outcome {
         case .sent:
@@ -917,6 +975,11 @@ extension CopilotTasksStore {
                     promptsOver[id] = nil
                 } else if promptsOver[id] == nil {
                     promptsOver[id] = now
+                    // A fix sent with Push and Reply on pushed once the list reads its branch moved: now, rather than at
+                    // its next refresh.
+                    if prompt.fixes == true, case .finished? = turn?.phase, let number = prompt.pullRequest.number {
+                        rereadPullRequest(PRKey(prompt.pullRequest.scope, number))
+                    }
                 }
             } else {
                 promptsOver[id] = nil

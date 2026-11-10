@@ -136,15 +136,16 @@ actor AzureDevOpsReader {
         )
     }
 
-    /// The branch a pull request merges into, as Azure DevOps says now, read with one request each time, rather than as the
-    /// lists read it, up to a minute before (`freshFor`): for `pull_request`, which an agent checks it with right before it
-    /// pushes, as Push & Reply's prompt has it. Nil for the demo, which reads nothing.
-    nonisolated func targetNow(of key: PRKey) async -> Result<String, any Error>? {
+    /// A pull request's target branch and status, as Azure DevOps says now, read with one request each time, rather than as
+    /// the lists read them, up to a minute before (`freshFor`): for `pull_request`, which an agent checks right before it
+    /// pushes, as Push & Reply's prompt has it, that the pull request is still active and still merges into the branch the
+    /// prompt names. Nil for the demo, which reads nothing.
+    nonisolated func freshRead(of key: PRKey) async -> Result<PullRequest, any Error>? {
         guard let client else { return nil }
         do {
             let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
-            let target = PullRequest(organization: key.organization, dto).targetBranch
-            return target.isEmpty ? .failure(NoTarget()) : .success(target)
+            let pullRequest = PullRequest(organization: key.organization, dto)
+            return pullRequest.targetBranch.isEmpty ? .failure(NoTarget()) : .success(pullRequest)
         } catch {
             return .failure(error)
         }
@@ -949,11 +950,14 @@ struct AzureDevOpsAgent: Sendable {
     func pullRequest(_ reference: JSONValue?, now: Date = Date()) async throws -> String {
         let read = await reader.pullRequests(now: now)
         var record = try Self.find(reference, in: read)
-        // The branch it merges into as Azure DevOps says now, rather than as the lists read it, up to a minute before: an
-        // agent checks it right before it pushes.
+        // The branch it merges into, and whether it's still active, as Azure DevOps says now, rather than as the lists read
+        // them, up to a minute before: an agent checks them right before it pushes.
         var unreadTarget: String?
-        switch await reader.targetNow(of: record.id) {
-        case .success(let target)?: record.pullRequest.targetBranch = target
+        switch await reader.freshRead(of: record.id) {
+        case .success(let now)?:
+            record.pullRequest.targetBranch = now.targetBranch
+            record.pullRequest.status = now.status
+            record.pullRequest.closedAt = now.closedAt
         case .failure(let error)?: unreadTarget = AzureDevOpsReader.describe(error)
         case nil: break
         }
@@ -1262,8 +1266,8 @@ enum AgentText {
     ///   - session: its Copilot session, as its details show it, if there's something to say.
     ///   - stage: its stage, with Pull Request Order on (`AgentText.stage`).
     ///   - work: its work items, each with the one it's under, as Azure DevOps links them, or why they couldn't be read.
-    ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, as it asked, for the agent to know
-    ///     that the one named may not be it any more (`AzureDevOpsReader.targetNow(of:)`).
+    ///   - unreadTarget: why BriefBar couldn't read again which branch it merges into, and whether it's active, as it asked,
+    ///     for the agent to know that the ones named may not be so any more (`AzureDevOpsReader.freshRead(of:)`).
     ///   - wait: the command that waits on it for an agent (`--wait`), for one of your open pull requests.
     static func details(
         _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: AgentSession? = nil,
@@ -1279,7 +1283,7 @@ enum AgentText {
         )
         if let unreadTarget {
             lines.append(
-                "- BriefBar couldn't read which branch it merges into just now, so it can't tell whether that's still \(target): "
+                "- BriefBar couldn't read it again just now, so it can't tell whether it's still active, and still merges into \(target): "
                     + QuotedText.oneLine(unreadTarget)
             )
         }

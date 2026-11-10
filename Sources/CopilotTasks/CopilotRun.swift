@@ -147,9 +147,11 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     ///   - target: the pull request's target branch, which the conflicts it takes on are with (`TakenPart.target`).
     ///   - fixing: a Push & Reply that fixes what it takes on first, as a comment's Fix sent with Push and Reply on does
     ///     (`TakenPart.fixes`).
+    ///   - head: for one that fixes them first, the commit the pull request's branch is at now, as BriefBar's list has read
+    ///     it (`TakenPart.head`).
     public static func taken(
         goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?, taking parts: [PullRequestPart],
-        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false
+        for action: PullRequestAction?, at now: Date, target: String? = nil, fixing: Bool = false, head: String? = nil
     ) -> [TakenPart]? {
         var kept: [TakenPart] = []
         if let previous, let before = previous.taken, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true,
@@ -168,7 +170,9 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         let ships: Bool? = action == .pushAndReply ? true : nil
         let fixes: Bool? = action == .pushAndReply && fixing ? true : nil
         kept = kept.filter { !taking.contains($0.part) } + taking.map { part in
-            TakenPart(part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil)
+            TakenPart(
+                part, since: now, ships: ships, fixes: fixes, target: part == .conflicts ? target : nil, head: fixes == true ? head : nil
+            )
         }
         return keeping(kept, for: action)
     }
@@ -182,12 +186,16 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
 
     /// The Push & Reply tasks that ran in a session before the task that goes on with it, `previous` as BriefBar keeps it,
     /// on `pullRequest` (`pushes`): those `previous` kept, and `previous` itself when it's one, with how it ended, or, not
-    /// seen to end, that it stopped. Only on the same pull request; nil when none did.
+    /// seen to end, that it stopped, and whether it fixed what it took on first, with the commit the branch was at as it
+    /// was sent. Only on the same pull request; nil when none did.
     public static func pushes(goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?) -> [SessionPush]? {
         guard let previous, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true else { return nil }
         var pushes = previous.pushes ?? []
         if previous.action == .pushAndReply {
-            pushes.append(SessionPush(since: previous.startedAt, ended: previous.ended ?? .stopped))
+            let fixing = previous.taken?.first { $0.ended == nil && $0.fixes == true }
+            pushes.append(SessionPush(
+                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixing.map { _ in true }, head: fixing?.head
+            ))
         }
         return pushes.isEmpty ? nil : pushes
     }
