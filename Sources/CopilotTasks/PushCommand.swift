@@ -1,0 +1,476 @@
+import Foundation
+
+/// The pushes in a shell command, as Push & Reply's check of each push reads them (`PushGuard`): the command Copilot is
+/// about to run with its `bash` tool, read as a shell would (`ShellReader`), as far as telling whether it runs `git push`,
+/// and how. It expands nothing and runs nothing, so what a variable, an alias, a script, or another language's code would
+/// push is out of its reach; but a command it can't read that says `push`, as one whose quotes don't close, or that runs a
+/// variable, a shell's script that comes through a pipe, or words `xargs` fills in, may push (`isUnreadable`). It reads
+/// in the substitutions, subshells and here-documents a command has, the script of `sh -c`, `sh -s`, `eval`, `trap` and
+/// `source /dev/stdin`, and what `env`, `xargs` and other such programs run; and a program it doesn't know that names git
+/// or a shell may run it. Program names go as macOS finds them, whatever their letter case: `GIT` runs git.
+public struct PushCommand: Sendable, Equatable {
+    /// A word as the shell passes it: its quotes and escapes taken out.
+    public struct Word: Sendable, Equatable {
+        public var value: String
+        /// Nothing in it expands, no variable, substitution, pattern, braces or `~`, so `value` is what the program gets.
+        public var isLiteral: Bool
+
+        public init(value: String, isLiteral: Bool = true) {
+            self.value = value
+            self.isLiteral = isLiteral
+        }
+    }
+
+    /// A `git push` it runs, or another of git's ways to push: `git subtree push`, `git send-pack`, `git-push`.
+    public struct Push: Sendable, Equatable {
+        /// git's own options, before `push`: `-C <folder>`, `-c <name>=<value>` and the others, each word as it is.
+        public var options: [Word]
+        /// What follows `push`.
+        public var arguments: [Word]
+        /// It runs as written, a `git push` itself: not after `NAME=value`, not through another program, such as `env` or
+        /// `xargs`, not by git's path, nor another way of git's to push.
+        public var isPlain: Bool
+
+        public init(options: [Word] = [], arguments: [Word], isPlain: Bool = true) {
+            self.options = options
+            self.arguments = arguments
+            self.isPlain = isPlain
+        }
+    }
+
+    /// The pushes it runs, as far as it can tell.
+    public var pushes: [Push] = []
+    /// It says `push` somewhere it can't read, so it may push otherwise.
+    public var isUnreadable = false
+
+    public init(_ command: String) {
+        read(command, depth: 0, says: false, wrapped: false)
+    }
+
+    // MARK: Reading
+
+    /// Words that start a command without being it: `if git push …; then`.
+    private static let prefixes: Set<String> = ["!", "if", "then", "elif", "else", "do", "while", "until"]
+    /// Words that start what isn't a command: a loop's list, a case's word, a function's name, a test.
+    private static let notCommands: Set<String> = ["for", "select", "case", "esac", "in", "function", "[[", "fi", "done"]
+    /// Shells, whose `-c` runs a script, or which read one from their input.
+    private static let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh", "mksh", "fish", "csh", "tcsh"]
+    /// Programs that run another, named after their own options: what they run is looked for in their words.
+    private static let wrappers: Set<String> = [
+        "command", "builtin", "exec", "env", "nohup", "time", "nice", "timeout", "gtimeout", "sudo", "doas", "xargs",
+        "find", "caffeinate", "stdbuf", "ionice", "chronic", "watch", "unbuffer", "script", "coproc", "arch", "flock",
+        "parallel", "direnv", "taskpolicy", "sandbox-exec", "xcrun", "ssh-agent",
+    ]
+    /// Those of them that fill in the words of what they run from their input: their own, or in place of `{}`.
+    private static let fillers: Set<String> = ["xargs", "parallel", "find"]
+    /// What those may run that BriefBar reads: git, its ways to push, shells and `eval`.
+    private static let runners: Set<String> = shells.union(["git", "git-push", "git-send-pack", "eval"])
+    /// Programs that only print, test or look up what they're given, and run none of it (not `man`, whose `-P` does).
+    private static let runNothing: Set<String> = [
+        "echo", "printf", ":", "true", "false", "test", "[", "cd", "pushd", "popd", "which", "type", "whereis", "whence",
+        "help", "ls", "cat", "grep", "head", "tail", "wc",
+    ]
+    /// The files a shell, or `source`, reads its standard input from by.
+    private static let standardInput: Set<String> = ["/dev/stdin", "/dev/fd/0"]
+    /// git's options that print and stop, rather than run the command after them.
+    private static let gitStops: Set<String> = ["--help", "-h", "--version", "-v", "--html-path", "--man-path", "--info-path"]
+    /// git's options that take the word after them, unless they have it after `=`.
+    private static let gitOptionsWithValue: Set<String> = [
+        "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source",
+    ]
+    /// git's options on their own.
+    private static let gitFlags: Set<String> = [
+        "-p", "--paginate", "-P", "--no-pager", "--no-replace-objects", "--no-lazy-fetch", "--no-optional-locks",
+        "--no-advice", "--bare", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
+    ]
+
+    /// Reads a script, at `depth` in the command, into the pushes: those it finds `wrapped` in another program aren't plain.
+    /// `says`: the script it's in says `push`.
+    private mutating func read(_ script: String, depth: Int, says: Bool, wrapped: Bool) {
+        let says = says || script.contains("push")
+        guard depth <= ShellReader.deepest else {
+            if says { isUnreadable = true }
+            return
+        }
+        let before = pushes.count
+        let (commands, isReadable) = ShellReader.read(script, depth: depth)
+        if !isReadable, says { isUnreadable = true }
+        for command in commands {
+            var words = command.words[...]
+            var assigns = false
+            // `if ! GIT_TERMINAL_PROMPT=0 git push …`: words that start a command, and the variables set for it, in any order.
+            while let first = words.first {
+                if Self.isAssignment(first) {
+                    assigns = true
+                } else if !(first.isLiteral && Self.prefixes.contains(first.value)) {
+                    break
+                }
+                words = words.dropFirst()
+            }
+            guard let first = words.first, !(first.isLiteral && Self.notCommands.contains(first.value)) else { continue }
+            run(Array(words), input: command.input, plain: !assigns, depth: depth, says: says)
+        }
+        if wrapped {
+            for index in before..<pushes.count { pushes[index].isPlain = false }
+        }
+    }
+
+    /// What a command runs, by its first word. `filled`: the words that program fills in from its input, in place of
+    /// which it runs this (`xargs -I {}`): `{}` and any other it names; nil when it fills in none.
+    private mutating func run(_ words: [Word], input: [Word], plain: Bool, depth: Int, says: Bool, filled: Set<String>? = nil) {
+        guard let first = words.first else { return }
+        guard first.isLiteral else {
+            // A variable or a substitution for the command: what it runs isn't known.
+            if says { isUnreadable = true }
+            return
+        }
+        let name = Self.programName(first.value)
+        switch name {
+        case "git":
+            git(words, plain: plain && first.value == "git", says: says, filled: filled)
+        case "git-push", "git-send-pack":
+            pushes.append(Push(arguments: Array(words.dropFirst()), isPlain: false))
+        case "eval":
+            evaluate(Array(words.dropFirst()), plain: plain, depth: depth, says: says)
+        case "trap":
+            // `trap '<script>' EXIT`: its script runs later, as `eval` would run it.
+            var script = words.dropFirst()
+            if script.first?.value == "--" { script = script.dropFirst() }
+            guard let action = script.first, !action.value.hasPrefix("-") || !action.isLiteral else { return }
+            evaluate([action], plain: plain, depth: depth, says: says)
+        case "source", ".":
+            // A script, read in this shell: from its input, by /dev/stdin; a file, BriefBar doesn't read.
+            var file = words.dropFirst()
+            if file.first?.value == "--" { file = file.dropFirst() }
+            guard let script = file.first else { return }
+            guard script.isLiteral else {
+                if says { isUnreadable = true }
+                return
+            }
+            if Self.standardInput.contains(script.value) { readInput(input, plain: plain, depth: depth, says: says) }
+        case _ where Self.shells.contains(name):
+            shell(words, input: input, plain: plain, depth: depth, says: says, filled: filled)
+        case _ where Self.wrappers.contains(name):
+            // `command -v git` only says where it is.
+            if name == "command", words.dropFirst().prefix(while: { $0.value.hasPrefix("-") }).contains(where: {
+                $0.value != "--" && ($0.value.contains("v") || $0.value.contains("V"))
+            }) {
+                return
+            }
+            let fills: Set<String>? = Self.fillers.contains(name) ? Self.placeholders(words) : filled
+            // Each word it may run, as `exec -a git bash -c '…'` runs bash, under the name git.
+            let starts = words.indices.dropFirst().filter { words[$0].isLiteral && Self.runners.contains(Self.programName(words[$0].value)) }
+            for start in starts {
+                run(Array(words[start...]), input: input, plain: false, depth: depth, says: says, filled: fills)
+            }
+            if starts.isEmpty, says, words.dropFirst().contains(where: { !$0.isLiteral })
+                || (name == "env" && words.contains(where: { $0.value.hasPrefix("-S") || $0.value.hasPrefix("--split-string") })) {
+                // What it runs may be in a variable, or in env's string of words.
+                isUnreadable = true
+            }
+        case _ where Self.runNothing.contains(name):
+            return
+        default:
+            // A program BriefBar doesn't know, such as another that runs a program, named after it: what it runs isn't known
+            // when that's git or a shell.
+            if says, words.dropFirst().contains(where: { $0.isLiteral && Self.runners.contains(Self.programName($0.value)) }) {
+                isUnreadable = true
+            }
+        }
+    }
+
+    /// `eval`'s words, as the script they make together: when they're known.
+    private mutating func evaluate(_ words: [Word], plain: Bool, depth: Int, says: Bool) {
+        guard words.allSatisfy(\.isLiteral) else {
+            if says { isUnreadable = true }
+            return
+        }
+        read(words.map(\.value).joined(separator: " "), depth: depth + 1, says: says, wrapped: !plain)
+    }
+
+    /// The words `xargs` puts what it reads in place of: `{}`, as `find -exec` and `parallel` have it too, and the one its
+    /// `-I`, `-J`, `-i` or `--replace` names. Any word with a brace counts, for `parallel`'s others, such as `{1}`.
+    private static func placeholders(_ words: [Word]) -> Set<String> {
+        var names: Set<String> = ["{}"]
+        for (index, word) in words.enumerated() where word.isLiteral {
+            let value = word.value
+            for option in ["-I", "-J"] where value.hasPrefix(option) {
+                let attached = String(value.dropFirst(option.count))
+                if !attached.isEmpty {
+                    names.insert(attached)
+                } else if index + 1 < words.count {
+                    names.insert(words[index + 1].value)
+                }
+            }
+            if value.hasPrefix("--replace=") { names.insert(String(value.dropFirst("--replace=".count))) }
+            if value.hasPrefix("-i"), value.count > 2, !value.hasPrefix("-i-") { names.insert(String(value.dropFirst(2))) }
+        }
+        return names
+    }
+
+    /// A word a program that fills in words, `filled`, may put something else in place of.
+    private static func isPlaceholder(_ word: Word, _ filled: Set<String>?) -> Bool {
+        guard let filled else { return false }
+        return !word.isLiteral || filled.contains(word.value) || word.value.contains("{")
+    }
+
+    /// git, past its own options: a push, with them and what follows it.
+    private mutating func git(_ words: [Word], plain: Bool, says: Bool, filled: Set<String>?) {
+        var index = 1
+        var options: [Word] = []
+        while index < words.count {
+            let word = words[index]
+            guard word.isLiteral else {
+                if says { isUnreadable = true }
+                return
+            }
+            let option = word.value
+            guard option.hasPrefix("-") else { break }
+            if Self.gitStops.contains(option) || (option.hasPrefix("--exec-path") && !option.contains("="))
+                || option.hasPrefix("--list-cmds") {
+                return
+            }
+            if Self.gitOptionsWithValue.contains(option) {
+                guard index + 1 < words.count else { return }
+                options += [word, words[index + 1]]
+                index += 2
+            } else if Self.gitFlags.contains(option) || option.hasPrefix("--exec-path=")
+                        || Self.gitOptionsWithValue.contains(where: { option.hasPrefix("\($0)=") }) {
+                options.append(word)
+                index += 1
+            } else {
+                // An option git may have since, which may take the word after it: where its command is isn't known.
+                if says { isUnreadable = true }
+                return
+            }
+        }
+        // No command: one may come from what runs git, as `xargs git` reads it.
+        guard index < words.count else {
+            if says { isUnreadable = true }
+            return
+        }
+        let command = words[index]
+        guard command.isLiteral, !Self.isPlaceholder(command, filled) else {
+            if says { isUnreadable = true }
+            return
+        }
+        // An alias of that name, set right there.
+        let settings = zip(options, options.dropFirst()).compactMap { option, value in
+            option.value == "-c" || option.value == "--config-env" ? value.value : nil
+        } + options.compactMap { $0.value.hasPrefix("--config-env=") ? String($0.value.dropFirst("--config-env=".count)) : nil }
+        if settings.contains(where: { $0.hasPrefix("alias.\(command.value)=") }) {
+            if says { isUnreadable = true }
+            return
+        }
+        let rest = Array(words[(index + 1)...])
+        switch command.value {
+        case "push":
+            pushes.append(Push(options: options, arguments: rest, isPlain: plain))
+        case "send-pack":
+            pushes.append(Push(options: options, arguments: rest, isPlain: false))
+        case "subtree" where rest.first == Word(value: "push"):
+            pushes.append(Push(options: options, arguments: Array(rest.dropFirst()), isPlain: false))
+        default:
+            return
+        }
+    }
+
+    /// A shell: the script its `-c` runs, or, with `-s`, or no script file, or /dev/stdin for one, the one it reads from a
+    /// here-document or here-string. One from anywhere else, as through a pipe, can't be read.
+    private mutating func shell(_ words: [Word], input: [Word], plain: Bool, depth: Int, says: Bool, filled: Set<String>?) {
+        var index = 1
+        var runsArgument = false
+        var readsInput = false
+        while index < words.count {
+            let word = words[index]
+            guard word.isLiteral, !Self.isPlaceholder(word, filled) else {
+                if says { isUnreadable = true }
+                return
+            }
+            let option = word.value
+            // `-` ends the options, as `--` does.
+            if option == "--" || option == "-" {
+                index += 1
+                break
+            }
+            if option.hasPrefix("--") {
+                index += option == "--rcfile" || option == "--init-file" ? 2 : 1
+                continue
+            }
+            guard option.count > 1, option.hasPrefix("-") || option.hasPrefix("+") else { break }
+            let letters = option.dropFirst()
+            if letters.contains("c") { runsArgument = true }
+            if letters.contains("s") { readsInput = true }
+            // -o and +o take an option's name.
+            index += letters.contains("o") || letters.contains("O") ? 2 : 1
+        }
+        if runsArgument {
+            // No script: one may come from what runs the shell, as `xargs sh -c` reads it.
+            guard index < words.count else {
+                if says { isUnreadable = true }
+                return
+            }
+            let script = words[index]
+            guard script.isLiteral, !Self.isPlaceholder(script, filled) else {
+                if says { isUnreadable = true }
+                return
+            }
+            read(script.value, depth: depth + 1, says: says, wrapped: !plain)
+        } else if readsInput || index >= words.count || Self.standardInput.contains(words[index].value) {
+            readInput(input, plain: plain, depth: depth, says: says)
+        }
+        // Else a script file, which BriefBar doesn't read.
+    }
+
+    /// The script a shell reads from its input: a here-document or here-string. One from anywhere else, as through a pipe,
+    /// can't be read.
+    private mutating func readInput(_ input: [Word], plain: Bool, depth: Int, says: Bool) {
+        guard !input.isEmpty else {
+            if says { isUnreadable = true }
+            return
+        }
+        for script in input {
+            if script.isLiteral {
+                read(script.value, depth: depth + 1, says: says, wrapped: !plain)
+            } else if says || script.value.contains("push") {
+                isUnreadable = true
+            }
+        }
+    }
+
+    /// `NAME=value`, or `NAME+=value`, before a command: for it alone, as `GIT_DIR` would point git elsewhere.
+    private static func isAssignment(_ word: Word) -> Bool {
+        guard let equals = word.value.firstIndex(of: "=") else { return false }
+        var name = word.value[..<equals]
+        if name.hasSuffix("+") { name = name.dropLast() }
+        guard let first = name.first, first == "_" || (first.isASCII && first.isLetter) else { return false }
+        return name.allSatisfy { $0 == "_" || ($0.isASCII && ($0.isLetter || $0.isNumber)) }
+    }
+
+    /// A program's name, without the folder it's in, in lowercase, as macOS finds it whatever its case: `git` for
+    /// `/usr/bin/git`, and for `GIT`.
+    private static func programName(_ word: String) -> String {
+        (word.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init) ?? word).lowercased()
+    }
+}
+
+extension PushCommand.Push {
+    /// What a push would do, by its options and refspecs.
+    public enum Form: Sendable, Equatable {
+        /// `git [-C <worktree>] push [-q|-v|--porcelain|--progress|--no-progress] origin <commit>:refs/heads/<branch>`,
+        /// plain, with the commit's full ID: the one way Push & Reply's prompt asks for.
+        case exact(commit: String)
+        /// It pushes otherwise: another remote, branch or refspec, more than one, or with other options.
+        case other
+        /// It would rewrite or delete what's on the remote, or push more than a branch.
+        case unsafe(Unsafe)
+        /// `--dry-run`, or `--help`, with no option BriefBar doesn't know, such as `--no-dry-run`, or an abbreviation,
+        /// that could undo it: it pushes nothing.
+        case dryRun
+
+        public var unsafe: Unsafe? {
+            if case .unsafe(let unsafe) = self { return unsafe }
+            return nil
+        }
+    }
+
+    public enum Unsafe: Sendable, Equatable {
+        /// `--force`, `-f`, `--force-with-lease`, `--force-if-includes`, or a refspec with `+`.
+        case force
+        /// `--delete`, `-d`, `--prune`, or a refspec with nothing before its `:`.
+        case delete
+        /// `--mirror`, `--all`, `--branches` or `--tags`.
+        case more
+    }
+
+    /// What it would do, in the worktree `worktree`, to the pull request's branch, `branch`.
+    public func form(worktree: URL, branch: String) -> Form {
+        var unsafe: Unsafe?
+        var dryRun = false
+        var other = !isPlain
+        var positional: [PushCommand.Word] = []
+        var optionsEnded = false
+        var index = 0
+        while index < arguments.count {
+            let word = arguments[index]
+            index += 1
+            guard word.isLiteral else {
+                // What a variable says isn't known: it isn't this form.
+                other = true
+                continue
+            }
+            let value = word.value
+            if optionsEnded || !value.hasPrefix("-") || value == "-" {
+                positional.append(word)
+                continue
+            }
+            if value == "--" {
+                optionsEnded = true
+                other = true
+                continue
+            }
+            if value.hasPrefix("--") {
+                let name = value.split(separator: "=", maxSplits: 1).first.map(String.init) ?? value
+                switch name {
+                case "--force", "--force-with-lease", "--force-if-includes": unsafe = unsafe ?? .force
+                case "--delete", "--prune": unsafe = unsafe ?? .delete
+                case "--mirror", "--all", "--branches", "--tags": unsafe = unsafe ?? .more
+                case "--dry-run", "--help": dryRun = true
+                case "--quiet", "--verbose", "--porcelain", "--progress", "--no-progress": break
+                case "--repo", "--receive-pack", "--exec", "--push-option":
+                    other = true
+                    if !value.contains("=") { index += 1 }
+                default: other = true
+                }
+                continue
+            }
+            // Short options, which may share a dash: -qv, -fu.
+            var letters = value.dropFirst()
+            while let letter = letters.first {
+                letters = letters.dropFirst()
+                switch letter {
+                case "f": unsafe = unsafe ?? .force
+                case "d": unsafe = unsafe ?? .delete
+                case "n", "h": dryRun = true
+                case "q", "v": break
+                case "o":
+                    // -o <option>, or -o<option>.
+                    other = true
+                    if letters.isEmpty { index += 1 }
+                    letters = ""
+                default: other = true
+                }
+            }
+        }
+        for refspec in positional.dropFirst() {
+            if refspec.value.hasPrefix("+") {
+                unsafe = unsafe ?? .force
+            } else if refspec.value.hasPrefix(":"), refspec.value != ":" {
+                unsafe = unsafe ?? .delete
+            }
+        }
+        // A dry run, unless another option, or a word that isn't known, may undo it: `--no-dry-run`, an abbreviation git
+        // takes, as `--no-dr`, or an option whose value it would be, as `--rep -n`.
+        if dryRun, !other { return .dryRun }
+        if let unsafe { return .unsafe(unsafe) }
+        guard !other, positional.count == 2, positional[0].value == "origin", runsIn(worktree) else { return .other }
+        let parts = positional[1].value.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, Git.isCommit(String(parts[0])), parts[1] == "refs/heads/\(branch)" else { return .other }
+        return .exact(commit: String(parts[0]))
+    }
+
+    /// Its only option of git's is none, or `-C` with the worktree's path, in full.
+    private func runsIn(_ worktree: URL) -> Bool {
+        switch options.count {
+        case 0:
+            return true
+        case 2:
+            let folder = options[1]
+            guard options[0].value == "-C", folder.isLiteral, folder.value.hasPrefix("/") else { return false }
+            return URL(fileURLWithPath: folder.value).standardizedFileURL.resolvingSymlinksInPath().path
+                == worktree.standardizedFileURL.resolvingSymlinksInPath().path
+        default:
+            return false
+        }
+    }
+}

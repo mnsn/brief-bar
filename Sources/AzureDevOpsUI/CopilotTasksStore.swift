@@ -672,7 +672,8 @@ final class CopilotTasksStore: ObservableObject {
                     // Asked again for each send, so a tool you've just installed is found.
                     let environment = await environment(fresh: true)
                     let launcher = CopilotLauncher(
-                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings
+                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings,
+                        pushGuard: PushGuardPlugin.executable(Bundle.main.executableURL)
                     )
                     run = try await launcher.launch(request, id: id, now: now, forked: { [weak self] fork in
                         launched.id = fork
@@ -709,7 +710,11 @@ final class CopilotTasksStore: ObservableObject {
                 if case .pullRequest(let pullRequest, _) = subject {
                     settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
                 }
-                let how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                var how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                if case .pullRequest(_, .pushAndReply) = subject {
+                    let checks = FileManager.default.fileExists(atPath: PushGuardPlugin.folder(in: Self.outputFolder, id: run.id).path)
+                    how += checks ? ", with its check of each push" : ", without its check of each push"
+                }
                 Log.app.info("Sent a task to Copilot\(how, privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
                 refresh()
@@ -1056,19 +1061,26 @@ final class CopilotTasksStore: ObservableObject {
         settings.copilotRuns.contains { $0.id == id && $0.stoppedByYou == true }
     }
 
-    /// Forgets it here, and deletes what it printed. Its worktree, branch and session stay.
+    /// Forgets it here, and deletes what it printed, and the plugin of its check of each push. Its worktree, branch and
+    /// session stay.
     func clear(_ entry: CopilotTaskEntry) {
         pending.removeAll { $0.id == entry.id }
         settings.copilotRuns.removeAll { $0.id == entry.id }
         statuses[entry.id] = nil
         if let run = entry.run, run.isValid {
-            try? FileManager.default.removeItem(at: output(of: run))
+            Self.deleteOutput(ofRun: run.id)
             let monitor = monitor
             Task { await monitor.forget(run.id) }
         } else if UUID(uuidString: entry.id) != nil {
             // A send that couldn't start may have printed why.
-            try? FileManager.default.removeItem(at: Self.outputFolder.appendingPathComponent("\(entry.id.lowercased()).log"))
+            Self.deleteOutput(ofRun: entry.id.lowercased())
         }
+    }
+
+    /// Deletes what a run printed, and the plugin of its check of each push, by the run's ID, a UUID.
+    nonisolated static func deleteOutput(ofRun id: String, in folder: URL = outputFolder) {
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).log"))
+        PushGuardPlugin.remove(in: folder, id: id)
     }
 
     /// Forgets every task that has ended.

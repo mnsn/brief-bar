@@ -238,7 +238,8 @@ public struct RunStatus: Sendable, Equatable {
 
     /// From whether Copilot's process still runs, then, once it's gone, from Copilot's log of the session. While it
     /// runs, it's working whatever the log says: in autopilot, Copilot goes on after a turn that looks like its last,
-    /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
+    /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone. A
+    /// push BriefBar's check stopped since it started fails it, with why, whatever Copilot said after it (`PushStop`).
     /// - Parameters:
     ///   - log: nil until Copilot has written one.
     ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log was put in before then, and not
@@ -250,6 +251,7 @@ public struct RunStatus: Sendable, Equatable {
     public static func derive(
         log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
     ) -> RunStatus {
+        let whole = log
         var log = log
         var phaseSince = log?.phaseSince
         if let startedAt, let state = log {
@@ -262,6 +264,11 @@ public struct RunStatus: Sendable, Equatable {
         }
         if isRunning {
             return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
+        }
+        // BriefBar's check stopped a push it made, as Copilot made it (`PushGuard`): whatever Copilot said since, it didn't
+        // push that. One from before it started was the session's, not this run's.
+        if let stop = whole?.pushStop, let at = stop.at ?? whole?.lastEventAt, startedAt.map({ at >= $0 }) ?? true {
+            return RunStatus(phase: .failed, since: whole?.lastEventAt ?? at, detail: "BriefBar stopped the push: \(stop.reason)")
         }
         switch log?.phase {
         case .finished?:

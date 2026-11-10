@@ -17,6 +17,9 @@ public struct LogEvent: Sendable, Equatable {
         case assistantMessage(isSubagent: Bool, hasToolRequests: Bool)
         case toolStart(ToolStart)
         case toolComplete(callId: String)
+        /// A shell command BriefBar's check of a Push & Reply task's pushes stopped (`PushStop`): its call, which it ends,
+        /// and why.
+        case pushStopped(callId: String, reason: String)
         case permissionRequested(PermissionRequest)
         case permissionCompleted(requestId: String)
         /// `hook.start` with `hookType == "agentStop"`: the agent finished its interaction.
@@ -77,6 +80,36 @@ public struct LogEvent: Sendable, Equatable {
             self.kind = kind
             self.detail = detail
         }
+    }
+}
+
+/// A push that BriefBar's check stopped as Copilot made it, in one of BriefBar's Push & Reply tasks: the CLI denied the
+/// shell command, as its `preToolUse` hook said, with BriefBar's reason, which its log keeps after "Denied by preToolUse
+/// hook: " (CopilotTasks' `PushGuard`). Why, and when.
+public struct PushStop: Sendable, Equatable {
+    /// What the reason for a stop starts with, where the log finds it.
+    public static let marker = "BriefBar stopped this push: "
+    /// What it ends with, which tells Copilot what to do then: the task has failed, whatever it does next.
+    public static let ending = " Don't push again, in any way: stop, and say why in your summary."
+
+    /// Why, without the marker or the ending.
+    public var reason: String
+    public var at: Date?
+
+    public init(reason: String, at: Date?) {
+        self.reason = reason
+        self.at = at
+    }
+
+    /// The reason a denied call's message gives after the marker, without the ending; nil when it has no marker.
+    public static func reason(in message: String) -> String? {
+        guard let start = message.range(of: marker) else { return nil }
+        var reason = message[start.upperBound...]
+        if let end = reason.range(of: ending.trimmingCharacters(in: .whitespaces), options: .backwards) {
+            reason = reason[..<end.lowerBound]
+        }
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

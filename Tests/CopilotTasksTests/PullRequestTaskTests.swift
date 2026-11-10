@@ -30,7 +30,9 @@ import Testing
         return fixture
     }
 
-    private func launcher(_ fixture: RepositoryFixture, runner: any ProcessRunning = ProcessRunner()) throws -> (CopilotLauncher, arguments: URL) {
+    private func launcher(
+        _ fixture: RepositoryFixture, runner: any ProcessRunning = ProcessRunner(), pushGuard: URL? = nil, version: String? = nil
+    ) throws -> (CopilotLauncher, arguments: URL) {
         let copilot = fixture.folder.appendingPathComponent("bin/copilot")
         try FileManager.default.createDirectory(at: copilot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try CopilotLauncherTests.fakeCopilot.write(to: copilot, atomically: true, encoding: .utf8)
@@ -39,10 +41,11 @@ import Testing
         var environment = fixture.environment
         environment["COPILOT_HOME"] = fixture.folder.appendingPathComponent("copilot-home").path
         environment["FAKE_COPILOT_ARGUMENTS"] = argumentsFile.path
+        if let version { environment["FAKE_COPILOT_VERSION"] = version }
         let launchEnvironment = environment
         let launcher = CopilotLauncher(
             outputFolder: fixture.folder.appendingPathComponent("output"), runner: runner, environment: { launchEnvironment },
-            locate: { _ in copilot }, appHome: fixture.folder.appendingPathComponent("copilot-home")
+            locate: { _ in copilot }, appHome: fixture.folder.appendingPathComponent("copilot-home"), pushGuard: pushGuard
         )
         return (launcher, argumentsFile)
     }
@@ -99,6 +102,100 @@ import Testing
         #expect(!arguments.contains("--name"))
         #expect(!arguments.contains("--deny-tool"))
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-2").path))
+    }
+
+    /// Push & Reply alone gets the plugin of its check of each push, in a folder of the run's own, whose hook runs BriefBar
+    /// with the pull request, its worktree and branches, each value in the same word as its option: once the CLI is 1.0.57
+    /// or later. With an older one, or one that doesn't say, or without BriefBar's executable, it goes as before, and an
+    /// earlier run's plugin in the session goes.
+    @Test(.timeLimit(.minutes(5)))
+    func checksEachPushOfPushAndReplyAlone() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let briefBar = URL(fileURLWithPath: "/Applications/Brief Bar's.app/Contents/MacOS/BriefBar")
+        let output = fixture.folder.appendingPathComponent("output")
+        let id = "8c3a2f4e-5d0f-4f1a-9d6b-4a5b6c7d8e9f"
+        let folder = PushGuardPlugin.folder(in: output, id: id)
+        func arguments(_ file: URL) throws -> [String] {
+            try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map(String.init)
+        }
+
+        let (guarded, argumentsFile) = try launcher(fixture, pushGuard: briefBar)
+        let fix = try await launch(guarded, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix the comments", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil
+        ), id: id)
+        #expect(!(try arguments(argumentsFile)).contains("--plugin-dir"))
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+
+        let ship = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: fix
+        )
+        _ = try await launch(guarded, ship, id: id)
+        var shipped = try arguments(argumentsFile)
+        let plugin = try #require(shipped.firstIndex(of: "--plugin-dir"))
+        #expect(shipped[plugin + 1] == folder.path)
+        #expect(plugin < shipped.firstIndex(of: "--session-id")!)
+        let hooks = try #require(
+            JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("hooks.json"))) as? [String: Any]
+        )
+        let hook = try #require(((hooks["hooks"] as? [String: Any])?["preToolUse"] as? [[String: Any]])?.first)
+        #expect(hook["matcher"] as? String == "bash")
+        #expect(hook["bash"] as? String == [
+            briefBar.path, "--push-guard", pullRequest.url.absoluteString, "--worktree=\(fix.worktree.path)",
+            "--source-branch=users/robin/fix-total", "--target-branch=main",
+        ].map(CopilotCommand.quoted).joined(separator: " "))
+
+        // An older CLI, or one that doesn't say its version: as before, without the earlier run's plugin.
+        for version in ["1.0.56", "a version"] {
+            let (older, olderArguments) = try launcher(fixture, pushGuard: briefBar, version: version)
+            _ = try await launch(older, ship, id: id)
+            shipped = try arguments(olderArguments)
+            #expect(!shipped.contains("--plugin-dir"), "\(version)")
+            #expect(!FileManager.default.fileExists(atPath: folder.path), "\(version)")
+        }
+        // Without BriefBar's executable.
+        let (without, withoutArguments) = try launcher(fixture)
+        _ = try await launch(without, ship, id: id)
+        #expect(!(try arguments(withoutArguments)).contains("--plugin-dir"))
+        // 1.0.57 is enough.
+        let (oldest, oldestArguments) = try launcher(fixture, pushGuard: briefBar, version: "1.0.57")
+        _ = try await launch(oldest, ship, id: id)
+        #expect((try arguments(oldestArguments)).contains("--plugin-dir"))
+    }
+
+    /// Says a CLI's version, as `copilot --version` does, and runs every other program.
+    private struct SaysTheVersion: ProcessRunning {
+        func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
+            guard arguments != ["--version"] else { return .ok("GitHub Copilot CLI 1.0.108.") }
+            return try await ProcessRunner().run(executable, arguments: arguments, environment: environment, timeout: timeout)
+        }
+    }
+
+    /// When Copilot can't start, the plugin written for its run goes with its worktree.
+    @Test(.timeLimit(.minutes(5)))
+    func removesThePluginWhenCopilotCantStart() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, _) = try launcher(fixture, runner: SaysTheVersion(), pushGuard: URL(fileURLWithPath: "/B/BriefBar"))
+        // A copilot that can't run.
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fixture.folder.appendingPathComponent("bin/copilot").path)
+        let id = "5e7b9c1d-2f3a-4b4c-8d5e-6f7a8b9c0d1e"
+        let error = await #expect(throws: LaunchError.self) {
+            try await launcher.launch(CopilotLauncher.Request(
+                subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+                repository: fixture.checkout, worktreesFolder: nil
+            ), id: id) { _ in }
+        }
+        // As it started Copilot, once git was done and the plugin written.
+        guard case .couldntStart? = error else {
+            Issue.record("\(String(describing: error))")
+            return
+        }
+        let output = fixture.folder.appendingPathComponent("output")
+        #expect(!FileManager.default.fileExists(atPath: PushGuardPlugin.folder(in: output, id: id).path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071").path))
     }
 
     /// Push & Reply going on with a session whose worktree holds a merge of what the pull request's target doesn't have, as

@@ -1770,9 +1770,10 @@ private final class TakenAt: Sendable {
         #expect(store.delivering.isEmpty)
     }
 
-    /// Turning Azure DevOps off deletes what Copilot printed, and BriefBar's requests and results, which hold its prompts,
-    /// even from a folder that others can open by then, but not what the extensions in open sessions say, theirs while they
-    /// run; and only the link, when the folder, or the outbox, is one.
+    /// Turning Azure DevOps off deletes what Copilot printed, the plugins of Push & Reply's check of each push, and
+    /// BriefBar's requests and results, which hold its prompts, even from a folder that others can open by then, but not
+    /// what the extensions in open sessions say, theirs while they run; and only the link, when the folder, or the outbox,
+    /// is one.
     @Test func turningAzureDevOpsOffKeepsWhatExtensionsSay() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarOutput-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -1781,6 +1782,14 @@ private final class TakenAt: Sendable {
         let outbox = CopilotOutbox(root: home, path: ["Copilot", "Outbox"])
         try outbox.write(.send("Fix the comments", to: session))
         try Data("Done.".utf8).write(to: folder.appendingPathComponent("\(session).log"))
+        let plugin = try PushGuardPlugin.write(
+            in: folder, id: session, executable: URL(fileURLWithPath: "/B/BriefBar"), pullRequest: TaskPullRequest(
+                organization: "contoso", project: "Storefront", repository: "checkout", id: 4071, title: "Fix the total",
+                url: URL(string: "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071")!,
+                sourceBranch: "users/robin/fix-total", targetBranch: "main"
+            ), worktree: home, version: nil
+        )
+        #expect(FileManager.default.fileExists(atPath: plugin.appendingPathComponent("hooks.json").path))
         let ext = ExtensionStandIn(outbox: outbox.url, sessionId: session)
         try ext.listen()
         try ExtensionStandIn.write(["ok": true], to: outbox.url.appendingPathComponent("results"), named: "\(UUID().uuidString.lowercased()).json")
@@ -1814,6 +1823,26 @@ private final class TakenAt: Sendable {
         CopilotTasksStore.deleteOutput(in: other, outbox: CopilotOutbox(root: home, path: ["Other", "Outbox"]))
         #expect(!FileManager.default.fileExists(atPath: other.path))
         #expect(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("keep.log").path))
+    }
+
+    /// Clearing a task deletes what it printed and the plugin of its check of each push, and nothing of another run's.
+    @Test func clearingATaskDeletesItsOutputAndPlugin() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarOutput-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let other = UUID().uuidString.lowercased()
+        for id in [session, other] {
+            try Data("Done.".utf8).write(to: folder.appendingPathComponent("\(id).log"))
+            _ = try PushGuardPlugin.write(
+                in: folder, id: id, executable: URL(fileURLWithPath: "/B/BriefBar"), pullRequest: TaskPullRequest(
+                    organization: "contoso", project: "Storefront", repository: "checkout", id: 4071, title: "Fix the total",
+                    url: URL(string: "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071")!,
+                    sourceBranch: "users/robin/fix-total", targetBranch: "main"
+                ), worktree: folder, version: nil
+            )
+        }
+        CopilotTasksStore.deleteOutput(ofRun: session, in: folder)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["\(other).guard", "\(other).log"])
     }
 
     /// Stopped, as when its window closes, a send takes its request back, and copies, opens and hands off nothing.

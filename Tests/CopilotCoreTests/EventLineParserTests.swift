@@ -76,6 +76,22 @@ import Testing
         #expect(parse(reordered) == LogEvent(timestamp: t(8), kind: .toolComplete(callId: "c2")))
     }
 
+    /// A shell command the CLI denied as BriefBar's check of a push said, its line as the CLI writes it: why, without the
+    /// marker or the ending. Another denial, such as the check's ask to push as the prompt says, or another failure, is a
+    /// call that completed; and so is a line whose `"success":false` comes later than a completed call's does.
+    @Test func pushesBriefBarStopped() {
+        func failed(_ id: String, _ message: String, code: String = "denied", padding: Int = 0) -> String {
+            let model = String(repeating: "x", count: padding)
+            let data = #"{"toolCallId":"\#(id)","model":"claude-haiku-4.5\#(model)","interactionId":"7f1c","turnId":"3","rte":0,"success":false,"error":{"message":\#(Line.json([message]).dropFirst().dropLast()),"code":"\#(code)"},"toolTelemetry":{}}"#
+            return Line.event("tool.execution_complete", rawData: data, at: t(9))
+        }
+        let stop = "Denied by preToolUse hook: " + PushStop.marker + "it would delete what's on the remote." + PushStop.ending
+        #expect(parse(failed("c1", stop)) == LogEvent(timestamp: t(9), kind: .pushStopped(callId: "c1", reason: "it would delete what's on the remote.")))
+        #expect(parse(failed("c2", "Denied by preToolUse hook: BriefBar's push check: push once."))?.kind == .toolComplete(callId: "c2"))
+        #expect(parse(failed("c3", stop, code: "failure"))?.kind == .toolComplete(callId: "c3"))
+        #expect(parse(failed("c4", stop, padding: 1_100))?.kind == .toolComplete(callId: "c4"))
+    }
+
     @Test func permissionRequestsDescribeWhatIsAsked() {
         let fromExtension = Line.permissionRequested(
             id: "r1",

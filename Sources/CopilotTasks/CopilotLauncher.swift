@@ -135,6 +135,8 @@ public struct CopilotLauncher: Sendable {
     let appHome: URL
     /// Where the forks it couldn't delete yet are kept, each deleted before the next task; nowhere when nil.
     let leftovers: (any LeftoverForks)?
+    /// BriefBar's executable, which Push & Reply's check of each push runs (`PushGuardPlugin`); nil for none, as in tests.
+    let pushGuard: URL?
 
     /// - Parameters:
     ///   - environment: what Copilot and git run with; by default, your login shell's (`LoginEnvironment`).
@@ -142,14 +144,17 @@ public struct CopilotLauncher: Sendable {
     ///   - appHome: the Copilot app's folder; by default, `AppSessions.home()`.
     ///   - leftovers: where the forks it couldn't delete yet are kept, with BriefBar's runs, each deleted before the next
     ///     task; nowhere when nil.
+    ///   - pushGuard: BriefBar's executable, for Push & Reply's check of each push as Copilot makes it
+    ///     (`PushGuardPlugin.executable(_:)`); nil to go without it, as today.
     public init(
         outputFolder: URL, runner: any ProcessRunning = ProcessRunner(),
         environment: (@Sendable () async -> [String: String])? = nil,
         locate: @escaping @Sendable ([String: String]) -> URL? = { CopilotCLI.locate(environment: $0) },
-        appHome: URL = AppSessions.home(), leftovers: (any LeftoverForks)? = nil
+        appHome: URL = AppSessions.home(), leftovers: (any LeftoverForks)? = nil, pushGuard: URL? = nil
     ) {
         self.appHome = appHome
         self.leftovers = leftovers
+        self.pushGuard = pushGuard
         self.outputFolder = outputFolder
         self.runner = runner
         self.environment = environment ?? { await LoginEnvironment.load(runner: runner) }
@@ -186,6 +191,11 @@ public struct CopilotLauncher: Sendable {
         if let forking = request.forking, !FileManager.default.fileExists(atPath: forking.events(in: home).path) {
             throw LaunchError.couldntStart("the Copilot CLI has no session \(forking.id) in \(UserPath.abbreviate(home.path))")
         }
+        // Whether this Copilot CLI can run Push & Reply's check of each push, asked meanwhile.
+        let guarding: (pullRequest: TaskPullRequest, executable: URL)? =
+            if case .pullRequest(let pullRequest, .pushAndReply) = request.subject, let pushGuard { (pullRequest, pushGuard) } else { nil }
+        let asks = guarding != nil
+        async let checksPushes = asks ? checksPushes(copilot, environment: environment) : false
         let git = Git(
             executable: LoginEnvironment.which("git", in: environment) ?? URL(fileURLWithPath: "/usr/bin/git"),
             environment: environment, runner: runner
@@ -294,6 +304,23 @@ public struct CopilotLauncher: Sendable {
             if AppSessions.anotherRunsATurn(inCheckoutOf: worktree, besides: id, home: appHome) { throw LaunchError.sharedCheckout }
         }
 
+        // Push & Reply's check of each push, as Copilot makes it: a plugin of this run's alone, when this CLI can run it and its
+        // folder can be written. Without it, the run goes as it did before BriefBar had it. An earlier run's in the session
+        // goes, whatever this one is.
+        PushGuardPlugin.remove(in: outputFolder, id: id)
+        var plugins: [URL] = []
+        if let guarding, await checksPushes {
+            do {
+                try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                plugins.append(try PushGuardPlugin.write(
+                    in: outputFolder, id: id, executable: guarding.executable, pullRequest: guarding.pullRequest, worktree: worktree,
+                    version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                ))
+            } catch {
+                PushGuardPlugin.remove(in: outputFolder, id: id)
+            }
+        }
+
         // A new session is named for what it's for; one that's there, a fork included, keeps its name.
         let isNew = request.continuing == nil && request.forking == nil
         // Only a work item's prompt has the base branch to fill in. A pull request's has no placeholders, but quotes what
@@ -302,7 +329,7 @@ public struct CopilotLauncher: Sendable {
         let arguments = CopilotCommand.arguments(
             prompt: prompt, options: request.options,
             sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
-            denied: request.subject.deniedTools
+            denied: request.subject.deniedTools, plugins: plugins
         )
         // Going on with a fork, it's still that session's fork, made as its first task started.
         let forkedFrom = request.forking?.id ?? request.continuing?.forkedFrom
@@ -332,6 +359,7 @@ public struct CopilotLauncher: Sendable {
             )
         } catch {
             try? FileManager.default.removeItem(at: run.output(in: outputFolder))
+            PushGuardPlugin.remove(in: outputFolder, id: id)
             if made { try? await git.removeWorktree(at: worktree, of: repository.root, force: true) }
             if let fork { await forker.discard(fork) }
             throw LaunchError.couldntStart(String(describing: error))
@@ -339,6 +367,25 @@ public struct CopilotLauncher: Sendable {
         // The fork is the task's session now, no longer one to delete.
         if let fork { await forker.forget(fork) }
         return run
+    }
+
+    /// Whether this Copilot CLI can run Push & Reply's check of each push (`PushGuardPlugin`): 1.0.57 or later, as
+    /// `copilot --version` says. Not when it doesn't say.
+    func checksPushes(_ copilot: URL, environment: [String: String]) async -> Bool {
+        guard let result = try? await runner.run(copilot, arguments: ["--version"], environment: environment, timeout: 30),
+              result.status == 0, let version = Self.version(in: String(decoding: result.stdout, as: UTF8.self))
+        else { return false }
+        return version >= PushGuardPlugin.oldest
+    }
+
+    /// The version `copilot --version` says: 1.0.108, from "GitHub Copilot CLI 1.0.108.".
+    static func version(in output: String) -> CopilotServer.Version? {
+        for word in output.split(whereSeparator: \.isWhitespace) {
+            var word = word
+            while let last = word.last, last == "." || last == "," { word = word.dropLast() }
+            if let version = CopilotServer.Version(String(word)) { return version }
+        }
+        return nil
     }
 
     /// Why Push & Reply mustn't go now, by the pull request as `Request.targetNow` reads it: it merges into another branch

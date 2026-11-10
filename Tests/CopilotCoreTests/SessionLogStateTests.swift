@@ -32,6 +32,21 @@ import Testing
         #expect(done.lastEventAt == t(9))
     }
 
+    /// A push BriefBar's check stopped ends its call, and stays, through Copilot's next prompts and turns.
+    @Test func keepsAPushBriefBarStopped() {
+        let stop = #"{"toolCallId":"c1","success":false,"error":{"message":"Denied by preToolUse hook: \#(PushStop.marker)the pull request was abandoned.\#(PushStop.ending)","code":"denied"}}"#
+        let state = logState([
+            Line.userMessage(at: t(1)),
+            Line.toolStart("bash", id: "c1", arguments: ["description": "Push"], at: t(2)),
+            Line.event("tool.execution_complete", rawData: stop, at: t(3)),
+            Line.userMessage("Go on", at: t(4)),
+            Line.turnStart(at: t(5)), Line.assistantMessage(at: t(6)), Line.turnEnd(at: t(7)),
+        ])
+        #expect(state.pushStop == PushStop(reason: "the pull request was abandoned.", at: t(3)))
+        #expect(state.activity == .finished(at: t(7), summary: nil))
+        #expect(SessionLogState().pushStop == nil)
+    }
+
     @Test func pendingWorkBlocksFinishing() {
         var lines = [
             Line.userMessage(at: t(1)),

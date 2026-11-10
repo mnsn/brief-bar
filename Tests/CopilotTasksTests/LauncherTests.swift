@@ -8,9 +8,14 @@ import Testing
 /// A whole send, with a real repository and a made-up `copilot` that writes a session log as the real one does.
 @Suite struct CopilotLauncherTests {
     /// Records its arguments, writes a short session log, and prints the pull request it "opened". Like the real CLI,
-    /// it refuses `--trust-folder` with `--session-id`.
+    /// it refuses `--trust-folder` with `--session-id`. Asked its version, it says `FAKE_COPILOT_VERSION`'s, 1.0.108 by
+    /// default, as the real one does, and records nothing.
     static let fakeCopilot = """
         #!/bin/sh
+        if [ "$1" = "--version" ]; then
+          echo "GitHub Copilot CLI ${FAKE_COPILOT_VERSION:-1.0.108}."
+          exit 0
+        fi
         printf '%s\\n' "$@" > "$FAKE_COPILOT_ARGUMENTS"
         while [ $# -gt 0 ]; do
           case "$1" in

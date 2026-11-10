@@ -11,6 +11,10 @@ public enum EventLineParser {
     private static let agentIdKey = Array(#""agentId""#.utf8)
     private static let agentStopNeedle = Array("agentStop".utf8)
     private static let toolCompletePrefix = Array(#"{"type":"tool.execution_complete","data":{"toolCallId":""#.utf8)
+    private static let failedNeedle = Array(#""success":false"#.utf8)
+    /// How far into a completed call's line its `"success":false` comes, after its call, model, interaction, turn and
+    /// `rte`: a failed call's line is decoded in full, for a push BriefBar's check stopped.
+    private static let maxSuccessOffset = 1_024
     /// Generous room for the top-level members after the timestamp (`,"parentId":"…"}`).
     private static let maxTimestampSuffix = 512
 
@@ -44,7 +48,8 @@ public enum EventLineParser {
                 if kind != .userMessage || !contains(line, agentIdKey) {
                     return LogEvent(timestamp: timestamp, kind: kind)
                 }
-            } else if type == "tool.execution_complete", let callId = fastToolCompleteId(line) {
+            } else if type == "tool.execution_complete", let callId = fastToolCompleteId(line),
+                      !contains(UnsafeRawBufferPointer(rebasing: line.prefix(maxSuccessOffset)), failedNeedle) {
                 return LogEvent(timestamp: timestamp, kind: .toolComplete(callId: callId))
             } else if !decodedTypes.contains(type) || (type == "hook.start" && !contains(line, agentStopNeedle)) {
                 return LogEvent(timestamp: timestamp, kind: .other)
@@ -93,7 +98,13 @@ public enum EventLineParser {
             ))
         case "tool.execution_complete":
             guard let callId = nonEmpty(data["toolCallId"]) else { kind = .other; break }
-            kind = .toolComplete(callId: callId)
+            // A shell command the CLI denied as BriefBar's check of a Push & Reply task's pushes said.
+            if data["success"] as? Bool == false, let error = data["error"] as? [String: Any], error["code"] as? String == "denied",
+               let message = error["message"] as? String, let reason = PushStop.reason(in: message) {
+                kind = .pushStopped(callId: callId, reason: reason)
+            } else {
+                kind = .toolComplete(callId: callId)
+            }
         case "permission.requested":
             guard let requestId = nonEmpty(data["requestId"]) else { kind = .other; break }
             let request = data["permissionRequest"] as? [String: Any] ?? [:]
