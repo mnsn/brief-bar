@@ -1336,7 +1336,9 @@ fileprivate final class SplitViewer {}
     }
 
     /// A line among what a split moved, told since, is one BriefBar knows from then on, kept with your changes: once one of
-    /// them goes back to the order's mission, by Undo Your Changes to It, the order told again takes nothing back.
+    /// them goes back to the order's mission, by Undo Your Changes to It, the order told again takes nothing back. Undo
+    /// brings it back where the split put it as it was, so a line across the split its order told meanwhile, even one
+    /// BriefBar hadn't read yet, takes them both back, with Put Yours Back.
     @Test func aLineAmongWhatASplitMovedToldSinceTakesNothingBackOnceOneOfThemGoesBack() async throws {
         let clock = SplitClock()
         let model = SplitModel()
@@ -1389,22 +1391,27 @@ fileprivate final class SplitViewer {}
         #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4121)])
 
         // The coupon field's tests after the coupon field, told while they're in the order's mission, which BriefBar hasn't
-        // read yet: Undo reads it first, so it brings them back where the split put them knowing that, and takes nothing
-        // back.
+        // read yet: Undo brings them back where the split put them as they were, and that line, later than your change,
+        // takes them both back into the order's mission.
         clock.advance(60)
+        let toldAt = clock.now
+        let after4101: [OrderRequest.Entry] = [
+            .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
+            .init(link: link(4121), after: [link(4120)]),
+        ]
         var unread = DeclaredOrders.load(from: defaults)
-        try unread.apply(
-            OrderRequest(plan: Self.planID.uuidString, revision: 3, entries: [
-                .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
-                .init(link: link(4121), after: [link(4120)]),
-            ]),
-            now: clock.now, newID: UUID()
-        )
+        try unread.apply(OrderRequest(plan: Self.planID.uuidString, revision: 3, entries: after4101), now: toldAt, newID: UUID())
         unread.save(to: defaults)
         #expect(order.undo())
-        order.reloadOrders()
-        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
+        #expect(order.changes[Self.pr(4120)]?.overridden == .init(by: Self.planID, at: toldAt))
+        #expect(order.changes[Self.pr(4121)]?.overridden == .init(by: Self.planID, at: toldAt, with: Self.pr(4120)))
+        #expect(Self.refs(of: Self.mission(key, in: order)) == Set([4101, 4102, 4120, 4121].map(Self.pr)))
+        // Put Yours Back puts both back where the split put them, knowing that line: the order told again takes nothing back.
+        try #require(order.change(.putBack(Self.pr(4121))) != nil)
         #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4120), Self.pr(4121)])
+        clock.advance(60)
+        try tell(4, after4101)
+        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
         #expect(OrderChanges.load(from: defaults)[Self.pr(4120)]?.linedWith == [Self.pr(4101), Self.pr(4121)])
     }
 
