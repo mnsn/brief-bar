@@ -1201,7 +1201,10 @@ package final class PullRequestOrder: ObservableObject {
         let touched: [ItemRef: OrderChange?]
         let told = orders
         do {
-            touched = try changed.apply(edit, missions: missions, orders: told, stacked: stacked, now: now())
+            touched = try changed.apply(
+                edit, missions: missions, orders: told, stacked: stacked, now: now(),
+                status: OrderBoard.statuses(facts, evidence: evidence)
+            )
         } catch {
             let refused = OrderLastChange(
                 said: "\(error)", refs: edit.refs, mission: cardMission(for: edit, source: source), touched: [:],
@@ -1680,7 +1683,7 @@ package final class PullRequestOrder: ObservableObject {
         reloadOrders()
         guard let last = lastOrderChange, last.canUndo else { return false }
         var changed = changes
-        changed.restore(last.touched, orders: orders)
+        changed.restore(last.touched, orders: orders, status: OrderBoard.statuses(facts, evidence: evidence))
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
         // took them from since, as Undo of Put Yours Back, or of a second split, brings back.
         let splitBack = Set(last.touched.keys.filter { ref in

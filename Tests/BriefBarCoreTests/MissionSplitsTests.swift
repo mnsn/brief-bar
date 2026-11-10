@@ -1482,6 +1482,74 @@ import Testing
         #expect(oneSided.all.allSatisfy { $0.overridden == nil })
     }
 
+    /// Nor does a change of yours, Undo or Put Yours Back know a line that holds nothing up as they record the lines of what a
+    /// split moved (`OrderChange.linedWith`): so it takes what the split moved back once it holds something up again, as a
+    /// closed one reopens.
+    @Test func aLineThatHoldsNothingUpIsntKnownThroughAChangeOfYoursUndoOrPutYoursBack() throws {
+        let mine = MissionKey.mine(Self.otherID)
+        let group = Set([4403, 4404, 4405].map(Self.pr))
+        let first = Self.across(1, at: 1)
+        let after4403 = Self.across(2, at: 10, [.init(ref: Self.pr(4402), after: [Self.pr(4401), Self.pr(4403)])])
+        let closed4402: (ItemRef) -> OrderStatus = { $0 == Self.pr(4402) ? .closed : .open }
+        let closedFacts = OrderFacts(pullRequests: [4401, 4402, 4403, 4404, 4405, 4406].map {
+            Self.ado($0, state: $0 == 4402 ? .closed : .open)
+        })
+        func takenBack(_ changes: OrderChanges, _ orders: DeclaredOrders) -> Set<ItemRef> {
+            var changes = changes
+            changes.noteOverrides(in: orders, now: t(60))
+            return Set(changes.all.filter { $0.overridden != nil }.map(\.ref))
+        }
+        // A Set as Next on another, which takes 4403's next away and stamps it again.
+        var changes = try Self.splitAcross()
+        try changes.apply(
+            .setNext(Self.pr(4403), in: mine, true), missions: StoryMissionsTests.missions(Self.acrossFacts, first, changes: changes),
+            orders: first, now: t(7)
+        )
+        changes.noteOverrides(in: after4403, now: t(11), status: closed4402)
+        #expect(changes.all.allSatisfy { $0.overridden == nil })
+        #expect(takenBack(changes, after4403) == group)
+        try changes.apply(
+            .setNext(Self.pr(4405), in: mine, true),
+            missions: StoryMissionsTests.missions(closedFacts, after4403, changes: changes), orders: after4403, now: t(14),
+            status: closed4402
+        )
+        #expect(changes[Self.pr(4403)]?.first == nil)
+        #expect(changes[Self.pr(4403)]?.linedWith == [Self.pr(4404)])
+        #expect(takenBack(changes, after4403) == group)
+        changes.noteOverrides(in: after4403, now: t(60))
+        let order = StoryMissionsTests.missions(Self.acrossFacts, after4403, changes: changes).first { $0.key == .plan(Self.planID) }
+        #expect(order?.steps.first { $0.ref == Self.pr(4402) }?.prerequisites.map(\.ref) == [Self.pr(4401), Self.pr(4403)])
+        // Undo of a Move elsewhere, which learns the lines told meanwhile, but not that one.
+        changes = try Self.splitAcross()
+        let elsewhere = MissionKey.mine(UUID(uuidString: "41111111-2222-4333-8444-555555555555")!)
+        let moved = try changes.apply(.move([Self.pr(4403)], to: .into(elsewhere), from: mine), missions: [], orders: first, now: t(8))
+        changes.noteOverrides(in: after4403, now: t(11), status: closed4402)
+        changes.restore(moved, orders: after4403, status: closed4402)
+        #expect(changes[Self.pr(4403)]?.placement == .into(mine))
+        #expect(changes[Self.pr(4403)]?.linedWith == [Self.pr(4404)])
+        #expect(takenBack(changes, after4403) == group)
+        // Put Yours Back knows the line it puts them back over, 4403 after 4402, but not 4406 after 4404, which holds nothing
+        // up as 4406 closed.
+        changes = try Self.splitAcross()
+        let both = Self.across(
+            2, at: 10, [.init(ref: Self.pr(4403), after: [Self.pr(4402)]), .init(ref: Self.pr(4406), after: [Self.pr(4404)])]
+        )
+        let closed4406: (ItemRef) -> OrderStatus = { $0 == Self.pr(4406) ? .closed : .open }
+        changes.noteOverrides(in: both, now: t(11), status: closed4406)
+        #expect(changes.all.allSatisfy { $0.overridden?.by == Self.planID })
+        let closed4406Facts = OrderFacts(pullRequests: [4401, 4402, 4403, 4404, 4405, 4406].map {
+            Self.ado($0, state: $0 == 4406 ? .closed : .open)
+        })
+        try changes.apply(
+            .putBack(Self.pr(4403)), missions: StoryMissionsTests.missions(closed4406Facts, both, changes: changes), orders: both,
+            now: t(12), status: closed4406
+        )
+        #expect(changes.all.allSatisfy { $0.overridden == nil })
+        #expect(changes[Self.pr(4403)]?.linedWith.contains(Self.pr(4402)) == true)
+        #expect(changes[Self.pr(4404)]?.linedWith.contains(Self.pr(4406)) == false)
+        #expect(takenBack(changes, both) == group)
+    }
+
     /// One a split moved, back where the split put it as Undo, or an order BriefBar forgot that had taken it, brings it back
     /// after its order took back the rest, goes back with them, so that the order's lines among them aren't cut; alone, its
     /// order takes it back again.

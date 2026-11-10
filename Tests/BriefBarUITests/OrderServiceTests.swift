@@ -896,6 +896,8 @@ private final class Clock {
         let mission = try #require(OrderBoard.mission(of: Self.ref(4130), in: order.missions))
         #expect(mission.key == .chain(Self.ref(4102)) && mission.contains(Self.ref(4103)))
     }
+
+    /// Turning a source off forgets your changes to its pull requests, and what BriefBar saw become of them, for good: the
     /// rebuild that follows, though one of those changes finished meanwhile, saves none of them back.
     @Test func aSourceTurnedOffForgetsItsChangesForGoodThoughOneFinishesMeanwhile() throws {
         let defaults = try Self.defaults(on: true)
@@ -1660,5 +1662,53 @@ private final class Clock {
         #expect(waitsNext.ref == Self.ref(4101) && waitsNext.mission == other && waitsNext.isFocused)
         let all = order.board(kinds: [.pullRequest], lanes: BoardLanes.none)
         #expect(all.lanes.first?.cards(in: .waits).first?.ref == Self.ref(4101))
+    }
+
+    /// A split's line to a pull request that holds nothing up, as one abandoned, isn't known through a change of yours to the
+    /// split, even a Set as Next on another of its pull requests: once it's reactivated, the line holds it up, and the order
+    /// takes the split back, with it waiting where its order puts it. So too once what it was after has merged meanwhile,
+    /// and when BriefBar was quit and opened again before.
+    @Test(arguments: [false, true], [false, true])
+    func aSplitsLineToAnAbandonedOneTakesItBackOnceItsReactivatedThoughYouChangedTheSplitSince(firstMerged: Bool, reopened: Bool)
+        throws {
+        // 4401; 4402 after 4401; 4403; 4404 after 4403; 4405.
+        var entries: [OrderRequest.Entry] = [
+            .init(link: Self.link(4401)), .init(link: Self.link(4402), after: ["4401"]), .init(link: Self.link(4403)),
+            .init(link: Self.link(4404), after: ["4403"]), .init(link: Self.link(4405)),
+        ]
+        let defaults = try Self.defaults(on: true, order: entries)
+        let clock = Clock()
+        var order = Self.service(defaults, clock: clock)
+        let mine = MissionKey.mine(UUID())
+        func publish(_ states: [Int: PullRequestState] = [:]) {
+            order.publish(.azureDevOps, pullRequests: (4401...4405).map { Self.ado($0, from: "robin/\($0)", state: states[$0] ?? .open) })
+        }
+        func minute() { clock.now = clock.now.addingTimeInterval(60) }
+        publish()
+        minute()
+        let split = OrderSplitMove([4403, 4404, 4405].map(Self.ref), to: .into(mine))
+        try #require(order.change(.split(.plan(Self.planID), [split])) != nil)
+        minute()
+        try #require(order.change(.setNext(Self.ref(4403), in: mine, true))?.touched.isEmpty == false)
+        minute()
+        publish([4402: .closed])
+        // The session puts the abandoned 4402 after 4401 and 4403: a line across the split that holds nothing up.
+        minute()
+        var revised = DeclaredOrders.load(from: defaults)
+        entries[1] = .init(link: Self.link(4402), after: ["4401", "4403"])
+        try revised.apply(OrderRequest(plan: Self.planID.uuidString, revision: 1, entries: entries), now: clock.now)
+        revised.save(to: defaults)
+        order.reloadOrders()
+        #expect(order.changes.all.allSatisfy { $0.overridden == nil })
+        minute()
+        try #require(order.change(.setNext(Self.ref(4405), in: mine, true))?.touched.isEmpty == false)
+
+        minute()
+        if reopened { order = Self.service(defaults, clock: clock) }
+        publish(firstMerged ? [4401: .merged] : [:])
+        #expect(order.changes[Self.ref(4403)]?.overridden?.by == Self.planID)
+        let mission = try #require(order.missions.first { $0.key == .plan(Self.planID) })
+        let step = try #require(mission.steps.first { $0.ref == Self.ref(4402) })
+        #expect(step.prerequisites.map(\.ref).contains(Self.ref(4403)))
     }
 }
