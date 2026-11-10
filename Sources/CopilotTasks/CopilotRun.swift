@@ -174,8 +174,11 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
            previous.action?.changesCode == true || previous.action == .pushAndReply {
             kept = before.map { taken in
                 var taken = taken
-                // Gone on with, it ended: one BriefBar didn't see end, it stopped.
-                if taken.ended == nil { taken.ended = previous.ended ?? .stopped }
+                // Gone on with, it ended, by now: one BriefBar didn't see end, it stopped.
+                if taken.ended == nil {
+                    taken.ended = previous.ended ?? .stopped
+                    taken.overBy = now
+                }
                 return taken
             }
         }

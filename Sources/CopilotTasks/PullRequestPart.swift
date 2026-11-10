@@ -77,10 +77,14 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
     /// prompt has it stop before it pushes, as when the tests don't pass. Nil otherwise, when the list didn't have it, and
     /// for what BriefBar kept before it had this.
     public var head: String?
+    /// Once a task that took it on was gone on with (`ended`): by when it was over, as the first task that went on with its
+    /// session started, whichever goes on since; a fork of the session made after that has it. Nil until then, and for what
+    /// BriefBar kept before it had this.
+    public var overBy: Date?
 
     public init(
         _ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, fixes: Bool? = nil, target: String? = nil,
-        head: String? = nil
+        head: String? = nil, overBy: Date? = nil
     ) {
         self.part = part
         self.since = since
@@ -89,6 +93,7 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
         self.fixes = fixes
         self.target = target
         self.head = head
+        self.overBy = overBy
     }
 }
 

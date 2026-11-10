@@ -1844,6 +1844,19 @@ import Testing
             settings.copilotSentPrompts = [fixed, push]
             #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
         }
+        // A fork a plain fix made, which a fix sent to push and reply went on with since, has 11's fix too, unless it was
+        // made before 11 was fixed.
+        let wentOn = try #require(SentPrompt(shipping, session: fork, sentAt: now, copied: false, ended: .finished))
+        let madeIt = try #require(SentPrompt(
+            about(threads: [13]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [fixed, madeIt, wentOn]
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).isEmpty)
+        let madeEarly = try #require(SentPrompt(
+            about(threads: [13]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(-60), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [fixed, madeEarly, wentOn]
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
 
         // One of BriefBar's tasks fixed 11, then resolved the conflicts, which it committed; a fork of it with the CLI
         // fixed 12 and pushed: the conflicts' resolution went along, but not 11's fix, which wasn't committed.
@@ -1884,16 +1897,20 @@ import Testing
         var goneOn = resolved
         goneOn.action = .fixComments
         goneOn.startedAt = now.addingTimeInterval(-100)
-        goneOn.taken = [
-            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .finished),
-            TakenPart(.conflicts, since: first, ended: .finished, target: "main"), TakenPart(.thread(13), since: goneOn.startedAt),
-        ]
+        let reference = try #require(resolved.onPullRequest)
+        goneOn.taken = CopilotRun.taken(goingOnWith: resolved, on: reference, taking: [.thread(13)], for: .fixComments, at: goneOn.startedAt)
+        #expect(goneOn.taken?.first { $0.part == .conflicts }?.overBy == goneOn.startedAt)
         forked.forkedAt = first.addingTimeInterval(60)
         settings.copilotRuns = [goneOn, forked]
         #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11), .conflicts]])
-        // Forked once the next task there started, it has it.
+        // Forked once the next task there started, it has it, however often the session goes on since.
         forked.forkedAt = now.addingTimeInterval(-50)
         settings.copilotRuns = [goneOn, forked]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11)]])
+        var again = goneOn
+        again.startedAt = now.addingTimeInterval(30)
+        again.taken = CopilotRun.taken(goingOnWith: goneOn, on: reference, taking: [.thread(14)], for: .fixComments, at: again.startedAt)
+        settings.copilotRuns = [again, forked]
         #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11)]])
     }
     /// A fix in a fork of the pull request's session works on the side: the pull request's session stays the one it was, as

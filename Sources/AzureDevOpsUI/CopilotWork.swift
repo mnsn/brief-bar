@@ -215,8 +215,9 @@ struct CopilotWork: Equatable {
     /// When it was taken on, whether it's over or not, and whichever task in its session keeps it now: a Push & Reply's,
     /// when it started to push, which a run of the build that fails after it was a run of what it pushed, or since.
     var takenAt: Date?
-    /// For one an earlier task in its session took on, which a later one went on with: by when it was over, as that one
-    /// started, which `since`, when it was taken on, doesn't say. Nil otherwise.
+    /// For one an earlier task in its session took on, which a later one went on with: by when it was over, as the first
+    /// that went on started (`TakenPart.overBy`), or, for one kept before BriefBar had that, the one that keeps it now,
+    /// which `since`, when it was taken on, doesn't say. Nil otherwise.
     var overBy: Date?
     /// For Push & Reply on a thread: it replies on it, as its prompt lists it. False for a thread whose fix it pushes along
     /// with all else its session changed, without replying on it (`CopilotTasksStore.work(on:of:for:)`).
@@ -408,7 +409,7 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since, takenAt: taken.since, overBy: entry.startedAt, fixes: fixes, head: head
+                since: taken.since, takenAt: taken.since, overBy: taken.overBy ?? entry.startedAt, fixes: fixes, head: head
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
@@ -587,9 +588,18 @@ extension CopilotTasksStore {
                 consider(push.since, CopilotWork.from(entry, taken: push), after: after)
             }
         }
+        // The Copilot app's forks, each made as the prompt that made it went, whatever for, with all its session changed: a
+        // prompt sent to one since goes on in it.
+        var forks: [String: (from: String, madeAt: Date)] = [:]
+        for prompt in settings.copilotSentPrompts {
+            guard let from = prompt.forkedFrom, forks[prompt.session].map({ prompt.sentAt < $0.madeAt }) ?? true else { continue }
+            forks[prompt.session] = (from, prompt.sentAt)
+        }
         for (prompt, turn) in prompts(about: key) where prompt.purpose == .pushAndReply {
-            // The Copilot app's fork, made as the prompt went, with all the session changed.
-            let carrying = carried(by: prompt.session, forkedFrom: prompt.forkedFrom, madeAt: prompt.sentAt, committedOnly: false)
+            let fork = prompt.forkedFrom.map { (from: $0, madeAt: prompt.sentAt) } ?? forks[prompt.session]
+            let carrying = carried(
+                by: prompt.session, forkedFrom: fork?.from, madeAt: fork?.madeAt ?? prompt.sentAt, committedOnly: false
+            )
             guard let after = carrying else { continue }
             consider(prompt.sentAt, CopilotWork.from(prompt, about: fix.part, turn: turn), after: after)
         }
