@@ -743,6 +743,44 @@ import Testing
         #expect(again.picks == UpNextPicks([.fix: Self.ref(4132)]))
     }
 
+    /// How long a choice has been away is as the account signed in saw it: once another signs in, its own choice of the
+    /// same pull request for the same slot has its half hour, rather than go on how long the other's was away; and so
+    /// does the other's once it signs in again.
+    @Test func anotherAccountsChoiceOfTheSamePullRequestHasItsOwnHalfHour() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "sam@contoso.com"
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+        Self.tell(order, Self.reviews)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+
+        // Robin approves it, and nothing changes for half an hour.
+        var approved = Self.reviews
+        approved[4203] = StageFacts(role: .reviewer, votes: "10", since: Date(timeIntervalSince1970: 1_791_500_000))
+        Self.tell(order, approved)
+        now += UpNextPicks.awayFor
+
+        // Sam signs in, still asked to review it.
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.yourReview(order)?.card.ref == Self.ref(4203))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+
+        // Robin signs in again: Robin's goes half an hour later, and Sam's stays.
+        Self.tell(order, approved)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += UpNextPicks.awayFor - 1
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += 1
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(Self.kept(defaults).isEmpty)
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+    }
+
     /// As a stage you set, what you chose goes once no list has had its pull request for 30 days, with any account: one
     /// another account chose, which never signs in again, and one of the account signed in that waits, as while its
     /// organization's lists can't be read. One a list has stays, noted once a day.

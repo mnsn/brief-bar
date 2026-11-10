@@ -117,9 +117,9 @@ package final class PullRequestOrder: ObservableObject {
     /// (`UpNextPicks.Kept`): what one account chose waits, unused, while another is signed in. None while it's off.
     private var keptPicks = UpNextPicks.Kept()
     /// Since when each pull request you chose for Up Next's slots has been away from where you chose it, as BriefBar saw it
-    /// (`UpNextPicks.moved`): in memory only, while it's on, as what the sources told is, so that once it's on again, or
-    /// BriefBar starts again, each choice has its half hour again, rather than end on what BriefBar reads before it has
-    /// read everything.
+    /// (`UpNextPicks.moved`): in memory only, while it's on, as what the sources told is, so that once it's on again,
+    /// BriefBar starts again, or another account signs in, each choice has its half hour again, rather than end on what
+    /// BriefBar reads before it has read everything, or on how another account saw it.
     private var picksAway: [UpNextSlot: UpNextPicks.Away] = [:]
     /// The pull requests a source said it lists only because someone sent them in a chat, while BriefBar runs, until one
     /// lists them otherwise, as yours or one you watch: one that leaves the lists, merged or closed, stays here.
@@ -393,8 +393,9 @@ package final class PullRequestOrder: ObservableObject {
     /// reads by their links, apart from those lists, as one you watch, it doesn't list yet, as when that read failed: one
     /// you chose of those waits. It replaces what the source told before. Once it tells another account than the one it
     /// told last, the stages you set that BriefBar kept in memory for its pull requests go, and so does Undo of one: they
-    /// were the other account's. So does what you chose for Up Next's slots in memory, and what the other account chose
-    /// that BriefBar keeps waits, unused, until it signs in again. Nothing's kept while Pull Request Order is off.
+    /// were the other account's. So does what you chose for Up Next's slots in memory, and since when each choice has been
+    /// away, and what the other account chose that BriefBar keeps waits, unused, until it signs in again. Nothing's kept
+    /// while Pull Request Order is off.
     package func publish(
         _ source: SourceID, pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [], items: [LinkedItem] = [],
         working: [ItemRef: [ItemRef]] = [:], stages: [ItemRef: StageFacts] = [:], account: String? = nil,
@@ -1736,7 +1737,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forgets the stages you set that BriefBar kept in memory for pull requests of these kinds, and Undo of one, and the
-    /// pull requests of these kinds you chose for Up Next's slots that it kept in memory.
+    /// pull requests of these kinds you chose for Up Next's slots that it kept in memory, and since when each of those you
+    /// chose has been away: it was away as another account, or a source now off, saw it.
     private func forgetInMemory(_ kinds: Set<ItemRef.Kind>) {
         marksInMemory = marksInMemory.filter { !kinds.contains($0.key.kind) }
         if let change = lastStageChange, kinds.contains(change.ref.kind) { lastChange = nil }
@@ -1745,6 +1747,7 @@ package final class PullRequestOrder: ObservableObject {
         for (slot, ref) in gone.refs where picks[slot] == ref {
             picks[slot] = nil
         }
+        picksAway = picksAway.filter { !kinds.contains($0.value.ref.kind) }
     }
 
     /// Takes away what sessions set on a pull request, once none of it counts: in memory, and from what each session

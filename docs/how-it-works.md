@@ -1639,9 +1639,9 @@ as when the Mac wakes (`UpNextPicks.moved`); back sooner, it's still yours. Half
 reads to catch up: as Pull Request Order turns on, which pull requests the Copilot app's sessions are on can come after
 Azure DevOps' lists, so for a moment a pull request a session asks you about reads as waiting on a teammate; and while
 Azure DevOps throttles BriefBar, a failed build shows only once it lets BriefBar read the pull request's details again. When it
-went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again, or
-BriefBar starts again, each choice has its half hour again, so time away while BriefBar is closed, or while Pull Request
-Order is off, doesn't count. One whose source can't tell where it is now, as before Azure DevOps has read its
+went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again,
+BriefBar starts again, or another account signs in, each choice has its half hour again, so time away while BriefBar is
+closed, or while Pull Request Order is off, doesn't count, nor does how another account saw it. One whose source can't tell where it is now, as before Azure DevOps has read its
 organization's lists since BriefBar started, while the latest refresh read nothing, as offline, or while it's off, is
 neither away nor back, and waits; an organization whose lists can't be read again keeps what they had. So does one
 BriefBar reads by its link, sent to you in a chat or watched, as its organization's lists don't have one you're not on,
