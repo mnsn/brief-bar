@@ -19,6 +19,10 @@ import {
     start,
     stopWithTheSession,
 } from "../../Resources/CopilotPlugin/briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/outbox.mjs";
+import {
+    LONGEST_LINE,
+    LONGEST_SAID,
+} from "../../Resources/CopilotPlugin/briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/turn.mjs";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "briefbar-outbox-test-"));
 after(() => {
@@ -572,6 +576,20 @@ describe("reporting", () => {
         assert.equal(readReport(value.requestId).state, "working");
     });
 
+    test("writes what it cuts short as whole characters, as BriefBar reads the report's JSON", async () => {
+        const fake = idleSession({ name: () => ({ name: `${"n".repeat(LONGEST_LINE - 2)}\u{1F600} fork` }) });
+        const { value } = await sendReported(fake);
+        const content = `${"y".repeat(LONGEST_SAID - 2)}\u{1F600} and more`;
+        fake.emit("assistant.message", { messageId: "a1", originatingMessageId: "message-1", content });
+        fake.emit("session.idle", {}, iso(NOW + 9000));
+        const written = fs.readFileSync(path.join(folder, "reports", `${value.requestId}.json`), "utf8");
+        // JSON says half of a character as a lone surrogate's escape, which BriefBar's JSONSerialization refuses.
+        assert.doesNotMatch(written, /\\ud[89a-f][0-9a-f]{2}/i);
+        const report = readReport(value.requestId);
+        assert.equal(report.said, `${"y".repeat(LONGEST_SAID - 2)}…`);
+        assert.equal(report.name, `${"n".repeat(LONGEST_LINE - 2)}…`);
+    });
+
     test("stops following a turn whose report BriefBar removed, as turning Azure DevOps off does, and writes it no more", async () => {
         const fake = idleSession();
         const { value } = await sendReported(fake);
@@ -820,6 +838,11 @@ describe("forking", () => {
         assert.equal(
             forked({ resultType: "failure", error: `It\u001b[31m failed\n${"x".repeat(500)}` }, sessionId).error.message.length,
             200,
+        );
+        // Cut short between characters, never inside one, such as an emoji, half of which BriefBar can't read.
+        assert.equal(
+            forked({ resultType: "failure", error: `${"x".repeat(181)}\u{1F600}${"y".repeat(30)}` }, sessionId).error.message,
+            `The fork failed: ${"x".repeat(181)}…`,
         );
     });
 

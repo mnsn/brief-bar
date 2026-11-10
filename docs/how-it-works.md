@@ -3420,18 +3420,20 @@ demo's are made up (`SentPrompt.demo`).
 shows then, nor in the demo, whose Notifications page lists a made-up one (`CopilotTasksStore.demoNotifications`), and
 it needs Send Work to Copilot and Send Prompts to Copilot Sessions, which are off until you turn them on. Once its turn
 has waited on you a couple of seconds, each time it starts to, one says so, with what Copilot asks, its question or its
-plan's summary, and goes once the turn goes on, or says another still open again once you answer the one it said; a
-permission that a rule grants at once says nothing. Once the turn ends, one says how, in that one's place: done, failed,
-or stopped because the session closed or autopilot reached the most it may spend, never when you stopped it, which takes
-back the one that said it waited on you. Its title is what the pull request's line says, by the session's name as the
-app shows it, a fork's own: "Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but,
-for a comment's fix sent to push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a
-comment in ‘Retry backoff’", as above, since whether it pushed isn't known yet; then the pull request, "!4102 Add retry
-with backoff", as a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the
-thread a thread's prompt took on, as other notifications about it do; one posted before the list read the pull request,
-as BriefBar starts, names it and the thread, and a click finds them as the list has them by then
-(`CopilotTasksStore.promptLink`). Its record keeps when BriefBar last said its turn waited on you, so that a restart
-doesn't say so again; an end BriefBar learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
+plan's summary, and goes once the turn goes on, or says another still open again once you answer the one it said, or as
+you turn Send Work to Copilot off, as a task's working one does, since no report is read then, to say so again once it's
+back on, if the turn still waits (`CopilotTasksStore.withdrawPromptNotifications`); a permission that a rule grants at
+once says nothing. Once the turn ends, one says how, in that one's place: done, failed, or stopped because the session
+closed or autopilot reached the most it may spend, never when you stopped it, which takes back the one that said it
+waited on you. Its title is what the pull request's line says, by the session's name as the app shows it, a fork's own:
+"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but, for a comment's fix sent to
+push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a comment in ‘Retry
+backoff’", as above, since whether it pushed isn't known yet; then the pull request, "!4102 Add retry with backoff", as
+a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
+prompt took on, as other notifications about it do; one posted before the list read the pull request, as BriefBar
+starts, names it and the thread, and a click finds them as the list has them by then (`CopilotTasksStore.promptLink`).
+Its record keeps when BriefBar last said its turn waited on you, so that a restart doesn't say so again; an end BriefBar
+learns as it starts, it says then, as a task's (`CopilotTasksStore.notifyPrompt`,
 `CopilotTasksStore.promptNotification`). One BriefBar follows from the session's log says nothing.
 
 A line that says what Copilot does about a thread, a build or the conflicts has ⋯, with what its state allows, in its

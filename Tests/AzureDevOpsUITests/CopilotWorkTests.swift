@@ -1731,6 +1731,33 @@ import Testing
         #expect(SentPrompt.load(from: settings.defaults).first?.ended == .finished)
     }
 
+    /// Turning Send Work to Copilot off takes back the notification that a reported prompt's turn waits on you, as a task's
+    /// working one goes: no report is read while it's off, so nothing would take it back once the turn goes on. Turned back
+    /// on, one that still waits says so again.
+    @Test func turningSendWorkOffTakesBackThatATurnWaitsOnYou() async throws {
+        let (store, outbox, recent, requestId, home) = try reportedPrompt()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = store.settings
+        let asked = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down) - 10)
+        try writeReport(requestId, in: outbox, state: "needsYou", since: asked, ["asks": "question", "said": "Push it now?"])
+        try await follow(store)
+        #expect(recent.history.entries.first?.body == "Push it now?")
+        store.start()
+        defer { store.stop() }
+
+        settings.copilotEnabled = false
+        try await settle { recent.history.entries.isEmpty }
+        #expect(recent.history.entries.isEmpty)
+        #expect(settings.copilotSentPrompts.first?.notifiedNeedsYou == nil)
+        #expect(SentPrompt.load(from: settings.defaults).first?.notifiedNeedsYou == nil)
+
+        settings.copilotEnabled = true
+        try await follow(store)
+        try await settle { !recent.history.entries.isEmpty }
+        #expect(recent.history.entries.first?.body == "Push it now?")
+        #expect(settings.copilotSentPrompts.first?.notifiedNeedsYou == asked)
+    }
+
     /// A prompt its extension reports goes on being followed while another prompt is sent to its session, and after: its
     /// report is of its own message. One followed from the log isn't.
     @Test func followsAReportedPromptWhileAnotherIsSentToItsSession() async throws {

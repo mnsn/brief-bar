@@ -10,7 +10,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { followTurn, line } from "./turn.mjs";
+import { beginning, followTurn, line } from "./turn.mjs";
 
 export const VERSION = 1;
 /** What the extension does when BriefBar asks. */
@@ -792,5 +792,5 @@ function because(lead, detail) {
 /** A line of text, without control characters, its spaces collapsed, cut short when it's long. */
 function short(text) {
     const line = String(text).replace(/[\p{Cc}\p{Cf}]+/gu, " ").replace(/\s+/g, " ").trim();
-    return line.length > LONGEST_MESSAGE ? `${line.slice(0, LONGEST_MESSAGE - 1)}…` : line;
+    return line.length > LONGEST_MESSAGE ? `${beginning(line, LONGEST_MESSAGE - 1)}…` : line;
 }
