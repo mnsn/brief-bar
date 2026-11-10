@@ -22,6 +22,8 @@ public struct OutboxRequest: Sendable, Equatable {
     public let kind: Kind
     /// For a send; nil for a fork or a stop.
     public let prompt: String?
+    /// For a send: its extension reports how the message's turn goes (`CopilotOutbox.report(of:sentTo:)`), when it can.
+    public let report: Bool
     public let createdAt: Date
     /// After this, no extension takes it.
     public let expiresAt: Date
@@ -31,9 +33,9 @@ public struct OutboxRequest: Sendable, Equatable {
     /// The largest request an extension takes.
     public static let largestFile = 256 << 10
 
-    /// Asks the session's extension to send it a prompt.
-    public static func send(_ prompt: String, to sessionId: String, now: Date = Date()) -> OutboxRequest {
-        OutboxRequest(sessionId: sessionId, kind: .send, prompt: prompt, now: now)
+    /// Asks the session's extension to send it a prompt, and, with `report`, to report how its turn goes.
+    public static func send(_ prompt: String, to sessionId: String, report: Bool = false, now: Date = Date()) -> OutboxRequest {
+        OutboxRequest(sessionId: sessionId, kind: .send, prompt: prompt, report: report, now: now)
     }
 
     /// Asks the session's extension to fork it.
@@ -46,11 +48,14 @@ public struct OutboxRequest: Sendable, Equatable {
         OutboxRequest(sessionId: sessionId, kind: .stop, prompt: nil, now: now)
     }
 
-    init(sessionId: String, kind: Kind, prompt: String?, now: Date, requestId: String = UUID().uuidString.lowercased()) {
+    init(
+        sessionId: String, kind: Kind, prompt: String?, report: Bool = false, now: Date, requestId: String = UUID().uuidString.lowercased()
+    ) {
         self.requestId = requestId
         self.sessionId = sessionId
         self.kind = kind
         self.prompt = prompt
+        self.report = report
         // In whole seconds, so that the times it's written with are exactly its lifetime apart.
         createdAt = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         expiresAt = createdAt.addingTimeInterval(Self.lifetime)
@@ -59,10 +64,11 @@ public struct OutboxRequest: Sendable, Equatable {
     /// `<sessionId>.<requestId>.json`, in `requests`.
     public var fileName: String { "\(sessionId).\(requestId).json" }
 
-    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send and none for a fork or a stop.
+    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send and none for a fork or a
+    /// stop, and asking for a report only for a send.
     func encoded() throws -> Data {
         guard AppSessions.isSessionID(sessionId), AppSessions.isSessionID(requestId),
-              (kind == .send) == (prompt != nil), prompt?.isEmpty != true,
+              (kind == .send) == (prompt != nil), prompt?.isEmpty != true, !report || kind == .send,
               expiresAt > createdAt, expiresAt.timeIntervalSince(createdAt) <= Self.lifetime
         else { throw OutboxError.invalidRequest }
         var fields: [String: Any] = [
@@ -70,6 +76,7 @@ public struct OutboxRequest: Sendable, Equatable {
             "createdAt": CopilotOutbox.timestamp(createdAt), "expiresAt": CopilotOutbox.timestamp(expiresAt),
         ]
         if let prompt { fields["prompt"] = prompt }
+        if report { fields["report"] = true }
         return try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
     }
 }
@@ -106,13 +113,16 @@ public struct OutboxResult: Sendable, Equatable {
     public var message: String?
     /// The message the session got, for a send.
     public var messageId: String?
+    /// For a send BriefBar asked to report: its extension reports how the message's turn goes, in a report named for the
+    /// request (`CopilotOutbox.report(of:sentTo:)`). False from one that doesn't, as an extension from before reports did.
+    public var reports: Bool
     /// The new session, for a fork: a lowercase UUID, the app's ID for it.
     public var forkSessionId: String?
     public var finishedAt: Date?
 
     public init(
         requestId: String, sessionId: String, kind: OutboxRequest.Kind, failure: Failure? = nil, message: String? = nil,
-        messageId: String? = nil, forkSessionId: String? = nil, finishedAt: Date? = nil
+        messageId: String? = nil, reports: Bool = false, forkSessionId: String? = nil, finishedAt: Date? = nil
     ) {
         self.requestId = requestId
         self.sessionId = sessionId
@@ -120,6 +130,7 @@ public struct OutboxResult: Sendable, Equatable {
         self.failure = failure
         self.message = message
         self.messageId = messageId
+        self.reports = reports
         self.forkSessionId = forkSessionId
         self.finishedAt = finishedAt
     }
@@ -150,6 +161,10 @@ public struct OutboxResult: Sendable, Equatable {
         switch request.kind {
         case .send:
             messageId = fields["messageId"] as? String
+            // Only for a report BriefBar asked for: one it didn't, it wouldn't read.
+            if request.report, let reports = fields["reports"] as? NSNumber, CFGetTypeID(reports) == CFBooleanGetTypeID() {
+                self.reports = reports.boolValue
+            }
         case .fork:
             guard let fork = fields["forkSessionId"] as? String, AppSessions.isSessionID(fork), fork != request.sessionId else { return }
             forkSessionId = fork
@@ -195,6 +210,129 @@ public struct OutboxListener: Sendable, Equatable {
     }
 }
 
+/// How the turn of a prompt goes that BriefBar asked its extension to report (`OutboxRequest.report`), as the extension
+/// says in `reports/<requestId>.json`, which it rewrites whole as the turn changes, until it's over: what the session's
+/// documented events say of the message it sent, never the prompt.
+public struct OutboxReport: Sendable, Equatable {
+    public enum State: String, Sendable, Equatable, CaseIterable {
+        /// Sent, and waiting in the session's queue for the turn before it to end.
+        case waiting
+        /// The session works on it.
+        case working
+        /// Copilot asks you something, shows you a plan, or waits for your permission, in the app.
+        case needsYou
+        case finished
+        case failed
+        case stopped
+
+        /// Over: finished, failed or stopped. Nothing changes a report after.
+        public var isOver: Bool {
+            switch self {
+            case .finished, .failed, .stopped: true
+            case .waiting, .working, .needsYou: false
+            }
+        }
+    }
+
+    /// What waits on you.
+    public enum Asks: String, Sendable, Equatable {
+        case question
+        case plan
+        /// Something else Copilot asks for, such as signing in to a server, or switching to another model.
+        case input
+        case permission
+    }
+
+    /// Why a turn stopped, when it wasn't a Stop of yours.
+    public enum Cause: String, Sendable, Equatable {
+        /// The session closed, or its runtime stopped: a session that opens again doesn't go on with it.
+        case closed
+        /// Autopilot reached the most it may spend.
+        case creditLimit
+    }
+
+    public var requestId: String
+    /// The session it went to.
+    public var sessionId: String
+    /// The message the session got.
+    public var messageId: String?
+    /// The extension's process, which follows the turn, and when it started, as its `listening` file says them: while it
+    /// runs, the report may still change (`CopilotOutbox.isLive(_:)`).
+    public var pid: Int32
+    public var startedAt: Date
+    /// The session's name, as the app shows it, when the extension could tell.
+    public var name: String?
+    public var state: State
+    /// Since when it stands so: for a turn that's over, when it ended.
+    public var since: Date
+    /// While it works, the step it's at.
+    public var step: String?
+    /// While it waits on you, what for.
+    public var asks: Asks?
+    /// What Copilot said as it ended, or the error it failed with; while it waits on you, its question, or its plan's
+    /// summary: its lines kept, at most `longestSaid` characters.
+    public var said: String?
+    /// For one that stopped, why, when it wasn't a Stop of yours.
+    public var cause: Cause?
+
+    public init(
+        requestId: String, sessionId: String, messageId: String? = nil, pid: Int32, startedAt: Date, name: String? = nil,
+        state: State, since: Date, step: String? = nil, asks: Asks? = nil, said: String? = nil, cause: Cause? = nil
+    ) {
+        self.requestId = requestId
+        self.sessionId = sessionId
+        self.messageId = messageId
+        self.pid = pid
+        self.startedAt = startedAt
+        self.name = name
+        self.state = state
+        self.since = since
+        self.step = step
+        self.asks = asks
+        self.said = said
+        self.cause = cause
+    }
+
+    /// The most of what Copilot said that BriefBar takes from a report, as its extension sends at most.
+    public static let longestSaid = 4_000
+
+    /// Its turn is over: finished, failed or stopped.
+    public var isOver: Bool { state.isOver }
+
+    /// One as version 1 of the contract has it, of the request it's named for, sent to that session; nil for anything
+    /// else. What it says is checked as BriefBar shows it: one line for a name or a step, and only what goes with its state.
+    init?(_ data: Data, requestId: String, sessionId: String) {
+        guard let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              CopilotOutbox.number(fields["version"]) == Double(CopilotOutbox.version),
+              fields["requestId"] as? String == requestId, fields["sessionId"] as? String == sessionId,
+              let pid = CopilotOutbox.number(fields["pid"]).flatMap({ Int32(exactly: $0) }), pid > 0,
+              let startedAt = (fields["startedAt"] as? String).flatMap(CopilotOutbox.date),
+              let state = (fields["state"] as? String).flatMap(State.init(rawValue:)),
+              let since = (fields["since"] as? String).flatMap(CopilotOutbox.date)
+        else { return nil }
+        let line = { (key: String) in (fields[key] as? String).map(OutboxResult.oneLine).flatMap { $0.isEmpty ? nil : $0 } }
+        self.init(
+            requestId: requestId, sessionId: sessionId, messageId: (fields["messageId"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            pid: pid, startedAt: startedAt, name: line("name"), state: state, since: since,
+            step: state == .working ? line("step") : nil,
+            asks: state == .needsYou ? (fields["asks"] as? String).flatMap(Asks.init(rawValue:)) : nil,
+            said: state == .needsYou || state.isOver ? (fields["said"] as? String).flatMap(Self.words) : nil,
+            cause: state == .stopped ? (fields["cause"] as? String).flatMap(Cause.init(rawValue:)) : nil
+        )
+    }
+
+    /// What Copilot wrote, its lines kept, without other control characters or space around it, and no more than
+    /// `longestSaid` characters: nil for nothing.
+    static func words(_ text: String) -> String? {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let kept = String(String.UnicodeScalarView(normalized.unicodeScalars.filter { scalar in
+            scalar == "\n" || scalar == "\t" || !(scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format)
+        })).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !kept.isEmpty else { return nil }
+        return kept.count > longestSaid ? String(kept.prefix(longestSaid - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "…" : kept
+    }
+}
+
 public enum OutboxError: Error, Sendable, Equatable, CustomStringConvertible {
     /// One of the outbox's folders isn't a real one that only you can open, or couldn't be made: its name.
     case unsafeFolder(String)
@@ -219,7 +357,8 @@ public enum OutboxError: Error, Sendable, Equatable, CustomStringConvertible {
 /// The folder BriefBar shares with its extension in the Copilot app's sessions, which the opt-in `briefbar-sessions` plugin
 /// installs (version 1 of the contract, in docs/how-it-works.md): local files only. BriefBar writes requests to
 /// `requests`, where an extension claims its own session's by renaming it, then writes a result to `results`; while it
-/// runs, an extension says so in `listening`.
+/// runs, an extension says so in `listening`; and for a send BriefBar asked it to report, it says how the message's turn
+/// goes in `reports`, which BriefBar reads, and removes once the turn is over.
 ///
 /// Each of its folders is a real one, yours, that only you can open (0700), and each file a regular one, yours, that only
 /// you can read (0600), written whole to a name starting with `.`, then renamed into place: what isn't so is never read,
@@ -234,11 +373,13 @@ public struct CopilotOutbox: Sendable {
         case results
         /// The extensions that run, each in its own session.
         case listening
+        /// How the turns go of the sends BriefBar asked extensions to report, which BriefBar reads, and removes once over.
+        case reports
     }
 
     /// The contract's version.
     public static let version = 1
-    /// The largest result or listening file BriefBar reads.
+    /// The largest result, listening file or report BriefBar reads.
     static let largestAnswer = 64 << 10
     /// How old BriefBar's requests and their results get before BriefBar removes them, as it starts another.
     public static let oldAge: TimeInterval = 3_600
@@ -321,8 +462,51 @@ public struct CopilotOutbox: Sendable {
         _ listener: OutboxListener, isRunning: (pid_t) -> Bool = SessionLock.isRunning,
         startTime: (pid_t) -> Date? = DetachedProgram.startTime(of:)
     ) -> Bool {
-        guard isRunning(listener.pid), let started = startTime(listener.pid) else { return false }
-        return started <= listener.startedAt.addingTimeInterval(2)
+        isLive(pid: listener.pid, startedAt: listener.startedAt, isRunning: isRunning, startTime: startTime)
+    }
+
+    /// Whether the extension that follows a turn still runs, as `isLive` checks one that listens: until it's over, its report
+    /// may still change.
+    public static func isLive(
+        _ report: OutboxReport, isRunning: (pid_t) -> Bool = SessionLock.isRunning,
+        startTime: (pid_t) -> Date? = DetachedProgram.startTime(of:)
+    ) -> Bool {
+        isLive(pid: report.pid, startedAt: report.startedAt, isRunning: isRunning, startTime: startTime)
+    }
+
+    private static func isLive(pid: Int32, startedAt: Date, isRunning: (pid_t) -> Bool, startTime: (pid_t) -> Date?) -> Bool {
+        guard isRunning(pid), let started = startTime(pid) else { return false }
+        return started <= startedAt.addingTimeInterval(2)
+    }
+
+    // MARK: Reports
+
+    /// What the extension that sent a prompt says of its turn, in the report named for its request, sent to `sessionId`:
+    /// nil when there's none, or none as the contract has it, in a file BriefBar reads as it reads results.
+    public func report(of requestId: String, sentTo sessionId: String) -> OutboxReport? {
+        guard AppSessions.isSessionID(requestId), AppSessions.isSessionID(sessionId),
+              let folder = try? openFolder(.reports, create: false)
+        else { return nil }
+        defer { close(folder) }
+        guard case .data(let data) = Self.read("\(requestId).json", in: folder, limit: Self.largestAnswer) else { return nil }
+        return OutboxReport(data, requestId: requestId, sessionId: sessionId)
+    }
+
+    /// Removes a turn's report, once BriefBar has taken how it ended: it holds what Copilot said.
+    public func removeReport(of requestId: String) {
+        guard AppSessions.isSessionID(requestId), let folder = try? openFolder(.reports, create: false) else { return }
+        defer { close(folder) }
+        unlinkat(folder, "\(requestId).json", 0)
+    }
+
+    /// Removes the reports that are more than `age` old but those of the requests BriefBar still follows a turn by: one
+    /// whose prompt BriefBar no longer keeps, as when it cleared it, or Azure DevOps was off, nothing reads.
+    public func removeOldReports(keeping kept: Set<String>, now: Date = Date(), age: TimeInterval = CopilotOutbox.oldAge) {
+        guard let folder = try? openFolder(.reports, create: false) else { return }
+        defer { close(folder) }
+        Self.removeOld(in: folder, now: now, age: age) { name in
+            !(name.hasSuffix(".json") && kept.contains(String(name.dropLast(".json".count))))
+        }
     }
 
     // MARK: Cleaning up
@@ -333,21 +517,26 @@ public struct CopilotOutbox: Sendable {
         for kind in [Folder.requests, .results] {
             guard let folder = try? openFolder(kind, create: false) else { continue }
             defer { close(folder) }
-            for name in Self.names(in: folder) {
-                var info = stat()
-                guard fstatat(folder, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
-                      info.st_mode & S_IFMT == S_IFREG || info.st_mode & S_IFMT == S_IFLNK
-                else { continue }
-                let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
-                if now.timeIntervalSince(modified) >= age { unlinkat(folder, name, 0) }
-            }
+            Self.removeOld(in: folder, now: now, age: age) { _ in true }
         }
     }
 
-    /// Removes every request and result, whatever its age, as when Azure DevOps is turned off: they hold its prompts. A
-    /// folder of them that isn't only yours anymore, such as one that others can open now, is emptied all the same, and
-    /// goes too, for the next request to make it anew; a link or a file in its place is unlinked, never followed. What
-    /// extensions say in `listening` stays, theirs while they run.
+    /// Removes the files, or links, in a folder that are more than `age` old, of those whose names `goes` takes.
+    private static func removeOld(in folder: Int32, now: Date, age: TimeInterval, where goes: (String) -> Bool) {
+        for name in Self.names(in: folder) where goes(name) {
+            var info = stat()
+            guard fstatat(folder, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
+                  info.st_mode & S_IFMT == S_IFREG || info.st_mode & S_IFMT == S_IFLNK
+            else { continue }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
+            if now.timeIntervalSince(modified) >= age { unlinkat(folder, name, 0) }
+        }
+    }
+
+    /// Removes every request and result, whatever its age, as when Azure DevOps is turned off: they hold its prompts; and
+    /// every report, which holds what Copilot said. A folder of them that isn't only yours anymore, such as one that others
+    /// can open now, is emptied all the same, and goes too, for the next request to make it anew; a link or a file in its
+    /// place is unlinked, never followed. What extensions say in `listening` stays, theirs while they run.
     /// - Returns: false when some of them may stay: what couldn't be removed, or what couldn't be opened to look.
     @discardableResult
     public func forget() -> Bool {
@@ -366,12 +555,12 @@ public struct CopilotOutbox: Sendable {
         defer { close(outbox) }
         guard Self.isOwnFolder(outbox) else { return false }
         var forgotten = true
-        for kind in [Folder.requests, .results] where !Self.empty(kind, in: outbox) { forgotten = false }
+        for kind in [Folder.requests, .results, .reports] where !Self.empty(kind, in: outbox) { forgotten = false }
         return forgotten
     }
 
-    /// Removes BriefBar's requests, or their results, from the outbox: what's in their folder, without following a link,
-    /// and the folder too unless it's only yours, as BriefBar makes it; or a link or a file in its place. False when
+    /// Removes BriefBar's requests, their results, or reports, from the outbox: what's in their folder, without following a
+    /// link, and the folder too unless it's only yours, as BriefBar makes it; or a link or a file in its place. False when
     /// something stays, such as a folder of someone else's.
     static func empty(_ kind: Folder, in outbox: Int32) -> Bool {
         let name = kind.rawValue

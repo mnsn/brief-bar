@@ -265,9 +265,9 @@ extension CopilotTasksStore {
     /// pasted it (`copiedPrompts`), so a prompt you don't paste leaves the comments on Needs You. Only while Send Work to
     /// Copilot is on, never in the demo, and one prompt at a time for each session.
     /// - Parameter about: what of the pull request it's about, its threads, a build or its conflicts, and what for: once it's
-    ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`). Whatever
-    ///   it's about, the turns of the prompts sent the session before that weren't seen to end aren't followed after
-    ///   (`overlap`).
+    ///   sent, or copied for you to paste, BriefBar keeps that, to follow its turn in the session (`SentPrompt`), and asks the
+    ///   extension that sends it to report how its turn goes. Whatever it's about, the turns of the prompts sent the session
+    ///   before that weren't seen to end, and that no extension reports, aren't followed after (`overlap`).
     ///   - sentAt: as delivering it starts, which its sender may tell, as the time it took on what it's about: what the
     ///     session does from then on is its turn, even one over before BriefBar heard it went. It's free then, or nothing
     ///     goes.
@@ -288,13 +288,20 @@ extension CopilotTasksStore {
         // the session, and its turn end, before BriefBar hears it went (`pauseFollowing`). A fork's goes to the fork.
         if !forking { pauseFollowing(choice.id) }
         defer { if !forking { resumeFollowing(choice.id) } }
-        let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush)
-        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff)
+        var report: String?
+        let outcome = await deliverPrompt(
+            prompt, to: choice, forking: forking, handOff: handOff, checkingPush: checkingPush, reporting: about != nil, report: &report
+        )
+        keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt, copying: prompt, handOff: handOff, report: report)
         return outcome
     }
 
+    /// - Parameters:
+    ///   - reporting: asks the extension that sends it to report how its turn goes.
+    ///   - report: set, once it's sent, to the request whose report says how its turn goes, when the extension reports it.
     private func deliverPrompt(
-        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?
+        _ prompt: String, to choice: SessionChoice, forking: Bool, handOff: CommentHandOff?, checkingPush: TaskPullRequest?,
+        reporting: Bool = false, report: inout String?
     ) async -> SessionDelivery {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
@@ -400,20 +407,24 @@ extension CopilotTasksStore {
         let notes = ThisMac.noting
         let work = Task.detached(priority: .userInitiated) {
             await ThisMac.$noting.withValue(notes) {
-                forking ? await sender.forkAndSend(prompt, from: id) : await sender.send(prompt, to: id)
+                forking
+                    ? await sender.forkAndSend(prompt, from: id, report: reporting)
+                    : await sender.send(prompt, to: id, report: reporting)
             }
         }
         // Stopped, as when its window closes: a request that no extension took yet is taken back.
-        let outcome = await withTaskCancellationHandler {
+        let receipt = await withTaskCancellationHandler {
             await work.value
         } onCancel: {
             work.cancel()
         }
+        let outcome = receipt.outcome
         // Once it's stopped, or Send Work to Copilot or Send Prompts to Copilot Sessions is turned off, nothing more shows,
         // and nothing's copied.
         let goesOn = maySendToSessions && !Task.isCancelled
         switch outcome {
         case .sent, .forkedAndSent:
+            report = receipt.report
             let shown: String
             if case .forkedAndSent(let fork) = outcome {
                 shown = fork
