@@ -1388,14 +1388,21 @@ fileprivate final class SplitViewer {}
         #expect(order.changes.all.allSatisfy { $0.overridden == nil })
         #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4121)])
 
-        // The coupon field's tests after the coupon field, told while they're in the order's mission: Undo brings them back
-        // where the split put them, knowing that, so it takes nothing back.
+        // The coupon field's tests after the coupon field, told while they're in the order's mission, which BriefBar hasn't
+        // read yet: Undo reads it first, so it brings them back where the split put them knowing that, and takes nothing
+        // back.
         clock.advance(60)
-        try tell(3, [
-            .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
-            .init(link: link(4121), after: [link(4120)]),
-        ])
+        var unread = DeclaredOrders.load(from: defaults)
+        try unread.apply(
+            OrderRequest(plan: Self.planID.uuidString, revision: 3, entries: [
+                .init(link: link(4101)), .init(link: link(4102)), .init(link: link(4120), after: [link(4101)]),
+                .init(link: link(4121), after: [link(4120)]),
+            ]),
+            now: clock.now, newID: UUID()
+        )
+        unread.save(to: defaults)
         #expect(order.undo())
+        order.reloadOrders()
         #expect(order.changes.all.allSatisfy { $0.overridden == nil })
         #expect(Self.refs(of: order.missions.first { .into($0.key) == mine }) == [Self.pr(4120), Self.pr(4121)])
         #expect(OrderChanges.load(from: defaults)[Self.pr(4120)]?.linedWith == [Self.pr(4101), Self.pr(4121)])

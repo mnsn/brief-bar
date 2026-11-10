@@ -1674,6 +1674,9 @@ package final class PullRequestOrder: ObservableObject {
     /// it had asked them with, so that they aren't asked again.
     private func undo(_ last: OrderLastChange) -> Bool {
         guard isOn, last.canUndo else { return false }
+        // Against the orders as agents last told them, as for a change: what a split moved, back where the split put it,
+        // knows the lines they told before.
+        reloadOrders()
         var changed = changes
         changed.restore(last.touched, orders: orders)
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order

@@ -1469,15 +1469,16 @@ it again elsewhere in its mission, the rest of what the split moved with it goes
 to them since, but not one a split moved there, or you put back there, since. Only a line that crosses the split as
 BriefBar first sees it: not
 a line you took away, nor one to a pull request you moved elsewhere yourself, nor one among what the split moved
-together, which each keeps as it sees them, with the order's lines it had when you last changed it
-(`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves them, or goes back to the order's
-mission, takes nothing back; one that Undo brings back where the split put it knows the lines told meanwhile, as Undo is
-your later change, but not one an order BriefBar forgot that had taken it brings back, as the order's line is the later
-change. Nor one that holds nothing up, to one
-that merged or closed or from one that merged, until
-it does again; one BriefBar can't see counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
-one the order took back puts back what it took back with it, and on one another order took, what the order took back of
-what the split moved with it since it moved it there, as one change, each keeping the order's lines it has then, so telling
+together, which each keeps as it sees them, with the order's lines it had when you last changed it, and those another the
+split moved from that order keeps (`OrderChange.linedWith`), so one that comes to cross later, as a pull request leaves
+them, or goes back to the order's mission, takes nothing back; one that Undo brings back where the split put it knows the
+lines told meanwhile, as Undo is your later change, but not one an order BriefBar forgot that had taken it brings back, as
+the order's line is the later change; and Undo leaves taken back one its order took since. Nor one that holds nothing up,
+to one that merged or closed or from one that merged, which BriefBar sees only once it does again; one BriefBar can't see
+counts, and `--mcp` goes by the same before the app notes it. Put Yours Back on
+one the order took back puts back what it took back with it, or what it went back with, and on one another order took,
+what the order took back of what the split moved with it since it moved it there, as one change, each keeping the
+order's lines it has then, so telling
 the same again takes nothing back, but a new line across does. **Keep Together**,
 Undo, Undo Your Changes
 to It or to This Mission, and an order that takes back what a split moved, as a session's later change does one you
