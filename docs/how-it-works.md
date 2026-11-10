@@ -1630,26 +1630,41 @@ one you chose (`UpNextPicks`) comes first in its column, ahead of all of the abo
 (`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
 needs you, so that what needs you still comes first;
 the slot shows it with ✎, and its card wears **✎ Next**. It stands while its pull request is on your board in that stage
-(`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away, and once it's
-been away for half an hour (`UpNextPicks.awayFor`), BriefBar forgets it as it works stages out again, back by then or not,
+(`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
+it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull
+requests and Done only yours, or once you're taken off it: the lists Azure DevOps has read of its organization since
+BriefBar started, as the account signed in now (`PRStore.listedOrganizations`), don't have it. Once it's been away for
+half an hour (`UpNextPicks.awayFor`), BriefBar forgets it as it works stages out again, back by then or not,
 as when the Mac wakes (`UpNextPicks.moved`); back sooner, it's still yours. Half an hour is long enough for what BriefBar
 reads to catch up: as Pull Request Order turns on, which pull requests the Copilot app's sessions are on can come after
 Azure DevOps' lists, so for a moment a pull request a session asks you about reads as waiting on a teammate; and while
 Azure DevOps throttles BriefBar, a failed build shows only once it lets BriefBar read the pull request's details again. When it
-went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again, or
-BriefBar starts again, each choice has its half hour again. One whose source reads nothing of it now, such as while its
-organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's off, is
-neither away nor back, and waits. In progress without needing you, as while its build runs again or a session writes
-it, Fix next's waits too, and comes first again once it needs you. Undo of a stage you changed chooses its pull request
+went away is kept in memory only, while Pull Request Order is on, as what the sources tell is: once it's on again,
+BriefBar starts again, or another account signs in, each choice has its half hour again, so time away while BriefBar is
+closed, or while Pull Request Order is off, doesn't count, nor does how another account saw it. One whose source can't
+tell where it is now, as before Azure DevOps has read its
+organization's lists since BriefBar started, while the latest refresh read nothing, as offline, or while it's off, is
+neither away nor back, and waits; an organization whose lists can't be read again keeps what they had. So does one
+BriefBar reads by its link, sent to you in a chat or watched, as its organization's lists don't have one you're not on,
+while BriefBar doesn't list it and Azure DevOps hasn't said it's closed or gone, as before its link's turn, or after a
+read that failed, tried again an hour later (`PRStore.unreadLinks`). In progress
+without needing you, as while its build runs again or a session writes it, Fix next's waits too, and comes first again
+once it needs you. Undo of a stage you changed chooses its pull request
 again where you'd chosen it, gone by then or not, but not for a slot you've decided for since, choosing another or with
-Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, or
-unchecking Make Next forgets it at once, whether the slot shows it then or waits for it to come back; there's no Undo
-line, as for Focus. It's kept in the preferences as each slot's name and its pull request's reference
-(`order.upNextPicks`), but for a pull request listed only because someone sent it in a chat, which stays in memory while
-BriefBar runs, Pull Request Order off or on, as your changes to its mission do, until BriefBar lists it otherwise, and
-goes when another account signs in.
-**Forget Stages…** forgets them all, and turning Azure DevOps off forgets its own. `needs_me` reads those kept in the
-preferences, and lists each first in its stage, as the Board does.
+Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, forgets
+it at once, whether the slot shows it then or waits for it to come back; so does unchecking Make Next on its card while
+the slot shows it. There's no Undo line, as for Focus. It's kept in the preferences with the Azure DevOps account you
+chose it with, as the stages you set are (`UpNextPicks.Kept`, `order.upNextPicks`): each slot's name, its pull request's
+reference, and when a list last had it, noted once a day. What one account chose applies only while it's signed in, and
+waits, unused, while another is; one no list has had for 30 days goes, with any account, as a stage you set does, such
+as once its organization isn't watched, or its account doesn't sign in again. One of a pull request listed only because
+someone sent it in a chat stays in memory while BriefBar runs, Pull Request Order off or on, as your changes to its
+mission do, until BriefBar lists it otherwise, and goes when another account signs in; so does one chosen before BriefBar
+knew the account, until it does, when it's kept with the account, over what the account chose for that slot before. Each
+of those comes first, as you chose it since. One the account chose before goes to memory too once that account's own
+lists have it only from a chat, as a stage you set does, but not because another account's did.
+**Forget Stages…** forgets them all, with every account, and turning Azure DevOps off forgets its own. `needs_me` reads
+those kept in the preferences for the account its lists read with, and lists each first in its stage, as the Board does.
 
 A pull request in two missions has a card in each lane, and counts once. On the Board (`OrderBoardView`), a card drags
 with SwiftUI's `draggable`, carrying its reference and a token made for that drag alone (`BoardDrag`), so a column takes
@@ -4062,7 +4077,7 @@ Azure DevOps starts. The demo keeps them in memory.
 
 While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
 stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
-the preferences, each pull request with its number, title and repository and why it's there, in
+the preferences for the account the lists read with, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back while the session's lasts, and whether yours goes or shows again once it ends. `--mcp` works them
 out itself (`AzureDevOpsAgent.stages`, `AgentStages`), as the app does, from what

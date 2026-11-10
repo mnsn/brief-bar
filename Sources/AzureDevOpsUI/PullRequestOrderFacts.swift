@@ -9,10 +9,12 @@ import Foundation
 /// day included, merged or abandoned, for what BriefBar sees become of them; with their branches, repositories and
 /// authors, what each means for you now, how each looks and opens, as its row does; what each one's stage is worked out
 /// from (`stageFacts`), with the Copilot tasks BriefBar sent on it and the account it was read with, whose stages you set
-/// apply; and, with Show Links on too, the stories and work items each is for, by reference, with those stories and work
-/// items, for their titles. Only Show Links reads more from Azure DevOps for it, the stories (`WorkLinksStore`). As the
-/// list doesn't read which branches are forks' or which is a repository's default, a pull request that targets another's
-/// branch goes after it only when the same person opened both.
+/// and choices for Up Next apply, and the organizations whose lists it read, which a pull request you chose has left once
+/// they don't have it, unless it's one BriefBar reads by its link and hasn't yet; and, with Show Links on too, the stories
+/// and work items each is for, by reference, with those stories and work items, for their titles. Only Show Links reads
+/// more from Azure DevOps for it, the stories (`WorkLinksStore`). As the list doesn't read which branches are forks' or
+/// which is a repository's default, a pull request that targets another's branch goes after it only when the same person
+/// opened both.
 @MainActor
 final class PullRequestOrderFacts {
     private let order: PullRequestOrder
@@ -128,7 +130,8 @@ final class PullRequestOrderFacts {
                 store.records, items: store.items, tasks: tasks, watched: settings.watchedKeys, readAt: store.readTimes
             ),
             account: settings.account, inMemory: Self.sentInChats(store.records, watched: settings.watchedKeys),
-            readsStories: stories.areRead, listed: store.isListing
+            readsStories: stories.areRead, listed: store.isListing, listsRead: store.listedOrganizations,
+            unreadLinks: Set(store.unreadLinks.map(\.linkRef))
         )
         tellDemoStages()
     }

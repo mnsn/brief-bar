@@ -357,10 +357,12 @@ build on counting as long as they've waited, as they can't merge before it; **Ne
 that needs a reviewer first; **Merge next**, what can merge next; **Waits next**, the one closest to merging. The
 mission you focus on comes first in each. To choose which one a slot shows, such as a more urgent fix, click its title,
 **Fix next ⌄**, and pick it from its pull requests, each with why it's there: it shows with ✎, first in its column on the
-Board too, and BriefBar remembers it until that pull request moves on to another stage, merges or closes, and stays away
-for half an hour; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and
-**Undo**, after you move its card, chooses it again. While its build runs again, or a session writes it, Fix next shows
-the next one meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
+Board too, and BriefBar remembers it, for the Azure DevOps account you're signed in with, until that pull request moves
+on to another stage, merges or closes, or leaves your lists, as a review once its author completes it, and stays away for
+half an hour while BriefBar runs with Pull Request Order on; then BriefBar chooses again. Back sooner, as when someone
+wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless you've since
+chosen another or let BriefBar choose. While its build runs again, or a session writes it, Fix next shows the next one
+meanwhile, and yours once it needs you again. **Let BriefBar Choose**, in the same list, gives the slot back
 to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board. Click **Up Next**
 to fold it, and BriefBar remembers. It changes no group or count.
 
