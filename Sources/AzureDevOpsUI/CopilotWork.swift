@@ -215,6 +215,9 @@ struct CopilotWork: Equatable {
     /// When it was taken on, whether it's over or not, and whichever task in its session keeps it now: a Push & Reply's,
     /// when it started to push, which a run of the build that fails after it was a run of what it pushed, or since.
     var takenAt: Date?
+    /// For one an earlier task in its session took on, which a later one went on with: by when it was over, as that one
+    /// started, which `since`, when it was taken on, doesn't say. Nil otherwise.
+    var overBy: Date?
     /// For Push & Reply on a thread: it replies on it, as its prompt lists it. False for a thread whose fix it pushes along
     /// with all else its session changed, without replying on it (`CopilotTasksStore.work(on:of:for:)`).
     var replies = true
@@ -405,7 +408,7 @@ struct CopilotWork: Equatable {
             }
             return CopilotWork(
                 part: taken.part, purpose: purpose, state: state, session: entry.id, forkedFrom: entry.forkedFrom, isTask: isTask,
-                since: taken.since, takenAt: taken.since, fixes: fixes, head: head
+                since: taken.since, takenAt: taken.since, overBy: entry.startedAt, fixes: fixes, head: head
             )
         }
         let ended = entry.status.phase.isActive ? nil : entry.status.since
@@ -550,16 +553,19 @@ extension CopilotTasksStore {
         /// When what a push from a session would push of the fix was there: in the session itself, once the fix was taken
         /// on; in a fork of it made once the fix was over, as it was made, unless it's one the Copilot CLI made of one of
         /// BriefBar's tasks, which has only what the session committed, and the fix isn't the conflicts' resolution. Nil
-        /// when it has none of it.
+        /// when it has none of it. A fix an earlier task in its session took on was over by when the next one there started
+        /// (`CopilotWork.overBy`), not as it was taken on.
         func carried(by session: String, forkedFrom: String?, madeAt: Date, committedOnly: Bool) -> Date? {
             if session == fix.session { return fix.takenAt ?? fix.since }
-            guard forkedFrom == fix.session, madeAt > fix.since, !committedOnly || fix.part == .conflicts else { return nil }
-            return fix.since
+            let over = fix.overBy ?? fix.since
+            guard forkedFrom == fix.session, madeAt > over, !committedOnly || fix.part == .conflicts else { return nil }
+            return over
         }
         for entry in entries where entry.isOn(key) {
-            // A fork's session was made as its first task started, the earliest it kept.
+            // A fork's session was made as its first task started (`CopilotRun.forkedAt`); for one kept before BriefBar had
+            // that, the earliest it kept.
             let kept = (entry.pushes ?? []).map(\.since) + (entry.taken ?? []).map(\.since)
-            let madeAt = kept.reduce(entry.startedAt, min)
+            let madeAt = entry.run?.forkedAt ?? kept.reduce(entry.startedAt, min)
             let committedOnly = entry.run?.isAppSession != true
             let carrying = carried(by: entry.id, forkedFrom: entry.forkedFrom, madeAt: madeAt, committedOnly: committedOnly)
             guard let after = carrying else { continue }

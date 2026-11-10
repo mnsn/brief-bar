@@ -304,15 +304,16 @@ public struct CopilotLauncher: Sendable {
             sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
             denied: request.subject.deniedTools
         )
-        // Going on with a fork, it's still that session's fork.
+        // Going on with a fork, it's still that session's fork, made as its first task started.
         let forkedFrom = request.forking?.id ?? request.continuing?.forkedFrom
+        let forkedAt = request.forking != nil ? now : request.continuing?.forkedAt
         var run: CopilotRun
         switch request.subject {
         case .workItem(let item):
             run = CopilotRun(
                 id: id, workItem: item.reference, options: request.options, repository: repository.root, worktree: worktree,
                 startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: request.continuing?.pullRequest,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt
             )
         case .pullRequest(let pullRequest, let action):
             // Going on with the session of the work item's task that opened it, the run stays that work item's too; a fork
@@ -321,7 +322,7 @@ public struct CopilotLauncher: Sendable {
                 id: id, workItem: request.continuing?.workItem, onPullRequest: pullRequest.reference, action: action,
                 options: request.options, repository: repository.root, worktree: worktree, startedAt: now,
                 process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom, forkedAt: forkedAt
             )
         }
         do {

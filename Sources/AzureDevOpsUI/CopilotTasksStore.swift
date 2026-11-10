@@ -33,6 +33,10 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     /// commit than as it was sent (`fixingHead`, `CopilotTasksStore.seesPush(since:of:)`), which says it pushed. Its prompt
     /// has it stop before it pushes, as when the tests don't pass, and finish all the same.
     var pushSeen = false
+    /// Its run fixes what it took on first, with the commit the branch was at as it was sent, as the run keeps them apart
+    /// from what it took on, which Clear lets go of (`CopilotRun.fixes`, `CopilotRun.head`); not a run it goes on with.
+    var runFixes = false
+    var runHead: String? = nil
 
     var workItemURL: URL? {
         workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
@@ -364,6 +368,8 @@ final class CopilotTasksStore: ObservableObject {
             startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run, taken: run.taken,
             forkedFrom: run.forkedFrom, pushes: run.pushes
         )
+        entry.runFixes = run.fixes == true
+        entry.runHead = run.head
         if entry.fixesFirst, let key = entry.pullRequestKey { entry.pushSeen = seesPush(since: entry.fixingHead, of: key) }
         return entry
     }
@@ -604,6 +610,10 @@ final class CopilotTasksStore: ObservableObject {
         // The pushes that ran there, as BriefBar kept its runs: not one of the app's sessions' only about to start.
         let pushes = CopilotRun.pushes(goingOnWith: keptRun, on: entry.onPullRequest)
         entry.pushes = pushes
+        // Kept with the run apart from what it took on, which Clear lets go of: it pushed only once the list reads the branch
+        // moved.
+        let fixesFirst = action == .pushAndReply && fixing
+        let fixingHead = fixesFirst ? head : nil
         entry.forkedFrom = forking?.id ?? continuing?.forkedFrom
         pending.removeAll { $0.id == id }
         pending.append(entry)
@@ -677,6 +687,10 @@ final class CopilotTasksStore: ObservableObject {
                     run.taken = kept
                 }
                 run.pushes = pushes
+                if fixesFirst {
+                    run.fixes = true
+                    run.head = fixingHead
+                }
                 // Going on with one of the Copilot app's sessions: its turn is the next, after any prompt sent it before.
                 if let continuing { overlap(promptsIn: continuing.id, before: now) }
                 startedHere.insert(run.id)

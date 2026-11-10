@@ -2795,8 +2795,9 @@ before a retarget the list has read meanwhile, and until the prompt is sent or c
 another, nothing goes, and BriefBar says to open the window again, for a prompt that names it
 (`CopilotTasksStore.retargetProblem`, `LaunchError.retargeted`); when Azure DevOps names another branch than the list
 has read, the list reads the pull request again then, rather than at its next refresh, so that the window, opened again,
-names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). Nor does the window send one once the list
-no longer has the pull request open, as a comment's composer doesn't (`CopilotTasksStore.closedProblem`). Nor does a
+names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). Nor does one go once the list no longer
+has the pull request open, as a comment's composer doesn't: the window checks as you send it, and the list is asked
+again, as for a retarget, until the prompt is sent or copied (`CopilotTasksStore.closedProblem`). Nor does a
 Push & Reply go to one of the
 app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
 as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
@@ -3239,8 +3240,9 @@ paste. A thread whose own Push & Reply failed or stopped is pushed along so too.
 takes on its threads alone, and says it fixes them first (`CopilotWork.fixes`): "Copilot is fixing this in ‘Retry
 backoff’, to push and reply", then, once it finished, "Fixed, pushed and replied in ‘Retry backoff’", while the session's
 other fixes it pushes along say they're pushed, without a reply, as above: but only once the list reads the pull
-request's branch at another commit than as it was sent, which it keeps with it (`TakenPart.head`, `SentPrompt.head`,
-`SessionPush.head`, `PullRequest.sourceCommit`, `CopilotTasksStore.seesPush(since:of:)`), since its prompt has it stop
+request's branch at another commit than as it was sent, which it keeps with it, a task with its run too, so that clearing
+its threads doesn't make it a plain push (`TakenPart.head`, `CopilotRun.head`, `SentPrompt.head`, `SessionPush.head`,
+`PullRequest.sourceCommit`, `CopilotTasksStore.seesPush(since:of:)`), since its prompt has it stop
 before it pushes, and end its turn all the same, when the tests don't pass, the pull request was retargeted, completed or
 abandoned, a merge brings in another branch, or a push was rejected. Until then it says "Fixed in ‘Retry backoff’, but
 not pushed" (`CopilotWork.pushSeen`), with what Copilot said under it; the session's other fixes stay ready; its task's
@@ -3253,7 +3255,10 @@ either, since it may have replied, which a Push & Reply would post again: **Fix*
 session pushes the session's fixes the fork has (`CopilotTasksStore.pushCarrying`): a fork of one of the app's sessions
 has all the session changed by the time it was made, its changes that aren't committed too, but a fork one of
 BriefBar's tasks makes with the CLI starts at the commit the task's checkout has, so only the conflicts' resolution,
-which Resolve Conflicts commits, goes with it; neither has a fix done after it was made. One that failed or stopped may
+which Resolve Conflicts commits, goes with it; neither has a fix done after it was made. A task's fork keeps when it was
+made, as its first task started (`CopilotRun.forkedAt`), and a fix an earlier task in the session took on was done by
+when the next one there started (`CopilotWork.overBy`), so a fork made while a fix was under way isn't taken to have it.
+One that failed or stopped may
 not have fixed them, so, unlike a Push & Reply that did, it doesn't make them ready to push: Try Again sends it again
 (`CopilotWork.waitsToBePushed`, `CopilotTasksStore.canTryAgain`). Once one such push finished, the fix
 stays pushed, whatever comes after it, such as a push that fails or one copied for you to paste, and even once what that

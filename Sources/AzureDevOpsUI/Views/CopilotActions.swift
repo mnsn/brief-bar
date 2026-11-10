@@ -1580,7 +1580,7 @@ struct ReadyFixesBar: View {
 
     /// What fixes fixed, in a sentence's middle: "2 fixes", "1 fix and the conflicts' resolution", "a build's fix";
     /// "nothing" for none.
-    static func listed(_ parts: [PullRequestPart]) -> String {
+    nonisolated static func listed(_ parts: [PullRequestPart]) -> String {
         let threads = parts.filter { $0.thread != nil }.count
         let builds = parts.filter { $0.build != nil }.count
         var what: [String] = []

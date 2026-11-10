@@ -485,6 +485,79 @@ private final class TakenAt: Sendable {
         #expect(ext.received == ["Push and reply"])
     }
 
+    /// Nor once the list reads that the pull request was completed or abandoned: before git checks, after BriefBar wrote the
+    /// prompt for the session's extension but before the extension took it, which BriefBar takes back, and right before
+    /// BriefBar copies it for you to paste.
+    @Test(.timeLimit(.minutes(5)))
+    func sendsNoPushOnceThePullRequestIsClosed() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"])
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { _, text in copied.append(text); return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        try hold(session, home: home)
+        try database(at: home, forks: [])
+        try work(session, in: try await resolvedAgainstMain(in: home), home: home)
+        // Open until the list reads it closed: from the given look on, or from when the test says.
+        var looks = 0
+        var closedAt = Int.max
+        var closed = false
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        store.pullRequestIsOpen = { asked in
+            guard asked == key else { return true }
+            looks += 1
+            return !closed && looks < closedAt
+        }
+        store.readTarget = { _ in "main" }
+        let refused = SessionDelivery.notSent(CopilotSending.pullRequestGone)
+
+        // Read before git checks.
+        closedAt = 1
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(looks == 1)
+        #expect(requests(home).isEmpty)
+
+        // Read once the prompt is written for the extension, which hasn't taken it: as it waits, rather than once the
+        // extension didn't take it in time, which BriefBar checks again then, before it copies the prompt.
+        store.deliveryTimingForTests?.claim = 120
+        looks = 0
+        closedAt = Int.max
+        let sending = Task { await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while requests(home).isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!requests(home).isEmpty)
+        closed = true
+        let shut = ContinuousClock.now
+        #expect(await sending.value == refused)
+        #expect(ContinuousClock.now - shut < .seconds(60))
+        #expect(requests(home).isEmpty)
+        store.deliveryTimingForTests?.claim = 60
+
+        // Read right before BriefBar copies it, with Send Prompts to Copilot Sessions off.
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        looks = 0
+        closedAt = 3
+        closed = false
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == refused)
+        #expect(looks == 3)
+        #expect(copied.isEmpty)
+        #expect(ext.received.isEmpty)
+        #expect(store.deliveringFolders.isEmpty && store.delivering.isEmpty)
+
+        // While it's open, it goes.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        closedAt = Int.max
+        ext.start()
+        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply"])
+    }
+
     /// A Push & Reply whose prompt names main doesn't go when Azure DevOps says, right before git checks what it would push,
     /// or right after, that the pull request merges into release/x, though the list hasn't read that yet; nor when it can't
     /// be read.

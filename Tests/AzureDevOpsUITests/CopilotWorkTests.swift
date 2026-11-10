@@ -834,19 +834,26 @@ import Testing
         try await settle { settings.copilotRuns.count == 1 }
         let fixing = try #require(settings.copilotRuns.first)
         #expect(fixing.taken?.map(\.head) == ["c1"])
+        #expect(fixing.fixes == true && fixing.head == "c1")
         store.send(.pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
                    repository: repository, parts: [.thread(13)])
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 14", options: CopilotModel.standard,
                    repository: repository, parts: [.thread(14)])
         try await settle { settings.copilotRuns.count == 3 }
         #expect(settings.copilotRuns.filter { $0.id != fixing.id }.flatMap { $0.taken ?? [] }.map(\.head) == [nil, nil])
-        // Its row, once it finished: pushed once the list reads the branch at another commit.
-        let index = try #require(settings.copilotRuns.firstIndex { $0.id == fixing.id })
-        settings.copilotRuns[index].ended = .finished
-        func row() -> CopilotTaskEntry? { store.entries.first { $0.id == fixing.id } }
+        #expect(settings.copilotRuns.filter { $0.id != fixing.id }.allSatisfy { $0.fixes == nil && $0.head == nil })
+        // Its row, once it finished: pushed once the list reads the branch at another commit. As BriefBar keeps the run,
+        // where no read of its log is under way, which says a task just started is still working, whatever it kept.
+        var finished = try #require(settings.copilotRuns.first { $0.id == fixing.id })
+        finished.ended = .finished
+        let ended = AppSettings(defaults: MemoryDefaults())
+        let rows = self.store(ended)
+        rows.currentHead = { $0 == current ? "c1" : nil }
+        ended.copilotRuns = [finished]
+        func row() -> CopilotTaskEntry? { rows.entries.first { $0.id == fixing.id } }
         #expect(row()?.pushSeen == false)
         #expect(row()?.sentence(now: nil) == "Fixed, but not pushed")
-        store.currentHead = { _ in "c2" }
+        rows.currentHead = { _ in "c2" }
         #expect(row()?.pushSeen == true)
         #expect(row()?.sentence(now: nil) == "Fixed, pushed and replied")
 
@@ -859,6 +866,36 @@ import Testing
         store.keep(about(.pushAndReply, threads: [13]), sentTo: .forkedAndSent(fork: fork), from: session, forking: true, at: now.addingTimeInterval(1))
         store.keep(about(threads: [14]), sentTo: .sent, from: task, forking: false, at: now.addingTimeInterval(2))
         #expect(settings.copilotSentPrompts.map(\.head) == ["c3", nil, nil])
+    }
+
+    /// A fix sent with Push and Reply on whose thread you clear still fixed it first, as its run keeps: the session's other
+    /// fixes it pushed along are pushed only once the list reads the branch moved, rather than as soon as it finished, as a
+    /// plain Push & Reply's are; and so once the session goes on.
+    @Test func clearingAFixThatShipsKeepsThatItFixedFirst() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        var fixing = run(task, .pushAndReply, startedAt: first, ended: .finished, taken: [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .finished),
+            TakenPart(.thread(12), since: first, ships: true, fixes: true, head: "c1"),
+        ])
+        fixing.fixes = true
+        fixing.head = "c1"
+        settings.copilotRuns = [fixing]
+        store.currentHead = { _ in "c1" }
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
+        store.clear(.thread(12), of: key)
+        #expect(settings.copilotRuns.first?.taken?.map(\.part) == [.thread(11)])
+        #expect(store.entries.first?.fixesFirst == true)
+        #expect(store.entries.first?.fixingHead == "c1")
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).map(\.threads) == [[11]])
+        store.currentHead = { _ in "c2" }
+        #expect(store.readyFixes(of: key, among: [.thread(11)]).isEmpty)
+        let reference = try #require(fixing.onPullRequest)
+        #expect(
+            CopilotRun.pushes(goingOnWith: settings.copilotRuns.first, on: reference)
+                == [SessionPush(since: first, ended: .finished, fixes: true, head: "c1")]
+        )
     }
 
     /// Going on with a session keeps the Push & Reply tasks that ran there, each with how it ended, on the same pull
@@ -1829,6 +1866,35 @@ import Testing
         forked.taken = [TakenPart(.thread(12), since: forked.startedAt, ships: true, fixes: true, head: "c1")]
         settings.copilotRuns = [resolved, forked]
         #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11), .conflicts]])
+        // Forked before it resolved them, as the fork's first task took 9 on, and pushing from there since: still not.
+        forked.startedAt = now
+        forked.taken = [
+            TakenPart(.thread(9), since: first.addingTimeInterval(-30), ended: .finished),
+            TakenPart(.thread(12), since: now, ships: true, fixes: true, head: "c1"),
+        ]
+        settings.copilotRuns = [resolved, forked]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11), .conflicts]])
+        // Nor once what its first task took on is let go, or taken on again: it keeps when it was made.
+        forked.forkedAt = first.addingTimeInterval(-30)
+        forked.taken = [TakenPart(.thread(12), since: now, ships: true, fixes: true, head: "c1")]
+        settings.copilotRuns = [resolved, forked]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11), .conflicts]])
+        // Forked while it resolved them, which the task that went on with the session since keeps as done: that was over
+        // only by when the next task started, after the fork was made.
+        var goneOn = resolved
+        goneOn.action = .fixComments
+        goneOn.startedAt = now.addingTimeInterval(-100)
+        goneOn.taken = [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .finished),
+            TakenPart(.conflicts, since: first, ended: .finished, target: "main"), TakenPart(.thread(13), since: goneOn.startedAt),
+        ]
+        forked.forkedAt = first.addingTimeInterval(60)
+        settings.copilotRuns = [goneOn, forked]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11), .conflicts]])
+        // Forked once the next task there started, it has it.
+        forked.forkedAt = now.addingTimeInterval(-50)
+        settings.copilotRuns = [goneOn, forked]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11)]])
     }
     /// A fix in a fork of the pull request's session works on the side: the pull request's session stays the one it was, as
     /// does the one you chose, and the task the window goes on with, unless you choose the fork.
