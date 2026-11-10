@@ -1130,9 +1130,11 @@ package final class PullRequestOrder: ObservableObject {
         keepTogether(splitBack: splitBack)
         var made = false
         if case .move(_, .into(let key), _) = edit, case .mine = key { made = !before.contains(key) }
+        // Put Yours Back on what a split moved can put back what its order took back with it.
+        let refs = if case .putBack(let ref) = edit { OrderChanges.putBack(ref, touched: touched) } else { edit.refs }
         let last = OrderLastChange(
-            said: OrderText.did(edit, names: names, newMission: made), refs: edit.refs, mission: cardMission(for: edit, source: source),
-            touched: touched, evidence: seen
+            said: OrderText.did(edit, names: names, newMission: made, refs: refs), refs: refs,
+            mission: cardMission(for: edit, source: source), touched: touched, evidence: seen
         )
         refusal = nil
         lastChange = .order(last)
@@ -1257,7 +1259,7 @@ package final class PullRequestOrder: ObservableObject {
         // which it notes as it starts, keeps the mission it went back to together, in this look (`keepKeptTogether`).
         var noted = changes
         var splitsTakenBack: Set<ItemRef> = []
-        if noted.noteOverrides(in: orders, now: date) {
+        if noted.noteOverrides(in: orders, now: date, status: OrderBoard.statuses(facts, evidence: evidence)) {
             for change in noted.all where change.bySplit && change.overridden != nil && changes[change.ref]?.overridden == nil {
                 splitsTakenBack.insert(change.ref)
             }

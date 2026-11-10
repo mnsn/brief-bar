@@ -185,6 +185,45 @@ import Testing
         #expect(again.stage == .yourReview && again.isSetByYou && again.replaced == nil)
     }
 
+    /// A session's order that puts a line across a split since takes what the split moved back into its mission for agents
+    /// too, before the app notes it: 4403, ready to complete, waits for 4402 again, as the order puts it after it.
+    @Test func aLineAcrossASplitToldSinceTakesItBackForAgentsBeforeTheAppNotesIt() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
+        let id = try #require(UUID(uuidString: "21111111-2222-4333-8444-555555555555"))
+        let session = try #require(ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b"))
+        func order(_ revision: Int, at time: Date, after4402: Bool) -> DeclaredOrders {
+            DeclaredOrders(plans: [OrderPlan(id: id, revision: revision, createdAt: now - 900, updatedAt: time, declaredBy: session, entries: [
+                .init(ref: ref(4401)), .init(ref: ref(4402), after: [ref(4401)]), .init(ref: ref(4403), after: after4402 ? [ref(4402)] : []),
+                .init(ref: ref(4404), after: [ref(4403)]), .init(ref: ref(4405)),
+            ])])
+        }
+        let mine = try #require(UUID(uuidString: "31111111-2222-4333-8444-555555555555"))
+        var split = OrderChanges()
+        try split.apply(
+            .split(.plan(id), [OrderSplitMove([ref(4403), ref(4404), ref(4405)], to: .into(.mine(mine)))]), missions: [],
+            orders: order(1, at: now - 900, after4402: false), now: now - 300
+        )
+        let pullRequests = (4401...4405).map { number in
+            OrderPullRequest(
+                ref: ref(number), repository: "shop-web", sourceBranch: "refs/heads/part-\(number)", targetBranch: "refs/heads/main"
+            )
+        }
+        var facts = Dictionary(uniqueKeysWithValues: (4401...4405).map { (ref($0), StageFacts(role: .author, waitingFor: "Waiting on Priya")) })
+        facts[ref(4403)] = StageFacts(role: .author, isReady: true)
+        func stage(_ orders: DeclaredOrders) -> PullRequestStage? {
+            let kept = OrderKept(
+                orders: orders, evidence: OrderEvidence(), focus: nil, changes: split, marks: StageMarks(), sessionStages: SessionStages()
+            )
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: pullRequests, copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com",
+                now: now
+            ).readings[ref(4403)]?.stage
+        }
+        #expect(stage(order(1, at: now - 900, after4402: false)) == .canMerge)
+        #expect(stage(order(2, at: now - 60, after4402: true)) == .waits)
+    }
+
     /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps
     /// in the preferences; one its slot doesn't have, as one in another stage, changes nothing.
     @Test func whatYouChoseForUpNextComesFirstAsOnTheBoard() async throws {

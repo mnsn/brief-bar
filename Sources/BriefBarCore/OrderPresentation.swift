@@ -386,8 +386,13 @@ extension OrderEdit {
 extension OrderText {
     /// What you did, for the Undo line after it: "You set !4079 as next to merge", "You moved !4079 to ‘Coupon cleanup’",
     /// "Split ‘Checkout coupons’: !4105 and !4107 are in ‘Checkout tests’ now".
-    /// - Parameter newMission: it moved them to a mission of your own it made.
-    public static func did(_ edit: OrderEdit, names: OrderNames = .none, newMission: Bool = false) -> String {
+    /// - Parameters:
+    ///   - newMission: it moved them to a mission of your own it made.
+    ///   - refs: the pull requests it changed, where that's more than it names: Put Yours Back on one a split moved puts back
+    ///     what its order took back with it, "You put your changes to !4403, !4404 and !4405 back".
+    public static func did(
+        _ edit: OrderEdit, names: OrderNames = .none, newMission: Bool = false, refs: [ItemRef]? = nil
+    ) -> String {
         func title(_ key: MissionKey) -> String? {
             names.title(key).map { "‘\($0)’" }
         }
@@ -417,6 +422,7 @@ extension OrderText {
         case .undoMission(let key):
             return "You undid your changes to \(title(key) ?? "this mission")"
         case .putBack(let ref):
+            if let refs, refs.count > 1 { return "You put your changes to \(list(refs)) back" }
             return "You put your change to \(ref.shortOrderLabel) back"
         }
     }
