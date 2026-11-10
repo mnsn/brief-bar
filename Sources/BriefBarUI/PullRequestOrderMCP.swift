@@ -252,9 +252,11 @@ package enum PullRequestOrderMCP {
     /// doesn't list, one that merged or closed, and someone else's to put in progress, which BriefBar never does, are
     /// left as they are, each with a line that says why. It says BriefBar shows what it set only where it can tell
     /// (`MCPStages.sessions`), and not where the user set a stage after it read the pull request, which shows as the
-    /// later. A Your review it sets where the latest stage set is a Your review the user set before it
-    /// read the pull request keeps no votes, saying so: it lasts as theirs does, while theirs is there, rather than end
-    /// theirs as someone else votes (`OrderKeeper.setStages`).
+    /// later. Where it replaces a stage the user set that still stands, it says they can put theirs back while its own
+    /// lasts, and that theirs goes once its own ends, but for a Your review of theirs under its In progress, which
+    /// outlasts it and shows again (`StageMark.outlasts`). A Your review it sets where the user set a Your review
+    /// before it read the pull request, which outlasts what sessions set since, keeps no votes, saying so: it lasts as
+    /// theirs does, while theirs is there, rather than end theirs as someone else votes (`OrderKeeper.setStages`).
     static func setStage(
         _ arguments: JSONValue, keeper: OrderKeeper, stages: MCPStages, copilotOn: @escaping @Sendable () -> Bool,
         session: ItemRef, now: @Sendable () -> Date
@@ -335,7 +337,7 @@ package enum PullRequestOrderMCP {
             marks[ref] = StageRules.mark(stage, at: now, facts: facts, by: session)
         }
         guard !marks.isEmpty else { throw MCPToolError(notSet.joined(separator: "\n")) }
-        let (yours, following) = try await keeper.setStages(
+        let (yours, following, outlasting) = try await keeper.setStages(
             marks, of: session, account: read.account, listed: sessions?.listed, now: now, unless: refusal
         )
         let told = refs.filter { marks[$0] != nil }
@@ -353,8 +355,9 @@ package enum PullRequestOrderMCP {
             }
             lines.append("\(shows); the user sees who set it, and can change it.\(demo)")
         }
-        // What the user set that this replaces, while it stands, which they can put back; their Your review that this
-        // follows, which it lasts as; or what they set since it read it, which shows.
+        // What the user set that this replaces, while it stands, which they can put back while this lasts, and which
+        // goes once this ends, but a Your review of theirs that outlasts an In progress, which shows again; their Your
+        // review that this follows, which it lasts as; or what they set since it read it, which shows.
         for ref in told {
             guard let theirs = yours[ref] else { continue }
             let on = told.count > 1 ? " on \(labels([ref]))" : ""
@@ -370,8 +373,11 @@ package enum PullRequestOrderMCP {
                         + "it, rather than end once someone else votes."
                 )
             } else if theirs.stage != stage, standing(theirs, ref) {
+                let outlasts = outlasting.contains(ref)
+                let (shows, once) = outlasts ? ("shows over it", "shows again") : ("replaces it", "goes too")
                 lines.append(
-                    "The user had set \(theirs.stage.title)\(on) \(ago); yours replaces it, and they can put theirs back."
+                    "The user had set \(theirs.stage.title)\(on) \(ago); yours \(shows). They can put theirs back "
+                        + "while yours lasts; once yours ends, theirs \(once)."
                 )
             }
         }
@@ -594,17 +600,12 @@ actor OrderKeeper {
         return found
     }
 
-    /// When a session last set a stage on each of these pull requests, of those the Copilot app lists, or of all of them
-    /// where `--mcp` can't tell, as their keys have them now, but for a Your review that followed the user's
-    /// (`StageMark.followsYours`); none where none did.
-    private func latestSessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: Date] {
+    /// What the sessions set on each of these pull requests, of those the Copilot app lists, or of all of them where
+    /// `--mcp` can't tell, as their keys have them now.
+    private func sessionMarks(on refs: [ItemRef], listed: Set<ItemRef>?, now: Date) -> [ItemRef: [StageMark]] {
         let stages = SessionStages.load(from: defaults, now: now)
-        let marks = stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now)
-        var latest: [ItemRef: Date] = [:]
-        for ref in refs {
-            latest[ref] = marks[ref]?.filter { !$0.followsYours }.map(\.at).max()
-        }
-        return latest
+        let refs = Set(refs)
+        return stages.marks(listed: listed ?? Set(stages.sessions.keys), now: now).filter { refs.contains($0.key) }
     }
 
     /// Changes what a session set on its pull requests' stages, saving it under its own key, and tells the app when that
@@ -620,27 +621,33 @@ actor OrderKeeper {
         return keep(session, now: now, body)
     }
 
-    /// Sets these stages as this session's. A Your review where the latest stage set on the pull request is a Your review
-    /// the user set before the session read it, later than what every listed session set there but a Your review that
-    /// followed theirs this way, keeps no votes (`StageMark.follows`): it lasts as theirs does, while theirs is there,
-    /// rather than end as someone else votes, and theirs with it, as the latest set. One the user set as the session read
-    /// the pull request came after what it says, so it keeps its votes, as anywhere. It decides as it keeps them, in one
-    /// step, so that a call of this session's in between can't make it go stale. Refused, changing nothing, while Pull
-    /// Request Order is off, or `refusal` gives an answer, asked just before.
-    /// - Returns: the stages the user set on them, as it read them, and those whose Your review follows theirs.
+    /// Sets these stages as this session's. A Your review where the user set a Your review before the session read the
+    /// pull request, which outlasts what every listed session set there since, this one too (`StageMark.outlasts`):
+    /// only In progress, and Your reviews that followed theirs this way, keeps no votes (`StageMark.follows`): it lasts
+    /// as theirs does, while theirs is there, rather than end as someone else votes, and theirs with it. One the user
+    /// set as the session read the pull request came after what it says, so it keeps its votes, as anywhere. It decides
+    /// as it keeps them, in one step, so that a call of this session's in between can't make it go stale. Refused,
+    /// changing nothing, while Pull Request Order is off, or `refusal` gives an answer, asked just before.
+    /// - Returns: the stages the user set on them, as it read them; those whose Your review follows theirs; and those
+    ///   whose In progress shows over a Your review of theirs that outlasts it, what other sessions set there too.
     func setStages(
         _ marks: [ItemRef: StageMark], of session: ItemRef, account: String?, listed: Set<ItemRef>?, now: Date,
         unless refusal: @Sendable () -> String? = { nil }
-    ) throws -> (yours: [ItemRef: StageMark], following: Set<ItemRef>) {
+    ) throws -> (yours: [ItemRef: StageMark], following: Set<ItemRef>, outlasting: Set<ItemRef>) {
         if let refusal = refusal() { throw MCPToolError(refusal) }
         guard isOn else { throw MCPToolError(PullRequestOrderMCP.refusal) }
         let refs = Array(marks.keys)
         let yours = userMarks(of: refs, account: account)
-        let latest = latestSessionMarks(on: refs, listed: listed, now: now)
+        let set = sessionMarks(on: refs, listed: listed, now: now)
         let following = Set(refs.filter { ref in
             guard var mark = marks[ref], let theirs = yours[ref] else { return false }
             mark.votes = nil
-            return mark.follows(theirs) && theirs.at > (latest[ref] ?? .distantPast)
+            return mark.follows(theirs) && theirs.outlasts(set[ref] ?? [])
+        })
+        // What this session set there before goes as this replaces it.
+        let outlasting = Set(refs.filter { ref in
+            guard marks[ref]?.stage == .inProgress, let theirs = yours[ref] else { return false }
+            return theirs.outlasts((set[ref] ?? []).filter { $0.by != session })
         })
         keep(session, now: now) { kept in
             for (ref, mark) in marks {
@@ -649,7 +656,7 @@ actor OrderKeeper {
                 kept.set(mark, of: ref)
             }
         }
-        return (yours, following)
+        return (yours, following, outlasting)
     }
 
     /// Saves what a session set under its own key, and tells the app when that changed it.

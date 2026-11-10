@@ -324,6 +324,44 @@ import Testing
         #expect(StageRules.counted(yours: nil, theirs: [own], facts: facts, sessions: []).theirs == [own])
     }
 
+    /// A Your review you set outlasts sessions' In progress over it (`StageMark.outlasts`): while that stands, it
+    /// shows, with yours to put back, which shows again once it ends, as its session finishes or new commits come, with
+    /// the Your reviews that followed yours. Another stage a session set since replaced it, as In progress over another
+    /// stage of yours does: once the latest ends, none counts; nor once the pull request merged.
+    @Test func aYourReviewYouSetOutlastsASessionsInProgressOverIt() {
+        let facts = StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: "a1b2c3d")
+        let yours = StageMark(stage: .yourReview, at: t(100))
+        let followed = StageMark(stage: .yourReview, at: t(150), by: Self.backoff)
+        let onIt = StageMark(stage: .inProgress, at: t(200), by: Self.cart, commit: "a1b2c3d")
+        #expect(yours.outlasts([followed, onIt]))
+        #expect(!onIt.outlasts([]))
+
+        let working = [Self.cart: Self.session(.working, at: 150)]
+        let over = StageRules.reading(facts: facts, sessions: [], marks: [yours, onIt], order: .free, setters: working)
+        #expect(over?.mark == onIt && over?.replaced == yours && over?.replacedOutlasts == true)
+
+        let finished = [Self.cart: Self.session(.finished, at: 300)]
+        let ended = StageRules.counted(yours: yours, theirs: [followed, onIt], facts: facts, sessions: [], setters: finished)
+        #expect(ended.latestEnded && ended.yours == yours && ended.theirs == [followed])
+        var pushed = facts
+        pushed.commit = "e4f5a6b"
+        let afterPush = StageRules.counted(yours: yours, theirs: [onIt], facts: pushed, sessions: [])
+        #expect(afterPush.latestEnded && afterPush.yours == yours && afterPush.theirs.isEmpty)
+        #expect(Self.reading(pushed, marks: [yours])?.isSetByYou == true)
+
+        let teammate = StageMark(stage: .teammateReview, at: t(150), by: Self.backoff, votes: "")
+        #expect(!yours.outlasts([teammate, onIt]))
+        let replaced = StageRules.reading(facts: facts, sessions: [], marks: [yours, teammate, onIt], order: .free, setters: working)
+        #expect(replaced?.replaced == yours && replaced?.replacedOutlasts == false)
+        let gone = StageRules.counted(yours: yours, theirs: [teammate, onIt], facts: pushed, sessions: [])
+        #expect(gone.latestEnded && gone.yours == nil && gone.theirs.isEmpty)
+        let yourTeammates = StageMark(stage: .teammateReview, at: t(100))
+        #expect(!yourTeammates.outlasts([onIt]))
+        #expect(StageRules.counted(yours: yourTeammates, theirs: [onIt], facts: pushed, sessions: []).yours == nil)
+        let merged = StageFacts(role: .author, state: .merged)
+        #expect(StageRules.counted(yours: yours, theirs: [onIt], facts: merged, sessions: []).yours == nil)
+    }
+
     @Test func aSetTeammatesReviewEndsAsOthersVotesChange() {
         let mark = StageMark(stage: .teammateReview, at: t(100), votes: "0", commit: "a1b2c3d")
         #expect(StageRules.stands(mark, facts: StageFacts(role: .author, votes: "0", commit: "e4f5a6b"), sessions: []))
