@@ -844,7 +844,7 @@ final class CopilotTasksStore: ObservableObject {
         let monitor = monitor
         Task {
             let copilotHome = CopilotCLI.home(environment: await environment())
-            var results: [(run: CopilotRun, status: RunStatus, pullRequest: URL?)] = []
+            var results: [Followed] = []
             for run in runs {
                 let events = run.events(in: copilotHome)
                 if DetachedProgram.isRunning(run.process) || awaitsExit(of: run) {
@@ -853,7 +853,7 @@ final class CopilotTasksStore: ObservableObject {
                     let status = RunStatus.derive(
                         log: log, startedAt: run.launchedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil
                     )
-                    results.append((run, status, nil))
+                    results.append(Followed(run: run, status: status, pullRequest: nil, pushStopped: RunStatus.pushStop(in: log, since: run.launchedAt) != nil))
                     continue
                 }
                 let log = await monitor.log(id: run.id, events: events)
@@ -867,9 +867,11 @@ final class CopilotTasksStore: ObservableObject {
                 }.value
                 let status = RunStatus.derive(
                     log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
-                    stoppedByYou: wasStoppedByYou(run.id), output: found.0
+                    stoppedByYou: wasStoppedByYou(run.id), output: found.0, pushStopped: run.pushStopped == true
                 )
-                results.append((run, status, found.1))
+                results.append(Followed(
+                    run: run, status: status, pullRequest: found.1, pushStopped: RunStatus.pushStop(in: log, since: run.launchedAt) != nil
+                ))
             }
             apply(results)
             isRefreshing = false
@@ -886,13 +888,25 @@ final class CopilotTasksStore: ObservableObject {
         return Date().timeIntervalSince(gone) < Self.exitGrace
     }
 
-    private func apply(_ results: [(run: CopilotRun, status: RunStatus, pullRequest: URL?)]) {
+    /// What reading a run's log said: how it stands, the pull request it opened, if that's newly found, and whether
+    /// BriefBar's check stopped a push of its own.
+    private struct Followed {
+        var run: CopilotRun
+        var status: RunStatus
+        var pullRequest: URL?
+        var pushStopped: Bool
+    }
+
+    private func apply(_ results: [Followed]) {
         for result in results {
             if statuses[result.run.id] != result.status { statuses[result.run.id] = result.status }
             // Cleared while it was read.
             guard let index = settings.copilotRuns.firstIndex(where: { $0.id == result.run.id }) else { continue }
             var run = settings.copilotRuns[index]
             if run.pullRequest == nil, let pullRequest = result.pullRequest { run.pullRequest = pullRequest }
+            // Kept, in case the part of its log BriefBar reads after a restart no longer has it; and only for the run that
+            // was read, not one that went on with its session since.
+            if result.pushStopped, run.pushStopped != true, run.launchedAt == result.run.launchedAt { run.pushStopped = true }
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
                 Log.app.info("A task sent to Copilot ended: \(result.status.phase.rawValue, privacy: .public)")

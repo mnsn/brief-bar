@@ -30,11 +30,15 @@ public struct PushCommand: Sendable, Equatable {
         /// It runs as written, a `git push` itself: not after `NAME=value`, not through another program, such as `env` or
         /// `xargs`, not by git's path, nor another way of git's to push.
         public var isPlain: Bool
+        /// The folder the command went to before it, with `cd` or `pushd`, if it did: one it can't tell, as with `popd`, a
+        /// relative path or a variable, isn't literal. Nil when it went nowhere, so it runs where the shell was.
+        public var directory: Word?
 
-        public init(options: [Word] = [], arguments: [Word], isPlain: Bool = true) {
+        public init(options: [Word] = [], arguments: [Word], isPlain: Bool = true, directory: Word? = nil) {
             self.options = options
             self.arguments = arguments
             self.isPlain = isPlain
+            self.directory = directory
         }
     }
 
@@ -42,6 +46,8 @@ public struct PushCommand: Sendable, Equatable {
     public var pushes: [Push] = []
     /// It says `push` somewhere it can't read, so it may push otherwise.
     public var isUnreadable = false
+    /// Where the commands read so far went, with `cd`, `pushd` or `popd` (`Push.directory`).
+    private var directory: Word?
 
     public init(_ command: String) {
         read(command, depth: 0, says: false, wrapped: false)
@@ -168,6 +174,14 @@ public struct PushCommand: Sendable, Equatable {
                 // What it runs may be in a variable, or in env's string of words.
                 isUnreadable = true
             }
+        case "cd", "pushd", "popd":
+            // Where the shell goes, for a push after it from the folder it's in: a full path, else somewhere unknown.
+            let target = name == "popd" ? nil : words.dropFirst().first { !$0.value.hasPrefix("-") || $0.value == "-" }
+            if let target, target.isLiteral, target.value.hasPrefix("/") {
+                directory = target
+            } else {
+                directory = Word(value: target?.value ?? "", isLiteral: false)
+            }
         case _ where Self.runNothing.contains(name):
             return
         default:
@@ -265,11 +279,11 @@ public struct PushCommand: Sendable, Equatable {
         let rest = Array(words[(index + 1)...])
         switch command.value {
         case "push":
-            pushes.append(Push(options: options, arguments: rest, isPlain: plain))
+            pushes.append(Push(options: options, arguments: rest, isPlain: plain, directory: directory))
         case "send-pack":
-            pushes.append(Push(options: options, arguments: rest, isPlain: false))
+            pushes.append(Push(options: options, arguments: rest, isPlain: false, directory: directory))
         case "subtree" where rest.first == Word(value: "push"):
-            pushes.append(Push(options: options, arguments: Array(rest.dropFirst()), isPlain: false))
+            pushes.append(Push(options: options, arguments: Array(rest.dropFirst()), isPlain: false, directory: directory))
         default:
             return
         }
@@ -357,8 +371,9 @@ public struct PushCommand: Sendable, Equatable {
 extension PushCommand.Push {
     /// What a push would do, by its options and refspecs.
     public enum Form: Sendable, Equatable {
-        /// `git [-C <worktree>] push [-q|-v|--porcelain|--progress|--no-progress] origin <commit>:refs/heads/<branch>`,
-        /// plain, with the commit's full ID: the one way Push & Reply's prompt asks for.
+        /// `git [-C <worktree>] push [-q|-v|--porcelain|--progress|--no-progress|--no-follow-tags|--no-recurse-submodules]
+        /// origin <commit>:refs/heads/<branch>`, plain, with the commit's full ID, from the worktree: the one way Push &
+        /// Reply's prompt asks for, with the options that keep it to that branch.
         case exact(commit: String)
         /// It pushes otherwise: another remote, branch or refspec, more than one, or with other options.
         case other
@@ -416,7 +431,8 @@ extension PushCommand.Push {
                 case "--delete", "--prune": unsafe = unsafe ?? .delete
                 case "--mirror", "--all", "--branches", "--tags": unsafe = unsafe ?? .more
                 case "--dry-run", "--help": dryRun = true
-                case "--quiet", "--verbose", "--porcelain", "--progress", "--no-progress": break
+                case "--quiet", "--verbose", "--porcelain", "--progress", "--no-progress", "--no-follow-tags", "--no-recurse-submodules":
+                    break
                 case "--repo", "--receive-pack", "--exec", "--push-option":
                     other = true
                     if !value.contains("=") { index += 1 }
@@ -459,18 +475,26 @@ extension PushCommand.Push {
         return .exact(commit: String(parts[0]))
     }
 
-    /// Its only option of git's is none, or `-C` with the worktree's path, in full.
+    /// It runs in the worktree: its only option of git's is `-C` with the worktree's path, in full; or it has none, and the
+    /// command went nowhere before it, or to the worktree, by its full path. Where the shell went in an earlier command
+    /// isn't known: the CLI's `cwd` is the session's.
     private func runsIn(_ worktree: URL) -> Bool {
         switch options.count {
         case 0:
-            return true
+            guard let directory else { return true }
+            return Self.isFolder(directory, worktree)
         case 2:
-            let folder = options[1]
-            guard options[0].value == "-C", folder.isLiteral, folder.value.hasPrefix("/") else { return false }
-            return URL(fileURLWithPath: folder.value).standardizedFileURL.resolvingSymlinksInPath().path
-                == worktree.standardizedFileURL.resolvingSymlinksInPath().path
+            guard options[0].value == "-C" else { return false }
+            return Self.isFolder(options[1], worktree)
         default:
             return false
         }
+    }
+
+    /// A full path, as it's written, to the worktree.
+    private static func isFolder(_ word: PushCommand.Word, _ worktree: URL) -> Bool {
+        guard word.isLiteral, word.value.hasPrefix("/") else { return false }
+        return URL(fileURLWithPath: word.value).standardizedFileURL.resolvingSymlinksInPath().path
+            == worktree.standardizedFileURL.resolvingSymlinksInPath().path
     }
 }

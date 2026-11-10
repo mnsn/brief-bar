@@ -205,6 +205,48 @@ public struct Git: Sendable {
         return .clean
     }
 
+    /// The options a push of one branch from a folder's checkout needs so that it pushes that branch alone, as git's
+    /// configuration there has it, its own and yours: `--no-follow-tags`, when `push.followTags` would push the annotated
+    /// tags the commit reaches too; `--no-recurse-submodules`, when `push.recurseSubmodules` is `on-demand` or `only`, or,
+    /// with that unset, `submodule.recurse` is on, which would push its submodules' commits to their remotes. None by
+    /// default. Throws when git can't read its configuration.
+    public func pushOptions(in folder: URL) async throws -> [String] {
+        let result = try await runner.run(
+            executable,
+            arguments: ["-C", folder.path, "config", "--get-regexp", #"^(push\.followtags|push\.recursesubmodules|submodule\.recurse)$"#],
+            environment: environment, timeout: 30
+        )
+        // 1: none of them is set.
+        guard result.status == 0 || (result.status == 1 && result.stdout.isEmpty) else {
+            throw GitError.failed(Self.message(String(decoding: result.stderr, as: UTF8.self)))
+        }
+        // The last of each, as git takes it; a name with no value is on.
+        var values: [String: String?] = [:]
+        for line in String(decoding: result.stdout, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+            values[parts[0].lowercased()] = .some(parts.count > 1 ? String(parts[1]) : nil)
+        }
+        var options: [String] = []
+        if let followTags = values["push.followtags"], Self.isOn(followTags) { options.append("--no-follow-tags") }
+        let recurses: Bool
+        if let pushes = values["push.recursesubmodules"] {
+            recurses = pushes.map { ["on-demand", "only"].contains($0.lowercased()) } ?? false
+        } else {
+            recurses = values["submodule.recurse"].map(Self.isOn) ?? false
+        }
+        if recurses { options.append("--no-recurse-submodules") }
+        return options
+    }
+
+    /// A boolean of git's configuration as git reads it: a name with no value, `true`, `yes`, `on`, or a number other than
+    /// 0. One git can't read counts as on, so that the option that turns it off is asked for.
+    static func isOn(_ value: String?) -> Bool {
+        guard let value = value?.trimmingCharacters(in: .whitespaces).lowercased() else { return true }
+        if ["true", "yes", "on"].contains(value) { return true }
+        if ["false", "no", "off", ""].contains(value) { return false }
+        return Int(value).map { $0 != 0 } ?? true
+    }
+
     /// Why `checkPush` can't tell what a commit without parents brings in.
     static let cutShort = "What it would push has a commit without parents, as where a shallow clone's history stops, so BriefBar can't tell what that commit brings in. If it's a shallow clone, fetch the rest of its history first: git fetch --unshallow."
 

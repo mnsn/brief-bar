@@ -7,8 +7,9 @@ import Synchronization
 /// asks it about each shell command, before running it, through the `preToolUse` hook of the plugin BriefBar gives that
 /// task alone (`PushGuardPlugin`, `--push-guard`). A command that pushes nothing runs. A push runs only in the form the
 /// prompt names, `git push origin <commit>:refs/heads/<branch>`, optionally `git -C <worktree> …`, where `<commit>` is
-/// what the worktree has checked out, while Azure DevOps says the pull request is active and merges into the branch the
-/// prompt names, and git finds no merge in it of what that branch doesn't have (`Git.checkPush`). Pushed another way,
+/// what the worktree has checked out, with the options that keep it to that branch when git's configuration would push
+/// more (`Git.pushOptions`), while git finds no merge in it of what the branch the prompt names doesn't have
+/// (`Git.checkPush`), and then Azure DevOps says the pull request is active and merges into that branch. Pushed another way,
 /// Copilot is told the command to run instead, and can try again; one that would force, delete or push more than the
 /// branch, or that it would bring in what it mustn't, or that BriefBar can't check, is stopped, and the task fails with
 /// why (`PushStop`). On top of the launcher's checks before Copilot starts, and the prompt's, which stay as they are.
@@ -39,7 +40,7 @@ public struct PushGuard: Sendable {
         public var kind: String {
             switch self {
             case .allow: "allowed"
-            case .retry: "asked to push as the prompt says"
+            case .retry: "asked to run it another way"
             case .stop: "stopped"
             }
         }
@@ -47,6 +48,10 @@ public struct PushGuard: Sendable {
 
     /// What a retry's reason starts with.
     public static let retryMarker = "BriefBar's push check: "
+    /// What BriefBar says of a command longer than it reads: it doesn't run, since what BriefBar didn't read may push.
+    public static func tooLong(_ bytes: Int) -> Verdict {
+        .retry(retryMarker + "this command is longer than BriefBar reads (\(bytes / 1_048_576) MiB), so it didn't run. Run it in smaller parts.")
+    }
     /// How long the check takes at most: the hook's limit is 300 seconds (`PushGuardPlugin.timeout`), after which the CLI
     /// lets the call through.
     public static let limit: TimeInterval = 240
@@ -77,21 +82,21 @@ public struct PushGuard: Sendable {
 
     /// What BriefBar says of what the hook was given: the CLI's `preToolUse` input, `{toolName, toolArgs, …}`.
     public func check(_ payload: Data) async -> Verdict {
-        let pushes: [PushCommand.Push.Form]
+        let pushes: [(push: PushCommand.Push, form: PushCommand.Push.Form)]
         let isUnreadable: Bool
         switch Self.read(payload) {
         case .decided(let verdict):
             return verdict
         case .command(let command):
             let read = PushCommand(command)
-            pushes = read.pushes.map { $0.form(worktree: worktree, branch: source) }
+            pushes = read.pushes.map { ($0, $0.form(worktree: worktree, branch: source)) }
             isUnreadable = read.isUnreadable
         }
-        if let unsafe = pushes.lazy.compactMap(\.unsafe).first { return .stop(Self.stop(Self.why(unsafe))) }
-        let forms = pushes.filter { $0 != .dryRun }
-        guard !forms.isEmpty || isUnreadable else { return .allow }
+        if let unsafe = pushes.lazy.compactMap(\.form.unsafe).first { return .stop(Self.stop(Self.why(unsafe))) }
+        let found = pushes.filter { $0.form != .dryRun }
+        guard !found.isEmpty || isUnreadable else { return .allow }
         let late = Verdict.stop(Self.stop("BriefBar couldn't check it in time."))
-        return await Self.first(within: limit, otherwise: late) { await self.verify(forms, isUnreadable: isUnreadable) }
+        return await Self.first(within: limit, otherwise: late) { await self.verify(found, isUnreadable: isUnreadable) }
     }
 
     /// What BriefBar says without checking: a push, or a command it can't read that may push, is stopped, with `reason`;
@@ -108,10 +113,13 @@ public struct PushGuard: Sendable {
         }
     }
 
-    /// A push in the form the prompt names, checked: the worktree's commit, the branch the pull request merges into now,
-    /// and what it would bring in.
-    private func verify(_ forms: [PushCommand.Push.Form], isUnreadable: Bool) async -> Verdict {
-        let exact: String? = if !isUnreadable, forms.count == 1, case .exact(let commit) = forms[0] { commit } else { nil }
+    /// A push in the form the prompt names, checked: the worktree's commit; the options git's configuration needs to push
+    /// only the branch; what it would bring in; and last, so that what it says is as late as can be, the branch the pull
+    /// request merges into now, and whether it's still active.
+    private func verify(_ pushes: [(push: PushCommand.Push, form: PushCommand.Push.Form)], isUnreadable: Bool) async -> Verdict {
+        let exact: (push: PushCommand.Push, commit: String)? =
+            if !isUnreadable, pushes.count == 1, case .exact(let commit) = pushes[0].form { (pushes[0].push, commit) } else { nil }
+        let several = pushes.count > 1
         let head: String
         do {
             head = try await git.commit(checkedOutIn: worktree)
@@ -119,13 +127,33 @@ public struct PushGuard: Sendable {
             guard exact == nil else {
                 return .stop(Self.stop("BriefBar couldn't read which commit the worktree has checked out: \(Self.words(error))"))
             }
-            return .retry(retry(nil, isUnreadable: isUnreadable, several: forms.count > 1))
+            return .retry(retry(nil, options: [], isUnreadable: isUnreadable, several: several))
         }
-        guard let commit = exact else {
-            return .retry(retry(head, isUnreadable: isUnreadable, several: forms.count > 1))
+        let options: [String]
+        do {
+            options = try await git.pushOptions(in: worktree)
+        } catch {
+            guard exact == nil else {
+                return .stop(Self.stop("BriefBar couldn't read git's configuration in the worktree: \(Self.words(error))"))
+            }
+            return .retry(retry(head, options: [], isUnreadable: isUnreadable, several: several))
+        }
+        guard let (push, commit) = exact else {
+            return .retry(retry(head, options: options, isUnreadable: isUnreadable, several: several))
         }
         guard commit == head else {
-            return .retry(Self.retryMarker + "\(commit) isn't the commit the worktree has checked out. Push the one it has, in a command of its own, exactly: \(command(head)).")
+            return .retry(Self.retryMarker + "\(commit) isn't the commit the worktree has checked out. Push the one it has, in a command of its own, exactly: \(command(head, options: options)).")
+        }
+        let missing = options.filter { option in !push.arguments.contains { $0.isLiteral && $0.value == option } }
+        guard missing.isEmpty else {
+            return .retry(Self.retryMarker + "git's configuration in the worktree would push more than the branch with it, so it needs \(missing.joined(separator: " and ")). Run exactly: \(command(head, options: options)).")
+        }
+        do {
+            if try await git.checkPush(in: worktree, source: source, target: target, commit: commit) == .foreignMerge {
+                return .stop(Self.stop("what it would push has a merge of commits that \(QuotedText.commandWord(target)) doesn't have, which would bring another branch's work into the pull request."))
+            }
+        } catch {
+            return .stop(Self.stop("BriefBar couldn't check what it would push: \(Self.words(error))"))
         }
         do {
             guard try await targetNow() == target else {
@@ -136,29 +164,23 @@ public struct PushGuard: Sendable {
         } catch {
             return .stop(Self.stop("BriefBar couldn't read which branch the pull request merges into: \(Self.words(error))"))
         }
-        do {
-            if try await git.checkPush(in: worktree, source: source, target: target, commit: commit) == .foreignMerge {
-                return .stop(Self.stop("what it would push has a merge of commits that \(QuotedText.commandWord(target)) doesn't have, which would bring another branch's work into the pull request."))
-            }
-        } catch {
-            return .stop(Self.stop("BriefBar couldn't check what it would push: \(Self.words(error))"))
-        }
         return .allow
     }
 
     // MARK: What Copilot reads
 
     /// The push the check lets through: the worktree's commit, by its ID, or `<commit>` when that isn't known, to the pull
-    /// request's branch, from the worktree, whatever folder the shell is in.
-    func command(_ commit: String?) -> String {
-        "git -C \(QuotedText.commandWord(worktree.path)) push origin \(commit ?? "<commit>"):refs/heads/\(QuotedText.commandWord(source))"
+    /// request's branch, from the worktree, whatever folder the shell is in, with `options`, which keep it to that branch.
+    func command(_ commit: String?, options: [String] = []) -> String {
+        (["git -C \(QuotedText.commandWord(worktree.path)) push"] + options
+            + ["origin \(commit ?? "<commit>"):refs/heads/\(QuotedText.commandWord(source))"]).joined(separator: " ")
     }
 
-    private func retry(_ head: String?, isUnreadable: Bool, several: Bool) -> String {
+    private func retry(_ head: String?, options: [String], isUnreadable: Bool, several: Bool) -> String {
         let what = isUnreadable ? "BriefBar couldn't read this command, so it didn't run."
             : several ? "push once, in a command of its own." : "push only the commit the worktree has checked out, by its ID, to the pull request's branch, without force."
         let commit = head == nil ? ", where <commit> is what git rev-parse HEAD says there" : ""
-        return Self.retryMarker + what + " Once your changes are committed, run exactly: \(command(head))\(commit)."
+        return Self.retryMarker + what + " Once your changes are committed, run exactly: \(command(head, options: options))\(commit)."
     }
 
     /// A stop's reason, as Copilot reads it and the log keeps it.

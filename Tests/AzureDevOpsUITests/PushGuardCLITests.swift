@@ -155,19 +155,31 @@ import Testing
         #expect(checks.requests.withLock { $0 }.isEmpty)
     }
 
-    /// The CLI's input, to its end, of which it keeps the first mebibyte: the CLI's writing ends either way. Written from a
-    /// queue, and read on the tests' own threads, outside Swift's cooperative pool, which `make test` gives one thread.
+    /// The CLI's input, to its end, so that the CLI's writing ends: all of it, or, past a mebibyte, the first mebibyte, and
+    /// that it isn't all, so that the command doesn't run. Written from a queue, and read on the tests' own threads, outside
+    /// Swift's cooperative pool, which `make test` gives one thread.
     @Test func readsItsInputToTheEnd() async throws {
-        let pipe = Pipe()
-        let written = Data(repeating: UInt8(ascii: "a"), count: PushGuardCLI.mostInput + 70_000)
-        let writer = pipe.fileHandleForWriting
-        DispatchQueue.global().async {
-            writer.write(written)
-            try? writer.close()
+        func read(_ count: Int) async throws -> (data: Data, isWhole: Bool) {
+            let pipe = Pipe()
+            let written = Data(repeating: UInt8(ascii: "a"), count: count)
+            let writer = pipe.fileHandleForWriting
+            DispatchQueue.global().async {
+                writer.write(written)
+                try? writer.close()
+            }
+            let reader = pipe.fileHandleForReading
+            let read = await withTaskExecutorPreference(TestThreads.shared) { PushGuardCLI.input(reader) }
+            try reader.close()
+            return read
         }
-        let reader = pipe.fileHandleForReading
-        let read = await withTaskExecutorPreference(TestThreads.shared) { PushGuardCLI.input(reader) }
-        #expect(read.count == PushGuardCLI.mostInput)
-        try reader.close()
+        let whole = try await read(PushGuardCLI.mostInput)
+        #expect(whole.data.count == PushGuardCLI.mostInput && whole.isWhole)
+        let tooLong = try await read(PushGuardCLI.mostInput + 70_000)
+        #expect(tooLong.data.count == PushGuardCLI.mostInput && !tooLong.isWhole)
+        // What isn't all there doesn't run, whatever it says.
+        let verdict = await PushGuardCLI.verdict(
+            for: Self.tests, isWhole: false, arguments: arguments, demo: false, refusal: { nil }, check: Checks().check
+        )
+        #expect(verdict == PushGuard.tooLong(PushGuardCLI.mostInput))
     }
 }

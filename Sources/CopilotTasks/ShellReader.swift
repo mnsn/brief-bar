@@ -418,6 +418,9 @@ extension ShellReader {
             switch bytes[index] {
             case .backslash:
                 index += 2
+            case .singleQuote where inDoubleQuotes:
+                // In double quotes, as `"${X:-'$(…)'}"`, a single quote is only itself: what's after it is read, and runs.
+                index += 1
             case .singleQuote:
                 guard let end = bytes[(index + 1)...].firstIndex(of: .singleQuote) else { return false }
                 index = end + 1

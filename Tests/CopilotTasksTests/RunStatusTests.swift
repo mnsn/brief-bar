@@ -98,6 +98,15 @@ import Testing
             Line.taskComplete("Pushed and replied", at: 50),
         ])
         #expect(RunStatus.derive(log: retried, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil).phase == .finished)
+
+        // Once the part of its log BriefBar reads after a restart no longer has it, as BriefBar saw it before.
+        let later = log([Line.userMessage("Go on", at: 60), Line.taskComplete("Pushed and replied", at: 90)])
+        #expect(RunStatus.derive(log: later, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil, pushStopped: true) == RunStatus(
+            phase: .failed, since: Date(timeIntervalSince1970: 1_792_000_000 + 90), detail: "BriefBar stopped a push it made."
+        ))
+        #expect(RunStatus.derive(log: later, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil, pushStopped: true).phase == .working)
+        #expect(RunStatus.pushStop(in: stopped, since: nil)?.reason == "the pull request was completed.")
+        #expect(RunStatus.pushStop(in: stopped, since: Date(timeIntervalSince1970: 1_792_000_000 + 45)) == nil)
     }
 
     /// Going on with a session, or forking one, the log has that session's history too: how it stood before this run

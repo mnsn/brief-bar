@@ -13,7 +13,7 @@ import Foundation
 /// gave it. It logs what it did with a push it denied, never what that was.
 enum PushGuardCLI {
     static let flag = PushGuardPlugin.flag
-    /// The most it reads of what the CLI gives it: more, it reads and drops.
+    /// The most it reads of what the CLI gives it: a command longer than that doesn't run, since what's past it may push.
     static let mostInput = 1 << 20
 
     /// The task's pull request, the folder it works in, the pull request's branch and the one it merges into, as the
@@ -59,12 +59,14 @@ enum PushGuardCLI {
         return nil
     }
 
-    /// What it says of what the CLI gave it, `payload`: with the arguments it was started with, unless `refusal` says it
-    /// can't read Azure DevOps, through the check `check` makes for them. The demo checks nothing, and stops every push.
+    /// What it says of what the CLI gave it, `payload`, all of it unless `isWhole` is false: with the arguments it was
+    /// started with, unless `refusal` says it can't read Azure DevOps, through the check `check` makes for them. The demo
+    /// checks nothing, and stops every push. What it couldn't read all of doesn't run.
     static func verdict(
-        for payload: Data, arguments: [String], demo: Bool, refusal: @Sendable () -> String?,
+        for payload: Data, isWhole: Bool = true, arguments: [String], demo: Bool, refusal: @Sendable () -> String?,
         check: @Sendable (Request) -> PushGuard
     ) async -> PushGuard.Verdict {
+        guard isWhole else { return PushGuard.tooLong(mostInput) }
         guard !demo else { return PushGuard.check(payload, cantCheck: "BriefBar's demo pushes nothing.") }
         let request: Request
         switch self.request(arguments) {
@@ -79,28 +81,34 @@ enum PushGuardCLI {
 
     /// Runs `--push-guard`, for the CLI's hook: prints the decision, if any, and returns 0.
     static func run(_ options: CommandLineOptions) -> Int32 {
-        let payload = input()
+        let (payload, isWhole) = input()
         let arguments = options.arguments
         let demo = options.demo
-        let verdict = AzureDevOpsCommandLine.wait {
-            await verdict(for: payload, arguments: arguments, demo: demo, refusal: { refusal(AzureDevOpsCommandLine.appDefaults) }, check: live)
+        let decision: PushGuard.Verdict = AzureDevOpsCommandLine.wait { () async -> PushGuard.Verdict in
+            await Self.verdict(
+                for: payload, isWhole: isWhole, arguments: arguments, demo: demo,
+                refusal: { Self.refusal(AzureDevOpsCommandLine.appDefaults) }, check: { Self.live($0) }
+            )
         }
-        if let output = verdict.output {
+        if let output = decision.output {
             FileHandle.standardOutput.write(output + Data("\n".utf8))
         }
-        if verdict != .allow {
-            Log.app.info("Push & Reply's check of a push: \(verdict.kind, privacy: .public)")
+        if decision != PushGuard.Verdict.allow {
+            Log.app.info("Push & Reply's check of a push: \(decision.kind, privacy: .public)")
         }
         return 0
     }
 
-    /// What the CLI writes it, to its end, of which it keeps the first `mostInput` bytes, so that the CLI's writing ends.
-    static func input(_ handle: FileHandle = .standardInput) -> Data {
+    /// What the CLI writes it, to its end, so that the CLI's writing ends: the first `mostInput` bytes, and whether that's
+    /// all of it.
+    static func input(_ handle: FileHandle = .standardInput) -> (data: Data, isWhole: Bool) {
         var data = Data()
+        var total = 0
         while let chunk = try? handle.read(upToCount: 64 << 10), !chunk.isEmpty {
+            total += chunk.count
             if data.count < mostInput { data.append(chunk.prefix(mostInput - data.count)) }
         }
-        return data
+        return (data, total <= mostInput)
     }
 
     /// The check on your own data: the pull request from Azure DevOps, with your Azure CLI sign-in, as the app reads it, and

@@ -32,11 +32,31 @@ import Testing
             "git push origin \"\(commit)\":'refs/heads/users/robin/fix-total'",
             "sh -c 'git push origin \(refspec)'",
             "eval git push origin \(refspec)",
+            "git push --no-follow-tags --no-recurse-submodules origin \(refspec)",
+            "cd /tmp && git -C \(worktree.path) push origin \(refspec)",
         ]
         for command in commands {
             #expect(forms(command) == [exact], "\(command)")
             #expect(!PushCommand(command).isUnreadable, "\(command)")
         }
+    }
+
+    /// Without -C, a push runs in the folder the shell is in: the worktree, unless the same command went elsewhere first,
+    /// or somewhere it can't tell. Where an earlier command went isn't known.
+    @Test func takesThePushFromAnotherFolderForAnother() {
+        for command in [
+            "cd /Users/robin/src/shop-web && git push origin \(refspec)",
+            "pushd /tmp && git push origin \(refspec)",
+            "cd && git push origin \(refspec)",
+            "cd - && git push origin \(refspec)",
+            "cd .. && git push origin \(refspec)",
+            "cd \"$(git rev-parse --show-toplevel)\" && git push origin \(refspec)",
+            "cd \(worktree.path) && popd && git push origin \(refspec)",
+            "(cd /tmp; git push origin \(refspec))",
+        ] {
+            #expect(forms(command) == [.other], "\(command)")
+        }
+        #expect(forms("cd /tmp && cd \(worktree.path)/ && git push origin \(refspec)") == [.exact(commit: commit)])
     }
 
     /// A branch's name as the prompt writes it in a command (`QuotedText.commandWord`): in single quotes when a shell would
@@ -225,6 +245,10 @@ import Testing
         #expect(forms("echo \"`git \\\"push\\\" --force origin main`\"") == [.unsafe(.force)])
         #expect(forms("echo \"${X:-`git \\\"push\\\" -d origin main`}\"") == [.unsafe(.delete)])
         #expect(PushCommand("cat <<EOF\n`git \\\"push\\\" --force`\nEOF").pushes.isEmpty)
+        // A parameter's default in double quotes: a single quote there is only itself, so what it has runs; outside
+        // them, it quotes.
+        #expect(forms("echo \"${X:-'$(git push --force origin main)'}\"") == [.unsafe(.force)])
+        #expect(PushCommand("echo ${X:-'$(git push --force origin main)'}").pushes.isEmpty)
     }
 
     /// Programs as macOS finds them, whatever the case of their names; others that run git or a shell they name.

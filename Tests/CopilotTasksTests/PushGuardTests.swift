@@ -1,6 +1,7 @@
 import BriefBarCore
 import CopilotCore
 import Foundation
+import Synchronization
 import Testing
 @testable import CopilotTasks
 
@@ -23,10 +24,14 @@ import Testing
     }
 
     /// git as the stand-in answers: the worktree at `head`, merges as `merges` lists them, and `outside`, what the target
-    /// doesn't have of them; `failing`, a git command that fails.
-    private static func repository(head: String = head, merges: String = "", outside: String = "", failing: String? = nil) -> FakeRunner {
+    /// doesn't have of them; `config`, what `git config --get-regexp` lists of what pushes more; `failing`, a git command
+    /// that fails.
+    private static func repository(
+        head: String = head, merges: String = "", outside: String = "", config: String? = nil, failing: String? = nil
+    ) -> FakeRunner {
         FakeRunner { arguments in
             if let failing, arguments.contains(failing) { return .failure("fatal: couldn't \(failing)") }
+            if arguments.contains("--get-regexp") { return config.map { .ok($0) } ?? .failure("", status: 1) }
             if arguments.contains("--git-path") { return .ok(".git/MERGE_HEAD") }
             if arguments.contains("rev-parse") { return .ok(head) }
             if arguments.contains("--max-parents=0") { return .ok() }
@@ -80,6 +85,7 @@ import Testing
         for command in [
             exact, "git -C \(QuotedText.commandWord(worktree.path)) push origin \(Self.head):refs/heads/\(Self.source)",
             "if [ -n \"$(git status --porcelain)\" ]; then git commit -qam wip; fi; \(exact)",
+            "cd \(QuotedText.commandWord(worktree.path)) && \(exact)",
         ] {
             for asString in [true, false] {
                 let runner = Self.repository()
@@ -106,6 +112,86 @@ import Testing
             #expect(why.hasPrefix(PushGuard.retryMarker))
             #expect(why.hasSuffix(retryWithHead), "\(command)")
         }
+    }
+
+    /// From another folder the same command went to first, it may push another clone's commit to its own origin: it's
+    /// asked for with -C, as the push's own folder.
+    @Test func asksForThePushFromTheWorktreeAfterACommandMovesElsewhere() async {
+        for command in ["cd /Users/robin/src/another-clone && \(exact)", "pushd .. && \(exact)", "cd \"$REPO\" && \(exact)"] {
+            let verdict = await check(command)
+            guard case .retry(let why) = verdict else {
+                Issue.record("\(command): \(verdict)")
+                continue
+            }
+            #expect(why.hasSuffix(retryWithHead), "\(command)")
+        }
+        #expect(await check("cd /Users/robin/src/another-clone && git -C \(QuotedText.commandWord(worktree.path)) push origin \(Self.head):refs/heads/\(Self.source)") == .allow)
+    }
+
+    /// git's configuration that would push more than the branch with it, as `push.followTags` or `submodule.recurse`: the
+    /// push needs the options that keep it to the branch, and the command it's asked for has them.
+    @Test func asksForWhatKeepsThePushToTheBranch() async {
+        let tags = Self.repository(config: "push.followtags true\nsubmodule.recurse true")
+        let verdict = await check(exact, runner: tags)
+        guard case .retry(let why) = verdict else {
+            Issue.record("\(verdict)")
+            return
+        }
+        let narrowed = "git -C \(QuotedText.commandWord(worktree.path)) push --no-follow-tags --no-recurse-submodules origin \(Self.head):refs/heads/\(Self.source)"
+        #expect(why.contains("so it needs --no-follow-tags and --no-recurse-submodules. Run exactly: \(narrowed)."))
+        #expect(await check(narrowed, runner: Self.repository(config: "push.followtags true\nsubmodule.recurse true")) == .allow)
+        #expect(await check("git push --no-follow-tags origin \(Self.head):refs/heads/\(Self.source)", runner: Self.repository(config: "push.followtags yes")) == .allow)
+        // Another push is asked for with them too.
+        let other = await check("git push", runner: Self.repository(config: "push.followtags"))
+        guard case .retry(let otherWhy) = other else {
+            Issue.record("\(other)")
+            return
+        }
+        #expect(otherWhy.contains("push --no-follow-tags origin \(Self.head)"))
+        // When git can't say, the push isn't checked.
+        #expect(await check(exact, runner: Self.repository(failing: "--get-regexp"))
+            == stop("BriefBar couldn't read git's configuration in the worktree: couldn't --get-regexp"))
+    }
+
+    /// What was asked, in order: git's commands, by what they do, and Azure DevOps.
+    private final class Asked: Sendable {
+        let list = Mutex<[String]>([])
+
+        func append(_ what: String) {
+            list.withLock { $0.append(what) }
+        }
+    }
+
+    /// Azure DevOps last, after git's fetch and history, which can take a while: so the pull request is as late as can be.
+    @Test func readsAzureDevOpsLast() async {
+        let asked = Asked()
+        let runner = FakeRunner { arguments in
+            asked.append(arguments.first { ["rev-parse", "config", "fetch", "rev-list"].contains($0) } ?? "git")
+            if arguments.contains("--get-regexp") { return .failure("", status: 1) }
+            if arguments.contains("--git-path") { return .ok(".git/MERGE_HEAD") }
+            if arguments.contains("rev-parse") { return .ok(Self.head) }
+            return .ok()
+        }
+        let verdict = await check(exact, runner: runner) {
+            asked.append("azure devops")
+            return "main"
+        }
+        #expect(verdict == .allow)
+        let calls = asked.list.withLock { $0 }
+        #expect(calls.last == "azure devops")
+        #expect(calls.contains("fetch") && calls.firstIndex(of: "fetch")! < calls.firstIndex(of: "azure devops")!)
+        // So a pull request completed while git checked is still found completed.
+        let completed = await check(exact, runner: Self.repository()) { throw PullRequestNotActive(status: "completed") }
+        #expect(completed == stop("the pull request was completed."))
+    }
+
+    /// A command longer than BriefBar reads doesn't run.
+    @Test func doesntRunWhatsTooLongToRead() {
+        guard case .retry(let why) = PushGuard.tooLong(1 << 20) else {
+            Issue.record("not denied")
+            return
+        }
+        #expect(why == PushGuard.retryMarker + "this command is longer than BriefBar reads (1 MiB), so it didn't run. Run it in smaller parts.")
     }
 
     @Test func asksForTheCommitTheWorktreeHas() async {
