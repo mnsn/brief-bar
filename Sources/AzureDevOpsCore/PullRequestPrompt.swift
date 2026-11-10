@@ -89,7 +89,7 @@ public enum PullRequestPrompt {
 
     /// - Parameters:
     ///   - note: what you want, in your words, quoted as yours; nothing for nil or blank.
-    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), even when it changed nothing,
+    ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), unless it changed nothing,
     ///     then replies on each thread it lists and resolves each it changed, as a fix sent with Push and Reply on asks; else
     ///     it doesn't commit, push or reply, for you to check its changes first.
     public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree, note: String? = nil, ships: Bool = false) -> String {
@@ -126,7 +126,7 @@ public enum PullRequestPrompt {
 
             \(steps)
 
-            If you didn't change anything, still take the steps above, which push what else you changed here, if anything. \
+            If you didn't change anything, don't commit or push: only reply on each thread why, and leave it active. \
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with a short summary for \
             each thread, the commit you pushed and the threads you replied to.
             """
@@ -239,9 +239,9 @@ public enum PullRequestPrompt {
     /// The steps that commit and push what Copilot changed for the pull request, in `workplace`, before it replies on its
     /// threads: Push & Reply's, and a comment's fix's that ships, once it's made. Where Copilot works on its own, wherever
     /// that is, it first checks that what it would commit and push was made for the pull request; then it commits, once it
-    /// builds and the tests pass; checks, right before the push, that the pull request still merges into the branch the
-    /// prompt names, and that no merge brings in another branch's work; and pushes the commit it checked, by its ID, never
-    /// with force.
+    /// builds and the tests pass; checks, right before the push, that the pull request is still active and still merges into
+    /// the branch the prompt names, and that no merge brings in another branch's work; and pushes the commit it checked, by
+    /// its ID, never with force.
     static func pushSteps(_ pr: PullRequest, workplace: Workplace) -> [String] {
         let source = branch(pr.sourceBranch)
         var steps: [String] = []
@@ -272,10 +272,11 @@ public enum PullRequestPrompt {
             let target = branch(pr.targetBranch)
             steps.append("""
                 Right before you push, check it. This pull request merges into \(target): if you have BriefBar's pull_request \
-                tool, or Azure DevOps tools, read the pull request with them, and if it merges into another branch now, or \
-                they can't tell you, stop and tell me. Fetch origin/\(target) and origin/\(source): whatever a merge in git log \
-                --merges origin/\(source)..HEAD merged in must be in origin/\(target) (git merge-base --is-ancestor <parent> \
-                origin/\(target)). If you find a merge of any other branch, stop and tell me, and don't push.
+                tool, or Azure DevOps tools, read the pull request with them, and if it isn't active now, as when it was \
+                completed or abandoned, or it merges into another branch now, or they can't tell you, stop and tell me. Fetch \
+                origin/\(target) and origin/\(source): whatever a merge in git log --merges origin/\(source)..HEAD merged in \
+                must be in origin/\(target) (git merge-base --is-ancestor <parent> origin/\(target)). If you find a merge of \
+                any other branch, stop and tell me, and don't push.
                 """)
         }
         steps.append("""

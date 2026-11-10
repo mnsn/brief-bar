@@ -103,6 +103,12 @@ package struct UpNextView: View {
     package static func offersLetBriefBarChoose(_ slot: UpNext.Slot, order: PullRequestOrder) -> Bool {
         order.picks[slot.kind] != nil
     }
+
+    /// What VoiceOver hears of a slot's ⌄: "Chooses which of its 3 pull requests it shows", or, with one, "Chooses which
+    /// pull request it shows".
+    package static func chooserHint(_ slot: UpNext.Slot) -> String {
+        slot.count > 1 ? "Chooses which of its \(slot.count) pull requests it shows" : "Chooses which pull request it shows"
+    }
 }
 
 extension UpNextView {
@@ -266,7 +272,7 @@ private struct UpNextChooser: View {
         .help("Choose which pull request \(slot.kind.title) shows, first on the Board too, until it moves on")
         .accessibilityLabel(slot.kind.title)
         .accessibilityValue(slot.isPicked ? "You chose its pull request" : "")
-        .accessibilityHint("Chooses which of its \(slot.count) pull requests it shows")
+        .accessibilityHint(UpNextView.chooserHint(slot))
     }
 
     private func choose(_ ref: ItemRef) {

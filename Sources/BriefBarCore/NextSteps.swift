@@ -385,13 +385,12 @@ public struct UpNext: Equatable, Sendable {
 
 /// The pull request you chose for each of Up Next's slots, with its ⌄ or a Board card's Make Next: the slot shows it, it's
 /// first in its column on the Board, and `needs_me` lists it first, rather than the one BriefBar's order puts first
-/// (`BoardOrder`). It stands until its pull request moves on to another stage, leaves your board, merges or closes, and
-/// stays away for `awayFor` (`moved(by:known:away:now:)`), or you choose another, or Let BriefBar Choose; then
-/// BriefBar's order chooses again. Kept in the preferences by reference, but for a pull request listed only because
-/// someone sent it in a chat, which stays in memory, as what you change of its mission does.
+/// (`BoardOrder`). It stands until its pull request moves on to another stage, leaves your board or your lists, merges or
+/// closes, and stays away for `awayFor` (`moved(by:known:away:now:)`), or you choose another, or Let BriefBar Choose; then
+/// BriefBar's order chooses again. Kept in the preferences by reference, with the account you chose it with (`Kept`), but
+/// for a pull request listed only because someone sent it in a chat, which stays in memory, as what you change of its
+/// mission does.
 public struct UpNextPicks: Equatable, Sendable {
-    public static let defaultsKey = "order.upNextPicks"
-
     /// How long the pull request you chose can be away from where you chose it and still be the one you chose once it's
     /// back: long enough for what BriefBar reads to catch up, such as a pull request's details, which say its build failed,
     /// once Azure DevOps lets BriefBar read them again, or which pull requests the Copilot app's sessions are on, which say a
@@ -430,14 +429,15 @@ public struct UpNextPicks: Equatable, Sendable {
     }
 
     /// The slots whose pull request moved on, as these stages read now: it's been away from where you chose it
-    /// (`UpNextSlot.keeps`), in another stage, off your board, merged or closed, for `awayFor`, whether it's back now or
-    /// not. One back sooner is still the one you chose. `away` notes since when each is away, and forgets one once it's
-    /// back, and what it noted of a slot you chose another for. One whose source reads nothing of it now, such as while its
-    /// organization can't be read, since another account signed in, before Azure DevOps' lists are read, or while it's
-    /// off, is neither away nor back, and waits.
+    /// (`UpNextSlot.keeps`), in another stage, off your board, out of your lists, merged or closed, for `awayFor`, whether
+    /// it's back now or not. One back sooner is still the one you chose. `away` notes since when each is away, and forgets
+    /// one once it's back, and what it noted of a slot you chose another for. One whose source can't tell where it is now,
+    /// such as before Azure DevOps has read the lists of its organization, or while it's off, is neither away nor back, and
+    /// waits.
     /// - Parameters:
     ///   - readings: each listed pull request's stage.
-    ///   - known: the pull requests whose source reads them now, listed or not.
+    ///   - known: the pull requests whose source can tell where they are now: those it reads, listed or not, and those the
+    ///     lists it read in full don't have, which left them, as one you reviewed that its author completed.
     ///   - away: since when each one has been away.
     public func moved(
         by readings: [ItemRef: StageReading], known: Set<ItemRef>, away: inout [UpNextSlot: Away], now: Date
@@ -475,31 +475,158 @@ public struct UpNextPicks: Equatable, Sendable {
     public func merging(_ other: UpNextPicks) -> UpNextPicks {
         UpNextPicks(refs.merging(other.refs) { mine, _ in mine })
     }
+}
 
-    /// What was saved, without what can't be read, such as what another program wrote.
-    public static func load(from defaults: some SettingsStorage) -> UpNextPicks {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        else { return UpNextPicks() }
-        var refs: [UpNextSlot: ItemRef] = [:]
-        for (slot, ref) in saved {
-            guard let slot = UpNextSlot(rawValue: slot), let ref = (ref as? String).flatMap(ItemRef.init) else { continue }
-            refs[slot] = ref
-        }
-        return UpNextPicks(refs)
-    }
+extension UpNextPicks {
+    /// What BriefBar keeps of what you chose, in its preferences (`order.upNextPicks`): for each Azure DevOps account you
+    /// sign in with, as the stages you set are kept (`StageMarks`), each slot's pull request, by reference, with when a list
+    /// last had it. What an account chose applies only while it's signed in, and waits, unused, while another is. One goes
+    /// once its pull request moves on (`moved(by:known:away:now:)`), you choose another or Let BriefBar Choose, or no list
+    /// has had it for 30 days, as once its organization isn't watched, or its account doesn't sign in again; turning a
+    /// source off forgets its own, and Forget Stages… all of them.
+    public struct Kept: Equatable, Sendable {
+        public static let defaultsKey = "order.upNextPicks"
+        /// How long one stays once no list has its pull request: as long as a stage you set (`StageMarks.unlistedFor`).
+        public static let unlistedFor = StageMarks.unlistedFor
 
-    /// Saves them as each slot's name and its pull request's reference; none removes the key.
-    public func save(to defaults: some SettingsStorage) {
-        guard !refs.isEmpty else {
-            defaults.removeObject(forKey: Self.defaultsKey)
-            return
+        public struct Entry: Equatable, Sendable {
+            public var ref: ItemRef
+            /// When a list last had its pull request, as `listed` notes it.
+            public var listedAt: Date
+
+            public init(ref: ItemRef, listedAt: Date) {
+                self.ref = ref
+                self.listedAt = listedAt
+            }
+
+            /// Whether no list has had its pull request for 30 days, so it goes.
+            public func isUnlisted(at now: Date) -> Bool {
+                now.timeIntervalSince(listedAt) > Kept.unlistedFor
+            }
         }
-        let saved = Dictionary(uniqueKeysWithValues: refs.map { ($0.key.rawValue, $0.value.description) })
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        if let data = try? encoder.encode(saved) {
-            defaults.set(data, forKey: Self.defaultsKey)
+
+        /// Each account's, by its name lowercased, then by slot.
+        public private(set) var accounts: [String: [UpNextSlot: Entry]]
+
+        public init(accounts: [String: [UpNextSlot: Entry]] = [:]) {
+            var kept: [String: [UpNextSlot: Entry]] = [:]
+            for (account, entries) in accounts {
+                let pullRequests = entries.filter { $0.value.ref.kind.isPullRequest }
+                if !pullRequests.isEmpty { kept[account.lowercased(), default: [:]].merge(pullRequests) { first, _ in first } }
+            }
+            self.accounts = kept
+        }
+
+        public var isEmpty: Bool { accounts.isEmpty }
+
+        /// What this account chose.
+        public func picks(for account: String) -> UpNextPicks {
+            UpNextPicks((accounts[account.lowercased()] ?? [:]).mapValues(\.ref))
+        }
+
+        /// Keeps these as what the account chose, in place of what it had: each with when a list last had it, as kept for
+        /// its slot, or now for one new there.
+        public mutating func set(_ picks: UpNextPicks, for account: String, at now: Date) {
+            let account = account.lowercased()
+            let had = accounts[account] ?? [:]
+            var entries: [UpNextSlot: Entry] = [:]
+            for (slot, ref) in picks.refs {
+                entries[slot] = had[slot].flatMap { $0.ref == ref ? $0 : nil } ?? Entry(ref: ref, listedAt: now)
+            }
+            accounts[account] = entries.isEmpty ? nil : entries
+        }
+
+        /// Notes that a list has these now, at most once a day for each, as `StageMarks.listed` does, so that a list read
+        /// every minute doesn't write each time: true when that changed what's kept.
+        public mutating func listed(_ refs: Set<ItemRef>, for account: String, at now: Date) -> Bool {
+            let account = account.lowercased()
+            guard var entries = accounts[account] else { return false }
+            var changed = false
+            for (slot, entry) in entries
+            where refs.contains(entry.ref) && now.timeIntervalSince(entry.listedAt) >= StageMarks.listedEvery {
+                entries[slot]?.listedAt = now
+                changed = true
+            }
+            if changed { accounts[account] = entries }
+            return changed
+        }
+
+        /// Forgets those of these kinds that no list has had for 30 days, with every account: true when it forgot any.
+        /// - Parameter kinds: those whose sources have listed what they show, so that a list could have noted that it has
+        ///   them.
+        public mutating func forgetUnlisted(now: Date, of kinds: Set<ItemRef.Kind>) -> Bool {
+            forget { kinds.contains($0.ref.kind) && $0.isUnlisted(at: now) }
+        }
+
+        /// Forgets those of the sources you turned off, with every account: true when it forgot any.
+        public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
+            forget { kinds.contains($0.ref.kind) }
+        }
+
+        private mutating func forget(where isForgotten: (Entry) -> Bool) -> Bool {
+            var changed = false
+            for (account, entries) in accounts {
+                let kept = entries.filter { !isForgotten($0.value) }
+                guard kept.count != entries.count else { continue }
+                accounts[account] = kept.isEmpty ? nil : kept
+                changed = true
+            }
+            return changed
+        }
+
+        // MARK: Saved
+
+        private struct Saved: Codable {
+            var account: String
+            var slot: String
+            var pullRequest: ItemRef
+            var listedAt: Date
+        }
+
+        /// One that can be read, or none, so that one BriefBar can't read, such as a slot of a later version's, drops alone.
+        private struct Lossy: Decodable {
+            var value: Saved?
+
+            init(from decoder: Decoder) throws {
+                value = try? decoder.singleValueContainer().decode(Saved.self)
+            }
+        }
+
+        /// What was saved, without what can't be read, such as what another program wrote.
+        public static func load(from defaults: some SettingsStorage) -> Kept {
+            guard let data = defaults.data(forKey: defaultsKey), let saved = try? JSONDecoder().decode([Lossy].self, from: data)
+            else { return Kept() }
+            var accounts: [String: [UpNextSlot: Entry]] = [:]
+            for record in saved.compactMap(\.value) {
+                let account = record.account.lowercased()
+                guard let slot = UpNextSlot(rawValue: record.slot), record.pullRequest.kind.isPullRequest,
+                      accounts[account]?[slot] == nil
+                else { continue }
+                accounts[account, default: [:]][slot] = Entry(ref: record.pullRequest, listedAt: record.listedAt)
+            }
+            return Kept(accounts: accounts)
+        }
+
+        /// Saves each as its account, its slot's name, its pull request's reference and when a list last had it; none
+        /// removes the key.
+        public func save(to defaults: some SettingsStorage) {
+            guard !isEmpty else {
+                defaults.removeObject(forKey: Self.defaultsKey)
+                return
+            }
+            var saved: [Saved] = []
+            for account in accounts.keys.sorted() {
+                let entries = accounts[account] ?? [:]
+                for slot in UpNextSlot.allCases {
+                    guard let entry = entries[slot] else { continue }
+                    saved.append(Saved(account: account, slot: slot.rawValue, pullRequest: entry.ref, listedAt: entry.listedAt))
+                }
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            if let data = try? encoder.encode(saved) {
+                defaults.set(data, forKey: Self.defaultsKey)
+            }
         }
     }
 }

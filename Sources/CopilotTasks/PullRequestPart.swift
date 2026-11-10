@@ -72,9 +72,19 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
     /// For the conflicts, the pull request's target branch as it took them on: with another, they're other conflicts. Nil
     /// for the rest, and for conflicts BriefBar kept before it had this.
     public var target: String?
+    /// For a Push & Reply that fixed it first (`fixes`), the commit the pull request's branch was at as it was sent, as
+    /// BriefBar's list had read it: once the task finished, it pushed only if the list reads another since, since its
+    /// prompt has it stop before it pushes, as when the tests don't pass. Nil otherwise, when the list didn't have it, and
+    /// for what BriefBar kept before it had this.
+    public var head: String?
+    /// Once a task that took it on was gone on with (`ended`): by when it was over, as the first task that went on with its
+    /// session started, whichever goes on since; a fork of the session made after that has it. Nil until then, and for what
+    /// BriefBar kept before it had this.
+    public var overBy: Date?
 
     public init(
-        _ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, fixes: Bool? = nil, target: String? = nil
+        _ part: PullRequestPart, since: Date, ended: RunPhase? = nil, ships: Bool? = nil, fixes: Bool? = nil, target: String? = nil,
+        head: String? = nil, overBy: Date? = nil
     ) {
         self.part = part
         self.since = since
@@ -82,17 +92,28 @@ public struct TakenPart: Sendable, Codable, Equatable, Hashable {
         self.ships = ships
         self.fixes = fixes
         self.target = target
+        self.head = head
+        self.overBy = overBy
     }
 }
 
 /// A Push & Reply that ran in a task's session before it, on the same pull request (`CopilotRun.pushes`): when it started,
-/// and how it ended. It committed and pushed all that the session had changed by then, whatever its prompt listed.
+/// and how it ended. It committed and pushed all that the session had changed by then, whatever its prompt listed; one
+/// that fixed what it took on first (`fixes`), as a comment's Fix sent with Push and Reply on, only if the pull request's
+/// branch moved from `head` since, as BriefBar's list reads it.
 public struct SessionPush: Sendable, Codable, Equatable, Hashable {
     public var since: Date
     public var ended: RunPhase
+    /// It fixed what it took on first (`TakenPart.fixes`). Nil otherwise, and for what BriefBar kept before it had this.
+    public var fixes: Bool?
+    /// For one that fixed what it took on first, the commit the pull request's branch was at as it was sent
+    /// (`TakenPart.head`).
+    public var head: String?
 
-    public init(since: Date, ended: RunPhase) {
+    public init(since: Date, ended: RunPhase, fixes: Bool? = nil, head: String? = nil) {
         self.since = since
         self.ended = ended
+        self.fixes = fixes
+        self.head = head
     }
 }

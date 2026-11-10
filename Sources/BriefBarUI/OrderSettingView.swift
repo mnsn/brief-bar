@@ -42,13 +42,13 @@ package struct PullRequestOrderSettingView: View {
         the top of the Pull Requests page, where you can choose which pull request each kind shows; and a Board beside \
         List and Map. With agents on, sessions get the tools to tell BriefBar an order, and each pull request's stage, as \
         they work, and Copilot gets a skill that says when to. It keeps the orders and your changes to missions, by \
-        reference, the names you give missions, and the pull request you choose for each kind of next, by reference, \
-        until it moves on; and the stages you set, for each Azure DevOps account you sign in with, and those each \
-        session set, as references only, with only what would end each: for In progress, its commit; for Teammate's \
-        review, the votes it was set over, never who cast them (on someone else's, your own vote and its commit); until \
-        they end or you forget them; what a session set shows only while the Copilot app lists it. What you change, set \
-        or choose of a pull request sent to you in a chat stays in memory only. None of it goes to Azure DevOps or \
-        GitHub. Turning it off keeps them, unused, until you forget them.
+        reference, the names you give missions, and the pull request you choose for each kind of next, by reference, with \
+        the account you chose it with, until it moves on; and the stages you set, for each Azure DevOps account you sign \
+        in with, and those each session set, as references only, with only what would end each: for In progress, its \
+        commit; for Teammate's review, the votes it was set over, never who cast them (on someone else's, your own vote \
+        and its commit); until they end or you forget them; what a session set shows only while the Copilot app lists \
+        it. What you change, set or choose of a pull request sent to you in a chat stays in memory only. None of it goes \
+        to Azure DevOps or GitHub. Turning it off keeps them, unused, until you forget them.
         """
 
     package var body: some View {

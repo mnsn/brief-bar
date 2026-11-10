@@ -41,18 +41,20 @@ import BriefBarCore
         #expect(prompt.hasSuffix("Don't commit, push or reply on the pull request: end with a short summary for each thread, so I can check your changes before they go out."))
     }
 
-    /// With Push and Reply on, Fix All ships what it changed, as Push & Reply would, with its very steps, even when it
-    /// changed nothing, as a Push & Reply pushes all the session changed, then replies on the threads it lists alone, the
-    /// same as without it.
+    /// With Push and Reply on, Fix All ships what it changed, as Push & Reply would, with its very steps, then replies on the
+    /// threads it lists alone, the same as without it; and the same check right before the push, which stops once the pull
+    /// request was completed or abandoned meanwhile. Having changed nothing, it doesn't commit or push, which would push
+    /// what else the session changed, fixes you haven't pushed among them, but replies why on each thread.
     @Test func fixCommentsThatShipsRepliesOnTheThreadsItLists() {
         let prompt = PullRequestPrompt.fixComments(record(), note: "Keep the API.", ships: true)
         #expect(!prompt.contains("Don't commit, push or reply"))
         #expect(prompt.contains("How I want them fixed, in my own words:\n\n> Keep the API."))
         let steps = PullRequestPrompt.numbered(PullRequestPrompt.pushSteps(record().pullRequest, workplace: .worktree))
         #expect(prompt.contains("Build, and run the tests that cover what you changed. Then ship them, in this worktree:\n\n" + steps))
+        #expect(steps.contains("if it isn't active now, as when it was completed or abandoned, or it merges into another branch now"))
         #expect(prompt.contains(steps + "\n4. On the pull request, with your Azure DevOps tools, reply to each of the comment threads above, saying what you changed, and resolve it. For one you didn't change, reply why, and leave it active. Don't reply on the pull request's other threads."))
-        #expect(prompt.contains("If you didn't change anything, still take the steps above, which push what else you changed here, if anything."))
-        #expect(!prompt.contains("don't commit or push"))
+        #expect(prompt.contains("If you didn't change anything, don't commit or push: only reply on each thread why, and leave it active."))
+        #expect(!prompt.contains("still take the steps above"))
         #expect(prompt.hasSuffix("End with a short summary for each thread, the commit you pushed and the threads you replied to."))
         #expect(PullRequestPrompt.threadsListed(in: prompt, among: [7, 9, 11, 12]) == [7, 9])
         // Elsewhere: it checks what it would push first, and never rebases.
@@ -108,9 +110,11 @@ import BriefBarCore
         #expect(ship.contains("Don't complete, approve or abandon the pull request"))
         // The latest comment of each thread, for reference.
         #expect(ship.contains("1. src/Checkout/Total.cs, line 42 (thread 7)\n   Sam Rivera: Could we round half to even?"))
-        // Committed first; then, right before each push, after a rebase too, what it would push, and where it goes.
+        // Committed first; then, right before each push, after a rebase too, what it would push, where it goes, and that the
+        // pull request is still active: completed or abandoned meanwhile, its branch may be gone, which a push would make
+        // again.
         #expect(ship.contains("1. Make sure it builds and the tests you ran pass, then commit your changes"))
-        #expect(ship.contains("2. Right before you push, check it. This pull request merges into main: if you have BriefBar's pull_request tool, or Azure DevOps tools, read the pull request with them, and if it merges into another branch now, or they can't tell you, stop and tell me."))
+        #expect(ship.contains("2. Right before you push, check it. This pull request merges into main: if you have BriefBar's pull_request tool, or Azure DevOps tools, read the pull request with them, and if it isn't active now, as when it was completed or abandoned, or it merges into another branch now, or they can't tell you, stop and tell me."))
         #expect(ship.contains("Fetch origin/main and origin/fix-total: whatever a merge in git log --merges origin/fix-total..HEAD merged in must be in origin/main (git merge-base --is-ancestor <parent> origin/main). If you find a merge of any other branch, stop and tell me, and don't push."))
         #expect(ship.contains("If that's rejected, rebase on origin/fix-total, stop and tell me if that conflicts, and check it again, as above, before you push."))
         // Without a branch it merges into, there's nothing to check it against.

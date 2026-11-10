@@ -225,7 +225,8 @@ import Testing
     }
 
     /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps
-    /// in the preferences; one its slot doesn't have, as one in another stage, changes nothing.
+    /// in the preferences for the account the lists read with; one its slot doesn't have, as one in another stage, and
+    /// what another account chose, change nothing.
     @Test func whatYouChoseForUpNextComesFirstAsOnTheBoard() async throws {
         let now = Date(timeIntervalSince1970: 1_792_000_000)
         func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
@@ -234,24 +235,31 @@ import Testing
             ref(4133): StageFacts(role: .author, changesWanted: "Priya wants changes", since: now - 9_000),
             ref(4099): StageFacts(role: .author, waitingFor: "Waiting on Priya", since: now),
         ]
-        func columns(_ picks: UpNextPicks) -> [PullRequestStage: [ItemRef]] {
+        func kept(_ picks: UpNextPicks, for account: String = "Robin@contoso.com") -> UpNextPicks.Kept {
+            var kept = UpNextPicks.Kept()
+            kept.set(picks, for: account, at: now)
+            return kept
+        }
+        func columns(_ picks: UpNextPicks.Kept, account: String? = "robin@contoso.com") -> [PullRequestStage: [ItemRef]] {
             let kept = OrderKept(
                 orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
                 sessionStages: SessionStages(), picks: picks
             )
             return AzureDevOpsAgent.stages(
-                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com", now: now
+                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: account, now: now
             ).columns
         }
-        #expect(columns(UpNextPicks())[.inProgress] == [ref(4131), ref(4133)])
-        #expect(columns(UpNextPicks([.fix: ref(4133)]))[.inProgress] == [ref(4133), ref(4131)])
-        #expect(columns(UpNextPicks([.fix: ref(4099)]))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(UpNextPicks.Kept())[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)])))[.inProgress] == [ref(4133), ref(4131)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4099)])))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)]), for: "sam@contoso.com"))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)])), account: nil)[.inProgress] == [ref(4131), ref(4133)])
 
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
-        UpNextPicks([.fix: ref(4133)]).save(to: defaults)
+        kept(UpNextPicks([.fix: ref(4133)])).save(to: defaults)
         let reader = AzureDevOpsReader(demo: false, organizations: [], defaults: defaults)
-        #expect(await reader.orderKept(now: now)?.picks == UpNextPicks([.fix: ref(4133)]))
+        #expect(await reader.orderKept(now: now)?.picks == kept(UpNextPicks([.fix: ref(4133)])))
     }
 
     /// A session's In progress ends for agents too as that session finishes, though the Copilot app doesn't record it on the

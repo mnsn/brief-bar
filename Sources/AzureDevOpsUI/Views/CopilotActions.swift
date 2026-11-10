@@ -749,6 +749,19 @@ struct CopilotAsking {
     /// What a comment's fix sent with Push and Reply on does once it's done, for its composer's note.
     static let shipsOnceDone = "once its tests pass, it commits, pushes and replies, as you"
 
+    /// What a fix sent with Push and Reply on pushes besides its own, without replying on it, for its note: it commits all
+    /// its session changed, so the fixes `ready` in the session, which you haven't pushed; in a fork the Copilot CLI makes of
+    /// one of BriefBar's tasks, which starts at the commit the task's checkout has, only the conflicts' resolution, which
+    /// Resolve Conflicts commits; none of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’, which you
+    /// haven't pushed, without replying on that comment." Nil when that's nothing.
+    static func alsoPushes(_ ready: [PullRequestPart], in name: String, forkedWithTheCLI: Bool, taking: [PullRequestPart]) -> String? {
+        let parts = ready.filter { !taking.contains($0) && (!forkedWithTheCLI || $0 == .conflicts) }
+        guard !parts.isEmpty else { return nil }
+        let threads = parts.filter { $0.thread != nil }.count
+        let reply = threads == 0 ? "" : threads == 1 ? ", without replying on that comment" : ", without replying on those comments"
+        return "It also pushes \(ReadyFixesBar.listed(parts)) ready in \(name), which you haven't pushed\(reply)."
+    }
+
     /// The words a composer says what it does in.
     struct Words {
         /// What a fix does, for its note: "addresses this comment", "fixes this build", "resolves the conflicts".
@@ -1038,6 +1051,8 @@ struct CopilotPartComposer<Options: View>: View {
         }
         guard isLive else { return ("The demo doesn't send anything.", false) }
         let leavesOut = asking.leavesOut
+        // With Push and Reply on: what else goes, which you haven't pushed.
+        let also = alsoPushes(target, choice: choice).map { " " + $0 } ?? ""
         switch target {
         case nil:
             return ("The sessions that go with this pull request go with it as well as each other: choose where it goes.", false)
@@ -1050,27 +1065,27 @@ struct CopilotPartComposer<Options: View>: View {
             guard let choice else { return (CopilotSending.gone, true) }
             if CopilotDestinations.forksWithTheCLI(choice) {
                 return (
-                    "The Copilot CLI forks \(name), with its history, into a worktree of its own, to \(words.toDo): \(leavesOut). The task stays as it is.",
+                    "The Copilot CLI forks \(name), with its history, into a worktree of its own, to \(words.toDo): \(leavesOut). The task stays as it is.\(also)",
                     false
                 )
             }
             let reach = checked?.destination == target ? checked?.forkReach : nil
             if let why = reach?.whyNot(forking: true) {
-                return ("BriefBar copies /fork and the prompt, and opens \(name) in the Copilot app, for you to paste. " + why, false)
+                return ("BriefBar copies /fork and the prompt, and opens \(name) in the Copilot app, for you to paste.\(also) " + why, false)
             }
-            return ("The Copilot app forks \(name), and BriefBar sends the fork the prompt, as yours: \(leavesOut). The session stays as it is.", false)
+            return ("The Copilot app forks \(name), and BriefBar sends the fork the prompt, as yours: \(leavesOut). The session stays as it is.\(also)", false)
         case .session?:
             guard let choice else { return (CopilotSending.gone, true) }
             switch delivery(for: target, choice: choice) {
             case .cli:
-                return ("Copilot goes on with \(name) with the CLI, on its own, then builds and tests: \(leavesOut).", false)
+                return ("Copilot goes on with \(name) with the CLI, on its own, then builds and tests: \(leavesOut).\(also)", false)
             case .app(let reach, let reason):
                 var parts: [String]
                 switch reach {
                 case .listening?, .loads?, nil:
-                    parts = ["Sends it to \(name) in the Copilot app, as yours: \(leavesOut)."]
+                    parts = ["Sends it to \(name) in the Copilot app, as yours: \(leavesOut).\(also)"]
                 case .noListener?, .notInApp?, .off?:
-                    parts = ["BriefBar copies it and opens \(name) in the Copilot app, for you to paste."]
+                    parts = ["BriefBar copies it and opens \(name) in the Copilot app, for you to paste.\(also)"]
                 }
                 if let why = reach?.whyNot(forking: false) { parts.append(why) }
                 if let reason { parts.append(reason) }
@@ -1089,6 +1104,23 @@ struct CopilotPartComposer<Options: View>: View {
         if checked?.destination == target, let delivery = checked?.delivery { return delivery }
         if session?.session?.id == choice.id, let delivery = session?.delivery { return delivery }
         return PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: copilot.canOpenInApp)
+    }
+
+    /// With Push and Reply on, what else a fix pushes where it goes, which you haven't pushed
+    /// (`CopilotAsking.alsoPushes(_:in:forkedWithTheCLI:taking:)`): the fixes ready in the session, as the bar at the foot of
+    /// the details has them, or what a fork of it has of them; none in a new session.
+    private func alsoPushes(_ target: CopilotDestination?, choice: SessionChoice?) -> String? {
+        guard asking.ships, let record, let choice else { return nil }
+        let forkedWithTheCLI: Bool
+        switch target {
+        case .session?: forkedWithTheCLI = false
+        case .fork?: forkedWithTheCLI = CopilotDestinations.forksWithTheCLI(choice)
+        case .newSession?, nil: return nil
+        }
+        let ready = copilot.readyFixes(of: item.key, among: record.partsToFix).first { $0.session == choice.id }?.parts ?? []
+        let taking = asking.part.map { [$0] } ?? PullRequestTasks.parts(.fixComments, for: record)
+        let name = CopilotWork.quoted(PullRequestSession.name(of: choice), isTask: Self.isTask(choice))
+        return CopilotAsking.alsoPushes(ready, in: name, forkedWithTheCLI: forkedWithTheCLI, taking: taking)
     }
 
     private func canSend(_ target: CopilotDestination?, choice: SessionChoice?) -> Bool {
@@ -1542,14 +1574,20 @@ struct ReadyFixesBar: View {
     /// What's ready, by what it fixed, and where: "2 fixes ready in ‘Retry backoff’", "1 fix and the conflicts' resolution
     /// ready in ‘Retry backoff’", "A build's fix ready in the ‘Fix the Build’ task".
     static func sentence(_ parts: [PullRequestPart], in place: String) -> String {
+        let listed = listed(parts)
+        return listed.prefix(1).uppercased() + listed.dropFirst() + " ready in \(place)"
+    }
+
+    /// What fixes fixed, in a sentence's middle: "2 fixes", "1 fix and the conflicts' resolution", "a build's fix";
+    /// "nothing" for none.
+    nonisolated static func listed(_ parts: [PullRequestPart]) -> String {
         let threads = parts.filter { $0.thread != nil }.count
         let builds = parts.filter { $0.build != nil }.count
         var what: [String] = []
         if threads > 0 { what.append(threads == 1 ? "1 fix" : "\(threads) fixes") }
         if builds > 0 { what.append(builds == 1 ? "a build's fix" : "\(builds) builds' fixes") }
         if parts.contains(.conflicts) { what.append("the conflicts' resolution") }
-        let listed = what.count > 1 ? what.dropLast().joined(separator: ", ") + " and " + what[what.count - 1] : what.first ?? "Nothing"
-        return listed.prefix(1).uppercased() + listed.dropFirst() + " ready in \(place)"
+        return what.count > 1 ? what.dropLast().joined(separator: ", ") + " and " + what[what.count - 1] : what.first ?? "nothing"
     }
 
     /// Takes the details to the first thing they fixed.

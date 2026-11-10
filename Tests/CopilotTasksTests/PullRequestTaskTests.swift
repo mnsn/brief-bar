@@ -170,8 +170,9 @@ import Testing
     }
 
     /// A comment's fix that pushes and replies, sent to a new session, goes as Push & Reply does: only while Azure DevOps
-    /// says, right before git checks and right before Copilot starts, that the pull request merges into the branch its
-    /// prompt names. When it says another, or can't be read, nothing starts, and the worktree made for it goes.
+    /// says, right before git checks and right before Copilot starts, that the pull request is active, and merges into the
+    /// branch its prompt names. When it says another, or that it was completed or abandoned, or can't be read, nothing
+    /// starts, and the worktree made for it goes.
     @Test(.timeLimit(.minutes(5)))
     func aNewSessionThatPushesGoesOnlyWhileThePullRequestMergesIntoItsTarget() async throws {
         let fixture = try await repositoryWithBranch()
@@ -201,6 +202,17 @@ import Testing
             try await launcher.launch(request(["main"]), id: id) { _ in }
         }
         #expect(reads.read == ["main", "unread"])
+        // Completed or abandoned while Copilot would fix it: before git checks, or after.
+        await #expect(throws: LaunchError.notActive(PullRequestNotActive(status: "completed"))) {
+            try await launcher.launch(request(["completed"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["completed"])
+        await #expect(throws: LaunchError.notActive(PullRequestNotActive(status: "abandoned"))) {
+            try await launcher.launch(request(["main", "abandoned"]), id: id) { _ in }
+        }
+        #expect(reads.read == ["main", "abandoned"])
+        #expect(LaunchError.notActive(PullRequestNotActive(status: "completed")).description
+            == "The pull request was completed, so Copilot didn't push to it or reply on it.")
         #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
 
@@ -518,27 +530,28 @@ import Testing
         // Going on with a fix, it keeps what it took on, with how that ended, and takes the new one on in its place.
         let fixed = run(.fixComments, ended: .finished, taken: [TakenPart(.thread(11), since: first), TakenPart(.thread(12), since: first)])
         #expect(taken(fixed, [.thread(12)], for: .fixComments, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second), TakenPart(.thread(12), since: second),
         ])
         // A build and its conflicts go along with threads.
         #expect(taken(fixed, [.build(31)], for: .fixBuild, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
-            TakenPart(.build(31), since: second),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: first, ended: .finished, overBy: second), TakenPart(.build(31), since: second),
         ])
         // One BriefBar didn't see end stopped.
         let unseen = run(.fixBuild, ended: nil, taken: [TakenPart(.build(31), since: first)])
         #expect(taken(unseen, [.conflicts], for: .resolveConflicts, at: second) == [
-            TakenPart(.build(31), since: first, ended: .stopped), TakenPart(.conflicts, since: second),
+            TakenPart(.build(31), since: first, ended: .stopped, overBy: second), TakenPart(.conflicts, since: second),
         ])
         // Push & Reply takes on what it ships, with what prompts to the session fixed rather than its runs, such as 13; it
         // doesn't reply on the others it has, which stay as they were.
         let shipping = try #require(taken(fixed, [.thread(12), .thread(13), .build(31)], for: .pushAndReply, at: second))
         #expect(shipping == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ships: true),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second), TakenPart(.thread(12), since: second, ships: true),
             TakenPart(.thread(13), since: second, ships: true), TakenPart(.build(31), since: second, ships: true),
         ])
         #expect(taken(fixed, [], for: .pushAndReply, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: first, ended: .finished),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: first, ended: .finished, overBy: second),
         ])
         // A comment's Fix sent with Push and Reply on is a Push & Reply that fixes what it takes on first: they say so, and
         // still do once a later task goes on with its session. Only a Push & Reply fixes and ships so.
@@ -546,28 +559,38 @@ import Testing
             goingOnWith: fixed, on: pullRequest.reference, taking: [.thread(12)], for: .pushAndReply, at: second, fixing: true
         ))
         #expect(fixing == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ships: true, fixes: true),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: second, ships: true, fixes: true),
         ])
         #expect(taken(run(.pushAndReply, ended: .failed, taken: fixing), [.thread(13)], for: .fixComments, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .failed, ships: true, fixes: true),
-            TakenPart(.thread(13), since: second),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: second, ended: .failed, ships: true, fixes: true, overBy: second), TakenPart(.thread(13), since: second),
+        ])
+        // What ended as an earlier task went on stays over by then, however often the session goes on since.
+        let third = Date(timeIntervalSince1970: 300)
+        #expect(taken(run(.pushAndReply, ended: .finished, taken: fixing), [.thread(14)], for: .fixComments, at: third) == [
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: second, ended: .finished, ships: true, fixes: true, overBy: third), TakenPart(.thread(14), since: third),
         ])
         #expect(CopilotRun.taken(goingOnWith: nil, on: pullRequest.reference, taking: [.thread(11)], for: .fixComments, at: first, fixing: true)
             == [TakenPart(.thread(11), since: first)])
         // Once it's done, a later task keeps what it had and didn't ship, still not pushed, and what it shipped, pushed, for
         // an older fix of it, elsewhere, not to be its latest again.
         #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .finished, ships: true),
-            TakenPart(.build(31), since: second, ended: .finished, ships: true), TakenPart(.thread(13), since: second),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: second, ended: .finished, ships: true, overBy: second),
+            TakenPart(.build(31), since: second, ended: .finished, ships: true, overBy: second), TakenPart(.thread(13), since: second),
         ])
         #expect(taken(run(.pushAndReply, ended: .finished, taken: shipping), [.thread(11)], for: .fixComments, at: second) == [
-            TakenPart(.thread(12), since: second, ended: .finished, ships: true), TakenPart(.thread(13), since: second, ended: .finished, ships: true),
-            TakenPart(.build(31), since: second, ended: .finished, ships: true), TakenPart(.thread(11), since: second),
+            TakenPart(.thread(12), since: second, ended: .finished, ships: true, overBy: second),
+            TakenPart(.thread(13), since: second, ended: .finished, ships: true, overBy: second),
+            TakenPart(.build(31), since: second, ended: .finished, ships: true, overBy: second), TakenPart(.thread(11), since: second),
         ])
         // One that failed didn't push them: what it shipped says so, and a fix of it takes it on again.
         #expect(taken(run(.pushAndReply, ended: .failed, taken: shipping), [.thread(13)], for: .fixComments, at: second) == [
-            TakenPart(.thread(11), since: first, ended: .finished), TakenPart(.thread(12), since: second, ended: .failed, ships: true),
-            TakenPart(.build(31), since: second, ended: .failed, ships: true), TakenPart(.thread(13), since: second),
+            TakenPart(.thread(11), since: first, ended: .finished, overBy: second),
+            TakenPart(.thread(12), since: second, ended: .failed, ships: true, overBy: second),
+            TakenPart(.build(31), since: second, ended: .failed, ships: true, overBy: second), TakenPart(.thread(13), since: second),
         ])
         // A review changed nothing to push.
         #expect(taken(run(.review, ended: .finished, taken: shipping), [], for: .fixComments, at: second) == nil)
@@ -665,6 +688,8 @@ private final class TargetReads: Sendable {
         let target = answers.withLock { $0.isEmpty ? "unread" : $0.removeFirst() }
         reads.withLock { $0.append(target) }
         guard target != "unread" else { throw TestError("Azure DevOps didn't answer in time.") }
+        // Completed or abandoned meanwhile.
+        if target == "completed" || target == "abandoned" { throw PullRequestNotActive(status: target) }
         return target
     }
 }

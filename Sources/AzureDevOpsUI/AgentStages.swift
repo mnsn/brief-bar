@@ -14,8 +14,8 @@ struct OrderKept: Sendable {
     /// The stages sessions set (`SessionStages`).
     var sessionStages: SessionStages
     /// The pull requests you chose for Up Next's slots, which come first in their columns, as on the Board: those the app
-    /// keeps in the preferences, not those only sent to you in a chat, which it keeps in memory.
-    var picks = UpNextPicks()
+    /// keeps in the preferences, for each account, not those only sent to you in a chat, which it keeps in memory.
+    var picks = UpNextPicks.Kept()
     /// The demo's stages, as if you and its sessions had set them then, each keeping what would end it as the pull request
     /// is now, as the app's demo has them (`PullRequestOrder.tellDemo`).
     var demoMarks: [ItemRef: StageMark] = [:]
@@ -139,7 +139,9 @@ extension AzureDevOpsAgent {
                 readings[ref] = reading
             }
         }
-        let board = PullRequestBoard.make(stages: readings, missions: missions, kinds: [.pullRequest], lanes: .none, picks: kept.picks)
+        // What the account the lists read with chose for Up Next's slots, as the app applies it while it's signed in.
+        let picks = account.map { kept.picks.picks(for: $0) } ?? UpNextPicks()
+        let board = PullRequestBoard.make(stages: readings, missions: missions, kinds: [.pullRequest], lanes: .none, picks: picks)
         var columns: [PullRequestStage: [ItemRef]] = [:]
         for (stage, cards) in board.lanes.first?.columns ?? [:] {
             columns[stage] = cards.map(\.ref)

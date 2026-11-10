@@ -31,15 +31,26 @@ import Testing
         return PullRequestOrder(defaults: defaults, isDemo: false, now: now)
     }
 
-    private static func tell(_ order: PullRequestOrder, _ facts: [Int: StageFacts], states: [Int: PullRequestState] = [:]) {
+    /// What Azure DevOps tells, as Robin, with Contoso's lists read in full (`listsRead`), unless said otherwise: one it
+    /// doesn't list there has left them. `listed` false is before it has read them since BriefBar started.
+    private static func tell(
+        _ order: PullRequestOrder, _ facts: [Int: StageFacts], states: [Int: PullRequestState] = [:], account: String = account,
+        listed: Bool = true, listsRead: Set<String> = ["contoso"], unreadLinks: Set<ItemRef> = []
+    ) {
         order.publish(
             .azureDevOps, pullRequests: facts.keys.sorted().map { number in
                 var pullRequest = ado(number)
                 pullRequest.state = states[number] ?? .open
                 return pullRequest
             },
-            stages: Dictionary(uniqueKeysWithValues: facts.map { (ref($0.key), $0.value) }), account: account
+            stages: Dictionary(uniqueKeysWithValues: facts.map { (ref($0.key), $0.value) }), account: account, listed: listed,
+            listsRead: listsRead, unreadLinks: unreadLinks
         )
+    }
+
+    /// What BriefBar keeps of what an account chose for Up Next's slots, Robin's unless said otherwise.
+    private static func kept(_ defaults: MemoryDefaults, for account: String = account) -> UpNextPicks {
+        UpNextPicks.Kept.load(from: defaults).picks(for: account)
     }
 
     private static let cart = ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b")!
@@ -186,9 +197,10 @@ import Testing
         order.board(kinds: kinds).upNext.slots.first { $0.kind == .fix }
     }
 
-    /// The one you choose is Fix next's, ahead of BriefBar's order, kept in the preferences by reference, and still so once
-    /// BriefBar starts again; but only one Fix next has. Back soon after it moved on, it's still yours; once it's been away
-    /// for half an hour, the choice goes, and BriefBar's order chooses again, as it does at once with Let BriefBar Choose.
+    /// The one you choose is Fix next's, ahead of BriefBar's order, kept in the preferences by reference, with the account,
+    /// and still so once BriefBar starts again and Azure DevOps says that account signed in; but only one Fix next has.
+    /// Back soon after it moved on, it's still yours; once it's been away for half an hour, the choice goes, and BriefBar's
+    /// order chooses again, as it does at once with Let BriefBar Choose.
     @Test func whatYouChooseIsRememberedUntilItMovesOn() throws {
         let defaults = MemoryDefaults()
         let order = Self.service(defaults)
@@ -203,7 +215,7 @@ import Testing
         #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order) == "Priya wants changes, Not in a mission, you chose it")
         #expect(UpNextView.choice(slot.card, order: order) == "!4133 — Priya wants changes")
         #expect(order.board(kinds: Self.kinds).picked == [.inProgress: Self.ref(4133)])
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
         #expect(order.keepsStages)
         #expect(!order.pickNext(Self.ref(4999), in: .fix))
         #expect(!order.pickNext(Self.ref(4131), in: .yourReview))
@@ -211,8 +223,9 @@ import Testing
 
         var now = Date(timeIntervalSince1970: 1_792_000_000)
         let again = Self.service(defaults, now: { now })
-        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(again.picks.isEmpty)
         Self.tell(again, Self.fixes)
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
         #expect(Self.fixNext(again)?.card.ref == Self.ref(4133))
 
         // Priya's changes are made: it moves on to Teammate's review, and BriefBar's order chooses while it's away.
@@ -232,7 +245,7 @@ import Testing
         now += UpNextPicks.awayFor
         again.timePassed()
         #expect(again.picks.isEmpty)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
         #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
         // Back in Fix next, it's BriefBar's order's again.
         Self.tell(again, Self.fixes)
@@ -242,7 +255,7 @@ import Testing
         again.letBriefBarChoose(.fix)
         #expect(again.picks.isEmpty)
         #expect(Self.fixNext(again)?.card.ref == Self.ref(4131))
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
 
         // One that merged, which the lists still read but no longer show, goes half an hour later.
         #expect(again.pickNext(Self.ref(4132), in: .fix))
@@ -253,14 +266,14 @@ import Testing
         now += UpNextPicks.awayFor
         again.timePassed()
         #expect(again.picks.isEmpty)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
     }
 
     /// What BriefBar reads before it has read everything ends no choice. As Pull Request Order turns on, which pull requests
     /// the Copilot app's sessions are on can come after Azure DevOps' lists, and a pull request a session asks you about
     /// reads, meanwhile, as waiting on a teammate, as it does once the Copilot source stops. Turning Pull Request Order off
-    /// forgets since when one was away, as quitting does: once it's on again, each choice has its half hour again. One the
-    /// lists don't have, as while its organization can't be read, waits however long.
+    /// forgets since when one was away, as quitting does: once it's on again, each choice has its half hour again. One its
+    /// source can't tell where it is, as before Azure DevOps has read its lists, waits however long.
     @Test func aChoiceOutlastsWhatBriefBarReadsBeforeItHasReadEverything() {
         let defaults = MemoryDefaults()
         var now = Date(timeIntervalSince1970: 1_792_000_000)
@@ -276,7 +289,7 @@ import Testing
         #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
         #expect(order.picks == UpNextPicks([.fix: Self.ref(4093)]))
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4093)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4093)]))
 
         // Off 20 minutes later, and on again, Azure DevOps' lists first: 40 minutes after it went away, it's still yours.
         now += 1_200
@@ -290,10 +303,11 @@ import Testing
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4093))
         #expect(Self.fixNext(order)?.isPicked == true)
 
-        // BriefBar starts again a day later: its lists don't have !4093 for an hour, then have it before the sessions.
+        // BriefBar starts again a day later: for an hour, before Azure DevOps has read its lists, what it tells doesn't have
+        // !4093; then its lists have it, before the sessions.
         now += 86_400
         let again = Self.service(defaults, now: { now })
-        Self.tell(again, Self.fixes)
+        Self.tell(again, Self.fixes, listed: false)
         now += 3_600
         again.timePassed()
         #expect(again.picks == UpNextPicks([.fix: Self.ref(4093)]))
@@ -303,7 +317,7 @@ import Testing
         Self.tellSession(again, on: [4093], state: .needsYou, since: now)
         #expect(Self.fixNext(again)?.card.ref == Self.ref(4093))
         #expect(Self.fixNext(again)?.isPicked == true)
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4093)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4093)]))
     }
 
     /// Undo of a stage you changed chooses its pull request again where you'd chosen it, however long after, gone by then or
@@ -324,7 +338,7 @@ import Testing
         #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4133))
         #expect(Self.fixNext(order)?.isPicked == true)
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
 
         // Undone half an hour later, before BriefBar looked again.
         #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
@@ -362,7 +376,7 @@ import Testing
         #expect(order.undo())
         #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
         #expect(order.picks.isEmpty)
-        #expect(UpNextPicks.load(from: defaults).isEmpty)
+        #expect(Self.kept(defaults).isEmpty)
     }
 
     /// While the one you chose waits, as while its build runs again, the slot shows the next one, and its menu still offers
@@ -386,7 +400,7 @@ import Testing
 
         order.letBriefBarChoose(.fix)
         #expect(order.picks.isEmpty)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
         let chosenByBriefBar = try #require(Self.fixNext(order))
         #expect(!UpNextView.offersLetBriefBarChoose(chosenByBriefBar, order: order))
         Self.tell(order, Self.fixes)
@@ -415,7 +429,7 @@ import Testing
         #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
         order.setOn(false)
         #expect(order.picks.isEmpty)
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.fix: Self.ref(4132)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4132)]))
         #expect(!order.pickNext(Self.ref(4131), in: .fix))
         order.setOn(true)
         #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
@@ -443,26 +457,37 @@ import Testing
         #expect(order.board(kinds: Self.kinds).upNext.slots.first?.card.ref == Self.ref(4088))
         #expect(order.pickNext(sent, in: .yourReview))
         #expect(order.board(kinds: Self.kinds).upNext.slots.first?.card.ref == sent)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
         #expect(order.keepsStages)
 
         order.setOn(false)
         order.setOn(true)
         #expect(order.picks == UpNextPicks([.yourReview: sent]))
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        // Merged, it leaves the lists: what you chose of it stays in memory still.
+        order.publish(
+            .azureDevOps, pullRequests: [Self.ado(4088)],
+            stages: [
+                Self.ref(4088): StageFacts(role: .reviewer, asksYou: "Sam asked you", since: Date(timeIntervalSince1970: 1_791_000_000)),
+            ],
+            account: Self.account
+        )
+        #expect(order.picks == UpNextPicks([.yourReview: sent]))
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
 
         // You watch it: it's kept in the preferences.
         tell(.watching)
-        #expect(UpNextPicks.load(from: defaults) == UpNextPicks([.yourReview: sent]))
+        #expect(Self.kept(defaults) == UpNextPicks([.yourReview: sent]))
 
         tell(.sentToYou)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
         #expect(order.picks == UpNextPicks([.yourReview: sent]))
         tell(.sentToYou, account: "sam@contoso.com")
         #expect(order.picks.isEmpty)
     }
 
-    /// Forget Stages… forgets what you chose too, and so does turning Azure DevOps off.
+    /// Forget Stages… forgets what you chose too, with every account, also what it kept in memory, which doesn't come back
+    /// as Pull Request Order turns on again, or as an account signs in again; and so does turning Azure DevOps off.
     @Test func forgettingStagesOrAzureDevOpsForgetsWhatYouChose() {
         let defaults = MemoryDefaults()
         let order = Self.service(defaults)
@@ -470,15 +495,474 @@ import Testing
         #expect(!order.keepsStages)
         #expect(order.pickNext(Self.ref(4133), in: .fix))
         #expect(order.keepsStages)
+        Self.tell(order, Self.fixes, account: "sam@contoso.com")
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
         order.forgetStages()
         #expect(order.picks.isEmpty)
         #expect(!order.keepsStages)
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        Self.tell(order, Self.fixes)
+        #expect(order.picks.isEmpty)
+        #expect(!order.keepsStages)
 
+        // One someone sent you in a chat, kept in memory.
+        let sent = Self.ref(4150)
+        order.publish(
+            .azureDevOps, pullRequests: [Self.ado(4150), Self.ado(4088)],
+            stages: [
+                sent: StageFacts(role: .sentToYou, asksYou: "Priya sent it in Teams", since: Date(timeIntervalSince1970: 1_791_500_000)),
+                Self.ref(4088): StageFacts(role: .reviewer, asksYou: "Sam asked you", since: Date(timeIntervalSince1970: 1_791_000_000)),
+            ],
+            account: Self.account, inMemory: [sent]
+        )
+        #expect(order.pickNext(sent, in: .yourReview))
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        #expect(order.keepsStages)
+        order.forgetStages()
+        #expect(order.picks.isEmpty)
+        #expect(!order.keepsStages)
+        order.setOn(false)
+        order.setOn(true)
+        #expect(order.picks.isEmpty)
+
+        Self.tell(order, Self.fixes)
         #expect(order.pickNext(Self.ref(4133), in: .fix))
         order.forget(.azureDevOps)
         #expect(order.picks.isEmpty)
-        #expect(defaults.object(forKey: UpNextPicks.defaultsKey) == nil)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        Self.tell(order, Self.fixes)
+        #expect(order.picks.isEmpty)
+    }
+
+    /// One you chose before BriefBar knew which account signed in stays in memory, and is kept with that account once it
+    /// does, over what the account chose before.
+    @Test func aChoiceBeforeBriefBarKnowsTheAccountIsKeptWithItOnceItDoes() {
+        let defaults = MemoryDefaults()
+        let earlier = Self.service(defaults)
+        Self.tell(earlier, Self.fixes)
+        #expect(earlier.pickNext(Self.ref(4132), in: .fix))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4132)]))
+
+        let order = Self.service(defaults)
+        order.publish(
+            .azureDevOps, pullRequests: Self.fixes.keys.sorted().map(Self.ado),
+            stages: Dictionary(uniqueKeysWithValues: Self.fixes.map { (Self.ref($0.key), $0.value) }), listsRead: ["contoso"]
+        )
+        #expect(order.picks.isEmpty)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4132)]))
+        #expect(order.keepsStages)
+
+        Self.tell(order, Self.fixes)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+    }
+
+    /// Two reviews: Sam's waited longer, so BriefBar's order puts it first.
+    private static let reviews: [Int: StageFacts] = [
+        4202: StageFacts(role: .reviewer, asksYou: "Sam asked you", since: Date(timeIntervalSince1970: 1_791_000_000)),
+        4203: StageFacts(role: .reviewer, asksYou: "Priya asked you", since: Date(timeIntervalSince1970: 1_791_500_000)),
+    ]
+
+    private static func yourReview(_ order: PullRequestOrder) -> UpNext.Slot? {
+        order.board(kinds: kinds).upNext.slots.first { $0.kind == .yourReview }
+    }
+
+    /// One whose pull request left your lists, read in full, is away too. You approve the review you chose, and its author
+    /// completes it: the reviewing list has only active pull requests, and Done only yours, so no list has it. Half an
+    /// hour later the choice goes, rather than stay for good, and nothing's left to forget; asked to review it again a
+    /// month later, it's BriefBar's order's. So with one you're taken off.
+    @Test func aChoiceWhosePullRequestLeftYourListsGoesHalfAnHourLater() throws {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.reviews)
+        #expect(Self.yourReview(order)?.card.ref == Self.ref(4202))
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+
+        var approved = Self.reviews
+        approved[4203] = StageFacts(role: .reviewer, votes: "10", since: Date(timeIntervalSince1970: 1_791_500_000))
+        Self.tell(order, approved)
+        #expect(order.stage(of: Self.ref(4203)) == nil)
+        now += 300
+        Self.tell(order, [4202: Self.reviews[4202]!])
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += UpNextPicks.awayFor - 300
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        let slot = try #require(Self.yourReview(order))
+        #expect(slot.card.ref == Self.ref(4202) && !slot.isPicked)
+        #expect(!UpNextView.offersLetBriefBarChoose(slot, order: order))
+        #expect(!order.keepsStages)
+
+        now += 31 * 86_400
+        Self.tell(order, Self.reviews)
+        #expect(Self.yourReview(order)?.card.ref == Self.ref(4202))
+        #expect(Self.yourReview(order)?.isPicked == false)
+
+        // Chosen again, and you're taken off it: no list has it, and it goes half an hour later.
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+        Self.tell(order, [4202: Self.reviews[4202]!])
+        now += UpNextPicks.awayFor - 1
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += 1
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(Self.kept(defaults).isEmpty)
+    }
+
+    /// The same once BriefBar starts again: the pull request of yours you chose merged while it was closed, and Done no
+    /// longer has it by then.
+    @Test func aChoiceWhosePullRequestMergedWhileBriefBarWasClosedGoes() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+
+        now += 3 * 86_400
+        let again = Self.service(defaults, now: { now })
+        var left = Self.fixes
+        left[4133] = nil
+        Self.tell(again, left)
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        now += UpNextPicks.awayFor
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+        #expect(!again.keepsStages)
+    }
+
+    /// One BriefBar reads by its link, as one sent to you in a chat that you watch, isn't in its organization's lists, as
+    /// you're not on it: while it isn't listed, as when its read failed and waits an hour to be tried again, it waits,
+    /// though those lists were read. Once Azure DevOps says it's closed, no list has it, and it goes half an hour later.
+    @Test func aChoiceReadByItsLinkWaitsWhileItIsntRead() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        var watched = Self.reviews
+        watched[4207] = StageFacts(role: .watching, asksYou: "Priya sent it in Teams", since: Date(timeIntervalSince1970: 1_791_600_000))
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, watched)
+        #expect(order.pickNext(Self.ref(4207), in: .yourReview))
+
+        // BriefBar starts again: Contoso's lists are read, and its link can't be, for two hours.
+        now += 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, Self.reviews, unreadLinks: [Self.ref(4207)])
+        now += 2 * 3_600
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4207)]))
+
+        // Read by it, it's closed.
+        Self.tell(again, Self.reviews)
+        now += UpNextPicks.awayFor - 1
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4207)]))
+        now += 1
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+    }
+
+    /// A pull request in another organization, Fabrikam's.
+    private static let fabrikam = ItemRef.pullRequest(organization: "Fabrikam", number: 77)
+
+    /// What Azure DevOps tells: the fixes, and Fabrikam's pull request with these facts, or not at all, with the lists of
+    /// these organizations read in full.
+    private static func tell(
+        _ order: PullRequestOrder, fabrikam facts: StageFacts?, account: String = account, listed: Bool = true, listsRead: Set<String>
+    ) {
+        var stages = Dictionary(uniqueKeysWithValues: Self.fixes.map { (Self.ref($0.key), $0.value) })
+        var pullRequests = Self.fixes.keys.sorted().map(Self.ado)
+        if let facts {
+            stages[fabrikam] = facts
+            pullRequests.append(OrderPullRequest(
+                ref: fabrikam, repository: "fabrikam/0b4e1c77/api", sourceBranch: "robin/retry", targetBranch: "main",
+                author: "robin", createdAt: Date(timeIntervalSince1970: 1_791_300_000)
+            ))
+        }
+        order.publish(
+            .azureDevOps, pullRequests: pullRequests, stages: stages, account: account, listed: listed, listsRead: listsRead
+        )
+    }
+
+    /// One whose source can't tell where it is waits, however long: while the lists of its organization aren't read, as
+    /// when the Azure CLI isn't signed in to its directory, and before Azure DevOps has read its lists since BriefBar
+    /// started, or after it read nothing, as offline. Once they're read without it, it's away, and goes half an hour later.
+    @Test func aChoiceWaitsUntilTheListsOfItsOrganizationAreRead() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let failed = StageFacts(role: .author, failure: "Build failed", since: Date(timeIntervalSince1970: 1_791_300_000))
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, fabrikam: failed, listsRead: ["contoso", "Fabrikam"])
+        #expect(order.pickNext(Self.fabrikam, in: .fix))
+
+        // BriefBar starts again: only Contoso's lists can be read, for a week.
+        now += 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, fabrikam: nil, listsRead: ["contoso"])
+        now += 7 * 86_400
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.fabrikam]))
+        // Offline: what it read before is all it has.
+        Self.tell(again, fabrikam: nil, listed: false, listsRead: ["contoso", "Fabrikam"])
+        now += UpNextPicks.awayFor
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.fabrikam]))
+
+        // Fabrikam's lists are read, without it.
+        Self.tell(again, fabrikam: nil, listsRead: ["contoso", "Fabrikam"])
+        now += UpNextPicks.awayFor - 1
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.fabrikam]))
+        now += 1
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+    }
+
+    /// What one account chose waits while another is signed in: it isn't the other's choice, and doesn't go, though the
+    /// other's lists don't have its pull request. Each account's is kept apart, and once one signs in again, what it chose
+    /// is chosen again, BriefBar started again or not.
+    @Test func whatAnotherAccountChoseWaitsUntilItSignsInAgain() throws {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "Sam@contoso.com"
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+
+        Self.tell(order, Self.fixes, account: sam)
+        #expect(order.picks.isEmpty)
+        let sams = try #require(Self.fixNext(order))
+        #expect(sams.card.ref == Self.ref(4131) && !sams.isPicked)
+        #expect(!UpNextView.offersLetBriefBarChoose(sams, order: order))
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        var without = Self.fixes
+        without[4133] = nil
+        Self.tell(order, without, account: sam)
+        now += 2 * 3_600
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4132)]))
+
+        Self.tell(order, Self.fixes)
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4133))
+        #expect(Self.fixNext(order)?.isPicked == true)
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, Self.fixes, account: sam)
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4132)]))
+    }
+
+    /// How long a choice has been away is as the account signed in saw it: once another signs in, its own choice of the
+    /// same pull request for the same slot has its half hour, rather than go on how long the other's was away; and so
+    /// does the other's once it signs in again.
+    @Test func anotherAccountsChoiceOfTheSamePullRequestHasItsOwnHalfHour() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "sam@contoso.com"
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+        Self.tell(order, Self.reviews)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+
+        // Robin approves it, and nothing changes for half an hour.
+        var approved = Self.reviews
+        approved[4203] = StageFacts(role: .reviewer, votes: "10", since: Date(timeIntervalSince1970: 1_791_500_000))
+        Self.tell(order, approved)
+        now += UpNextPicks.awayFor
+
+        // Sam signs in, still asked to review it.
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.yourReview(order)?.card.ref == Self.ref(4203))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+
+        // Robin signs in again: Robin's goes half an hour later, and Sam's stays.
+        Self.tell(order, approved)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += UpNextPicks.awayFor - 1
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        now += 1
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+        #expect(Self.kept(defaults).isEmpty)
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+    }
+
+    /// What one account chose stays in the preferences though another account's lists had its pull request only because
+    /// someone sent it in a chat, as before its own lists are read once it signs in again; it goes to memory, as a stage you
+    /// set does, once its own lists have it only from a chat.
+    @Test func anotherAccountsChatsDontTakeWhatAnAccountChoseOutOfThePreferences() {
+        let defaults = MemoryDefaults()
+        let sam = "sam@contoso.com"
+        let sent = StageFacts(role: .sentToYou, asksYou: "Priya sent it in Teams", since: Date(timeIntervalSince1970: 1_791_500_000))
+        func tellSent(_ order: PullRequestOrder, account: String) {
+            order.publish(
+                .azureDevOps, pullRequests: [Self.ado(4202), Self.ado(4203)],
+                stages: [Self.ref(4202): Self.reviews[4202]!, Self.ref(4203): sent], account: account,
+                inMemory: [Self.ref(4203)], listsRead: ["contoso"]
+            )
+        }
+        let order = Self.service(defaults)
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+
+        // Robin's lists have it only because Priya sent it in Teams; then Sam signs in again, whose lists aren't read yet.
+        tellSent(order, account: Self.account)
+        Self.tell(order, [:], account: sam, listed: false)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+        let again = Self.service(defaults)
+        Self.tell(again, Self.reviews, account: sam)
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+
+        // Sam's own lists have it only from a chat now: it stays chosen, in memory only.
+        tellSent(again, account: sam)
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.kept(defaults, for: sam).isEmpty)
+    }
+
+    /// As a stage you set, what you chose goes once no list has had its pull request for 30 days, with any account: one
+    /// another account chose, which never signs in again, and one of the account signed in that waits, as while its
+    /// organization's lists can't be read. One a list has stays, noted once a day.
+    @Test func aChoiceNoListHasHadFor30DaysGoes() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "sam@contoso.com"
+        let asked = StageFacts(role: .reviewer, asksYou: "Kai asked you", since: Date(timeIntervalSince1970: 1_791_300_000))
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+        Self.tell(order, fabrikam: asked, account: sam, listsRead: ["contoso", "fabrikam"])
+        #expect(order.pickNext(Self.ref(4131), in: .fix))
+        #expect(order.pickNext(Self.fabrikam, in: .yourReview))
+
+        // BriefBar starts again, and only Contoso's lists can be read, for a month.
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, fabrikam: nil, account: sam, listsRead: ["contoso"])
+        for _ in 1...30 {
+            now += 86_400
+            again.timePassed()
+        }
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4131), .yourReview: Self.fabrikam]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        // That a list has 4131 is noted in the preferences too, so the 30 days count from then once BriefBar starts again.
+        #expect(UpNextPicks.Kept.load(from: defaults).accounts[sam]?[.fix]?.listedAt == now)
+        now += 1
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4131)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4131)]))
+    }
+
+    /// That's for Azure DevOps as a whole: once it reads some of your lists, what you chose in an organization whose lists
+    /// it doesn't read, as one you no longer watch, counts from when a list last had it, across a restart too, so the 30
+    /// days still end it, rather than start again each time BriefBar does.
+    @Test func aChoiceInAnOrganizationItNoLongerReadsStillGoesAfterAMonthAway() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let failed = StageFacts(role: .author, failure: "Build failed", since: Date(timeIntervalSince1970: 1_791_300_000))
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, fabrikam: failed, listsRead: ["contoso", "fabrikam"])
+        #expect(order.pickNext(Self.fabrikam, in: .fix))
+
+        now += 35 * 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, fabrikam: nil, listsRead: ["contoso"])
+        #expect(again.picks == UpNextPicks([.fix: Self.fabrikam]))
+        now += 3_600
+        again.timePassed()
+        #expect(again.picks.isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+        #expect(Self.kept(defaults).isEmpty)
+        Self.tell(again, Self.fixes)
+        #expect(again.picks.isEmpty)
+    }
+
+    /// Back after five weeks, BriefBar starts while Azure DevOps can't be read yet, as when the Azure CLI wants you to sign
+    /// in again: what you chose waits, though the clock looks first, as no list could note yet that it has the pull
+    /// request. Once the lists are read, one they have stays, and what another account chose, which they can't have, goes
+    /// at the clock's next look, more than 30 days after a list last had it.
+    @Test func aChoiceOutlastsAMonthAwayUntilTheListsAreRead() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "sam@contoso.com"
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes, account: sam)
+        #expect(order.pickNext(Self.ref(4131), in: .fix))
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4133), in: .fix))
+
+        now += 35 * 86_400
+        let again = Self.service(defaults, now: { now })
+        Self.tell(again, [:], listed: false, listsRead: [])
+        now += 3_600
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4131)]))
+
+        Self.tell(again, Self.fixes)
+        #expect(Self.fixNext(again)?.card.ref == Self.ref(4133))
+        now += 3_600
+        again.timePassed()
+        #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.kept(defaults, for: sam).isEmpty)
+    }
+
+    /// What an account chose waits, as it signs in again, until its own lists are read, though another account's were:
+    /// those couldn't note that they have its pull request.
+    @Test func anAccountsChoiceWaitsForItsOwnListsAsItSignsInAgain() {
+        let defaults = MemoryDefaults()
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let sam = "sam@contoso.com"
+        let order = Self.service(defaults, now: { now })
+        Self.tell(order, Self.fixes, account: sam)
+        #expect(order.pickNext(Self.ref(4131), in: .fix))
+        Self.tell(order, Self.fixes)
+        now += 29 * 86_400 + 20 * 3_600
+        order.timePassed()
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4131)]))
+
+        // Sam signs in again, and the clock looks, 30 days after a list last had it, before Sam's lists are read.
+        Self.tell(order, [:], account: sam, listed: false, listsRead: [])
+        now += 8 * 3_600
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4131)]))
+        Self.tell(order, Self.fixes, account: sam)
+        now += 3_600
+        order.timePassed()
+        #expect(order.picks == UpNextPicks([.fix: Self.ref(4131)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.fix: Self.ref(4131)]))
+    }
+
+    /// What builds from main saved before what you chose was kept for each account, each slot's reference alone, can't be
+    /// read: it goes as Pull Request Order reads what it keeps, rather than keep Forget Stages… on with nothing to forget.
+    @Test func whatBriefBarCantReadOfWhatYouChoseGoes() {
+        let defaults = MemoryDefaults()
+        defaults.set(Data(#"{"fix":"pullRequest/contoso/4133"}"#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
+        let order = Self.service(defaults)
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        #expect(!order.keepsStages)
+        Self.tell(order, Self.fixes)
+        #expect(order.picks.isEmpty)
+        #expect(Self.fixNext(order)?.isPicked == false)
+    }
+
+    /// VoiceOver hears how many a slot's ⌄ chooses from, and with one, not "its 1 pull requests".
+    @Test func voiceOverHearsHowManyASlotChoosesFrom() throws {
+        let order = Self.service(MemoryDefaults())
+        Self.tell(order, Self.fixes.merging([4202: Self.reviews[4202]!]) { fix, _ in fix })
+        let slots = order.board(kinds: Self.kinds).upNext.slots
+        #expect(UpNextView.chooserHint(try #require(slots.first { $0.kind == .fix })) == "Chooses which of its 3 pull requests it shows")
+        #expect(UpNextView.chooserHint(try #require(slots.first { $0.kind == .yourReview })) == "Chooses which pull request it shows")
     }
 
     // MARK: Moving a card, as it is now

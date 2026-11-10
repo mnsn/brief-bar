@@ -72,9 +72,16 @@ extension CopilotTaskEntry {
     }
 
     /// A Push & Reply that fixes the threads it took on first, as a comment's Fix, or Fix All, sent with Push and Reply on
-    /// does (`TakenPart.fixes`).
+    /// does (`TakenPart.fixes`), as its run keeps it too, once Clear let go of them (`runFixes`).
     var fixesFirst: Bool {
-        action == .pushAndReply && taken?.contains { $0.ended == nil && $0.fixes == true } == true
+        action == .pushAndReply && (runFixes || taken?.contains { $0.ended == nil && $0.fixes == true } == true)
+    }
+
+    /// For one that fixes them first, the commit the pull request's branch was at as it was sent (`TakenPart.head`,
+    /// `runHead`).
+    var fixingHead: String? {
+        guard action == .pushAndReply else { return nil }
+        return runHead ?? taken?.first { $0.ended == nil && $0.fixes == true }?.head
     }
 
     /// A Push & Reply that replies on no thread, as one that ships a build's fix alone: it only pushes.
