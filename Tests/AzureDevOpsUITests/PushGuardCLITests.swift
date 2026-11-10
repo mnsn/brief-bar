@@ -129,6 +129,33 @@ import Testing
         #expect(PushGuardCLI.refusal(defaults) == nil)
     }
 
+    /// Whether Azure DevOps is still on, asked again right before the pull request is read, after git's checks, which can
+    /// take minutes: once it's off, nothing is read, and the push is stopped, with why.
+    @Test func readsThePullRequestOnlyWhileAzureDevOpsIsStillOn() async throws {
+        final class Reads: Sendable {
+            let count = Mutex(0)
+        }
+        let reads = Reads()
+        let pullRequest = PullRequest(
+            key: PRKey("contoso", 4071), title: "Fix the checkout total", author: Person(id: "a", name: "Alex Kim"), createdAt: Date(),
+            projectId: "p1", projectName: "Storefront", repositoryId: "r1", repositoryName: "checkout", targetBranch: "release/2.4"
+        )
+        let read: @Sendable () async throws -> PullRequest = {
+            reads.count.withLock { $0 += 1 }
+            return pullRequest
+        }
+        let off = "Azure DevOps is off in BriefBar, so it can't read the pull request."
+        do {
+            _ = try await PushGuardCLI.targetNow(refusal: { off }, read: read)()
+            Issue.record("read while off")
+        } catch let unread as PushGuardCLI.Unread {
+            #expect(unread.description == off)
+        }
+        #expect(reads.count.withLock { $0 } == 0)
+        #expect(try await PushGuardCLI.targetNow(refusal: { nil }, read: read)() == "release/2.4")
+        #expect(reads.count.withLock { $0 } == 1)
+    }
+
     /// With what it was started with, the check for them; nothing else checks: a push is stopped, with why, when it can't
     /// check, and in the demo; anything else runs.
     @Test func checksWithWhatItWasStartedWith() async {

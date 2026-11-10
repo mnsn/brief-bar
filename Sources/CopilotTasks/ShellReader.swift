@@ -17,6 +17,8 @@ struct ShellReader {
 
     /// How deep substitutions and scripts in scripts go before it gives up.
     static let deepest = 8
+    /// Reserved words that a command, such as `case`, may come after on its line.
+    private static let leading: Set<String> = ["!", "if", "then", "elif", "else", "do", "while", "until", "time"]
 
     /// A here-document whose body comes after its line.
     private struct Heredoc {
@@ -59,9 +61,11 @@ struct ShellReader {
         var current = begin()
         var heredocs: [Heredoc] = []
         var parentheses = 0
+        // `case` statements begun and not ended yet, whose patterns end with a `)` that closes nothing.
+        var cases = 0
         while index < bytes.count {
             switch bytes[index] {
-            case .space, .tab, .carriageReturn:
+            case .space, .tab:
                 index += 1
             case .backslash where index + 1 < bytes.count && bytes[index + 1] == .newline:
                 // A line that goes on.
@@ -94,9 +98,10 @@ struct ShellReader {
             case .closeParenthesis:
                 index += 1
                 if parentheses == 0 {
-                    // The end of the substitution it's in: not one whose here-document's body hasn't come yet. Anywhere
-                    // else, a parenthesis that closes nothing, which a shell refuses.
-                    return closedByParenthesis && heredocs.isEmpty
+                    // The end of the substitution it's in: not one whose here-document's body hasn't come yet, nor in a
+                    // `case`, where it may end a pattern, as in `$(case $x in y) git push;; esac)`, which BriefBar doesn't
+                    // read. Anywhere else, a parenthesis that closes nothing, which a shell refuses.
+                    return closedByParenthesis && heredocs.isEmpty && cases == 0
                 }
                 parentheses -= 1
                 current = begin()
@@ -116,6 +121,10 @@ struct ShellReader {
                     guard redirection(into: current, heredocs: &heredocs) else { return false }
                 } else {
                     guard let word = readWord() else { return false }
+                    if !word.isQuoted, word.word.isLiteral, commands[current].words.allSatisfy({ $0.isLiteral && Self.leading.contains($0.value) }) {
+                        if word.word.value == "case" { cases += 1 }
+                        if word.word.value == "esac", cases > 0 { cases -= 1 }
+                    }
                     commands[current].words.append(word.word)
                 }
             }
@@ -200,10 +209,17 @@ struct ShellReader {
         for heredoc in heredocs {
             var body: [UInt8] = []
             while index < bytes.count {
-                let end = bytes[index...].firstIndex(of: .newline) ?? bytes.count
-                var line = bytes[index..<end]
-                index = min(end + 1, bytes.count)
-                if heredoc.stripsTabs { line = line.drop { $0 == .tab } }
+                var line: [UInt8] = []
+                while true {
+                    let end = bytes[index...].firstIndex(of: .newline) ?? bytes.count
+                    line += bytes[index..<end]
+                    index = min(end + 1, bytes.count)
+                    // An unquoted one's line goes on past a backslash at its end that no other escapes, as bash joins them
+                    // before it looks for the delimiter: `EO\` and `F` make `EOF`.
+                    guard !heredoc.isQuoted, end < bytes.count, Self.endsInEscape(line) else { break }
+                    line.removeLast()
+                }
+                if heredoc.stripsTabs { line = Array(line.drop { $0 == .tab }) }
                 if line.elementsEqual(heredoc.delimiter) { break }
                 body += line
                 body.append(.newline)
@@ -272,7 +288,7 @@ extension ShellReader {
         scanning: while index < bytes.count {
             let byte = bytes[index]
             switch byte {
-            case .space, .tab, .carriageReturn, .newline, .semicolon, .ampersand, .pipe, .openParenthesis, .closeParenthesis:
+            case .space, .tab, .newline, .semicolon, .ampersand, .pipe, .openParenthesis, .closeParenthesis:
                 break scanning
             case .less, .greater:
                 guard startsProcessSubstitution(at: index) else { break scanning }
@@ -428,7 +444,8 @@ extension ShellReader {
                 index += 1
                 guard doubleQuoted(&scratch, &literal) else { return false }
             case .dollar:
-                guard dollar(&scratch, &literal, &quoted, inDoubleQuotes: false) else { return false }
+                // In double quotes still, as a default in a default: `"${X:-${Y:-'$(…)'}}"`.
+                guard dollar(&scratch, &literal, &quoted, inDoubleQuotes: inDoubleQuotes) else { return false }
             case .backtick:
                 guard backticks(&scratch, inDoubleQuotes: inDoubleQuotes) else { return false }
             case .openBrace:
@@ -543,10 +560,15 @@ extension ShellReader {
         while index < bytes.count, [.space, .tab].contains(bytes[index]) { index += 1 }
     }
 
+    /// A line ends in a backslash that no other escapes: an odd number of them.
+    private static func endsInEscape(_ line: [UInt8]) -> Bool {
+        line.reversed().prefix { $0 == .backslash }.count % 2 == 1
+    }
+
     /// Nothing at `position` goes on a word: the end, a blank, or an operator that isn't a process substitution.
     private func endsWord(at position: Int) -> Bool {
         guard position < bytes.count else { return true }
-        return [.space, .tab, .carriageReturn, .newline, .semicolon, .ampersand, .pipe, .openParenthesis, .closeParenthesis,
+        return [.space, .tab, .newline, .semicolon, .ampersand, .pipe, .openParenthesis, .closeParenthesis,
                 .less, .greater].contains(bytes[position])
     }
 

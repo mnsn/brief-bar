@@ -2936,36 +2936,37 @@ hook runs BriefBar itself, `BriefBar --push-guard <pull request> --worktree=<fol
 (`PushGuardCLI`, `PushGuard`). A command that pushes nothing runs at once, without git or Azure DevOps; BriefBar reads
 it as a shell would, its quotes, `$(…)`, `sh -c`, `sh -s`, `eval`, `trap`, here-documents and the programs that run
 others, such as `env` and `xargs`, included, with program names as macOS finds them, whatever their case (`GIT` runs
-git), and NULs as bash takes them, and takes what it can't read for a push when it says push, as words `xargs` fills in,
-or a program it doesn't know that names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an
-option BriefBar doesn't know, such as `--no-dry-run`, may undo it. What a variable, an alias, a script file or another
-language's code would push is out of its reach, and so is where a shell went in an earlier command. A command longer
-than it reads, a mebibyte, doesn't run. A push runs only in the form the prompt names, `git push origin
-<commit>:refs/heads/<branch>`, optionally `git -C <worktree> …`, as a command of its own, with nothing else in it that
-could change what it does first, such as a `cd` or `git config` (`PushCommand.isAlone`), where `<commit>` is the commit
-the worktree has checked out, by its ID; with `--no-follow-tags` or `--no-recurse-submodules` when git's configuration
-there would push the annotated tags the commit reaches, or submodules' commits, too (`push.followTags`,
-`push.recurseSubmodules`, `submodule.recurse`: `Git.pushOptions(in:)`); and only once git finds nothing in it merged in
-that the branch the prompt names doesn't have (`Git.checkPush(in:source:target:commit:)`), and then, last, so that it's
-as late as can be, BriefBar has read the pull request again from Azure DevOps, with one request, and found it active and
-still merging into that branch. A push in another form, such as `git push` alone, a branch's name or `HEAD` for the
-commit, options, a wrapper such as `env`, other commands with it, or two pushes in one command, doesn't run, and Copilot
-is told the exact command to run instead, which it can, and is checked again. One that would force, delete what's on the
-remote or push more than the branch (`--mirror`, `--all`, `--tags`, a refspec with `+`, …), or that the check finds
-wrong, or that BriefBar can't check, is stopped: when Azure DevOps can't be read, or is off in the app, when git fails,
-or when the check takes more than four minutes, since after the hook's five the CLI would run it. Copilot is told why
-and to stop, and the task ends as failed, with that reason, whatever Copilot says after it (`PushStop`,
-`RunStatus.derive`), even once the part of its log BriefBar reads after a restart no longer has the stop: BriefBar keeps
-that it stopped one, not why (`CopilotRun.pushStopped`). The reasons name only what the prompt names, never the branch a
-retargeted pull request merges into now, and what BriefBar logs of a check is what it decided, never the command. The
-checks above, before Copilot starts, and the prompt's own steps, stay as they are: this is one more, at the moment of
-the push. The CLI runs such a hook, and stops a command when its hook fails, only from 1.0.57, so BriefBar asks `copilot
---version` as it sends the task; with an older CLI, or one that doesn't say its version, the task goes as before,
-without the check. So it does when BriefBar runs from where macOS moved it for now (App Translocation), a path that
-doesn't last, when it can't write the plugin's folder, and when hooks are turned off in Copilot (`disableAllHooks`),
-which the CLI then doesn't run. It checks the `bash` tool only: what Copilot types into a shell it started earlier
-(`write_bash`) isn't. The folder goes with what the run printed, when you clear the task or turn Azure DevOps off, and a
-later task in the session writes its own again, or none.
+git), and NULs and carriage returns as bash takes them, and takes what it can't read for a push when it says push, as a
+`case` in a substitution, or words `xargs` fills in, or a program it doesn't know that names git or a shell
+(`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar doesn't know, such as `--no-dry-run`, may
+undo it. What a variable, an alias, a script file or another language's code would push is out of its reach, and so is
+where a shell went in an earlier command. A command longer than it reads, a mebibyte, doesn't run. A push runs only in
+the form the prompt names, `git push origin <commit>:refs/heads/<branch>`, optionally `git -C <worktree> …`, as a
+command of its own, with nothing else in it that could change what it does first, such as a `cd` or `git config`
+(`PushCommand.isAlone`), where `<commit>` is the commit the worktree has checked out, by its ID; with `--no-follow-tags`
+or `--no-recurse-submodules` when git's configuration there would push the annotated tags the commit reaches, or
+submodules' commits, too (`push.followTags`, `push.recurseSubmodules`, `submodule.recurse`: `Git.pushOptions(in:)`); and
+only once git finds nothing in it merged in that the branch the prompt names doesn't have
+(`Git.checkPush(in:source:target:commit:)`), and then, last, so that it's as late as can be, BriefBar has read the pull
+request again from Azure DevOps, with one request, and found it active and still merging into that branch. A push in
+another form, such as `git push` alone, a branch's name or `HEAD` for the commit, options, a wrapper such as `env`,
+other commands with it, or two pushes in one command, doesn't run, and Copilot is told the exact command to run instead,
+which it can, and is checked again. One that would force, delete what's on the remote or push more than the branch
+(`--mirror`, `--all`, `--tags`, a refspec with `+`, …), or that the check finds wrong, or that BriefBar can't check, is
+stopped: when Azure DevOps can't be read, or is off in the app, which BriefBar asks again right before it reads the pull
+request, when git fails, or when the check takes more than four minutes, since after the hook's five the CLI would run
+it. Copilot is told why and to stop, and the task ends as failed, with that reason, whatever Copilot says after it
+(`PushStop`, `RunStatus.derive`), even once the part of its log BriefBar reads after a restart no longer has the stop:
+BriefBar keeps that it stopped one, not why (`CopilotRun.pushStopped`). The reasons name only what the prompt names,
+never the branch a retargeted pull request merges into now, and what BriefBar logs of a check is what it decided, never
+the command. The checks above, before Copilot starts, and the prompt's own steps, stay as they are: this is one more, at
+the moment of the push. The CLI runs such a hook, and stops a command when its hook fails, only from 1.0.57, so BriefBar
+asks `copilot --version` as it sends the task; with an older CLI, or one that doesn't say its version, the task goes as
+before, without the check. So it does when BriefBar runs from where macOS moved it for now (App Translocation), a path
+that doesn't last, when it can't write the plugin's folder, and when hooks are turned off in Copilot
+(`disableAllHooks`), which the CLI then doesn't run. It checks the `bash` tool only: what Copilot types into a shell it
+started earlier (`write_bash`) isn't. The folder goes with what the run printed, when you clear the task or turn Azure
+DevOps off, and a later task in the session writes its own again, or none.
 
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**

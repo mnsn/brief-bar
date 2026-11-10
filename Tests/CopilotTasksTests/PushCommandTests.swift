@@ -277,6 +277,17 @@ import Testing
         // them, it quotes.
         #expect(forms("echo \"${X:-'$(git push --force origin main)'}\"") == [.unsafe(.force)])
         #expect(PushCommand("echo ${X:-'$(git push --force origin main)'}").pushes.isEmpty)
+        // And in a default's default, still in the double quotes.
+        #expect(forms("echo \"${X:-${Y:-'$(git push --force origin main)'}}\"") == [.unsafe(.force)])
+        #expect(PushCommand("echo ${X:-${Y:-'$(git push --force origin main)'}}").pushes.isEmpty)
+    }
+
+    /// A carriage return is a character like any other in a word, as bash reads it, not a blank: a `#` after one starts
+    /// no comment, and a line's that ends with one has it in its last word.
+    @Test func readsCarriageReturnsAsBashDoes() {
+        #expect(forms("echo ok\r# text; git push --force origin main") == [.unsafe(.force)])
+        #expect(forms("echo \r# text; git push -d origin main") == [.unsafe(.delete)])
+        #expect(forms("git push origin \(refspec)\r") == [.other])
     }
 
     /// Programs as macOS finds them, whatever the case of their names; others that run git or a shell they name.
@@ -385,6 +396,12 @@ import Testing
         #expect(forms("sh <<< 'git push -d origin main'") == [.unsafe(.delete)])
         // Its variables leave it unknown.
         #expect(PushCommand("bash <<EOF\ngit push origin $SHA:refs/heads/x\nEOF").isUnreadable)
+        // An unquoted one's line goes on past a backslash at its end before it's matched with the delimiter, as bash
+        // reads it: `EO\` and `F` end it, and what's after runs. Not a quoted one's, nor past an escaped backslash.
+        #expect(forms("cat <<EOF\nbody\nEO\\\nF\ngit push --force origin main") == [.unsafe(.force)])
+        #expect(forms("cat <<-EOF\n\tbody\n\tEO\\\nF\ngit push -d origin main") == [.unsafe(.delete)])
+        #expect(PushCommand("cat <<'EOF'\nEO\\\nF\ngit push --force origin main\nEOF").pushes.isEmpty)
+        #expect(PushCommand("cat <<EOF\nEO\\\\\nF\ngit push --force origin main\nEOF").pushes.isEmpty)
     }
 
     /// What it can't read, when it says push: unbalanced quotes, a variable for a command, a shell's script through a pipe.
@@ -403,15 +420,25 @@ import Testing
             "env -S 'git push origin x'",
             "nohup \"$GIT\" push",
             String(repeating: "$(", count: 12) + "git push" + String(repeating: ")", count: 12),
+            // A `case` pattern's `)` in a substitution, which bash 4 and later read as the pattern's end, not the
+            // substitution's.
+            "echo \"$(case yes in yes) git push --force origin main;; esac)\"",
+            "echo \"$(if case $x in\ny) git push -d origin main;; esac; then :; fi)\"",
         ]
         for command in unreadable {
             #expect(PushCommand(command).isUnreadable, "\(command)")
         }
         // That doesn't say push.
-        for command in ["echo 'unbalanced", "$EDITOR notes.md", "git $(echo status)", "echo hi | sh"] {
+        for command in [
+            "echo 'unbalanced", "$EDITOR notes.md", "git $(echo status)", "echo hi | sh", "echo \"$(case $x in y) echo hi;; esac)\"",
+        ] {
             let read = PushCommand(command)
             #expect(!read.isUnreadable && read.pushes.isEmpty, "\(command)")
         }
+        // A pattern in parentheses, and a `case` that ended, read as they are.
+        #expect(forms("echo \"$(case yes in (yes) git push --force origin main;; esac)\"") == [.unsafe(.force)])
+        #expect(forms("echo \"$(case $x in (y) echo;; esac; git push -d origin main)\"") == [.unsafe(.delete)])
+        #expect(!PushCommand("echo \"$(case \"case\" in (y) echo case;; esac)\" && git push origin \(refspec)").isUnreadable)
     }
 
     /// Several pushes in one command, each as it is.

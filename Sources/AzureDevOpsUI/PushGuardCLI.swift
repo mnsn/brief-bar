@@ -84,10 +84,11 @@ enum PushGuardCLI {
         let (payload, isWhole) = input()
         let arguments = options.arguments
         let demo = options.demo
+        let refusal: @Sendable () -> String? = { Self.refusal(AzureDevOpsCommandLine.appDefaults) }
         let decision: PushGuard.Verdict = AzureDevOpsCommandLine.wait { () async -> PushGuard.Verdict in
             await Self.verdict(
                 for: payload, isWhole: isWhole, arguments: arguments, demo: demo,
-                refusal: { Self.refusal(AzureDevOpsCommandLine.appDefaults) }, check: { Self.live($0) }
+                refusal: refusal, check: { Self.live($0, refusal: refusal) }
             )
         }
         if let output = decision.output {
@@ -111,19 +112,33 @@ enum PushGuardCLI {
         return (data, total <= mostInput)
     }
 
-    /// The check on your own data: the pull request from Azure DevOps, with your Azure CLI sign-in, as the app reads it, and
-    /// git, with the environment BriefBar gave the CLI, your login shell's.
-    static func live(_ request: Request) -> PushGuard {
+    /// The check on your own data: the pull request from Azure DevOps, with your Azure CLI sign-in, as the app reads it,
+    /// while `refusal` says Azure DevOps is on (`targetNow(refusal:read:)`), and git, with the environment BriefBar gave the
+    /// CLI, your login shell's.
+    static func live(_ request: Request, refusal: @escaping @Sendable () -> String?) -> PushGuard {
         let environment = Attribution.environment
         let git = Git(
             executable: LoginEnvironment.which("git", in: environment) ?? URL(fileURLWithPath: "/usr/bin/git"), environment: environment
         )
         let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let key = request.key
-        return PushGuard(worktree: request.worktree, source: request.source, target: request.target, git: git) {
+        let targetNow = Self.targetNow(refusal: refusal) {
+            let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+            return PullRequest(organization: key.organization, dto)
+        }
+        return PushGuard(worktree: request.worktree, source: request.source, target: request.target, git: git, targetNow: targetNow)
+    }
+
+    /// The branch the pull request merges into now, as `read` gets it from Azure DevOps: once `refusal` says, again, right
+    /// before the request, that Azure DevOps is still on, since git's checks before it can take minutes. Throws when it's
+    /// off, or the pull request isn't active, or can't be read.
+    static func targetNow(
+        refusal: @escaping @Sendable () -> String?, read: @escaping @Sendable () async throws -> PullRequest
+    ) -> @Sendable () async throws -> String {
+        {
+            if let refusal = refusal() { throw Unread(description: refusal) }
             do {
-                let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
-                let pullRequest = PullRequest(organization: key.organization, dto)
+                let pullRequest = try await read()
                 guard pullRequest.status == .active else { throw PullRequestNotActive(status: pullRequest.status.rawValue) }
                 return pullRequest.targetBranch
             } catch let closed as PullRequestNotActive {
