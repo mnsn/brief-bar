@@ -828,15 +828,19 @@ public struct OrderChanges: Equatable, Sendable {
                 continue
             }
             // Back where the split put it since the order took back the others the split moved with it: it goes back with
-            // them, with the one whose line took them, or by its own place in the order where that's it.
+            // them, with the one whose line took them, or by its own place in the order where that's it. Only one of those
+            // it goes back with, as Put Yours Back puts them back: not one the order took before it went there, that one of
+            // them went back with; else the first of them.
             for member in members {
                 let others = takenBack(with: member, in: orders)
                 guard let at = others.compactMap(\.overridden?.at).max() else { continue }
+                let with = Set(others.map(\.ref)).union([member.ref])
                 let leads = Set(others.compactMap { $0.overridden?.with }).union(others.filter { $0.overridden?.with == nil }.map(\.ref))
+                    .intersection(with)
                 taken[member.ref] = if leads.contains(member.ref) {
                     OrderChange.Overridden(by: plan.id, at: at)
                 } else {
-                    OrderChange.Overridden(by: plan.id, at: at, with: leads.min())
+                    OrderChange.Overridden(by: plan.id, at: at, with: leads.min() ?? others.first?.ref)
                 }
             }
         }

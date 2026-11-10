@@ -1631,7 +1631,7 @@ package final class PullRequestOrder: ObservableObject {
     package func undo() -> Bool {
         switch lastChange {
         case .stage(let change)?: undo(change)
-        case .order(let last)?: undo(last)
+        case .order?: undoOrderChange()
         case nil: false
         }
     }
@@ -1672,11 +1672,13 @@ package final class PullRequestOrder: ObservableObject {
     /// Puts back exactly what your last change to a mission touched. Undoing a split keeps the mission together as it's made
     /// again, as Keep Together does, and puts back the names Apple Intelligence had given the missions it named, with what
     /// it had asked them with, so that they aren't asked again.
-    private func undo(_ last: OrderLastChange) -> Bool {
-        guard isOn, last.canUndo else { return false }
+    private func undoOrderChange() -> Bool {
+        guard isOn, lastOrderChange?.canUndo == true else { return false }
         // Against the orders as agents last told them, as for a change: what a split moved, back where the split put it,
-        // knows the lines they told before.
+        // knows the lines they told before. What it puts back is then named as the missions it makes are, as each rebuild
+        // names it (`OrderLastChange.renamingMissions`).
         reloadOrders()
+        guard let last = lastOrderChange, last.canUndo else { return false }
         var changed = changes
         changed.restore(last.touched, orders: orders)
         // Those a split moved that are back where BriefBar or an order puts them: their split's change gone, or one an order
