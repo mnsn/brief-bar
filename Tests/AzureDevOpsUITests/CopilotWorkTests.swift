@@ -1021,6 +1021,45 @@ import Testing
         #expect(store.statuses[task] == nil)
     }
 
+    /// What git tells of a task once Send Work to Copilot is turned off, or BriefBar stopped, while it was asked, isn't kept,
+    /// and says nothing: the task stands as it did, and once the feature's on again, git is asked again.
+    @Test func whatGitTellsOnceItsOffIsntKept() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try finishedLog(of: task, in: home, after: now)
+        var shipping = run(task, .pushAndReply, startedAt: now, taken: [TakenPart(.thread(12), since: now, ships: true, fixes: true)])
+        shipping.worktree = URL(fileURLWithPath: "/tmp/copilot-worktrees/payments-api/\(task)", isDirectory: true)
+        shipping.fixes = true
+        shipping.head = "c1"
+        for stops in [false, true] {
+            let settings = AppSettings(defaults: MemoryDefaults())
+            settings.notifications = true
+            settings.copilotRuns = [shipping]
+            let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
+            let store = store(settings, notifier: Notifier(recent: recent, posts: false))
+            store.useEnvironment(["COPILOT_HOME": home.path])
+            let gate = Gate()
+            store.pushedForTests = { _, _, _, _ in
+                await gate.wait()
+                return true
+            }
+            store.refresh()
+            try await settle { store.runsBeingTold.contains(task) }
+            if stops { store.stop() } else { settings.copilotEnabled = false }
+            await gate.open()
+            try await settle { store.runsBeingTold.isEmpty }
+            #expect(settings.copilotRuns == [shipping])
+            #expect(recent.history.entries.isEmpty)
+            if !stops {
+                settings.copilotEnabled = true
+                store.refresh()
+                try await settle { settings.copilotRuns.first?.ended != nil }
+                #expect(settings.copilotRuns.first?.pushed == true)
+                #expect(recent.history.entries.map(\.id) == [CopilotTasksStore.notificationID(task)])
+            }
+        }
+    }
+
     /// A prompt sent to one of the Copilot app's sessions that fixes what it took on first, then was to push and reply,
     /// keeps whether it pushed a commit of its own as its turn finishes, as git in the checkout its session works in says,
     /// from where the branch was there as it went (`SentPrompt.pushed`): once, from the read that ends its turn, not one

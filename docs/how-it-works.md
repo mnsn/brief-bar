@@ -3267,11 +3267,16 @@ keeps the pull request's branch, and the commit git fetched it at in the checkou
 Reply's checks fetch it there (`Git.remoteHead(of:branch:)`, `SentPrompt.source`, `SentPrompt.head`, `CopilotRun.head`).
 As its turn finishes, git there tells, once, as things stood when the turn ended, as its log says, by git's logs of
 where HEAD and that branch were then, so that what's done there since, such as a later turn's push of its commit,
-doesn't count: it pushed when the branch then had the commit the checkout was at, which the commit kept didn't, and no
-rebase, merge, cherry-pick or revert stopped partway there, which leaves the checkout at what others pushed
-(`Git.pushedItsOwn(in:branch:since:at:)`). A push moves the branch there only when the clone's fetch settings name it,
-which a clone of one branch's don't (`Git.tracksPushes(to:in:)`): there git fetches the branch first, and goes by
-where it is now, or, when it can't fetch, as offline, where it was. For a prompt, git is asked only on the read of its
+doesn't count: it pushed when the commit the checkout was at, which the commit kept didn't have, had come to the branch
+there by a push from the clone, which moves it, not by a fetch of what others pushed, and no rebase, merge, cherry-pick
+or revert had stopped partway there, which leaves the checkout at what others pushed
+(`Git.pushedItsOwn(in:branch:since:at:)`, `Git.stoppedPartway(_:at:)`). git logs a rebase as it starts, `git pull
+--rebase`'s too, but not a merge, a cherry-pick or a revert, which keep HEAD where it is until they end: one going on
+that started since HEAD last moved before the turn ended leaves it unknown, and so does one that HEAD's first move since
+may have ended, as calling it off on a branch logs a reset. So does a move of HEAD, or a push of its commit, in the
+second the turn ended, since git's logs keep whole seconds. A push moves the branch there only when the clone's fetch
+settings name it, which a clone of one branch's don't (`Git.tracksPushes(to:in:)`): there git fetches the branch first,
+and goes by whether it has the commit now, or, when it can't fetch, as offline, had it. For a prompt, git is asked only on the read of its
 log that ends its turn. The fix ends once git has told, each on its own, so that the other tasks' and prompts' reads
 don't wait on it
 (`CopilotTasksStore.tellWhetherPushed`); a task gone on with meanwhile, which takes its place, isn't told what was read
@@ -3285,9 +3290,12 @@ Otherwise it says "Fixed in ‘Retry backoff’, but not pushed" (`CopilotWork.p
 the session's other fixes stay ready; its task's row says "Fixed, but not pushed" (`CopilotTaskEntry.pushSeen`); and
 the notification as it ends says only that Copilot finished fixing, with what it said. Nor is one known to have pushed
 when git can't tell, as when its checkout is gone, or one kept from before BriefBar kept the commit. What git can't tell
-apart: a commit someone else pushed after BriefBar fetched, which the session checked out as it was, committing nothing,
-from one of its own; and, in a clone whose fetch settings don't name the branch, a push of its commit from a later turn
-there before git fetched, as when the turn ended while BriefBar wasn't running, from its own. Not seen pushed, it isn't
+apart: a push from another checkout of the clone, which shares the branch's place there, from the session's own, so that
+a commit someone pushed from another worktree, which the session checked out as it was, committing nothing, looks like
+its own, as when a merge or a cherry-pick on it stopped partway, called off since with HEAD where it was, which git
+doesn't log on a detached HEAD; and, in a clone whose fetch settings don't name the branch, a commit someone else pushed
+after BriefBar fetched, which the session checked out so, and a push of its commit from a later turn there before git
+fetched, as when the turn ended while BriefBar wasn't running, from its own. Not seen pushed, it isn't
 ready to push either, since it may have replied, which a Push & Reply would post again: **Fix** it again; a later push
 from its session, or from a fork of it made since, takes its change along, so it says it's pushed, without a reply
 (`CopilotWork.shipsUnpushed`). One sent to a fork of a

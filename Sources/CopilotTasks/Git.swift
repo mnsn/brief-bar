@@ -165,45 +165,115 @@ public struct Git: Sendable {
 
     /// Whether a folder's checkout pushed a commit of its own to `branch` since `start`, the commit `origin/<branch>` was at
     /// there as it started (`remoteHead(of:branch:)`), as things stood at `end`, as the turn that was to push ended: the
-    /// commit it had checked out then was in `origin/<branch>` then, which its push moves, and wasn't in `start`. git's logs
-    /// of where HEAD and `origin/<branch>` were tell, so that what's done there since, such as a later turn's push of that
-    /// commit, doesn't count. A push moves `origin/<branch>` only when the clone's fetch settings name the branch
+    /// commit it had checked out then wasn't in `start`, and came to be in `origin/<branch>` by then by its push from there,
+    /// which moves it, not by a fetch of what others pushed. git's logs of where HEAD and `origin/<branch>` were tell, so
+    /// that what's done there since, such as a later turn's push of that commit, doesn't count; they keep whole seconds, so
+    /// git can't tell whether HEAD moved, or a push took its commit, in the second the turn ended, before the end or just
+    /// after it. The clone's checkouts share `origin/<branch>`: a push from another, of a commit this one then checked out,
+    /// counts as its own. A push moves `origin/<branch>` only when the clone's fetch settings name the branch
     /// (`tracksPushes(to:in:)`), which a clone of one branch's don't: there the branch is fetched first, as
-    /// `checkPush(in:source:target:)` fetches it, and it goes by where that is now, or, when it can't be fetched, as
-    /// offline, where it was. Without `end`, or those logs, by where they are now. False when it isn't: when it committed
-    /// nothing, or only fetched and checked out what others pushed, or its push was rejected, or it stopped before it, or
-    /// partway through a rebase, a merge, a cherry-pick or a revert, as when one on what others pushed conflicts, which
-    /// leaves it at their commit (`stoppedPartway`). Nil when git can't tell, as when the folder isn't a checkout any more.
+    /// `checkPush(in:source:target:)` fetches it, and it goes by whether that has the commit now, or, when it can't be
+    /// fetched, as offline, had it. Without `end`, or those logs, by where they are now. False when it isn't: when it
+    /// committed nothing, or only fetched and checked out what others pushed, or its push was rejected, or it stopped before
+    /// it, or partway through a rebase, a merge, a cherry-pick or a revert, as when one on what others pushed conflicts,
+    /// which leaves it at their commit (`stoppedPartway(_:at:)`). Nil when git can't tell, as when the folder isn't a
+    /// checkout any more, or whether it was partway through one then.
     public func pushedItsOwn(in folder: URL, branch: String, since start: String, at end: Date? = nil) async -> Bool? {
         guard Self.isBranchName(branch), Self.isCommit(start) else { return nil }
         let tracking = "refs/remotes/origin/\(branch)"
-        // git's logs of where refs were keep whole seconds.
-        let then = end.map { "@{\(Int($0.timeIntervalSince1970.rounded(.down)))}" }
-        guard let head = await commit(of: "HEAD", at: then, in: folder), let partway = await stoppedPartway(folder),
-              let tracked = await tracksPushes(to: branch, in: folder)
+        // git's logs of where refs were keep whole seconds: what they log in the end's second may have come after it.
+        let second = end.map { Int($0.timeIntervalSince1970.rounded(.down)) }
+        var head = await commit(second.map { "HEAD@{\($0)}" }, in: folder)
+        if head == nil { head = await commit("HEAD", in: folder) }
+        guard let head,
+              let partway = await stoppedPartway(folder, at: end),
+              let tracked = await tracksPushes(to: branch, in: folder),
+              let started = await isAncestor(head, of: start, in: folder)
         else { return nil }
-        if partway { return false }
-        var pushedTo = tracking
-        if tracked {
-            pushedTo = await commit(of: tracking, at: then, in: folder) ?? tracking
-        } else {
+        if partway || started { return false }
+        if let second, let before = await commit("HEAD@{\(second - 1)}", in: folder), before != head { return nil }
+        if tracked, let moves = await moves(of: tracking, in: folder), !moves.isEmpty {
+            // When origin/<branch> first had it by then, and how it came to: by a push from the clone, or a fetch.
+            var first: Move?
+            for move in moves where move.second <= second ?? .max {
+                guard let has = await isAncestor(head, of: move.commit, in: folder) else { return nil }
+                guard has else { break }
+                first = move
+            }
+            guard let first else { return false }
+            if first.second == second { return nil }
+            return first.subject == "update by push"
+        }
+        if !tracked {
             _ = try? await run(["-C", folder.path, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/\(branch):\(tracking)"], timeout: 60)
         }
-        guard let pushed = await isAncestor(head, of: pushedTo, in: folder) else { return nil }
-        guard pushed else { return false }
-        return await isAncestor(head, of: start, in: folder).map { !$0 }
+        return await isAncestor(head, of: tracking, in: folder)
     }
 
-    /// The commit `ref` was at, at `then` (`@{<seconds>}`), as git's log of where it was says; where it is now without
-    /// `then`, or that log. Nil when it isn't there.
-    private func commit(of ref: String, at then: String?, in folder: URL) async -> String? {
-        for name in [then.map { ref + $0 }, ref].compactMap(\.self) {
-            if let commit = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "\(name)^{commit}"], timeout: 30),
-               Self.isCommit(commit) {
-                return commit
-            }
+    /// The commit `name` names, such as `HEAD@{<seconds>}`, where git's log of where HEAD was says it was then; nil when it
+    /// names none, or there's no name.
+    private func commit(_ name: String?, in folder: URL) async -> String? {
+        guard let name,
+              let commit = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "\(name)^{commit}"], timeout: 30),
+              Self.isCommit(commit)
+        else { return nil }
+        return commit
+    }
+
+    /// Whether a folder's checkout was partway through a rebase, a merge, a cherry-pick or a revert as a turn there ended, at
+    /// `end`, as git's log of where HEAD was tells. A rebase logs its start, which leaves HEAD at what it rebases onto: one
+    /// that had started by then was, whether it's done, called off or going on now. A merge, a cherry-pick or a revert
+    /// doesn't log its start, nor let HEAD move until it ends: one going on now wasn't, once HEAD moved since the end, and
+    /// git can't tell otherwise; nor when HEAD's first move since may have ended one, as calling it off, which git logs as a
+    /// reset on a branch, or committing a merge or a cherry-pick does. Without `end`, or that log, one going on now
+    /// (`partway(_:)`). Nil when git can't tell.
+    func stoppedPartway(_ folder: URL, at end: Date? = nil) async -> Bool? {
+        guard let now = await partway(folder) else { return nil }
+        guard let end, let moves = await moves(of: "HEAD", in: folder), !moves.isEmpty else { return now != .nothing }
+        // git's log keeps whole seconds: a move logged in the end's second may have come after it.
+        let second = Int(end.timeIntervalSince1970.rounded(.down))
+        if let then = moves.first(where: { $0.second <= second }), Self.startsRebase(then.subject) { return true }
+        switch now {
+        case .rebase:
+            guard let start = moves.first(where: { Self.startsRebase($0.subject) }), start.second > second else { return true }
+        case .other:
+            guard moves[0].second > second else { return nil }
+        case .nothing:
+            break
         }
-        return nil
+        if let next = moves.last(where: { $0.second >= second }),
+           ["reset: ", "commit (merge): ", "commit (cherry-pick): "].contains(where: next.subject.hasPrefix) {
+            return nil
+        }
+        return false
+    }
+
+    /// Whether git logged a move of HEAD as a rebase's start, `git pull --rebase`'s too: `rebase (start): checkout <onto>`.
+    private static func startsRebase(_ subject: String) -> Bool {
+        subject.range(of: #"^[^:]+ \(start\): checkout "#, options: .regularExpression) != nil
+    }
+
+    /// A move of a ref, as git's log of where it was says: when, to the second; to what commit; and what moved it, as
+    /// `commit: <message>` or `update by push`.
+    struct Move: Equatable {
+        var second: Int
+        var commit: String
+        var subject: String
+    }
+
+    /// How a ref moved in a folder's checkout, as git's log of where it was says, the latest first. Nil when git can't read
+    /// it.
+    private func moves(of ref: String, in folder: URL) async -> [Move]? {
+        guard let log = try? await run(
+            ["-C", folder.path, "reflog", "show", "--date=unix", "--format=%gd%x09%H%x09%gs", ref, "--"], timeout: 30
+        ) else { return nil }
+        return log.split(whereSeparator: \.isNewline).compactMap { line in
+            let fields = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            guard fields.count == 3, let open = fields[0].range(of: "@{"), fields[0].hasSuffix("}"),
+                  let second = Int(fields[0][open.upperBound...].dropLast()), Self.isCommit(String(fields[1]))
+            else { return nil }
+            return Move(second: second, commit: String(fields[1]), subject: String(fields[2]))
+        }
     }
 
     /// Whether a push to `branch` from a folder's checkout moves `origin/<branch>` there: git does when the remote's fetch
@@ -244,20 +314,30 @@ public struct Git: Sendable {
         return String(ref.dropFirst(prefix.count).dropLast(suffix.count))
     }
 
-    /// Whether a folder's checkout stopped partway through a rebase, a merge, a cherry-pick or a revert, as git there keeps
-    /// it until it's done or called off; nil when git can't tell.
-    func stoppedPartway(_ folder: URL) async -> Bool? {
-        let names = ["rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"]
+    /// What a checkout stopped partway through, as git there keeps it until it's done or called off.
+    enum Partway: Equatable {
+        case nothing
+        /// A rebase, which git logs as it starts.
+        case rebase
+        /// A merge, a cherry-pick or a revert, which git doesn't log as it starts.
+        case other
+    }
+
+    /// What a folder's checkout stopped partway through; nil when git can't tell.
+    func partway(_ folder: URL) async -> Partway? {
+        let rebases = ["rebase-merge", "rebase-apply"], names = rebases + ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"]
         guard let paths = try? await run(["-C", folder.path, "rev-parse"] + names.flatMap { ["--git-path", $0] }, timeout: 30) else {
             return nil
         }
         let lines = paths.split(whereSeparator: \.isNewline).map(String.init)
         guard lines.count == names.count else { return nil }
-        return lines.contains { path in
+        let there = lines.map { path in
             let file = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
             // There, whatever it is, without following a link.
             return (try? FileManager.default.attributesOfItem(atPath: file.path)) != nil
         }
+        if there.prefix(rebases.count).contains(true) { return .rebase }
+        return there.contains(true) ? .other : .nothing
     }
 
     /// Whether `commit` is in `other`'s history, `other` included; nil when git can't tell, as when either isn't there.

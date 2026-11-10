@@ -886,16 +886,17 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// Ends a task that fixed what it took on first, then was to push and reply, and finished, once git in its checkout
-    /// tells whether it pushed a commit of its own (`pushedItsOwn(_:)`), on its own: git fetches the branch first, which may
-    /// wait on the network, and the other tasks' reads don't wait for it. Until then it stands as it did. Once, while one
-    /// is under way.
+    /// tells whether it pushed a commit of its own (`pushedItsOwn(_:at:)`), on its own: git may fetch the branch first, which
+    /// may wait on the network, and the other tasks' reads don't wait for it. Until then it stands as it did. Once Send Work
+    /// to Copilot is off, or BriefBar stopped, nothing's kept: it's read again once it's on. Once, while one is under way.
     private func tellWhetherPushed(_ ended: Ended) {
         guard runsBeingTold.insert(ended.run.id).inserted else { return }
         Task {
+            defer { runsBeingTold.remove(ended.run.id) }
             var ended = ended
             ended.pushed = await pushedItsOwn(ended.run, at: ended.status.since)
+            guard canSend, isOn, !hasStopped else { return }
             apply([ended])
-            runsBeingTold.remove(ended.run.id)
         }
     }
 
