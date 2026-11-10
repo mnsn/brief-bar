@@ -3265,9 +3265,11 @@ since its prompt has it stop before it pushes, and end its turn all the same, wh
 was retargeted, completed or abandoned, a merge brings in another branch, or a push was rejected. As it goes, BriefBar
 keeps the pull request's branch, and the commit git fetched it at in the checkout the session works in, as a Push &
 Reply's checks fetch it there (`Git.remoteHead(of:branch:)`, `SentPrompt.source`, `SentPrompt.head`, `CopilotRun.head`).
-As its turn finishes, git there tells, once: it pushed when that branch there, which the session's own push moves, has
-the commit the checkout is at, which the commit kept didn't, and no rebase, merge, cherry-pick or revert stopped partway
-there, which leaves the checkout at what others pushed (`Git.pushedItsOwn(in:branch:since:)`). BriefBar keeps what git
+As its turn finishes, git there tells, once, having fetched the branch there again, as a push moves it there only when
+the clone's fetch settings name it, which a clone of one branch's don't, or, when it can't fetch, as offline, by what
+the push moved: it pushed when that branch has the commit the checkout is at, which the commit kept didn't, and no
+rebase, merge, cherry-pick or revert stopped partway there, which leaves the checkout at what others pushed
+(`Git.pushedItsOwn(in:branch:since:)`). For a prompt, git is asked only on the read of its log that ends its turn. BriefBar keeps what git
 said with it, a task with its run, and with what it took on as the session goes on, so that clearing its threads
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,

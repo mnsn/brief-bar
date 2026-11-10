@@ -961,10 +961,45 @@ import Testing
         #expect(await later.asked.isEmpty)
     }
 
+    /// A task that goes on with a session takes the place of the one that ran there, with its ID: what a refresh read of the
+    /// earlier one, while it asked git whether that pushed, isn't the later one's, which goes on, neither ended nor told how
+    /// the earlier one did.
+    @Test func goingOnWhileGitIsAskedLeavesTheLaterTaskGoing() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let other = "44444444-4444-4444-8444-444444444444"
+        for id in [task, other] { try finishedLog(of: id, in: home, after: now) }
+        func shipping(_ id: String, _ thread: Int) -> CopilotRun {
+            var run = run(id, .pushAndReply, startedAt: now, taken: [TakenPart(.thread(thread), since: now, ships: true, fixes: true)])
+            run.worktree = URL(fileURLWithPath: "/tmp/copilot-worktrees/payments-api/\(id)", isDirectory: true)
+            run.fixes = true
+            run.head = "c1"
+            return run
+        }
+        let later = run(task, .fixComments, startedAt: now.addingTimeInterval(60), taken: [TakenPart(.thread(13), since: now.addingTimeInterval(60))])
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotRuns = [shipping(task, 12), shipping(other, 14)]
+        let store = store(settings)
+        store.useEnvironment(["COPILOT_HOME": home.path])
+        let earlier = "/tmp/copilot-worktrees/payments-api/\(task)"
+        // While git is asked about the earlier task, you go on with its session.
+        store.pushedForTests = { folder, _, _ in
+            guard folder.path == earlier else { return false }
+            await MainActor.run { settings.copilotRuns = settings.copilotRuns.map { $0.id == later.id ? later : $0 } }
+            return true
+        }
+        store.refresh()
+        // The other run's end is kept with what was read of the earlier one, in the same pass.
+        try await settle { settings.copilotRuns.first { $0.id == other }?.ended != nil }
+        #expect(settings.copilotRuns.first { $0.id == other }?.pushed == false)
+        #expect(settings.copilotRuns.first { $0.id == task } == later)
+        #expect(store.statuses[task] == nil)
+    }
+
     /// A prompt sent to one of the Copilot app's sessions that fixes what it took on first, then was to push and reply,
     /// keeps whether it pushed a commit of its own as its turn finishes, as git in the checkout its session works in says,
-    /// from where the branch was there as it went (`SentPrompt.pushed`): once, as it keeps how its turn ended. Nothing asks
-    /// git for a plain Push & Reply.
+    /// from where the branch was there as it went (`SentPrompt.pushed`): once, on the read that ends its turn, which keeps
+    /// how it ended. Nothing asks git for a plain Push & Reply.
     @Test func aPromptThatShipsKeepsWhetherItPushedAsItsTurnFinishes() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -990,16 +1025,18 @@ import Testing
             store.followSentPrompts(now: date)
             try await settle { !store.isFollowingPrompts }
         }
+        // Over, once: it may be the end of a turn that ran as it was sent, so git isn't asked yet.
         try await follow(at: sent.addingTimeInterval(3))
         #expect(settings.copilotSentPrompts.map(\.pushed) == [nil, nil])
+        #expect(await answers.asked.isEmpty)
         try await follow(at: sent.addingTimeInterval(6))
         #expect(settings.copilotSentPrompts.map(\.ended) == [.finished, .finished])
         #expect(settings.copilotSentPrompts.map(\.pushed) == [true, nil])
-        #expect(await answers.asked == Array(repeating: "\(checkout.path) payments-retry c1", count: 2))
+        #expect(await answers.asked == ["\(checkout.path) payments-retry c1"])
         #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Fixed, pushed and replied in ‘Retry backoff’")
         // Over, it isn't followed, nor asked about, any more.
         try await follow(at: sent.addingTimeInterval(9))
-        #expect(await answers.asked.count == 2)
+        #expect(await answers.asked.count == 1)
     }
 
     /// Whether a fix sent with Push and Reply on pushed is kept as it finished, so another push since doesn't change it

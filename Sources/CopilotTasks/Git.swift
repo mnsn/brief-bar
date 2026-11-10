@@ -165,10 +165,12 @@ public struct Git: Sendable {
 
     /// Whether a folder's checkout pushed a commit of its own to `branch` since `start`, the commit `origin/<branch>` was at
     /// there as it started (`remoteHead(of:branch:)`): the commit it has checked out is in `origin/<branch>` now, which its
-    /// push moves, and wasn't in `start`. False when it isn't: when it committed nothing, or only fetched and checked out
-    /// what others pushed, or its push was rejected, or it stopped before it, or partway through a rebase, a merge, a
-    /// cherry-pick or a revert, as when one on what others pushed conflicts, which leaves it at their commit
-    /// (`stoppedPartway`). Nil when git can't tell, as when the folder isn't a checkout any more.
+    /// push moves, and wasn't in `start`. The branch is fetched there first, as `checkPush(in:source:target:)` fetches it:
+    /// a push moves `origin/<branch>` only when the clone's fetch settings name the branch, which a clone of one branch's
+    /// don't; when it can't be fetched, as offline, it goes by what the push moved. False when it isn't: when it committed
+    /// nothing, or only fetched and checked out what others pushed, or its push was rejected, or it stopped before it, or
+    /// partway through a rebase, a merge, a cherry-pick or a revert, as when one on what others pushed conflicts, which
+    /// leaves it at their commit (`stoppedPartway`). Nil when git can't tell, as when the folder isn't a checkout any more.
     public func pushedItsOwn(in folder: URL, branch: String, since start: String) async -> Bool? {
         guard Self.isBranchName(branch), Self.isCommit(start),
               let head = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], timeout: 30),
@@ -176,6 +178,10 @@ public struct Git: Sendable {
               let partway = await stoppedPartway(folder)
         else { return nil }
         if partway { return false }
+        _ = try? await run(
+            ["-C", folder.path, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"],
+            timeout: 60
+        )
         guard let pushed = await isAncestor(head, of: "refs/remotes/origin/\(branch)", in: folder) else { return nil }
         guard pushed else { return false }
         return await isAncestor(head, of: start, in: folder).map { !$0 }

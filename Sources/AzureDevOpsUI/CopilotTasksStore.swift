@@ -898,15 +898,19 @@ final class CopilotTasksStore: ObservableObject {
 
     private func apply(_ results: [Ended]) {
         for result in results {
+            let index = settings.copilotRuns.firstIndex(where: { $0.id == result.run.id })
+            // Gone on with while it was read, as when git was asked whether it pushed: a task that goes on with its session
+            // takes its place, with its ID. What was read is the earlier task's; the next refresh reads the later one.
+            if let index, settings.copilotRuns[index].startedAt != result.run.startedAt { continue }
             if statuses[result.run.id] != result.status { statuses[result.run.id] = result.status }
             // Cleared while it was read.
-            guard let index = settings.copilotRuns.firstIndex(where: { $0.id == result.run.id }) else { continue }
+            guard let index else { continue }
             var run = settings.copilotRuns[index]
             if run.pullRequest == nil, let pullRequest = result.pullRequest { run.pullRequest = pullRequest }
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
                 // Whether it pushed, as git said in its checkout as it finished: once, whatever moves the branch since.
-                if run.fixes == true, run.startedAt == result.run.startedAt { run.pushed = result.pushed }
+                if run.fixes == true { run.pushed = result.pushed }
                 Log.app.info("A task sent to Copilot ended: \(result.status.phase.rawValue, privacy: .public)")
                 notify(entry(for: run, status: result.status), status: result.status)
             }

@@ -338,6 +338,25 @@ import Testing
         #expect(await git.pushedItsOwn(in: checkout, branch: "gone", since: start) == nil)
     }
 
+    /// A clone of one branch, whose fetch settings name only that one, isn't told its push moved the pull request's branch:
+    /// git fetches the branch there as it tells, as before the fix went.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsAPushFromACloneOfAnotherBranch() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let clone = fixture.folder.appendingPathComponent("one-branch")
+        try await fixture.git(["clone", "--quiet", "--single-branch", "--branch", "main", fixture.origin.path, clone.path])
+        _ = try await git.checkPush(in: clone, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: clone, branch: Self.source))
+        try await fixture.git(["-C", clone.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        try await commit("The fix", to: "fix.txt", in: clone, fixture)
+        let head = try await git.run(["-C", clone.path, "rev-parse", "HEAD"], timeout: 30)
+        try await fixture.git(["-C", clone.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"])
+        // The push left origin/<branch> where it was.
+        #expect(try await git.run(["-C", clone.path, "rev-parse", "refs/remotes/origin/\(Self.source)"], timeout: 30) == start)
+        #expect(await git.pushedItsOwn(in: clone, branch: Self.source, since: start) == true)
+    }
+
     @Test func putsWorktreesNextToTheRepositoryEachInAFolderOfItsOwn() {
         let root = URL(fileURLWithPath: "/Users/robin/dev/repos/Storefront")
         let folder = WorktreeLocation.defaultFolder(for: root)

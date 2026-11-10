@@ -914,6 +914,8 @@ extension CopilotTasksStore {
         let home = appHome
         let monitor = promptMonitor
         let copied = copiedPrompts.mapValues(\.text)
+        // Seen over once already: this read may end their turns (`applyTurns`), so git is asked about them only now.
+        let seenOver = Set(promptsOver.keys)
         Task {
             // Where the sessions are that prompts go to: the Copilot app's folder, and the CLI's, whose terminal one may
             // have been pasted in.
@@ -956,11 +958,11 @@ extension CopilotTasksStore {
                         turn = pastedAt.map { SessionTurn.of(sentAt: $0, log: log, isRunning: isRunning, isOpen: isOpen) }
                             ?? SessionTurn(phase: .waiting, since: prompt.sentAt)
                     }
-                    // A fix sent with Push and Reply on whose turn finished: whether it pushed a commit of its own, as git
-                    // says in the checkout the session works in.
+                    // A fix sent with Push and Reply on whose turn finished, as this read may end it: whether it pushed a
+                    // commit of its own, as git says in the checkout the session works in.
                     var pushed: Bool?
-                    if prompt.fixes == true, turn.isOver, case .finished = turn.phase, let branch = prompt.source, let start = prompt.head,
-                       let folder = AppSessions.folder(of: session, home: sessionHome) {
+                    if prompt.fixes == true, seenOver.contains(prompt.id), turn.isOver, case .finished = turn.phase,
+                       let branch = prompt.source, let start = prompt.head, let folder = AppSessions.folder(of: session, home: sessionHome) {
                         pushed = await CopilotTasksStore.pushedItsOwn(
                             in: folder, branch: branch, since: start, git: git, forTests: pushedForTests
                         )
