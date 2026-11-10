@@ -1661,7 +1661,8 @@ as once its organization isn't watched, or its account doesn't sign in again. On
 someone sent it in a chat stays in memory while BriefBar runs, Pull Request Order off or on, as your changes to its
 mission do, until BriefBar lists it otherwise, and goes when another account signs in; so does one chosen before BriefBar
 knew the account, until it does, when it's kept with the account, over what the account chose for that slot before. Each
-of those comes first, as you chose it since.
+of those comes first, as you chose it since. One the account chose before goes to memory too once that account's own
+lists have it only from a chat, as a stage you set does, but not because another account's did.
 **Forget Stages…** forgets them all, with every account, and turning Azure DevOps off forgets its own. `needs_me` reads
 those kept in the preferences for the account its lists read with, and lists each first in its stage, as the Board does.
 

@@ -464,6 +464,16 @@ import Testing
         order.setOn(true)
         #expect(order.picks == UpNextPicks([.yourReview: sent]))
         #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
+        // Merged, it leaves the lists: what you chose of it stays in memory still.
+        order.publish(
+            .azureDevOps, pullRequests: [Self.ado(4088)],
+            stages: [
+                Self.ref(4088): StageFacts(role: .reviewer, asksYou: "Sam asked you", since: Date(timeIntervalSince1970: 1_791_000_000)),
+            ],
+            account: Self.account
+        )
+        #expect(order.picks == UpNextPicks([.yourReview: sent]))
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
 
         // You watch it: it's kept in the preferences.
         tell(.watching)
@@ -785,6 +795,39 @@ import Testing
         #expect(order.picks.isEmpty)
         #expect(Self.kept(defaults).isEmpty)
         #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+    }
+
+    /// What one account chose stays in the preferences though another account's lists had its pull request only because
+    /// someone sent it in a chat, as before its own lists are read once it signs in again; it goes to memory, as a stage you
+    /// set does, once its own lists have it only from a chat.
+    @Test func anotherAccountsChatsDontTakeWhatAnAccountChoseOutOfThePreferences() {
+        let defaults = MemoryDefaults()
+        let sam = "sam@contoso.com"
+        let sent = StageFacts(role: .sentToYou, asksYou: "Priya sent it in Teams", since: Date(timeIntervalSince1970: 1_791_500_000))
+        func tellSent(_ order: PullRequestOrder, account: String) {
+            order.publish(
+                .azureDevOps, pullRequests: [Self.ado(4202), Self.ado(4203)],
+                stages: [Self.ref(4202): Self.reviews[4202]!, Self.ref(4203): sent], account: account,
+                inMemory: [Self.ref(4203)], listsRead: ["contoso"]
+            )
+        }
+        let order = Self.service(defaults)
+        Self.tell(order, Self.reviews, account: sam)
+        #expect(order.pickNext(Self.ref(4203), in: .yourReview))
+
+        // Robin's lists have it only because Priya sent it in Teams; then Sam signs in again, whose lists aren't read yet.
+        tellSent(order, account: Self.account)
+        Self.tell(order, [:], account: sam, listed: false)
+        #expect(order.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.kept(defaults, for: sam) == UpNextPicks([.yourReview: Self.ref(4203)]))
+        let again = Self.service(defaults)
+        Self.tell(again, Self.reviews, account: sam)
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+
+        // Sam's own lists have it only from a chat now: it stays chosen, in memory only.
+        tellSent(again, account: sam)
+        #expect(again.picks == UpNextPicks([.yourReview: Self.ref(4203)]))
+        #expect(Self.kept(defaults, for: sam).isEmpty)
     }
 
     /// As a stage you set, what you chose goes once no list has had its pull request for 30 days, with any account: one

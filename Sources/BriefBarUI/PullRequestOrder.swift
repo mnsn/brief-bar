@@ -600,10 +600,18 @@ package final class PullRequestOrder: ObservableObject {
     /// Keeps the pull requests you chose for Up Next's slots: in the preferences, with the account each one's source told
     /// last, in place of what that account chose before, but one listed only because someone sent it in a chat, which
     /// stays in memory until BriefBar lists it otherwise, and one chosen before BriefBar knew the account, until it does.
-    /// What another account chose stays as it was. Only while it's on, which has them all.
+    /// One the account chose before stays in the preferences until its source's account lists it only because someone
+    /// sent it in a chat, as a stage you set does: that another account's lists had it only from a chat, as before the
+    /// account's own lists are read, says nothing of it. What another account chose stays as it was. Only while it's on,
+    /// which has them all.
     private func keepPicks() {
         guard isOn else { return }
-        let (inMemory, saved) = picks.split { sentInChats.contains($0) || sourceAccount(of: $0) == nil }
+        let sentNow = Set(told.values.flatMap(\.inMemory))
+        let inMemory = UpNextPicks(picks.refs.filter { slot, ref in
+            guard let account = sourceAccount(of: ref) else { return true }
+            return sentNow.contains(ref) || (sentInChats.contains(ref) && keptPicks.picks(for: account)[slot] != ref)
+        })
+        let saved = UpNextPicks(picks.refs.filter { inMemory[$0.key] == nil })
         var kept = keptPicks
         for account in Set(accounts.values) {
             kept.set(saved.split { self.sourceAccount(of: $0) == account }.in, for: account, at: now())
