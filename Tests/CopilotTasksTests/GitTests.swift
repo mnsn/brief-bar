@@ -251,6 +251,389 @@ import Testing
         #expect(runner.arguments.isEmpty)
     }
 
+    // MARK: Whether a session pushed
+
+    /// Pushes a commit to the pull request's branch from another clone, as a teammate, or another session, would: `text`, in
+    /// a file of its own unless `file` names one.
+    private func pushFromElsewhere(_ text: String, to file: String? = nil, _ fixture: RepositoryFixture) async throws {
+        let other = fixture.folder.appendingPathComponent("elsewhere")
+        if !FileManager.default.fileExists(atPath: other.path) {
+            try await fixture.git(["clone", "--quiet", fixture.origin.path, other.path])
+        }
+        try await fixture.git(["-C", other.path, "fetch", "--quiet", "origin"])
+        try await fixture.git(["-C", other.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        try await commit(text, to: file ?? "\(text).txt", in: other, fixture)
+        try await fixture.git(["-C", other.path, "push", "--quiet", "origin", "HEAD:refs/heads/\(Self.source)"])
+    }
+
+    /// Pushes the checkout's HEAD as a fix's prompt has it, by its ID, to origin, which moves the checkout's origin/<branch>.
+    private func pushAsThePromptSays(_ fixture: RepositoryFixture, _ git: Git) async throws {
+        let head = try await git.run(["-C", fixture.checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await fixture.git(["-C", fixture.checkout.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"])
+    }
+
+    /// Where the branch was as the fix went, once BriefBar fetched it: a commit the checkout pushed of its own since is
+    /// pushed, whatever was pushed after it; nothing committed, or a commit not pushed, or one whose push was rejected as
+    /// someone else pushed first, isn't; nor is a commit others pushed, which the checkout fetched and checked out, or one it
+    /// pushed itself before the fix went; nor what others pushed, where a rebase on it, or a cherry-pick, stopped partway.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhetherACheckoutPushedACommitOfItsOwn() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let checkout = fixture.checkout
+        _ = try await git.checkPush(in: checkout, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        #expect(try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30) == start)
+        #expect(await git.remoteHead(of: checkout, branch: "nowhere") == nil)
+        #expect(await git.remoteHead(of: checkout, branch: "--all") == nil)
+
+        // Nothing committed: the tests failed, say.
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == false)
+        // Committed, then stopped before it pushed.
+        try await commit("The fix", to: "fix.txt", in: checkout, fixture)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == false)
+        // Pushed.
+        try await pushAsThePromptSays(fixture, git)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == true)
+        // Someone pushes on top of it since, which the checkout fetches: it still pushed its own.
+        try await pushFromElsewhere("Theirs", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"])
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start) == true)
+
+        // The next fix goes from there: what the checkout pushed before it went isn't its push, nor what it fetches and
+        // checks out of what others pushed.
+        let next = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        // Someone pushes while it fixes, the same lines: its push is rejected, as the branch moved, and it stops.
+        try await commit("Another fix", to: "another.txt", in: checkout, fixture)
+        let fixed = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await pushFromElsewhere("First", to: "another.txt", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"])
+        await #expect(throws: TestError.self) { try await self.pushAsThePromptSays(fixture, git) }
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        // A task's prompt has it rebase on what's pushed then, and stop when that conflicts, which leaves it at their commit
+        // until the rebase is done or called off; a cherry-pick of its fix there, the same.
+        let theirs = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        await #expect(throws: TestError.self) {
+            try await fixture.git(["-C", checkout.path] + Self.identity + ["rebase", "--quiet", "origin/\(Self.source)"])
+        }
+        #expect(try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30) == theirs)
+        #expect(await git.stoppedPartway(checkout) == true)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        try await fixture.git(["-C", checkout.path, "rebase", "--abort"])
+        #expect(await git.stoppedPartway(checkout) == false)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", theirs])
+        await #expect(throws: TestError.self) { try await fixture.git(["-C", checkout.path] + Self.identity + ["cherry-pick", fixed]) }
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == false)
+        try await fixture.git(["-C", checkout.path, "cherry-pick", "--abort"])
+
+        // What git can't tell: a folder that isn't a checkout, or a start that isn't a commit, or a branch git would read as
+        // something else.
+        let nowhere = fixture.folder.appendingPathComponent("nowhere")
+        try FileManager.default.createDirectory(at: nowhere, withIntermediateDirectories: true)
+        #expect(await git.pushedItsOwn(in: nowhere, branch: Self.source, since: start) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: "c1") == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: "main..HEAD", since: start) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: "gone", since: start) == nil)
+    }
+
+    /// A clone of one branch, whose fetch settings name only that one, isn't told its push moved the pull request's branch:
+    /// git fetches the branch there as it tells, as before the fix went.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsAPushFromACloneOfAnotherBranch() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let clone = fixture.folder.appendingPathComponent("one-branch")
+        try await fixture.git(["clone", "--quiet", "--single-branch", "--branch", "main", fixture.origin.path, clone.path])
+        _ = try await git.checkPush(in: clone, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: clone, branch: Self.source))
+        try await fixture.git(["-C", clone.path, "checkout", "--quiet", "--detach", "origin/\(Self.source)"])
+        try await commit("The fix", to: "fix.txt", in: clone, fixture)
+        let head = try await git.run(["-C", clone.path, "rev-parse", "HEAD"], timeout: 30)
+        try await fixture.git(["-C", clone.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"])
+        // The push left origin/<branch> where it was.
+        #expect(await git.tracksPushes(to: Self.source, in: clone) == false)
+        #expect(try await git.run(["-C", clone.path, "rev-parse", "refs/remotes/origin/\(Self.source)"], timeout: 30) == start)
+        // Its turn ends once it replied, a second or two later.
+        #expect(await git.pushedItsOwn(in: clone, branch: Self.source, since: start, at: Date().addingTimeInterval(2)) == true)
+    }
+
+    /// As things stood when a turn ended, from git's logs of where HEAD and origin/<branch> were: its own push then counts,
+    /// whatever's done there since; a commit it didn't push doesn't, though a later turn there pushes it along.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhatItPushedAsItsTurnEnded() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let checkout = fixture.checkout
+        _ = try await git.checkPush(in: checkout, source: Self.source, target: "main")
+        let start = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        // After all git has logged by the clock so far.
+        let base = Int(Date().timeIntervalSince1970) + 1_000
+        func at(_ seconds: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(base + seconds)) }
+        func commit(_ text: String, at seconds: Int) async throws {
+            try "\(text)\n".write(to: checkout.appendingPathComponent("\(text).txt"), atomically: true, encoding: .utf8)
+            try await fixture.git(["-C", checkout.path, "add", "\(text).txt"])
+            try await fixture.git(["-C", checkout.path] + Self.identity + ["commit", "--quiet", "-m", text], at: base + seconds)
+        }
+        func push(at seconds: Int) async throws {
+            let head = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+            try await fixture.git(["-C", checkout.path, "push", "--quiet", "origin", "\(head):refs/heads/\(Self.source)"], at: base + seconds)
+        }
+        // A fix commits and pushes, then its turn ends; a later turn there commits and pushes more.
+        try await commit("The fix", at: 10)
+        try await push(at: 20)
+        try await commit("Later", at: 40)
+        try await push(at: 50)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start, at: at(30)) == true)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: start, at: at(15)) == false)
+        // The next fix commits and doesn't push, then its turn ends; a later turn there pushes it along with its own.
+        let next = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await commit("Another fix", at: 60)
+        try await commit("Yet another", at: 80)
+        try await push(at: 90)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next, at: at(70)) == false)
+        // As things are now, it would look pushed.
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: next) == true)
+
+        // git's logs keep whole seconds: a push of its commit in the second its turn ended may be a later turn's, just after
+        // it; so may a move of HEAD to a commit pushed before.
+        let last = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await commit("Unpushed", at: 100)
+        try await push(at: 110)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(110).addingTimeInterval(0.5)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(111)) == true)
+        let pushed = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await commit("Not yet", at: 120)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", pushed], at: base + 130)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(130).addingTimeInterval(0.5)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(129)) == false)
+
+        // Without git's log of where HEAD was, it can't tell where the checkout was as the turn ended, only where it is now;
+        // without origin/<branch>'s, how the commit came to the branch, or when, whatever the branch has now.
+        func log(of ref: String) async throws -> URL {
+            let path = try await git.run(["-C", checkout.path, "rev-parse", "--git-path", "logs/\(ref)"], timeout: 30)
+            return path.hasPrefix("/") ? URL(fileURLWithPath: path) : checkout.appendingPathComponent(path)
+        }
+        try FileManager.default.removeItem(at: try await log(of: "HEAD"))
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(140)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last) == true)
+        try FileManager.default.removeItem(at: try await log(of: "refs/remotes/origin/\(Self.source)"))
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last) == nil)
+    }
+
+    /// Whether a fix was partway through a rebase, a merge or a cherry-pick as its turn ended, from git's log of where HEAD
+    /// was: a rebase on what others pushed that stopped then, called off since, stopped it short of its push, while one a
+    /// later turn starts doesn't; nor a merge a later turn starts once HEAD moved. git doesn't log when a merge or a
+    /// cherry-pick starts: one going on since HEAD's last move before the end leaves it unknown, and so does calling one off
+    /// since, which git logs on a branch. Others' commit, which the checkout fetched, isn't its push, whatever it did there;
+    /// nor is one pushed from another worktree of the clone, which shares origin/<branch>, where a rebase on it stopped. A
+    /// rebase on a detached HEAD logs no finish: one that went through, then pushed, isn't partway after its last step. What
+    /// git logs in the second the turn ended may have come after it.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhatItWasPartwayThroughAsItsTurnEnded() async throws {
+        let (fixture, git) = try await retargetable()
+        defer { fixture.remove() }
+        let checkout = fixture.checkout
+        _ = try await git.checkPush(in: checkout, source: Self.source, target: "main")
+        // After all git has logged by the clock so far.
+        let base = Int(Date().timeIntervalSince1970) + 1_000
+        func at(_ seconds: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(base + seconds)) }
+        func run(_ arguments: [String], at seconds: Int) async throws {
+            try await fixture.git(["-C", checkout.path] + Self.identity + arguments, at: base + seconds)
+        }
+        func head() async throws -> String { try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30) }
+        func remote() async throws -> String { try #require(await git.remoteHead(of: checkout, branch: Self.source)) }
+        func commit(_ text: String, to file: String = "fix.txt", at seconds: Int) async throws {
+            try "\(text)\n".write(to: checkout.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            try await run(["add", file], at: seconds)
+            try await run(["commit", "--quiet", "-m", text], at: seconds)
+        }
+        func push(at seconds: Int) async throws {
+            try await run(["push", "--quiet", "origin", "\(try await head()):refs/heads/\(Self.source)"], at: seconds)
+        }
+        // Someone pushes a change to the same lines, which the checkout fetches.
+        func theirs(_ text: String, at seconds: Int) async throws {
+            try await pushFromElsewhere(text, to: "fix.txt", fixture)
+            try await run(["fetch", "--quiet", "origin"], at: seconds)
+        }
+        func pushed(since start: String, at seconds: Int) async -> Bool? {
+            await git.pushedItsOwn(in: checkout, branch: Self.source, since: start, at: at(seconds))
+        }
+
+        // Its push rejected, a fix pulls with a rebase, which stops on the conflict, at their commit, as its turn ends; a
+        // later turn calls the rebase off.
+        var start = try await remote()
+        try await commit("Mine", at: 10)
+        try await theirs("Theirs", at: 20)
+        await #expect(throws: TestError.self) { try await run(["pull", "--rebase", "--quiet", "origin", Self.source], at: 30) }
+        try await run(["rebase", "--abort"], at: 50)
+        #expect(await git.stoppedPartway(checkout, at: at(40)) == true)
+        #expect(await pushed(since: start, at: 40) == false)
+
+        // The next fix commits on theirs and pushes, and its turn ends; a later turn commits more, then someone pushes over
+        // it, and the later turn's rebase on that stops on the conflict, after it picked one commit.
+        start = try await remote()
+        try await run(["checkout", "--quiet", "--detach", start], at: 60)
+        try await commit("Fixed", at: 70)
+        try await push(at: 80)
+        try await commit("Aside", to: "aside.txt", at: 100)
+        try await commit("More", at: 105)
+        try await theirs("Over", at: 110)
+        await #expect(throws: TestError.self) { try await run(["rebase", "--quiet", "origin/\(Self.source)"], at: 120) }
+        #expect(await git.stoppedPartway(checkout, at: at(90)) == false)
+        #expect(await pushed(since: start, at: 90) == true)
+        #expect(await git.stoppedPartway(checkout, at: at(125)) == true)
+        try await run(["rebase", "--abort"], at: 130)
+        #expect(await git.stoppedPartway(checkout, at: at(125)) == true)
+        #expect(await git.stoppedPartway(checkout, at: at(120).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(130).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(135)) == false)
+
+        // The next fix resets to what's pushed, then someone pushes over it, and it resets to theirs, and cherry-picks its
+        // fix there, which stops on the conflict, as its turn ends. Called off since, with HEAD where it was, which git
+        // doesn't log on a detached HEAD, their commit still came by a fetch.
+        start = try await remote()
+        try await run(["reset", "--quiet", "--hard", start], at: 140)
+        try await commit("Again", at: 150)
+        let again = try await head()
+        try await theirs("Twice", at: 160)
+        try await run(["reset", "--quiet", "--hard", "origin/\(Self.source)"], at: 170)
+        await #expect(throws: TestError.self) { try await run(["cherry-pick", again], at: 180) }
+        #expect(await git.stoppedPartway(checkout, at: at(190)) == nil)
+        #expect(await pushed(since: start, at: 190) == nil)
+        try await run(["cherry-pick", "--abort"], at: 200)
+        #expect(await pushed(since: start, at: 190) == false)
+
+        // The next fix commits and pushes, and its turn ends; a later turn commits, then merges what someone pushed over
+        // it, which stops on the conflict.
+        start = try await remote()
+        try await commit("Merged", at: 210)
+        try await push(at: 220)
+        try await theirs("Thrice", at: 240)
+        try await commit("Later", at: 250)
+        await #expect(throws: TestError.self) { try await run(["merge", "--quiet", "--no-edit", "origin/\(Self.source)"], at: 260) }
+        #expect(await git.stoppedPartway(checkout) == true)
+        #expect(await git.stoppedPartway(checkout, at: at(230)) == false)
+        #expect(await pushed(since: start, at: 230) == true)
+        try await run(["merge", "--abort"], at: 270)
+
+        // On a branch, git logs calling a cherry-pick off, as a reset: one that was going on as the turn ended may have
+        // ended so.
+        try await run(["checkout", "--quiet", "-B", "work", "origin/\(Self.source)"], at: 280)
+        await #expect(throws: TestError.self) { try await run(["cherry-pick", again], at: 290) }
+        try await run(["cherry-pick", "--abort"], at: 310)
+        #expect(await git.stoppedPartway(checkout, at: at(300)) == nil)
+
+        // Someone pushes from another worktree of the clone, which shares origin/<branch>, so that their commit looks
+        // pushed from here: the next fix's rebase on it, which stops on the conflict as its turn ends, still stops it short
+        // of its push, though that's called off since.
+        try await run(["checkout", "--quiet", "--detach", "origin/\(Self.source)"], at: 320)
+        start = try await remote()
+        try await commit("Ours", at: 330)
+        let other = fixture.folder.appendingPathComponent("other-worktree")
+        try await run(["worktree", "add", "--quiet", "--detach", other.path, start], at: 340)
+        try "Yours\n".write(to: other.appendingPathComponent("fix.txt"), atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", other.path, "add", "fix.txt"], at: base + 340)
+        try await fixture.git(["-C", other.path] + Self.identity + ["commit", "--quiet", "-m", "Yours"], at: base + 340)
+        try await fixture.git(["-C", other.path, "push", "--quiet", "origin", "HEAD:refs/heads/\(Self.source)"], at: base + 350)
+        await #expect(throws: TestError.self) { try await run(["rebase", "--quiet", "origin/\(Self.source)"], at: 360) }
+        #expect(await pushed(since: start, at: 370) == false)
+        try await run(["rebase", "--abort"], at: 380)
+        #expect(await pushed(since: start, at: 370) == false)
+
+        // The next fix's push is rejected, as someone pushed meanwhile, to another file, and its rebase on that goes
+        // through, on a detached HEAD; it pushes, and its turn ends.
+        try await run(["checkout", "--quiet", "--detach", "origin/\(Self.source)"], at: 390)
+        start = try await remote()
+        try await commit("Last", to: "last.txt", at: 400)
+        try await pushFromElsewhere("Fourth", to: "fourth.txt", fixture)
+        try await run(["fetch", "--quiet", "origin"], at: 410)
+        try await run(["rebase", "--quiet", "origin/\(Self.source)"], at: 420)
+        try await push(at: 430)
+        #expect(await git.stoppedPartway(checkout, at: at(420).addingTimeInterval(0.5)) == nil)
+        #expect(await git.stoppedPartway(checkout, at: at(440)) == false)
+        #expect(await pushed(since: start, at: 440) == true)
+    }
+
+    /// What git's log of where HEAD was says of a rebase, a merge, a cherry-pick or a revert going on at a time in a second,
+    /// and where a ref was then, from how it moved alone.
+    @Test func tellsFromHowHEADMovedWhatWasGoingOn() {
+        let (a, b) = (String(repeating: "a", count: 40), String(repeating: "b", count: 40))
+        func moves(_ entries: [(Int, String)]) -> [Git.Move] {
+            entries.reversed().map { Git.Move(second: $0.0, commit: a, subject: $0.1) }
+        }
+        func partway(_ entries: [(Int, String)], _ now: Git.Partway = .nothing, at second: Int) -> Bool? {
+            Git.stoppedPartway(moves(entries), now: now, at: second)
+        }
+        // A rebase, from its start to its calling off, or its finish; what it logs in that second may have come after it.
+        let aborted = [(10, "rebase (start): checkout origin/main"), (10, "rebase (pick): Mine"), (30, "rebase (abort): returning to \(b)")]
+        #expect(partway(aborted, at: 5) == false)
+        #expect(partway(aborted, at: 10) == nil)
+        #expect(partway(aborted, at: 20) == true)
+        #expect(partway(aborted, at: 30) == nil)
+        #expect(partway(aborted, at: 40) == false)
+        #expect(partway([(10, "rebase (start): checkout x"), (20, "rebase (continue): Mine"), (25, "rebase (finish): returning to refs/heads/b")], at: 22) == true)
+        // One on a detached HEAD logs no finish: its last step ends it, `git pull --rebase`'s too; one going on now hasn't
+        // ended, and one going on now whose start isn't logged can't be told.
+        #expect(partway([(10, "pull --rebase (start): checkout \(b)"), (12, "pull --rebase (pick): Mine"), (20, "commit: More")], at: 15) == false)
+        #expect(partway([(10, "rebase (start): checkout x")], .rebase, at: 20) == true)
+        #expect(partway([(10, "rebase (start): checkout x"), (12, "rebase (pick): Mine"), (30, "rebase (start): checkout y")], .rebase, at: 11) == true)
+        #expect(partway([(10, "rebase (start): checkout x")], .rebase, at: 5) == false)
+        #expect(partway([(5, "commit: Mine")], .rebase, at: 20) == nil)
+        #expect(partway([(10, "rebase (continue): Mine"), (20, "rebase (finish): returning to refs/heads/b")], at: 15) == true)
+        // A merge, a cherry-pick or a revert going on now started since HEAD last moved; one going on then may have ended with
+        // HEAD's first move since.
+        #expect(partway([(10, "commit: Mine")], .other, at: 20) == nil)
+        #expect(partway([(10, "commit: Mine"), (30, "commit: Later")], .other, at: 20) == false)
+        #expect(partway([(10, "commit: Mine"), (30, "reset: moving to \(b)")], at: 20) == nil)
+        #expect(partway([(10, "commit: Mine"), (30, "commit (cherry-pick): Mine")], at: 20) == nil)
+        #expect(partway([], at: 20) == nil)
+        #expect(Git.rebaseStep("rebase (start): checkout origin/main") == .start)
+        #expect(Git.rebaseStep("pull (start): checkout \(b)") == .start)
+        #expect(Git.rebaseStep("rebase (pick): Mine") == .step)
+        #expect(Git.rebaseStep("rebase (update-ref): refs/heads/b") == .step)
+        #expect(Git.rebaseStep("rebase (abort): returning to \(b)") == .end)
+        #expect(Git.rebaseStep("commit (merge): Merge branch 'main'") == nil)
+        #expect(Git.rebaseStep("commit (cherry-pick): Mine") == nil)
+        #expect(Git.rebaseStep("checkout: moving from main to b") == nil)
+        #expect(Git.rebaseStep("") == nil)
+
+        // Where a ref was: as the second before ended, unless it moved to another commit in that second.
+        let refMoves = [Git.Move(second: 20, commit: b, subject: "commit: Later"), Git.Move(second: 10, commit: a, subject: "commit: Mine")]
+        #expect(Git.commit(at: 5, of: refMoves) == nil)
+        #expect(Git.commit(at: 15, of: refMoves) == a)
+        #expect(Git.commit(at: 20, of: refMoves) == nil)
+        #expect(Git.commit(at: 25, of: refMoves) == b)
+        #expect(Git.commit(at: 20, of: [Git.Move(second: 20, commit: a, subject: "checkout: moving from a to a")] + refMoves.dropFirst()) == a)
+    }
+
+    /// A push moves origin/<branch> as the remote's fetch settings map the branch to it: by default, but not in a clone of
+    /// one other branch, one that maps it elsewhere, or one that leaves it out.
+    @Test(.timeLimit(.minutes(5)))
+    func tellsWhichBranchesAPushTracks() async throws {
+        let fixture = try await RepositoryFixture()
+        defer { fixture.remove() }
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment)
+        let checkout = fixture.checkout
+        func fetching(_ refspecs: [String]) async throws -> Bool? {
+            _ = try? await git.run(["-C", checkout.path, "config", "--unset-all", "remote.origin.fetch"], timeout: 30)
+            for refspec in refspecs {
+                try await fixture.git(["-C", checkout.path, "config", "--add", "remote.origin.fetch", refspec])
+            }
+            return await git.tracksPushes(to: Self.source, in: checkout)
+        }
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/origin/*"]) == true)
+        #expect(try await fetching(["+refs/heads/main:refs/remotes/origin/main"]) == false)
+        #expect(try await fetching(["+refs/heads/main:refs/remotes/origin/main", "refs/heads/\(Self.source):refs/remotes/origin/\(Self.source)"]) == true)
+        #expect(try await fetching(["+refs/heads/users/*:refs/remotes/origin/users/*"]) == true)
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/upstream/*"]) == false)
+        #expect(try await fetching(["+refs/heads/*:refs/remotes/origin/*", "^refs/heads/users/*"]) == false)
+        #expect(try await fetching([]) == false)
+        #expect(await git.tracksPushes(to: Self.source, in: fixture.folder.appendingPathComponent("nowhere")) == nil)
+    }
+
     @Test func putsWorktreesNextToTheRepositoryEachInAFolderOfItsOwn() {
         let root = URL(fileURLWithPath: "/Users/robin/dev/repos/Storefront")
         let folder = WorktreeLocation.defaultFolder(for: root)

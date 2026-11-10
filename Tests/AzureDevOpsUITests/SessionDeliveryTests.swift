@@ -439,9 +439,24 @@ private final class TakenAt: Sendable {
 
         try work(session, in: checkout, home: home)
         target = "main"
-        #expect(await store.deliver("Push and reply", to: choice(session), checkingPush: pullRequest) == .sent)
+        let plain = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .pushAndReply, parts: [.thread(11)])
+        #expect(await store.deliver("Push and reply", to: choice(session), about: plain, checkingPush: pullRequest) == .sent)
         #expect(ext.received == ["Push and reply"])
         #expect(copied.isEmpty)
+        // A fix sent with Push and Reply on keeps the pull request's branch, and the commit git just fetched it at in the
+        // session's checkout, for whether it pushed a commit of its own once its turn is done; a plain Push & Reply keeps
+        // neither.
+        let shipping = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .pushAndReply, parts: [.thread(12)], fixes: true)
+        #expect(await store.deliver("Fix and push", to: choice(session), about: shipping, checkingPush: pullRequest) == .sent)
+        #expect(ext.received == ["Push and reply", "Fix and push"])
+        let fetched = try await ProcessRunner().run(
+            URL(fileURLWithPath: "/usr/bin/git"), arguments: ["-C", checkout.path, "rev-parse", "refs/remotes/origin/\(pullRequest.sourceBranch)"],
+            environment: ["PATH": "/usr/bin:/bin", "HOME": home.path, "GIT_CONFIG_NOSYSTEM": "1"], timeout: 60
+        )
+        let commit = String(decoding: fetched.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(commit.count == 40)
+        #expect(store.settings.copilotSentPrompts.map(\.source) == [nil, pullRequest.sourceBranch])
+        #expect(store.settings.copilotSentPrompts.map(\.head) == [nil, commit])
     }
 
     /// A Push & Reply whose prompt names main doesn't go once the list reads that the pull request merges into release/x,
