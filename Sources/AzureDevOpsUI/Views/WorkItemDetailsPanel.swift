@@ -44,7 +44,7 @@ struct WorkItemDetailsPanel: View {
                         .padding(.bottom, 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // A pull request or a session linked to it opens its page here, a work item its details.
-                        .environment(\.itemNavigation, ItemNavigation(trail: [item.linkRef] + details.pages) { ref in navigate(to: ref) })
+                        .environment(\.itemNavigation, navigation(item))
                         // A composer in place, on a pull request's page, scrolls itself into view as it opens.
                         .environment(\.detailsScroll, proxy)
                     }
@@ -100,6 +100,11 @@ struct WorkItemDetailsPanel: View {
     }
 
     private var me: String { sprint.board?.me ?? "" }
+
+    /// Where what's linked to the work item opens, from its details and their ⋯'s links: what `navigate` opens it as.
+    private func navigation(_ item: WorkItem) -> ItemNavigation {
+        ItemNavigation(trail: [item.linkRef] + details.pages) { ref in navigate(to: ref) }
+    }
 
     /// "Back to Bug 5110: Coupon totals round down", or to the page before.
     private func backHelp(_ item: WorkItem) -> String {
@@ -278,7 +283,9 @@ struct WorkItemDetailsPanel: View {
             Divider()
             CopilotSendMenuItems(item: item)
         }
+        // A pull request in them shows over the details, as from Where It Stands.
         LinkMenuItems(item.linkRef)
+            .environment(\.itemNavigation, navigation(item))
     }
 
     private static func copy(_ text: String) {

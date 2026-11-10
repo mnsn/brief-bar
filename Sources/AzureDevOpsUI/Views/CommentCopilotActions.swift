@@ -583,10 +583,15 @@ struct CommentComposer: View {
     /// Push and Reply, which BriefBar keeps as you last left it, for the next fix.
     static let shipsTitle = "Push and reply once it's fixed"
 
-    /// What Push and Reply does: on a thread's Fix, or on Fix All.
+    /// What Push and Reply does: on a thread's Fix, or on Fix All. It commits all its session changed, so it pushes fixes
+    /// made there before that you haven't pushed, which the composer's note names; and it replies on a thread it doesn't
+    /// change, saying why.
     static func shipsHelp(fixAll: Bool) -> String {
         let threads = fixAll ? "on the threads it fixed, and resolves them" : "on the thread, and resolves it"
-        return "Once it builds and its tests pass, Copilot commits, pushes the branch and replies \(threads), as you, as Push & Reply does. BriefBar keeps your choice for the next fix."
+        let unchanged = fixAll
+            ? "On a thread it changes nothing for, it replies why, and leaves it active."
+            : "When it changes nothing for it, it doesn't push, but replies why, and leaves the thread active."
+        return "Once it builds and its tests pass, Copilot commits all the session changed, other fixes there you haven't pushed included, pushes the branch, and replies \(threads), as you, as Push & Reply does. \(unchanged) BriefBar keeps your choice for the next fix."
     }
 
     /// What a comment's fix does about pushing, for Fix's and Fix All's tooltips, as Push and Reply was last left.

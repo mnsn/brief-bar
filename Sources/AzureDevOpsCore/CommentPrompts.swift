@@ -63,8 +63,8 @@ extension PullRequestPrompt {
     ///   - suggestion: a suggested change to apply as it's written.
     ///   - answer: what a session said of it with Explain, which what you want may point to, such as "the second way".
     ///   - ships: once it's done, it commits and pushes, as Push & Reply would (`pushSteps`), then replies on the thread and
-    ///     resolves it, as Fix asks with Push and Reply on; when it changed nothing for it, it still pushes what else the
-    ///     session changed, as Push & Reply would, but replies why, and leaves the thread active.
+    ///     resolves it, as Fix asks with Push and Reply on; when it changed nothing for it, it doesn't commit or push, but
+    ///     replies why, and leaves the thread active.
     public static func fixThread(
         _ record: PRRecord, thread: ReviewThread, code: ThreadExcerpt?, how: String?, applying suggestion: CommentSuggestion? = nil,
         answer: CopilotAnswer? = nil, workplace: Workplace = .worktree, ships: Bool = false
@@ -97,10 +97,9 @@ extension PullRequestPrompt {
             Don't reply on the pull request's other threads.
             """]))
         parts.append("""
-            If you didn't change anything for it, still take the steps above, which push what else you changed here, if \
-            anything, but reply on the thread why, and leave it active. Don't complete, approve or abandon the pull request, \
-            and don't change pipelines. End with a short summary of what you changed for it, the commit you pushed and what \
-            you replied.
+            If you didn't change anything for it, don't commit or push: only reply on the thread why, and leave it active. \
+            Don't complete, approve or abandon the pull request, and don't change pipelines. End with a short summary of what \
+            you changed for it, the commit you pushed and what you replied.
             """)
         return parts.joined(separator: "\n\n")
     }

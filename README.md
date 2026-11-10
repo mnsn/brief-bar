@@ -182,8 +182,10 @@ work or a new one, and the model.
   **Fix with Copilot…** is on notifications too, when your build fails, someone comments or your pull request conflicts.
 - **Ask a session** where it stands, or why it changed something, with **Ask…**. It answers aside, in a copy of the
   session, so nothing in it changes.
-- **Ship the fix** with **Push & Reply**, which pushes a session's fixes and replies on the threads it fixed, as you. Or
-  check **Push and reply once it's fixed** as you send a fix.
+- **Ship the fix** with **Push & Reply**, which commits and pushes all a session changed and replies on the threads it
+  fixed, as you. Or check **Push and reply once it's fixed** in a comment's **Fix** or **Fix All**, for Copilot to do
+  the same once it's fixed: the composer names any other fixes in the session that would go too, and a thread it
+  changed nothing for gets a reply saying why.
 - **Or do it yourself.** With **Make Changes in Azure DevOps** on, reply to comments, resolve threads, edit or delete
   your own comments and change tags, as you, without opening Azure DevOps.
 

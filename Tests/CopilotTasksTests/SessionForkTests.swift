@@ -431,6 +431,7 @@ import Testing
         #expect(run.id == FakeCopilot.fork)
         #expect(forked == FakeCopilot.fork)
         #expect(run.forkedFrom == FakeCopilot.session)
+        #expect(run.forkedAt == run.startedAt)
         #expect(run.workItem == sampleItem.reference)
         #expect(run.isAppSession == nil)
         #expect(run.isValid)
@@ -474,6 +475,9 @@ import Testing
         #expect(next.id == fork.id)
         #expect(next.worktree == fork.worktree)
         #expect(next.forkedFrom == FakeCopilot.session)
+        // Made as its first task started, whenever it goes on.
+        #expect(fork.forkedAt == fork.startedAt)
+        #expect(next.forkedAt == fork.forkedAt)
         #expect(forked == nil)
         #expect(fixture.methods == ["connect", "sessions.fork"])
     }

@@ -138,7 +138,7 @@ import Testing
         #expect(replaced.stage == .inProgress && replaced.mark?.by == cart)
         #expect(AgentText.stage(replaced, stages: stages) == """
             Its stage: In progress: ‘Cart’ is on it (set 1m ago, after you). You'd set Teammate's review 2h ago, which a \
-            session's later change replaced: you can put yours back.
+            session's later change replaced: you can put yours back while that lasts. Once it ends, yours goes too.
             """)
         #expect(AgentText.stage(try #require(stages.readings[ref(4094)]), stages: stages)
             == "Its stage: Teammate's review: Waiting on Priya (You set it 2h ago).")
@@ -147,8 +147,47 @@ import Testing
         #expect(stages.columns[.inProgress] == [ref(4093)])
     }
 
+    /// Where a session's In progress shows over a Your review you set, `pull_request` says yours shows again once it
+    /// ends, as it does once the session's new commits come.
+    @Test func yourYourReviewUnderASessionsInProgressShowsAgainOnceItEnds() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        let cart = try #require(ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b"))
+        var marks = StageMarks()
+        _ = marks.set(StageMark(stage: .yourReview, at: now - 7_200), of: ref, for: "robin@contoso.com", at: now)
+        var sessionStages = SessionStages()
+        var cartStage = SessionStage(session: cart)
+        cartStage.set(StageMark(stage: .inProgress, at: now - 60, commit: "a1b2c3d"), of: ref)
+        sessionStages.replace(cartStage)
+        let kept = OrderKept(
+            orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
+            sessionStages: sessionStages
+        )
+        let copilot = MCPRelated.StageSessions(listed: [cart: .init(activity: .working, since: now - 120, name: "Cart")])
+        func stages(commit: String) -> AgentStages {
+            let facts = [ref: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: commit)]
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: copilot, kept: kept, account: "robin@contoso.com", now: now
+            )
+        }
+
+        let working = stages(commit: "a1b2c3d")
+        let over = try #require(working.readings[ref])
+        #expect(over.replacedOutlasts)
+        #expect(AgentText.stage(over, stages: working) == """
+            Its stage: In progress: ‘Cart’ is on it (set 1m ago, after you). You'd set Your review 2h ago, which a \
+            session's later In progress shows over: you can put yours back while that lasts. Once it ends, yours shows \
+            again.
+            """)
+
+        let pushed = stages(commit: "e4f5a6b")
+        let again = try #require(pushed.readings[ref])
+        #expect(again.stage == .yourReview && again.isSetByYou && again.replaced == nil)
+    }
+
     /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps
-    /// in the preferences; one its slot doesn't have, as one in another stage, changes nothing.
+    /// in the preferences for the account the lists read with; one its slot doesn't have, as one in another stage, and
+    /// what another account chose, change nothing.
     @Test func whatYouChoseForUpNextComesFirstAsOnTheBoard() async throws {
         let now = Date(timeIntervalSince1970: 1_792_000_000)
         func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
@@ -157,24 +196,31 @@ import Testing
             ref(4133): StageFacts(role: .author, changesWanted: "Priya wants changes", since: now - 9_000),
             ref(4099): StageFacts(role: .author, waitingFor: "Waiting on Priya", since: now),
         ]
-        func columns(_ picks: UpNextPicks) -> [PullRequestStage: [ItemRef]] {
+        func kept(_ picks: UpNextPicks, for account: String = "Robin@contoso.com") -> UpNextPicks.Kept {
+            var kept = UpNextPicks.Kept()
+            kept.set(picks, for: account, at: now)
+            return kept
+        }
+        func columns(_ picks: UpNextPicks.Kept, account: String? = "robin@contoso.com") -> [PullRequestStage: [ItemRef]] {
             let kept = OrderKept(
                 orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: StageMarks(),
                 sessionStages: SessionStages(), picks: picks
             )
             return AzureDevOpsAgent.stages(
-                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: "robin@contoso.com", now: now
+                facts: facts, pullRequests: [], copilot: MCPRelated.StageSessions(), kept: kept, account: account, now: now
             ).columns
         }
-        #expect(columns(UpNextPicks())[.inProgress] == [ref(4131), ref(4133)])
-        #expect(columns(UpNextPicks([.fix: ref(4133)]))[.inProgress] == [ref(4133), ref(4131)])
-        #expect(columns(UpNextPicks([.fix: ref(4099)]))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(UpNextPicks.Kept())[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)])))[.inProgress] == [ref(4133), ref(4131)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4099)])))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)]), for: "sam@contoso.com"))[.inProgress] == [ref(4131), ref(4133)])
+        #expect(columns(kept(UpNextPicks([.fix: ref(4133)])), account: nil)[.inProgress] == [ref(4131), ref(4133)])
 
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
-        UpNextPicks([.fix: ref(4133)]).save(to: defaults)
+        kept(UpNextPicks([.fix: ref(4133)])).save(to: defaults)
         let reader = AzureDevOpsReader(demo: false, organizations: [], defaults: defaults)
-        #expect(await reader.orderKept(now: now)?.picks == UpNextPicks([.fix: ref(4133)]))
+        #expect(await reader.orderKept(now: now)?.picks == kept(UpNextPicks([.fix: ref(4133)])))
     }
 
     /// A session's In progress ends for agents too as that session finishes, though the Copilot app doesn't record it on the

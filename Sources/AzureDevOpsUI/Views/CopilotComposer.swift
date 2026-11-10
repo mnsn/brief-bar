@@ -1204,8 +1204,10 @@ struct CopilotComposerView: View {
     private func send() {
         guard canSend else { return }
         // The prompt names the branch the pull request merged into as the window wrote it, which BriefBar checks what the
-        // session would push against: once the list has read another, it doesn't go.
-        if case .pullRequest(let pullRequest, .pushAndReply) = subject, let problem = store.retargetProblem(pullRequest) {
+        // session would push against: once the list has read another, it doesn't go; nor once the pull request was
+        // completed or abandoned, as a comment's composer has it.
+        if case .pullRequest(let pullRequest, .pushAndReply) = subject,
+           let problem = store.closedProblem(pullRequest) ?? store.retargetProblem(pullRequest) {
             deliveryProblem = problem
             return
         }
