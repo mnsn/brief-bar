@@ -138,13 +138,51 @@ import Testing
         #expect(replaced.stage == .inProgress && replaced.mark?.by == cart)
         #expect(AgentText.stage(replaced, stages: stages) == """
             Its stage: In progress: ‘Cart’ is on it (set 1m ago, after you). You'd set Teammate's review 2h ago, which a \
-            session's later change replaced: you can put yours back.
+            session's later change replaced: you can put yours back while that lasts. Once it ends, yours goes too.
             """)
         #expect(AgentText.stage(try #require(stages.readings[ref(4094)]), stages: stages)
             == "Its stage: Teammate's review: Waiting on Priya (You set it 2h ago).")
         #expect(stages.readings[ref(4095)]?.stage == .yourReview)
         #expect(stages.readings[ref(4095)]?.mark == nil)
         #expect(stages.columns[.inProgress] == [ref(4093)])
+    }
+
+    /// Where a session's In progress shows over a Your review you set, `pull_request` says yours shows again once it
+    /// ends, as it does once the session's new commits come.
+    @Test func yourYourReviewUnderASessionsInProgressShowsAgainOnceItEnds() throws {
+        let now = Date(timeIntervalSince1970: 1_792_000_000)
+        let ref = ItemRef.pullRequest(organization: "contoso", number: 4093)
+        let cart = try #require(ItemRef.session("7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b"))
+        var marks = StageMarks()
+        _ = marks.set(StageMark(stage: .yourReview, at: now - 7_200), of: ref, for: "robin@contoso.com", at: now)
+        var sessionStages = SessionStages()
+        var cartStage = SessionStage(session: cart)
+        cartStage.set(StageMark(stage: .inProgress, at: now - 60, commit: "a1b2c3d"), of: ref)
+        sessionStages.replace(cartStage)
+        let kept = OrderKept(
+            orders: DeclaredOrders(), evidence: OrderEvidence(), focus: nil, changes: OrderChanges(), marks: marks,
+            sessionStages: sessionStages
+        )
+        let copilot = MCPRelated.StageSessions(listed: [cart: .init(activity: .working, since: now - 120, name: "Cart")])
+        func stages(commit: String) -> AgentStages {
+            let facts = [ref: StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "", commit: commit)]
+            return AzureDevOpsAgent.stages(
+                facts: facts, pullRequests: [], copilot: copilot, kept: kept, account: "robin@contoso.com", now: now
+            )
+        }
+
+        let working = stages(commit: "a1b2c3d")
+        let over = try #require(working.readings[ref])
+        #expect(over.replacedOutlasts)
+        #expect(AgentText.stage(over, stages: working) == """
+            Its stage: In progress: ‘Cart’ is on it (set 1m ago, after you). You'd set Your review 2h ago, which a \
+            session's later In progress shows over: you can put yours back while that lasts. Once it ends, yours shows \
+            again.
+            """)
+
+        let pushed = stages(commit: "e4f5a6b")
+        let again = try #require(pushed.readings[ref])
+        #expect(again.stage == .yourReview && again.isSetByYou && again.replaced == nil)
     }
 
     /// `needs_me` lists what you chose for an Up Next slot first in its stage, as the Board does, from what the app keeps

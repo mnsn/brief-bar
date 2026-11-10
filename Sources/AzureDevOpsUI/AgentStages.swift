@@ -171,12 +171,17 @@ extension AgentText {
     }
 
     /// `pull_request`'s stage: "Its stage: Your review: ‘Cart’ says it's ready (set 5m ago, after you). You'd set
-    /// Teammate's review 2h ago, which a session's later change replaced: you can put yours back."
+    /// Teammate's review 2h ago, which a session's later change replaced: you can put yours back while that lasts.
+    /// Once it ends, yours goes too." A Your review of yours under a session's In progress outlasts it: "…, which a
+    /// session's later In progress shows over: … Once it ends, yours shows again." (`StageReading.replacedOutlasts`).
     static func stage(_ reading: StageReading, stages: AgentStages) -> String {
         var line = "Its stage: \(reading.stage.title): \(words(reading, stages: stages))."
         if let yours = reading.replaced {
-            line += " You'd set \(yours.stage.title) \(StageText.agoWords(yours.at, now: stages.now)), which a session's later "
-                + "change replaced: you can put yours back."
+            let (over, once) = reading.replacedOutlasts
+                ? ("later In progress shows over", "shows again") : ("later change replaced", "goes too")
+            let ago = StageText.agoWords(yours.at, now: stages.now)
+            line += " You'd set \(yours.stage.title) \(ago), which a session's \(over): you can put yours back "
+                + "while that lasts. Once it ends, yours \(once)."
         }
         return line
     }

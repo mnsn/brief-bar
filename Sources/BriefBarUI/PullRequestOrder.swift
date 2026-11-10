@@ -1712,7 +1712,9 @@ package final class PullRequestOrder: ObservableObject {
     /// Each pull request's stage again: from what its source tells, the sessions on it, the stage you set and those the
     /// sessions it lists set, the latest of them while it stands, and its order. Once the latest no longer stands, or the
     /// pull request merged or closed, none of them counts: yours goes, and so do the sessions', those it doesn't list now
-    /// too, from what they keep, so that an older one never comes back (`SessionStages.end`). A stage you set that no longer stands goes too. One you
+    /// too, from what they keep, so that an older one never comes back (`SessionStages.end`); but a Your review of
+    /// yours that outlasts sessions' In progress stays, with the sessions' Your reviews that follow it
+    /// (`StageRules.counted`). A stage you set that no longer stands goes too. One you
     /// set kept in memory before BriefBar knew the account, or while it was only sent to you, is kept with the account
     /// once it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
     /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
@@ -1751,9 +1753,11 @@ package final class PullRequestOrder: ObservableObject {
             )
             if counted.latestEnded {
                 // What every session set on it, listed or not: all of it once it merged or closed, else what the latest set
-                // before it ended, so that what an archived session set doesn't come back once it's listed again.
+                // before it ended, so that what an archived session set doesn't come back once it's listed again; but
+                // the Your reviews that follow yours, where yours outlasts what ended (`StageMark.outlasts`).
                 let latest = ([mine].compactMap { $0 } + (sessionMarks[ref] ?? [])).map(\.at).max() ?? .distantPast
-                end(sessionStages.marks(on: ref, setBy: facts.state.isOpen ? latest : nil), of: ref)
+                let ended = sessionStages.marks(on: ref, setBy: facts.state.isOpen ? latest : nil)
+                end(ended.filter { mark in counted.yours.map(mark.follows) != true }, of: ref)
             }
             if mine != nil, counted.yours == nil {
                 marksInMemory[ref] = nil

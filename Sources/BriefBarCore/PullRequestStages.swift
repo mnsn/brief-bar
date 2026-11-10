@@ -239,6 +239,14 @@ public struct StageMark: Equatable, Sendable {
     public func follows(_ yours: StageMark) -> Bool {
         followsYours && yours.isYours && yours.stage == .yourReview && at > yours.at
     }
+
+    /// Whether this is a Your review of yours that outlasts what sessions set after it: only In progress, as a session
+    /// works on it, and Your reviews that follow it (`follows`). It lasts until you change it, so it shows again once
+    /// those end; any other stage a session set after it replaced it (`StageRules.counted`).
+    public func outlasts(_ theirs: [StageMark]) -> Bool {
+        isYours && stage == .yourReview
+            && theirs.allSatisfy { $0.at <= at || $0.stage == .inProgress || $0.follows(self) }
+    }
 }
 
 /// What a pull request's order says of merging it, for Can merge and Waits.
@@ -344,8 +352,12 @@ public struct StageReading: Equatable, Sendable {
     public var since: Date?
     /// What you or a session set, when that's what it shows: it says who.
     public var mark: StageMark?
-    /// Yours, which a session's later change replaced: Put Yours Back makes it the latest again.
+    /// Yours, which a session's later change replaced: Put Yours Back makes it the latest again, while that change
+    /// lasts. Once it ends, yours goes too, unless it outlasts it (`replacedOutlasts`).
     public var replaced: StageMark?
+    /// Whether yours, which `replaced` holds, outlasts what replaced it: a Your review of yours under sessions' In
+    /// progress alone shows again once that ends (`StageMark.outlasts`).
+    public var replacedOutlasts: Bool
     /// Yours, which a session's later Your review followed, as `--mcp` keeps one where yours was the latest stage set, as
     /// a session that pushed says its work is ready: without votes, so it lasts as yours does. It shows the session's, and
     /// Let BriefBar Decide forgets both.
@@ -362,13 +374,14 @@ public struct StageReading: Equatable, Sendable {
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
-        followed: StageMark? = nil, isOnBoard: Bool = true, alsoFailing: String? = nil
+        replacedOutlasts: Bool = false, followed: StageMark? = nil, isOnBoard: Bool = true, alsoFailing: String? = nil
     ) {
         self.stage = stage
         self.why = why
         self.since = since
         self.mark = mark
         self.replaced = replaced
+        self.replacedOutlasts = replacedOutlasts
         self.followed = followed
         self.isOnBoard = isOnBoard
         self.alsoFailing = alsoFailing
@@ -495,7 +508,8 @@ public enum StageRules {
                 return StageReading(stage: .teammateReview, why: why, since: mark.at, mark: mark, replaced: replaced)
             default:
                 return StageReading(
-                    stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced, followed: followed
+                    stage: mark.stage, why: .set, since: mark.at, mark: mark, replaced: replaced,
+                    replacedOutlasts: replaced?.outlasts(marks.filter { !$0.isYours }) == true, followed: followed
                 )
             }
         }
@@ -545,9 +559,10 @@ public enum StageRules {
     /// What you and the sessions set on a pull request that counts now (`reading`'s marks): yours while it stands, and
     /// the sessions', while the latest of them all stands and the pull request is open. Once the latest ends, or it merged
     /// or closed, none counts, and `latestEnded` says so, for what keeps them to end them all, so that an older one never
-    /// comes back. A session's Your review that followed one of yours counts only while that one of yours is there
-    /// (`StageMark.follows`): once yours is gone, as with Undo, also as you took it away while `--mcp` kept it, it lasts
-    /// no more on its own.
+    /// comes back; but a Your review of yours that only sessions' In progress came after, which outlasts it, stays,
+    /// with the sessions' Your reviews that follow it (`StageMark.outlasts`). A session's Your review that followed one
+    /// of yours counts only while that one of yours is there (`StageMark.follows`): once yours is gone, as with Undo,
+    /// also as you took it away while `--mcp` kept it, it lasts no more on its own.
     /// - Parameters:
     ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
     ///   - setters: what those sessions do now, on it or not (`stands`).
@@ -557,8 +572,12 @@ public enum StageRules {
         let theirs = theirs.filter { !$0.followsYours || yours.map($0.follows) == true }
         let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
         let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
-        let mine = yours.flatMap { latestEnded || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0 }
-        return (mine, latestEnded ? [] : theirs, latestEnded)
+        let lasts = facts.state.isOpen && yours?.outlasts(theirs) == true
+        let mine = yours.flatMap {
+            (latestEnded && !lasts) || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0
+        }
+        guard latestEnded else { return (mine, theirs, false) }
+        return (mine, mine.map { yours in theirs.filter { $0.follows(yours) } } ?? [], true)
     }
 
     /// A stage you or a session set now, keeping of what it was set over only what `stands` reads to end it: the
