@@ -92,6 +92,12 @@ enum MyWorkFacts {
         return sprint.filter { $0.story != $0.ref || !storiesOfTasks.contains($0.ref) } + outside
     }
 
+    /// Where Show Them takes the Board: the first card of what the line counts, yours outside the sprint's iteration
+    /// (`OutsideWork.notInSprint`), not one in it that its board doesn't have.
+    static func card(of outside: OutsideWork, on board: PullRequestBoard) -> ItemRef? {
+        card(of: Set(outside.notInSprint.map(\.linkRef)), on: board)
+    }
+
     /// Where Show Them takes the Board: the first card of its own of your work outside the sprint, lanes from the top, columns
     /// from the left; else the first pull request's card that names one; nil with neither.
     static func card(of outside: Set<ItemRef>, on board: PullRequestBoard) -> ItemRef? {
@@ -606,8 +612,7 @@ private struct MyWorkContent: View {
     /// Show Them: + All My Tasks, with the Board at the first of them, which takes the keyboard's focus, its column opened for
     /// the moment where it's folded.
     private func showOutside() {
-        let refs = Set(outside?.items.map(\.linkRef) ?? [])
-        let card = board(showing: .allTasks).flatMap { MyWorkFacts.card(of: refs, on: $0) }
+        let card = outside.flatMap { outside in board(showing: .allTasks).flatMap { MyWorkFacts.card(of: outside, on: $0) } }
         settings.myWorkShows = .allTasks
         if let card { ordering.revealedCard = card }
     }

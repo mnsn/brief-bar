@@ -33,15 +33,20 @@ public struct OutsideWork: Sendable, Equatable {
     /// What a card says of one in no sprint, at its project's root.
     public static let noSprint = "No sprint"
 
-    /// How many of them aren't in the sprint's iteration, what My Work's line counts: those in its iteration that its board
-    /// doesn't have, such as one under another team's area, have cards, but aren't counted.
+    /// Those not in the sprint's iteration, what My Work's line counts and Show Them shows: those in its iteration that its
+    /// board doesn't have, such as one under another team's area, have cards, but aren't counted.
+    public var notInSprint: [WorkItem] {
+        items.filter { !isInSprint($0) }
+    }
+
+    /// How many of them aren't in the sprint's iteration (`notInSprint`).
     public var count: Int {
-        items.filter { !isInSprint($0) }.count
+        notInSprint.count
     }
 
     /// How many of those are bugs, by their type's name, which the line counts apart from tasks.
     public var bugCount: Int {
-        items.filter { !isInSprint($0) && $0.type.caseInsensitiveCompare("Bug") == .orderedSame }.count
+        notInSprint.filter { $0.type.caseInsensitiveCompare("Bug") == .orderedSame }.count
     }
 
     /// The story a work item is for, whose mission's lane it goes in, as the sprint has it: its parent, for a task; itself,

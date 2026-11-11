@@ -1932,7 +1932,7 @@ pull request's card dropped on To start or Completed, are refused, saying why (`
 With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
 with + Sprint Tasks offering **Show Them**, + All My Tasks, with the Board at the first card of that work
-(`MyWorkFacts.card`): its own, lanes from the top, columns from the left, else a pull request's that names one. Its
+(`MyWorkFacts.card`, of `OutsideWork.notInSprint`): its own, lanes from the top, columns from the left, else a pull request's that names one. Its
 column opens for the moment where it's folded, and its title flashes; the page scrolls to its lane, as to a mission's; and
 the card takes the keyboard's focus, for VoiceOver to read it (`PullRequestOrder.revealedCard`); or says "All your open
 tasks and bugs are in Sprint 42";

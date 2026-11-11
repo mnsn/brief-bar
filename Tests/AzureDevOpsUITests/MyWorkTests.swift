@@ -272,6 +272,23 @@ import Testing
         #expect(card(sprint: [work(1, .toDo)], outside: []) == nil)
     }
 
+    /// Show Them goes to what the line counts: past one of yours in the sprint's own iteration that its board doesn't have,
+    /// such as one under another team's area, which has a card with + All My Tasks, but isn't counted.
+    @Test func showThemPassesYourWorkInTheSprintsIterationThatTheLineDoesntCount() {
+        func item(_ id: Int, in sprint: String) -> WorkItem {
+            WorkItem(
+                id: id, organization: "contoso", project: "Storefront", type: "Task", title: "Totals", state: "New", category: .proposed,
+                iteration: #"Storefront\"# + sprint
+            )
+        }
+        let outside = OutsideWork(items: [item(20, in: "Sprint 42"), item(21, in: "Sprint 41")], sprintPath: #"Storefront\Sprint 42"#)
+        let work = outside.items.map { SprintWork(ref: $0.linkRef, story: nil, progress: .toDo, pullRequests: [], copilotWorks: false) }
+        let board = PullRequestBoard.make(stages: [:], missions: [], kinds: PullRequestsByMission.kinds)
+            .withWork(work, missions: [], stories: [])
+        #expect(outside.count == 1)
+        #expect(MyWorkFacts.card(of: outside, on: board) == outside.items[1].linkRef)
+    }
+
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and
     /// window shares, shows one since: that pull request's card isn't marked, and while the details cover the Board, ⌘→ and
     /// ⌘← don't move it. A pull request's card clicked last, its details show and the keys move it; with none, a work item's
