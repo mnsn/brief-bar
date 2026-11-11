@@ -1843,8 +1843,9 @@ in the same Tab order, its ring drawn inside it, and owes it to its first card i
 Return, Space, a click or VoiceOver's action. A click that folds or opens a column while another is open for the moment
 is kept, unless BriefBar would do the same once that moment ends. A drop leaves each column as it folds once the drag's
 springs end: one that stays folded, with the card in it, as one you folded, counts it in its strip, and its title
-flashes (`PullRequestBoard.foldsOnceMoved`, from the board before the drop, with the card as its reading has it once
-moved, so a session at work on it leaves it not your move there). Folding changes no stage, count or Up Next slot. The
+flashes (`PullRequestBoard.foldsOnceMoved`: the board before the drop with each of its pull requests at its stage
+once moved, so the column the card left no longer counts it, Set as Next to Merge's wait for the one you set counts,
+and a session at work on it leaves it not your move there). Folding changes no stage, count or Up Next slot. The
 Board, its lanes, the columns you folded or opened, and whether Up Next is folded are kept as choices only:
 `order.view`, which GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes`,
 `order.boardColumns` and `order.upNextFolded`.
