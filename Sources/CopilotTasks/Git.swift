@@ -203,7 +203,7 @@ public struct Git: Sendable {
         if tracked {
             // How origin/<branch> came to have it by then, as git's log of where it was says: without it, git can't tell.
             guard let moves = await moves(of: tracking, in: folder) else { return nil }
-            if let second, !Self.isOrdered(moves, around: second + 1) { return nil }
+            if let second, !Self.isOrdered(moves, around: second) { return nil }
             let then = moves.filter { $0.second <= second ?? .max }
             guard !then.isEmpty else { return nil }
             var first: Move?
@@ -239,14 +239,15 @@ public struct Git: Sendable {
         return before.commit
     }
 
-    /// Whether a ref's moves, the latest first (`moves(of:in:)`), are all from `second` on before they're all from before
-    /// it: whether git's log of them can place a time in `second` among them. git logs each move at the time
+    /// Whether a ref's moves, the latest first (`moves(of:in:)`), are those git logged after `second`, then those in it,
+    /// then those before it: whether its log can place a time in `second` among them. git logs each move at the time
     /// `GIT_COMMITTER_DATE` says, or else at the clock's, so a log can go back in time: as a clock set back has it, or a
     /// rebase with `--committer-date-is-author-date`, which logs each of its steps at its commit's author's time. Once it
-    /// goes back past `second`, it can't tell which of its moves came before a time in it.
+    /// goes back from `second`, or a later one, to before it, or from a later one to it, git can't tell which of its moves
+    /// came before a time in it.
     static func isOrdered(_ moves: [Move], around second: Int) -> Bool {
-        guard let before = moves.firstIndex(where: { $0.second < second }) else { return true }
-        return moves[before...].allSatisfy { $0.second < second }
+        let sides = moves.map { $0.second < second ? 0 : $0.second == second ? 1 : 2 }
+        return zip(sides, sides.dropFirst()).allSatisfy { $0 >= $1 }
     }
 
     /// Whether a folder's checkout was partway through a rebase, a merge, a cherry-pick or a revert as a turn there ended, at
@@ -272,23 +273,23 @@ public struct Git: Sendable {
     static func stoppedPartway(_ moves: [Move], now: Partway, at second: Int) -> Bool? {
         guard !moves.isEmpty, isOrdered(moves, around: second) else { return nil }
         var spans: [ClosedRange<Int>] = []
-        var open: (start: Int, last: Int)?
+        var open: ClosedRange<Int>?
         for move in moves.reversed() {
             switch rebaseStep(move.subject) {
             case .start?:
-                if let open { spans.append(span(open.start, open.last)) }
-                open = (move.second, move.second)
+                if let open { spans.append(open) }
+                open = move.second...move.second
             case .end?:
-                spans.append(span(open?.start ?? .min, move.second))
+                spans.append(open.map { span($0, move.second) } ?? Int.min...move.second)
                 open = nil
             case .step?:
-                open?.last = move.second
+                open = open.map { span($0, move.second) }
             case nil:
                 break
             }
         }
         if let open {
-            spans.append(span(open.start, now == .rebase ? .max : open.last))
+            spans.append(now == .rebase ? open.lowerBound...Int.max : open)
         } else if now == .rebase {
             // Going on, but git didn't log its start.
             return nil
@@ -306,9 +307,9 @@ public struct Git: Sendable {
         return unsure ? nil : false
     }
 
-    /// The seconds from one of a rebase's moves to another, whichever git logged at the earlier time.
-    private static func span(_ one: Int, _ other: Int) -> ClosedRange<Int> {
-        min(one, other)...max(one, other)
+    /// The seconds a rebase spans, from the earliest of its moves git logged to the latest, with one more.
+    private static func span(_ seconds: ClosedRange<Int>, _ second: Int) -> ClosedRange<Int> {
+        min(seconds.lowerBound, second)...max(seconds.upperBound, second)
     }
 
     /// What a move of HEAD was of a rebase.

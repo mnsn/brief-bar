@@ -429,6 +429,19 @@ import Testing
         #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: before, at: at(400)) == false)
         try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", pushed], at: base + 410)
 
+        // The other way about: someone else's commit came to it by a fetch in the second the turn ended, then the checkout's
+        // own, pushed over theirs, at an earlier time. The push came after what may have come after the end: git can't tell
+        // whether it came before it, until after both.
+        let again = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await commit("Over theirs", at: 500)
+        try await pushFromElsewhere("Theirs again", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"], at: base + 600)
+        let over = try await git.run(["-C", checkout.path, "rev-parse", "HEAD"], timeout: 30)
+        try await fixture.git(["-C", checkout.path, "push", "--quiet", "--force", "origin", "\(over):refs/heads/\(Self.source)"], at: base + 550)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: again, at: at(600).addingTimeInterval(0.5)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: again, at: at(700)) == true)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", pushed], at: base + 710)
+
         // Without git's log of where HEAD was, it can't tell where the checkout was as the turn ended, only where it is now;
         // without origin/<branch>'s, how the commit came to the branch, or when, whatever the branch has now.
         func log(of ref: String) async throws -> URL {
@@ -632,6 +645,13 @@ import Testing
         let continued = [(100, "rebase (start): checkout x"), (40, "rebase (continue): Mine"), (40, "rebase (finish): returning to refs/heads/b")]
         #expect(partway(continued + [(150, "rebase (start): checkout y"), (160, "rebase (pick): More")], at: 155) == true)
         #expect(partway(continued, at: 200) == false)
+        // Nor where it goes back from a later second to that one: what it logged then came after what it logged later.
+        let stepped = [(100, "rebase (start): checkout x"), (40, "rebase (pick): Mine"), (60, "rebase (finish): returning to refs/heads/b")]
+        #expect(partway(stepped, at: 40) == nil)
+        #expect(partway(stepped, at: 39) == false)
+        #expect(partway(stepped, at: 101) == false)
+        #expect(partway(dated, .rebase, at: 40) == nil)
+        #expect(partway(dated + [(60, "rebase (pick): More"), (150, "rebase (start): checkout y")], at: 40) == nil)
         // A merge, a cherry-pick or a revert going on now started since HEAD last moved; one going on then may have ended with
         // HEAD's first move since.
         #expect(partway([(10, "commit: Mine")], .other, at: 20) == nil)
@@ -656,12 +676,20 @@ import Testing
         #expect(Git.commit(at: 20, of: refMoves) == nil)
         #expect(Git.commit(at: 25, of: refMoves) == b)
         #expect(Git.commit(at: 20, of: [Git.Move(second: 20, commit: a, subject: "checkout: moving from a to a")] + refMoves.dropFirst()) == a)
-        // Its log going back in time past then, git can't tell where it was.
+        // Its log going back in time past then, or from a later second to then, git can't tell where it was.
         let back = [Git.Move(second: 10, commit: b, subject: "commit: Later"), Git.Move(second: 20, commit: a, subject: "commit: Mine")]
         #expect(Git.commit(at: 15, of: back) == nil)
         #expect(Git.commit(at: 25, of: back) == b)
+        let reset = [
+            Git.Move(second: 40, commit: a, subject: "reset: moving to \(a)"), Git.Move(second: 45, commit: b, subject: "commit: Later"),
+            Git.Move(second: 30, commit: a, subject: "commit: Mine"),
+        ]
+        #expect(Git.commit(at: 40, of: reset) == nil)
+        #expect(Git.commit(at: 46, of: reset) == a)
         #expect(Git.isOrdered(back, around: 5))
+        #expect(!Git.isOrdered(back, around: 10))
         #expect(!Git.isOrdered(back, around: 15))
+        #expect(!Git.isOrdered(back, around: 20))
         #expect(Git.isOrdered(back, around: 25))
     }
 
