@@ -448,10 +448,12 @@ on that card. Each column counts its cards: a pull request's once, with the work
 items with their pull requests only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers
 to turn it on until it is; and it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that
 work stays in To start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull
-requests aren't on your board, in a lane of the story's own; otherwise with the pull requests in no mission. Click it,
-or press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for
-its menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and
-⌘← say so instead.
+requests aren't on your board, in a lane of the story's own, which folds to its header once that work is all resolved
+or done, as a finished mission's lane does, saying what it holds, such as **1 merged · 2 completed**: click that, or
+press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. Click a card, or
+press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its
+menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘←
+say so instead.
 On My Work, **2 more ›** scrolls the Board to its column, opened if it's folded, a pull request's mission in its details
 shows its lane, and **Show By Status** shows Pull Requests by status. To start, Completed and work items' cards are only
 on the Board: stages, Up Next's slots, groups, counts and what agents are told stay as they were. While My Work shows

@@ -1818,7 +1818,7 @@ A column folds to a strip as you click its title, and opens as you click the str
 kept by column (`BoardFolds`), To start, a stage or Completed, folded or open; a click that does what BriefBar would do
 by itself then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no
 cards folds, and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip
-20, 10 between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar
+18, 10 between open columns and 3 beside a strip, each grown with Text Size in Windows, a strip to 22 at 150%), BriefBar
 folds, until they fit: Completed, Merged, Waits and To start, whatever they hold; then those where you wait, the one
 that needs least from you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and
 Approved, one step from done, last, then any other from the left; never one where it's your move
@@ -1826,7 +1826,8 @@ Approved, one step from done, last, then any other from the left; never one wher
 one in In progress that's your draft or that you set there, while no session writes it or asks you about it, which its
 flags say; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`), nor one you chose.
 What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points the Board has in a
-946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill bordered in its column's color where one of
+946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too, whose nine columns
+take 3 × 172 + 6 × 18 + 2 × 10 + 6 × 3 = 662. A strip's count is in a pill bordered in its column's color where one of
 its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or a problem Fix next ranks,
 `fixRank`, but none in Merged), which only marks it, and the strip wears its column's mark, To start's dashed ring,
 Approved's seal, Completed's checkmark or a dot: a shape as well as a color. With
@@ -1900,7 +1901,10 @@ request's that's out, which stays while Done lists it, as Merged's do; once it l
 have cards of their own there. Done work that a pull request in another column names, such as one held in Merged, is on
 that card. Completed counts its cards, as every column does: a pull request's once, whatever work items it names; where
 the Board is too narrow, it folds first (`BoardFolding.foldsFirst`). A pull request's card in Completed tells VoiceOver
-so before its stage, Merged. A finished mission's lane folds while none of its cards is work of yours still to do
+so before its stage, Merged. A story's lane whose work is all resolved or done, in Merged and Completed
+(`BoardLane.isFinishedStory`), folds to its header, as a finished mission's does, until you open it: its header doesn't
+say its pull requests aren't on your board yet, and the line under it says what it holds, "1 merged · 2 completed"
+(`finishedWork`). A finished mission's lane folds while none of its cards is work of yours still to do
 (`BoardLane.hasWorkToDo`): in To start or In progress, not resolved yet, or named by a pull request's card. The line a
 lane folds to takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation, so that Tab reaches
 what it hides, and Return, Space or a click folds the lane or shows it. The columns, their widths and their counts come

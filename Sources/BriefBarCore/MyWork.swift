@@ -194,14 +194,27 @@ extension BoardLane {
         }
     }
 
-    /// Whether it has cards of your work that's still to do, which keep a finished mission's lane from folding, as it would
-    /// hide them: in To start or In progress, or not resolved yet, as one still open whose pull request merged, in Merged;
-    /// or a pull request's card that names work of yours not resolved yet (`namesWorkToDo`). Resolved and done work folds
-    /// with it, as a merged pull request's card does.
+    /// Whether it has cards of your work that's still to do, which keep a finished mission's lane, or a story's, from
+    /// folding, as it would hide them: in To start or In progress, or not resolved yet, as one still open whose pull request
+    /// merged, in Merged; or a pull request's card that names work of yours not resolved yet (`namesWorkToDo`). Resolved and
+    /// done work folds with it, as a merged pull request's card does.
     public var hasWorkToDo: Bool {
         namesWorkToDo || tasks.contains { task in
             task.column == .toStart || task.column == .inProgress || task.work.progress.isOpen
         }
+    }
+
+    /// A story's lane whose work is all resolved or done, in Merged and Completed: it folds to its header, as a finished
+    /// mission's does, until you open it.
+    public var isFinishedStory: Bool {
+        story != nil && !tasks.isEmpty && !hasWorkToDo
+    }
+
+    /// What a finished story's lane holds, on its folded line: "3 completed", "1 merged · 2 completed".
+    public var finishedWork: String {
+        let merged = count(of: .stage(.merged)), completed = count(of: .completed)
+        return [merged > 0 ? "\(merged) merged" : nil, completed > 0 ? "\(completed) completed" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 
     /// The story whose lane it is, for one of a story without a mission.

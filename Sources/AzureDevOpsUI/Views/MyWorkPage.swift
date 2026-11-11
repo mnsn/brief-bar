@@ -370,7 +370,7 @@ private struct MyWorkContent: View {
     private var workContent: BoardWorkContent {
         BoardWorkContent(
             card: { task in sprintItem(task.ref).map { taskCard(task, item: $0) } },
-            story: { ref in AnyView(storyHeader(ref)) },
+            story: { ref, isFinished in AnyView(storyHeader(ref, isFinished: isFinished)) },
             isSelected: { ref in shownDetails.workItem?.linkRef == ref },
             select: { ref in if let item = sprintItem(ref) { showDetails(of: item) } }
         )
@@ -396,8 +396,9 @@ private struct MyWorkContent: View {
         )
     }
 
-    /// A story's lane's header, for a story with no mission: its type, title and number, which show its details.
-    private func storyHeader(_ ref: ItemRef) -> some View {
+    /// A story's lane's header, for a story with no mission: its type, title and number, which show its details, and, until
+    /// its work is all resolved or done (`BoardLane.isFinishedStory`), that its pull requests aren't on your board yet.
+    private func storyHeader(_ ref: ItemRef, isFinished: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let story = sprintItem(ref) {
                 TypeBadge(item: story, size: 18)
@@ -410,7 +411,7 @@ private struct MyWorkContent: View {
                 .buttonStyle(.plain)
                 .help("Show its details")
                 .accessibilityAddTraits(.isHeader)
-                Text(verbatim: "\(story.type) \(story.id) · no pull requests on your board yet")
+                Text(verbatim: "\(story.type) \(story.id)" + (isFinished ? "" : " · no pull requests on your board yet"))
                     .font(size: 12)
                     .foregroundStyle(.secondary)
             } else {

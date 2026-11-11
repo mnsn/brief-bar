@@ -1159,7 +1159,7 @@ import Testing
     // MARK: Folding columns
 
     /// The Board's columns on My Work with + Sprint Tasks, from left to right.
-    static let allColumns: [BoardColumn] = [.toStart] + PullRequestStage.columns.map(BoardColumn.stage)
+    static let allColumns: [BoardColumn] = [.toStart] + PullRequestStage.columns.map(BoardColumn.stage) + [.completed]
 
     /// Which columns fold, and why, on a page this wide at 100%.
     static func folded(
@@ -1188,10 +1188,12 @@ import Testing
     }
 
     /// The user's window, 946 points wide, leaves the Board 664: its sidebar takes 240 and the page's margins 42.
-    @Test func tooNarrowFoldsMergedWaitsAndToStartThenWhereYouWaitWhatNeedsLeastFromYouFirst() {
+    @Test func tooNarrowFoldsCompletedMergedWaitsAndToStartThenWhereYouWaitWhatNeedsLeastFromYouFirst() {
         let counts = Dictionary(uniqueKeysWithValues: Self.allColumns.map { ($0, 1) })
         let review: Set<BoardColumn> = [.stage(.yourReview)]
-        let least: [BoardColumn: BoardFolding.Why] = [.stage(.merged): .narrow, .stage(.waits): .narrow, .toStart: .narrow]
+        let least: [BoardColumn: BoardFolding.Why] = [
+            .completed: .narrow, .stage(.merged): .narrow, .stage(.waits): .narrow, .toStart: .narrow,
+        ]
         func also(_ columns: PullRequestStage...) -> [BoardColumn: BoardFolding.Why] {
             least.merging(columns.map { (.stage($0), .narrow) }) { $1 }
         }
@@ -1212,8 +1214,8 @@ import Testing
         // A column you opened yourself, or one open for the moment, stays open: the next folds instead.
         let opened = BoardFolds([.stage(.merged): .open])
         #expect(Self.folded(counts, yourMove: review, choices: opened, open: [.toStart], width: 664)
-            == [.stage(.waits): .narrow, .stage(.canMerge): .narrow, .stage(.inProgress): .narrow, .stage(.teammateReview): .narrow,
-                .stage(.approved): .narrow])
+            == [.completed: .narrow, .stage(.waits): .narrow, .stage(.canMerge): .narrow, .stage(.inProgress): .narrow,
+                .stage(.teammateReview): .narrow, .stage(.approved): .narrow])
     }
 
     @Test func threeOpenColumnsFitTheUsersWindowAndShareTheRoomTheStripsLeave() {
@@ -1222,13 +1224,13 @@ import Testing
         let window = BoardWidths(scale: 1, available: 664)
         #expect(window.fits(Self.allColumns, folded: folded))
         #expect(!window.fits(Self.allColumns, folded: folded.subtracting([.stage(.canMerge)])))
-        // Strips of 20 points, with 5 beside each, 10 between open columns.
-        let strips = Double(folded.count) * (20 + 5) + 2 * 10
+        // Strips of 18 points, with 3 beside each, 10 between open columns.
+        let strips = Double(folded.count) * (18 + 3) + 2 * 10
         #expect(window.open(Self.allColumns, folded: folded) == (664 - strips) / 3)
         // Never narrower than 172, which grows with the text, as a strip does a little.
         #expect(BoardWidths(scale: 1, available: 300).open(Self.allColumns, folded: folded) == 172)
         #expect(BoardWidths(scale: 1.5, available: 0).open(Self.allColumns, folded: folded) == 258)
-        #expect(BoardWidths(scale: 1.5, available: 0).strip == 24)
+        #expect(BoardWidths(scale: 1.5, available: 0).strip == 22)
     }
 
     @Test func whatNeedsYouMarksAStripAndOnlyYourMoveKeepsAColumnOpen() {
@@ -1535,5 +1537,30 @@ import Testing
         #expect(!base.columns.contains(.completed))
         #expect(base.count(of: .stage(.merged)) == 4)
         #expect(labels(base.lanes[0], .stage(.merged)) == ["!4301", "!4302"])
+    }
+
+    /// A story's lane whose work is all resolved or done folds to its header, as a finished mission's does, saying what it
+    /// holds; not while any of it is still to do, though in Merged, as one still open whose pull request merged.
+    @Test func aStorysLaneWhoseWorkIsAllResolvedOrDoneFoldsSayingWhatItHolds() {
+        let work = [
+            Self.work(5101, .completed, story: 5001),
+            Self.work(5102, .completed, story: 5001),
+            Self.work(5103, .completed, story: 5001, linked: [Self.linked(4120, .merged)]),
+            Self.work(5201, .resolved, story: 5002),
+            Self.work(5202, .completed, story: 5002),
+            Self.work(5203, .completed, story: 5002),
+            Self.work(5301, .inProgress, story: 5003, linked: [Self.linked(4121, .merged)]),
+            Self.work(5302, .completed, story: 5003),
+            Self.work(5401, .toDo, story: 5004),
+            Self.work(5402, .completed),
+        ]
+        let stories = [5001, 5002, 5003, 5004].map(Self.task)
+        let board = Self.board([:]).withWork(work, missions: [], stories: stories)
+        #expect(board.lanes.map(\.kind) == stories.map(BoardLane.Kind.story) + [.notInAMission])
+        #expect(board.lanes.map(\.isFinishedStory) == [true, true, false, false, false])
+        #expect(board.lanes[0].finishedWork == "3 completed")
+        #expect(board.lanes[1].finishedWork == "1 merged · 2 completed")
+        #expect(board.lanes[2].tasks(in: .merged).map(\.ref.shortOrderLabel) == ["5301"])
+        #expect(board.lanes[2].count(of: .stage(.merged)) == 1 && board.lanes[2].count(of: .completed) == 1)
     }
 }

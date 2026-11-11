@@ -190,12 +190,14 @@ public struct BoardWidths: Equatable, Sendable {
 
     /// An open column's narrowest.
     public var minimum: Double { 172 * scale }
-    /// A folded column's: 20 points, a little more for bigger text, as only its count and its name across need it.
-    public var strip: Double { 12 + 8 * scale }
+    /// A folded column's: 18 points, a little more for bigger text, as only its count and its name across need it; thin
+    /// enough, with the room beside it, for three open columns in the 664 points a 946-point window leaves the Board, with
+    /// My Work's nine columns.
+    public var strip: Double { 10 + 8 * scale }
     /// Between two open columns.
     public var gap: Double { 10 * scale }
     /// Beside a folded one.
-    public var stripGap: Double { 5 * scale }
+    public var stripGap: Double { 3 * scale }
 
     /// The room between a column and the next.
     public func gap(after column: BoardColumn, in columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {

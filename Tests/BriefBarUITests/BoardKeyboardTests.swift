@@ -7,10 +7,10 @@ import Testing
 /// The Board's keyboard, with the Mac's keyboard navigation off, as it comes: a click on a card gives it the keyboard's
 /// focus, as a field takes it, then ⌘→ and ⌘← move it, again once it's drawn in its new column, and Return shows its
 /// details; Tab reaches a card too, a folded column's strip, whose Return opens it, and the line a finished mission's
-/// lane folds to, whose Return shows it. Where its details cover the Board, the keys move the card whose own details
-/// show, which has the focus back once they close, and they say why one can't move. AppKit gets the clicks and the keys
-/// as it would from the window server, in a window off screen that takes the keyboard, as the app's do, though the
-/// tests' process can't be the active app. One test at a time: the app gives a key to the window that was made key
+/// or story's lane folds to, whose Return shows it. Where its details cover the Board, the keys move the card whose own
+/// details show, which has the focus back once they close, and they say why one can't move. AppKit gets the clicks and
+/// the keys as it would from the window server, in a window off screen that takes the keyboard, as the app's do, though
+/// the tests' process can't be the active app. One test at a time: the app gives a key to the window that was made key
 /// last, whichever test's it is.
 @MainActor
 @Suite(.serialized, .keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
@@ -163,7 +163,7 @@ import Testing
                         .onDisappear { drawn.views[task.ref, default: 0] -= 1 }
                     return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
                 },
-                story: { ref in AnyView(Text(ref.shortOrderLabel)) },
+                story: { ref, _ in AnyView(Text(ref.shortOrderLabel)) },
                 isSelected: { [details] in details.shown == $0 },
                 select: { [details] in details.shown = $0 }
             )
@@ -616,6 +616,41 @@ import Testing
             try await Self.pressUntil("Return on a merged card, which Tab reached next") {
                 Self.press(.return, in: window)
                 return details.shown.map(merged.contains) == true
+            }
+        }
+    }
+
+    /// On My Work, with your sprint work on the Board, a story's lane whose work is all resolved or done folds to its line,
+    /// as a finished mission's does, which Tab reaches as it does a card, with the Mac's keyboard navigation off too: Return
+    /// there shows the lane, and Tab goes on to its first card, in Merged.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesWhatAFinishedStorysLaneFolds() async throws {
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let resolved = ItemRef.workItem(organization: "contoso", id: 5102)
+        let done = ItemRef.workItem(organization: "contoso", id: 5103)
+        let sprint = Sprint(
+            work: [(done, .completed), (resolved, .resolved)].map { ref, progress in
+                SprintWork(ref: ref, story: story, progress: progress, pullRequests: [], copilotWorks: false)
+            },
+            stories: [story]
+        )
+        let details = Details()
+        try await Self.showing(Self.order(), details: details, sprint: sprint) { window, _, drawn in
+            #expect(!drawn.isDrawn(resolved) && !drawn.isDrawn(done), "The finished story's lane showed its cards")
+            // Tab goes to the story's line first, above the draft's lane, and Return there shows its lane...
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the finished story's line, which Tab reached") {
+                if drawn.isDrawn(resolved) { return true }
+                Self.press(.return, in: window)
+                return drawn.isDrawn(resolved)
+            }
+            try await until("the done work's card in Completed") { drawn.isDrawn(done) }
+            #expect(details.shown == nil, "Tab went to the draft's card")
+            // ...then to its first card, the resolved work's in Merged, whose Return shows its details.
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the resolved work's card, which Tab reached next") {
+                Self.press(.return, in: window)
+                return details.shown == resolved
             }
         }
     }

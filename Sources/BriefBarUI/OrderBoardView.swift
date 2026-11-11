@@ -39,15 +39,16 @@ package struct BoardCardContent {
 package struct BoardWorkContent {
     /// A work item's card: its content, its menu, and what VoiceOver says of it; nil for one the page doesn't know.
     package var card: (BoardTask) -> BoardCardContent?
-    /// The header of a story's lane, for a story with no mission.
-    package var story: (ItemRef) -> AnyView
+    /// The header of a story's lane, for a story with no mission; for one whose work is all resolved or done, without
+    /// saying it has no pull requests yet: the line under it says what it holds.
+    package var story: (ItemRef, _ isFinished: Bool) -> AnyView
     /// Whether a work item's details show.
     package var isSelected: (ItemRef) -> Bool
     /// Shows a work item's details.
     package var select: (ItemRef) -> Void
 
     package init(
-        card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef) -> AnyView,
+        card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef, _ isFinished: Bool) -> AnyView,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void
     ) {
         self.card = card
@@ -850,8 +851,9 @@ package struct OrderBoardView: View {
 
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
-        // A finished mission's lane folds, but not while it holds your work that's still to do, which it would hide.
-        let canFold = mission.map { $0.isFinished && !lane.hasWorkToDo } ?? false
+        // A finished mission's lane folds, but not while it holds your work that's still to do, which it would hide; so does
+        // a story's whose work is all resolved or done.
+        let canFold = mission.map { $0.isFinished && !lane.hasWorkToDo } ?? lane.isFinishedStory
         let isFolded = canFold && !unfolded.contains(lane.kind)
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
@@ -906,7 +908,10 @@ package struct OrderBoardView: View {
                         .padding(.leading, 4)
                 }
             case .story(let story):
-                work?.story(story)
+                work?.story(story, lane.isFinishedStory)
+                if lane.isFinishedStory {
+                    foldedLine(lane.kind, saying: lane.finishedWork, isFolded: isFolded, canFold: canFold)
+                }
             case .notInAMission:
                 Text("Not in a mission")
                     .font(size: 15, weight: .semibold)
@@ -933,8 +938,8 @@ package struct OrderBoardView: View {
         order.lastStageChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
     }
 
-    /// A finished mission's lane folds to its header, as List's merged line does: its line says what the lane holds, and a
-    /// click on it, Return or Space folds the lane or shows it.
+    /// A finished mission's lane folds to its header, as List's merged line does, and so does a story's whose work is all
+    /// resolved or done: its line says what the lane holds, and a click on it, Return or Space folds the lane or shows it.
     /// - Parameter canFold: false for a finished mission's lane with cards of your work that's still to do, which doesn't
     ///   fold: the line only says it's finished.
     @ViewBuilder
@@ -1493,7 +1498,8 @@ private struct StripCount: View {
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .foregroundStyle(needsYou ? column.textColor : .secondary)
-            .padding(.horizontal, needsYou ? 3 * textScale : 0)
+            // Less room beside two digits, so that they fit a strip whole at 150% too.
+            .padding(.horizontal, needsYou ? (count < 10 ? 3 : 1.5) * textScale : 0)
             .padding(.vertical, needsYou ? 1 * textScale : 0)
             .background {
                 if needsYou {
