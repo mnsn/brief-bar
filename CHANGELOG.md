@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.19.3 - 2026-11-11
+
+- **Your sprint tasks and your pull requests on one board, as a preview.** Turn on **My Work Page (preview)** in
+  Settings › Pull Requests, with Pull Request Order, and Up Next and the Board move from Azure DevOps' Pull Requests
+  page, which keeps List, Map and By Status, to a page of their own in the window, **My Work**, right before it. Its
+  **Show** offers **Pull Requests**, the Board as it was, and **+ Sprint Tasks**, which puts your sprint work on it too,
+  with **Show Links** on: what hasn't started in **To start**, a new column before In progress; what has, without a pull
+  request on your board, as a card of its own in In progress, saying what its pull request is when it has one, such as
+  **Sam's !4120** or **!4120 merged · task still open**; and each pull request's card names the work items of yours it's
+  for. Click a work item's card for its details, beside the Board. With the setting off, nothing changes.
+- **Try Again pushes and replies as a fix went, after a restart too.** After BriefBar restarted, or for a thread **Fix
+  All** took on, whose words it doesn't keep, **Try Again** on a comment's fix opens the thread's **Fix** where that
+  went with **Push and reply once it's fixed** as that fix had it, rather than as you last left it, so that a fix sent
+  again pushes and replies or not as it first went. The box stays as you last left it for your next fix.
+- **A fix sent to push and reply that didn't push says it's done, not fixed.** Its line says **Done in ‘Retry
+  backoff’, but not pushed**, since it may have changed nothing, and its task's row **Done, but not pushed**. Its
+  notification now says whether it pushed, as its line does: a task's **Copilot fixed, pushed and replied** or
+  **Copilot is done, but didn't push**, a session's **Fixed, pushed and replied in ‘Retry backoff’** or **Done in ‘Retry
+  backoff’, but not pushed**.
+- **What a fix that pushes takes along, named in full.** With **Push and reply once it's fixed** checked, the composer
+  also names what an earlier fix there changed and didn't push, which goes too, without a reply: one sent to push and
+  reply that didn't, or one that failed or was stopped, though you had it fixed again in another session since, and, in
+  a fork of a busy session, what the fix under way there changed by then. In a fork BriefBar made, it names what the
+  fork has of the session it forked too, and, in a fork of a fork, of each before it. A fix still waiting for its turn,
+  or copied for you to paste, changed nothing yet, so it names what the one before it changed. In a fork the Copilot
+  CLI makes of a task, which starts at what the task committed, it names what may be committed there: the conflicts'
+  resolution, though **Resolve Conflicts** stopped after merging, and what a push that didn't go through may have
+  committed, earlier fixes too, though one was taken on again since. The Send to Copilot window that **Edit the Whole
+  Prompt…** opens names what goes with it as well, leaving out only the comments its prompt still lists as you send it.
+- **Sessions named for fixing first.** A new session, or a fork the Copilot CLI makes, that a comment's fix sent to push
+  and reply starts is named **Fix, Push & Reply: !4102 Add retry with backoff**, as BriefBar calls its task, rather than
+  **Push & Reply: …**.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** Only with My
+  Work Page on, Azure DevOps reads your sprint, and the pull requests linked to its work items, while My Work shows your
+  sprint tasks too.
+
 ## 0.19.2 - 2026-11-11
 
 - **BriefBar checks each push of its Push & Reply tasks itself.** In a Push & Reply that BriefBar runs, a comment's
