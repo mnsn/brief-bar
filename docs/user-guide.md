@@ -412,12 +412,13 @@ folded or opened, and folding changes no stage. A strip shows its column's mark 
 how many of the lane's cards it holds; a count is in a pill where something there needs you: a review waiting on you, a
 pull request you can complete, or a problem Fix next would show you, such as a failed build. A column with no cards
 folds by itself, and opens once a card arrives, unless you folded it. Where the window is too narrow for every open
-column, as with bigger text, BriefBar folds those you need least: **Merged**, **Waits** and **To start** first, then
-those where you wait on others, the one that needs least from you first: **Can merge** while its pull requests complete
-by themselves, **In progress** while nothing in it is yours alone, **Teammate's review**, and **Approved** last. Never a column where it's
-your move, as **Your review** while a review waits on you, **Can merge** while you can complete one, or **In progress**
-while it holds something only you are working on, with no session at it: your draft, one you set there yourself, or a
-work item you started; nor one you opened yourself. Only past that does the Board scroll sideways. Right-click a title or
+column, as with bigger text, BriefBar folds those you need least: **Completed**, **Merged**, **Waits** and **To start**
+first, then those where you wait on others, the one that needs least from you first: **Can merge** while its pull
+requests complete by themselves, **In progress** while nothing in it is yours alone, **Teammate's review**, and
+**Approved** last. Never a column where it's your move, as **Your review** while a review waits on you, **Can merge**
+while you can complete one, or **In progress** while it holds something only you are working on, with no session at it:
+your draft, one you set there yourself, or a work item you started; nor one you opened yourself. Only past that does the
+Board scroll sideways. Right-click a title or
 a strip for why it's folded, **Fold** or **Open**, and, once you chose, **Let BriefBar Decide**. While you drag a card, a
 strip that takes it springs open as you hold the card over it a moment, as Finder's folders do; once you drop it, each
 column folds as it would have, so one you folded keeps the card in its strip, counted, and its title flashes. **⌘→** and
@@ -430,24 +431,33 @@ in that lane. **2 more ›** in Up Next opens its column for the moment.
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
 for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, at its top, offers **Pull
 Requests**, the Board as it was, and **+ Sprint Tasks**, which puts your sprint work on it too: what the Sprint page
-counts as yours and not done. BriefBar remembers which. What hasn't started, with no pull request linked to it and no
+counts as yours, done or not. BriefBar remembers which. What hasn't started, with no pull request linked to it and no
 task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
-request, or has Copilot working on it, has a card of its own in In progress; and a pull request's card names the work
-items of yours it's for, such as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull
-request yet** or **New · Copilot works on it**, or, when its pull request isn't on your board, what that is: **Sam's
-!4120**, a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task still open**; or **!4120 can't be
+request, or has Copilot working on it, has a card of its own in In progress; what's resolved is in **Merged**; what's
+done is in **Completed**, a column after Merged; and a pull request's card names the work items of yours it's for, such
+as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull request yet**, **New · Copilot
+works on it**, **Resolved** or **Closed**, or, when its pull request isn't on your board, what that is: **Sam's !4120**,
+a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task still open**, in Merged; or **!4120 can't be
 read**. An abandoned pull request counts as none, and the card says so, as in **New · !4118 abandoned**. Of several, one
-on your board wins, then one that's active, merged, can't be read, then abandoned. BriefBar puts work items with their
-pull requests only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers to turn it on
-until it is; and it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that work stays in To
-start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull requests aren't on
-your board, in a lane of the story's own; otherwise with the pull requests in no mission. Click it, or press **Return**
-or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its menu. It moves by
-itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘← say so instead.
+on your board wins, then one that's active, merged, can't be read, then abandoned. A pull request of yours that merged
+stays in Merged until it's out and your work on it is done, its card saying what it waits for: **Production waits for
+approval** or **1 pipeline running**, while BriefBar follows its pipelines after the merge, or **Task 5112 still open**.
+Then it's in Completed, as one with none of your work on it is once it's out. Completed keeps your sprint's done work
+all sprint, and a pull request's card for as long as Done lists it; done work whose pull request is still in Merged is
+on that card. Each column counts its cards: a pull request's once, with the work items it names. BriefBar puts work
+items with their pull requests only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers
+to turn it on until it is; and it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that
+work stays in To start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull
+requests aren't on your board, in a lane of the story's own, which folds to its header once that work is all resolved
+or done, as a finished mission's lane does, saying what it holds, such as **1 merged · 2 completed**: click that, or
+press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. Click a card, or
+press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its
+menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘←
+say so instead.
 On My Work, **2 more ›** scrolls the Board to its column, opened if it's folded, a pull request's mission in its details
-shows its lane, and
-**Show By Status** shows Pull Requests by status. To start and work items' cards are only on the Board: stages, Up
-Next's slots, groups, counts and what agents are told stay as they were. While My Work shows + Sprint Tasks, BriefBar
+shows its lane, and **Show By Status** shows Pull Requests by status. To start, Completed and work items' cards are only
+on the Board: stages, Up Next's slots, groups, counts and what agents are told stay as they were. While My Work shows
++ Sprint Tasks, BriefBar
 reads your sprint, as it does for the Sprint page.
 
 **Suggested splits**, with Apple Intelligence on: when a mission's pull requests look like they've become different

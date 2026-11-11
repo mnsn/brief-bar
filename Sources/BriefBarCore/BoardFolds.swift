@@ -59,17 +59,20 @@ public struct BoardFolds: Equatable, Sendable {
 }
 
 extension BoardColumn {
-    /// Its name in the preferences: "toStart", or its stage's, "teammateReview".
+    /// Its name in the preferences: "toStart", "completed", or its stage's, "teammateReview".
     public var key: String {
         switch self {
         case .toStart: "toStart"
         case .stage(let stage): stage.rawValue
+        case .completed: "completed"
         }
     }
 
     public init?(key: String) {
         if key == "toStart" {
             self = .toStart
+        } else if key == "completed" {
+            self = .completed
         } else if let stage = PullRequestStage(rawValue: key) {
             self = .stage(stage)
         } else {
@@ -125,10 +128,7 @@ extension BoardTask {
 extension BoardLane {
     /// How many cards it has in a column: its pull requests', and its work items' own.
     public func count(of column: BoardColumn) -> Int {
-        switch column {
-        case .toStart: tasks(in: .toStart).count
-        case .stage(let stage): cards(in: stage).count + (stage == .inProgress ? tasks(in: .inProgress).count : 0)
-        }
+        cards(in: column).count + tasks.filter { BoardColumn($0.column) == column }.count
     }
 
     /// Its cards in a column that need you.
@@ -151,6 +151,7 @@ extension PullRequestBoard {
             case .stage(let stage):
                 lane.cards(in: stage).contains(where: \.isYourMove)
                     || stage == .inProgress && lane.tasks(in: .inProgress).contains(where: \.isYourMove)
+            case .completed: false
             }
         }
     }
@@ -192,12 +193,14 @@ public struct BoardWidths: Equatable, Sendable {
 
     /// An open column's narrowest.
     public var minimum: Double { 172 * scale }
-    /// A folded column's: 20 points, a little more for bigger text, as only its count and its name across need it.
-    public var strip: Double { 12 + 8 * scale }
+    /// A folded column's: 18 points, a little more for bigger text, as only its count and its name across need it; thin
+    /// enough, with the room beside it, for three open columns in the 664 points a 946-point window leaves the Board, with
+    /// My Work's nine columns.
+    public var strip: Double { 10 + 8 * scale }
     /// Between two open columns.
     public var gap: Double { 10 * scale }
     /// Beside a folded one.
-    public var stripGap: Double { 5 * scale }
+    public var stripGap: Double { 3 * scale }
 
     /// The room between a column and the next.
     public func gap(after column: BoardColumn, in columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {
@@ -236,9 +239,9 @@ public struct BoardWidths: Equatable, Sendable {
 /// Which of the Board's columns show folded, and why: worked out each time it's drawn, from your choices (`BoardFolds`),
 /// what's in each column and the page's width. A column you chose shows as you chose it, one open for a moment open, and
 /// BriefBar decides the rest: one with no cards folds; and where the Board is too narrow for its open columns at their
-/// narrowest, the least needed of those it opened fold: first Merged, Waits and To start, whatever's in them; then those
-/// where you wait, where it isn't your move (`BoardCard.isYourMove`), the one that needs least from you first, as what
-/// needs you otherwise only marks a strip. Whatever's still too wide scrolls sideways.
+/// narrowest, the least needed of those it opened fold: first Completed, Merged, Waits and To start, whatever's in them;
+/// then those where you wait, where it isn't your move (`BoardCard.isYourMove`), the one that needs least from you first,
+/// as what needs you otherwise only marks a strip. Whatever's still too wide scrolls sideways.
 public struct BoardFolding: Equatable, Sendable {
     /// Why a column shows folded.
     public enum Why: Equatable, Sendable {
@@ -289,9 +292,9 @@ public struct BoardFolding: Equatable, Sendable {
         return BoardFolding(folded: folded)
     }
 
-    /// Those BriefBar folds first where the Board is too narrow, whatever's in them: what merged, what waits for another
-    /// pull request, then the sprint work nobody started.
-    static let foldsFirst: [BoardColumn] = [.stage(.merged), .stage(.waits), .toStart]
+    /// Those BriefBar folds first where the Board is too narrow, whatever's in them: what you finished, what merged, what
+    /// waits for another pull request, then the sprint work nobody started.
+    static let foldsFirst: [BoardColumn] = [.completed, .stage(.merged), .stage(.waits), .toStart]
 
     /// Then, where it isn't your move, the columns where you wait, the one that needs least from you first: Can merge,
     /// where what's there completes by itself; In progress, where none of it is yours alone; Teammate's review; Approved,

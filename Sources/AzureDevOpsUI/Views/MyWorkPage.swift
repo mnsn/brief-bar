@@ -13,14 +13,16 @@ enum MyWorkShows: String, CaseIterable, Sendable {
 }
 
 /// Your sprint work as My Work's Board takes it (`SprintWork`), from what BriefBar reads already: the sprint, Show Links'
-/// links, your lists and the linked pull requests they don't have, and the tasks you sent to Copilot.
+/// links, your lists and the linked pull requests they don't have, the tasks you sent to Copilot, and the pipelines after your
+/// merges.
 enum MyWorkFacts {
     /// What's known of an Azure DevOps pull request: as your lists have it, with whether it's yours, else as Show Links read
     /// it.
     typealias KnownPullRequest = (pullRequest: PullRequest, isYours: Bool)
 
-    /// Your work items in the sprint that aren't done (`SprintBoard.myWork`), in its order, each with the story it's for,
-    /// how far along it is, the pull requests Show Links links it to, and whether a task you sent to Copilot works on it.
+    /// Your work items in the sprint, what's left (`SprintBoard.myWork`) then what's done (`SprintBoard.myDone`), each in its
+    /// order, with the story it's for, how far along it is, the pull requests Show Links links it to, and whether a task you
+    /// sent to Copilot works on it.
     /// - Parameters:
     ///   - linked: what Show Links links a work item to; nothing while it's off.
     ///   - pullRequest: what's known of an Azure DevOps pull request; nil for one BriefBar hasn't read, or couldn't.
@@ -35,7 +37,7 @@ enum MyWorkFacts {
             guard let parent = row.parent else { continue }
             for task in row.tasks where parents[task.id] == nil { parents[task.id] = parent }
         }
-        return board.myWork.map { item in
+        return (board.myWork + board.myDone).map { item in
             let story: ItemRef? = if alone.contains(item.id) {
                 item.linkRef
             } else if let parent = parents[item.id] {
@@ -46,7 +48,8 @@ enum MyWorkFacts {
             let progress: SprintWork.Progress = switch item.category {
             case .proposed: .toDo
             case .resolved: .resolved
-            default: .inProgress
+            case .completed: .completed
+            case .inProgress, .removed: .inProgress
             }
             let pullRequests = linked(item.linkRef).filter(\.kind.isPullRequest).map { ref in
                 LinkedPullRequest(ref: ref, state: state(of: ref, pullRequest: pullRequest))
@@ -67,6 +70,46 @@ enum MyWorkFacts {
         case .completed: return .merged
         case .abandoned, .other: return .abandoned
         }
+    }
+
+    /// Whether one of your merged pull requests is out, for Completed: BriefBar follows its pipelines after the merge no
+    /// more, and none of them failed or waits, as they passed or one was canceled, which Done counts as finished too; or it
+    /// follows none, with Follow Pipelines After You Merge off. While it follows them, it isn't: for half an hour after the
+    /// merge until a run starts, while one runs or waits, a little while after the last one finished, as more may start
+    /// (`MergeChain`); nor once one failed.
+    /// - Parameter followsMerges: Follow Pipelines After You Merge is on.
+    static func isOut(_ record: PRRecord?, followsMerges: Bool, now: Date) -> Bool {
+        guard followsMerges, let record, record.pullRequest.status == .completed else { return true }
+        if let merge = record.merge {
+            if merge.isFollowing { return false }
+            return merge.summary.map { $0.outcome == .passed || $0.outcome == .canceled } ?? true
+        }
+        // No run found yet: they're looked for a while after the merge.
+        guard record.pullRequest.mergeCommit != nil, let mergedAt = record.pullRequest.closedAt else { return true }
+        return !MergeChain.isFollowing(mergedAt: mergedAt, runs: [], at: now)
+    }
+
+    /// What keeps one of your merged pull requests in Merged, after "Merged" on its card: what its pipelines after the merge
+    /// do while it isn't out, "Production waits for approval", "1 pipeline running", "No pipeline has started yet", "Its
+    /// pipelines finished · more may start", but one that failed, whose mark says so; then the work items of yours it names
+    /// that aren't done, "Task 5112 still open". Nil for none.
+    /// - Parameter open: the work items of yours it names that aren't done, as its card names them: "Task 5112".
+    static func held(_ record: PRRecord?, open: [String], followsMerges: Bool, now: Date) -> String? {
+        var parts: [String] = []
+        if let record, !isOut(record, followsMerges: followsMerges, now: now) {
+            switch record.merge?.summary {
+            case nil: parts.append("No pipeline has started yet")
+            case let summary?:
+                switch summary.outcome {
+                case .waiting: parts.append("\(summary.stage ?? summary.pipeline ?? "A stage") waits for approval")
+                case .running: parts.append(summary.running == 1 ? "1 pipeline running" : "\(summary.running) pipelines running")
+                case .passed, .canceled: parts.append("Its pipelines finished · more may start")
+                case .failed: break
+                }
+            }
+        }
+        if !open.isEmpty { parts.append(open.joined(separator: ", ") + " still open") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
@@ -109,9 +152,9 @@ extension MyWorkPage {
     ) -> [(name: String, view: AnyView)] {
         guard services.pullRequestOrder.isOn else { return [] }
         let shown: [(name: String, shows: MyWorkShows, lanes: BoardLanes, size: CGSize)] = [
-            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_400, height: 2_050)),
+            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_600, height: 2_050)),
             ("my-work-sprint-tasks-narrow", .sprintTasks, .missions, CGSize(width: 560, height: 2_250)),
-            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_400, height: 950)),
+            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_600, height: 950)),
             ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250)),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
@@ -250,10 +293,17 @@ private struct MyWorkContent: View {
         guard ordering.isOn else { return nil }
         let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
         guard showsWork, let sprintBoard = sprint.board else { return board }
+        let follows = settings.followMerges, now = store.now
         return board.withWork(
             work(in: sprintBoard), missions: PullRequestsByMission.missions(ordering.missions),
-            stories: sprintBoard.rows.compactMap(\.parent?.linkRef)
+            stories: sprintBoard.rows.compactMap(\.parent?.linkRef),
+            isOut: { ref in MyWorkFacts.isOut(record(of: ref), followsMerges: follows, now: now) }
         )
+    }
+
+    /// One of the list's pull requests, as the engine read it.
+    private func record(of ref: ItemRef) -> PRRecord? {
+        ref.number.flatMap { store.record(for: PRKey(ref.scope, $0)) }
     }
 
     /// Your sprint work, as Show Links links it to pull requests.
@@ -298,12 +348,19 @@ private struct MyWorkContent: View {
         }
     }
 
-    /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work.
+    /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work; in Merged then,
+    /// what keeps it there.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard, board: PullRequestBoard) -> BoardCardContent {
-        let work = (board.workOfPullRequests[card.ref] ?? []).map { ref in
-            sprintItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
+        let items = (board.workOfPullRequests[card.ref] ?? []).map { ref in (ref: ref, item: sprintItem(ref)) }
+        let work = items.map { named in named.item.map { "\($0.type) \($0.id)" } ?? named.ref.shortOrderLabel }
+        var held: String?
+        if board.showsWork, card.stage == .merged, !board.completed.contains(card.ref) {
+            let open = zip(items, work).filter { named, _ in named.item?.isDone != true }.map { _, name in name }
+            held = MyWorkFacts.held(store.record(for: item.key), open: open, followsMerges: settings.followMerges, now: store.now)
         }
-        return PullRequestBoardCard.content(item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work) {
+        return PullRequestBoardCard.content(
+            item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work, held: held
+        ) {
             select(item)
         }
     }
@@ -313,7 +370,7 @@ private struct MyWorkContent: View {
     private var workContent: BoardWorkContent {
         BoardWorkContent(
             card: { task in sprintItem(task.ref).map { taskCard(task, item: $0) } },
-            story: { ref in AnyView(storyHeader(ref)) },
+            story: { ref, isFinished in AnyView(storyHeader(ref, isFinished: isFinished)) },
             isSelected: { ref in shownDetails.workItem?.linkRef == ref },
             select: { ref in if let item = sprintItem(ref) { showDetails(of: item) } }
         )
@@ -339,8 +396,9 @@ private struct MyWorkContent: View {
         )
     }
 
-    /// A story's lane's header, for a story with no mission: its type, title and number, which show its details.
-    private func storyHeader(_ ref: ItemRef) -> some View {
+    /// A story's lane's header, for a story with no mission: its type, title and number, which show its details, and, until
+    /// its work is all resolved or done (`BoardLane.isFinishedStory`), that its pull requests aren't on your board yet.
+    private func storyHeader(_ ref: ItemRef, isFinished: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let story = sprintItem(ref) {
                 TypeBadge(item: story, size: 18)
@@ -353,7 +411,7 @@ private struct MyWorkContent: View {
                 .buttonStyle(.plain)
                 .help("Show its details")
                 .accessibilityAddTraits(.isHeader)
-                Text(verbatim: "\(story.type) \(story.id) · no pull requests on your board yet")
+                Text(verbatim: "\(story.type) \(story.id)" + (isFinished ? "" : " · no pull requests on your board yet"))
                     .font(size: 12)
                     .foregroundStyle(.secondary)
             } else {

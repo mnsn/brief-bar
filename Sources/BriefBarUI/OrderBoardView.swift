@@ -11,7 +11,8 @@ import SwiftUI
 // the text, the least needed. Only then does the board scroll sideways. Scrolling redraws only what follows it: the column
 // titles and the lanes' headers. On My Work, with + Sprint Tasks, your sprint work has cards of its own
 // (`PullRequestBoard.withWork`): in To start, a column before In progress, until it's started, then in In progress, after
-// the pull requests. They don't move: their work does, in Azure DevOps.
+// the pull requests; in Merged once it's resolved, and in Completed, a column after Merged, once it's done, where a merged
+// pull request's card goes too once it's out, with your work on it done. They don't move: their work does, in Azure DevOps.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -38,15 +39,16 @@ package struct BoardCardContent {
 package struct BoardWorkContent {
     /// A work item's card: its content, its menu, and what VoiceOver says of it; nil for one the page doesn't know.
     package var card: (BoardTask) -> BoardCardContent?
-    /// The header of a story's lane, for a story with no mission.
-    package var story: (ItemRef) -> AnyView
+    /// The header of a story's lane, for a story with no mission; for one whose work is all resolved or done, without
+    /// saying it has no pull requests yet: the line under it says what it holds.
+    package var story: (ItemRef, _ isFinished: Bool) -> AnyView
     /// Whether a work item's details show.
     package var isSelected: (ItemRef) -> Bool
     /// Shows a work item's details.
     package var select: (ItemRef) -> Void
 
     package init(
-        card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef) -> AnyView,
+        card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef, _ isFinished: Bool) -> AnyView,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void
     ) {
         self.card = card
@@ -68,31 +70,25 @@ extension BoardColumn {
         switch self {
         case .toStart: BoardText.toStart
         case .stage(let stage): stage.columnTitle
+        case .completed: BoardText.completed
         }
     }
 
     /// Its color: its stage's; for To start, the gray of the Sprint page's To Do, which is Waits' too: only To start's
-    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side.
+    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side. Completed is gray too, with the
+    /// Sprint page's Done checkmark in place of a dot, Merged between it and Waits: what's done needs nothing from you.
     var color: Color {
         switch self {
-        case .toStart: Color(nsColor: .systemGray)
+        case .toStart, .completed: Color(nsColor: .systemGray)
         case .stage(let stage): stage.color
         }
     }
 
-    /// Its color for words, as its stage's is (`PullRequestStage.textColor`); To start's is Waits' gray.
+    /// Its color for words, as its stage's is (`PullRequestStage.textColor`); To start's and Completed's are Waits' gray.
     var textColor: Color {
         switch self {
-        case .toStart: PullRequestStage.waits.textColor
+        case .toStart, .completed: PullRequestStage.waits.textColor
         case .stage(let stage): stage.textColor
-        }
-    }
-
-    /// The column a work item's card is in.
-    init(_ column: BoardTask.Column) {
-        switch column {
-        case .toStart: self = .toStart
-        case .inProgress: self = .stage(.inProgress)
         }
     }
 }
@@ -314,7 +310,7 @@ package struct OrderBoardView: View {
     /// The folded columns Up Next's "2 more ›" opened, for the moment: until you fold them, or the board goes.
     @LocalState private var revealedOpen: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
-    @LocalState private var unfolded: Set<MissionKey> = []
+    @LocalState private var unfolded: Set<BoardLane.Kind> = []
     @LocalState private var width: CGFloat = 0
     @LocalState private var flashing: BoardColumn?
     @LocalState private var scroll = BoardScroll()
@@ -470,9 +466,12 @@ package struct OrderBoardView: View {
         return open
     }
 
-    /// The column a card is in on the board: a pull request's stage's, or a work item's.
+    /// The column a card is in on the board: a pull request's stage's, or Completed for one in it, whose stage stays Merged;
+    /// or a work item's.
     private func column(of spot: CardSpot) -> BoardColumn? {
-        if let card = board.card(spot.ref, preferring: spot.lane) { return .stage(card.stage) }
+        if let card = board.card(spot.ref, preferring: spot.lane) {
+            return board.completed.contains(card.ref) ? .completed : .stage(card.stage)
+        }
         return board.lanes.lazy.flatMap(\.tasks).first { $0.ref == spot.ref }.map { BoardColumn($0.column) }
     }
 
@@ -547,7 +546,7 @@ package struct OrderBoardView: View {
 
     /// A lane's first card in a column, a pull request's, else a work item's: where the keyboard goes as its strip opens.
     private func firstSpot(in lane: BoardLane, column: BoardColumn) -> CardSpot? {
-        let card = column.stage.flatMap { lane.cards(in: $0).first?.ref }
+        let card = lane.cards(in: column).first?.ref
         let ref = card ?? lane.tasks.first { BoardColumn($0.column) == column }?.ref
         return ref.map { CardSpot(lane: lane.kind, ref: $0) }
     }
@@ -733,14 +732,16 @@ package struct OrderBoardView: View {
         return "\(title): \(count)\(needs)\n\(BoardText.folded(why))"
     }
 
-    /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, while the board
-    /// shows it.
+    /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, and Merged what
+    /// isn't out yet, while the board shows it.
     private func help(_ column: BoardColumn) -> String {
         switch column {
         case .toStart: BoardText.toStartHelp
         case .stage(.inProgress) where board.showsWork:
             Self.help(.inProgress) + "; then your sprint work that has started, with no pull request on your board"
+        case .stage(.merged) where board.showsWork: BoardText.mergedWithWorkHelp
         case .stage(let stage): Self.help(stage)
+        case .completed: BoardText.completedHelp
         }
     }
 
@@ -850,15 +851,18 @@ package struct OrderBoardView: View {
 
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
-        // A finished mission's lane folds, but not while it holds your work's cards, which it would hide.
-        let isFolded = mission.map { $0.isFinished && lane.tasks.isEmpty && !unfolded.contains($0.key) } ?? false
+        // A finished mission's lane folds, but not while it holds your work that's still to do, which it would hide; so does
+        // a story's whose work is all resolved or done.
+        let canFold = mission.map { $0.isFinished && !lane.hasWorkToDo } ?? lane.isFinishedStory
+        let isFolded = canFold && !unfolded.contains(lane.kind)
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
             // Undo line or why a card couldn't move.
             if lane.kind != .all || hasLines(lane, undoRefs: undoRefs) {
                 FollowsScroll(
-                    scroll: scroll, direction: 1, content: laneHeader(lane, mission: mission, isFolded: isFolded, undoRefs: undoRefs)
+                    scroll: scroll, direction: 1,
+                    content: laneHeader(lane, mission: mission, isFolded: isFolded, canFold: canFold, undoRefs: undoRefs)
                 )
                 .frame(width: metrics.visible, alignment: .leading)
             }
@@ -883,7 +887,9 @@ package struct OrderBoardView: View {
     }
 
     @ViewBuilder
-    private func laneHeader(_ lane: BoardLane, mission: OrderMission?, isFolded: Bool, undoRefs: Set<ItemRef>) -> some View {
+    private func laneHeader(
+        _ lane: BoardLane, mission: OrderMission?, isFolded: Bool, canFold: Bool, undoRefs: Set<ItemRef>
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             switch lane.kind {
             case .mission:
@@ -896,13 +902,16 @@ package struct OrderBoardView: View {
                             .padding(.leading, 4)
                     }
                     if mission.isFinished {
-                        foldedLine(mission, isFolded: isFolded, canFold: lane.tasks.isEmpty)
+                        foldedLine(lane.kind, saying: OrderText.folded(mission.steps), isFolded: isFolded, canFold: canFold)
                     }
                     MissionNextStepsLine(lane: lane, order: order, select: select)
                         .padding(.leading, 4)
                 }
             case .story(let story):
-                work?.story(story)
+                work?.story(story, lane.isFinishedStory)
+                if lane.isFinishedStory {
+                    foldedLine(lane.kind, saying: lane.finishedWork, isFolded: isFolded, canFold: canFold)
+                }
             case .notInAMission:
                 Text("Not in a mission")
                     .font(size: 15, weight: .semibold)
@@ -929,14 +938,16 @@ package struct OrderBoardView: View {
         order.lastStageChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
     }
 
-    /// A finished mission's lane folds to its header, as List's merged line does.
-    /// - Parameter canFold: false for a lane with your work's cards, which doesn't fold: the line only says it's finished.
+    /// A finished mission's lane folds to its header, as List's merged line does, and so does a story's whose work is all
+    /// resolved or done: its line says what the lane holds, and a click on it, Return or Space folds the lane or shows it.
+    /// - Parameter canFold: false for a finished mission's lane with cards of your work that's still to do, which doesn't
+    ///   fold: the line only says it's finished.
     @ViewBuilder
-    private func foldedLine(_ mission: OrderMission, isFolded: Bool, canFold: Bool) -> some View {
+    private func foldedLine(_ lane: BoardLane.Kind, saying words: String, isFolded: Bool, canFold: Bool) -> some View {
         let label = HStack(spacing: 5) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-            Text(OrderText.folded(mission.steps))
+            Text(words)
             if canFold {
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
@@ -946,18 +957,27 @@ package struct OrderBoardView: View {
         .font(size: 11.5, weight: .medium)
         .foregroundStyle(.secondary)
         if canFold {
-            Button {
+            let toggle = {
                 withAnimation(.easeOut(duration: 0.15)) {
-                    if isFolded { unfolded.insert(mission.key) } else { unfolded.remove(mission.key) }
+                    if isFolded { unfolded.insert(lane) } else { unfolded.remove(lane) }
                 }
-            } label: {
-                label
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 4)
-            .help(isFolded ? "Show its lane" : "Fold its lane")
-            .accessibilityLabel(isFolded ? "Show \(OrderText.folded(mission.steps))" : "Hide \(OrderText.folded(mission.steps))")
+            label
+                .contentShape(Rectangle())
+                .onTapGesture(perform: toggle)
+                // Tab reaches it as it does a card, whatever the Mac's keyboard navigation, as it's the only way to the
+                // cards it hides.
+                .focusable(interactions: .edit)
+                .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                    toggle()
+                    return .handled
+                }
+                .padding(.leading, 4)
+                .help(isFolded ? "Show its lane" : "Fold its lane")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(isFolded ? "Show \(words)" : "Hide \(words)")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(.default, toggle)
         } else {
             label
                 .padding(.leading, 4)
@@ -1005,7 +1025,7 @@ package struct OrderBoardView: View {
     }
 
     private func openCell(_ lane: BoardLane, column: BoardColumn, width: CGFloat, moves: BoardMoves) -> some View {
-        let cards = column.stage.map(lane.cards(in:)) ?? []
+        let cards = lane.cards(in: column)
         // Your sprint work's own cards, after the pull requests'.
         let tasks = lane.tasks.filter { BoardColumn($0.column) == column }
         let target = BoardCell(lane: lane.kind, column: column)
@@ -1015,7 +1035,7 @@ package struct OrderBoardView: View {
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
         return VStack(alignment: .leading, spacing: 8 * textScale) {
             ForEach(cards) { card in
-                cardView(card, in: lane, moves: moves)
+                cardView(card, in: lane, column: column, moves: moves)
             }
             ForEach(tasks) { task in
                 taskView(task, in: lane)
@@ -1110,9 +1130,7 @@ package struct OrderBoardView: View {
     /// A lane's strip's tooltip: what's in it there, by number and title, and why it's folded.
     private func stripCellHelp(_ lane: BoardLane, column: BoardColumn, count: Int, needing: Int, why: BoardFolding.Why?) -> String {
         var lines = [Self.stripHelp(title: column.title, count: count, needing: needing, why: why ?? .yours)]
-        if let stage = column.stage {
-            lines += lane.cards(in: stage).map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
-        }
+        lines += lane.cards(in: column).map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
         lines += lane.tasks.filter { BoardColumn($0.column) == column }.compactMap { work?.card($0)?.label }
         return (lines + ["Click to open it"]).joined(separator: "\n")
     }
@@ -1140,11 +1158,11 @@ package struct OrderBoardView: View {
     }
 
     @ViewBuilder
-    private func cardView(_ card: BoardCard, in lane: BoardLane, moves: BoardMoves) -> some View {
+    private func cardView(_ card: BoardCard, in lane: BoardLane, column: BoardColumn, moves: BoardMoves) -> some View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
-                card: card, content: content, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
+                card: card, content: content, column: column, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
                 picked: Set(board.picked.filter { $0.value == card.ref }.keys), isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
@@ -1221,24 +1239,34 @@ package struct OrderBoardView: View {
             return false
         }
         drag = nil
+        // A work item's card, a pull request's on To start or Completed, or one in Completed, stays where it is.
+        if case .refused(let why) = outcome {
+            refuse(why, about: ref, in: lane.kind)
+            return false
+        }
         guard let stage = column.stage, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
-            // A work item's card, or a pull request's on To start, stays where it is.
-            if case .refused(let why) = outcome { refuse(why, about: ref, in: lane.kind) }
             return false
         }
         return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref, opensColumn: false)
     }
 
     /// What dropping a card on a column of a lane does, to the card as it is now: a work item's stays where its work puts it,
-    /// and To start takes no pull request. Nil for a card that left the board.
+    /// To start and Completed take no pull request, and one in Completed goes nowhere. Nil for a card that left the board.
     private func moving(_ ref: ItemRef, to column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> BoardMove? {
         if let task = board.lanes.lazy.flatMap(\.tasks).first(where: { $0.ref == ref }) {
             let stays = BoardColumn(task.column) == column && lane.tasks.contains { $0.ref == ref }
             return stays ? .stays : .refused(BoardText.workStays)
         }
         guard let card = moves.card(ref, in: lane.kind) else { return nil }
-        guard let stage = column.stage else { return .refused(BoardText.toStartTakesNoPullRequest) }
-        return moves.move(card, to: stage, in: lane.kind)
+        let isCompleted = board.completed.contains(ref)
+        switch column {
+        case .toStart: return .refused(BoardText.toStartTakesNoPullRequest)
+        case .completed:
+            if lane.completed.contains(ref) { return .stays }
+            return .refused(isCompleted ? BoardText.hasMerged : BoardText.completedTakesNoPullRequest)
+        case .stage(let stage):
+            return isCompleted ? .refused(BoardText.hasMerged) : moves.move(card, to: stage, in: lane.kind)
+        }
     }
 
     /// Why a card can't go where you moved it: a beep, which VoiceOver says, and its lane says until its stage changes.
@@ -1422,8 +1450,9 @@ package struct OrderBoardView: View {
 
 // MARK: - A column's marks
 
-/// A column's mark, by its title and on its strip: To start's dashed ring, as the Sprint page's To Do has it, else a dot in
-/// its stage's color; a shape as well as a color, for those who can't tell the colors apart.
+/// A column's mark, by its title and on its strip: To start's dashed ring, as the Sprint page's To Do has it, Approved's
+/// seal, Completed's checkmark, as the Sprint page's Done has it, else a dot in its stage's color; a shape as well as a
+/// color, for those who can't tell the colors apart.
 private struct ColumnMarker: View {
     let column: BoardColumn
     @Environment(\.textScale) private var textScale
@@ -1439,6 +1468,11 @@ private struct ColumnMarker: View {
                 // Its seal, not a dot: as some see colors, its mint reads as Waits' grey or Can merge's green.
                 Image(systemName: PullRequestStage.approved.symbol)
                     .font(size: 10, weight: .bold)
+                    .foregroundStyle(column.color)
+            } else if column == .completed {
+                // Done, as the Sprint page's Done says it: not Waits' grey dot.
+                Image(systemName: BoardText.completedSymbol)
+                    .font(size: 9.5, weight: .bold)
                     .foregroundStyle(column.color)
             } else {
                 Circle()
@@ -1465,7 +1499,8 @@ private struct StripCount: View {
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .foregroundStyle(needsYou ? column.textColor : .secondary)
-            .padding(.horizontal, needsYou ? 3 * textScale : 0)
+            // Less room beside two digits, so that they fit a strip whole at 150% too.
+            .padding(.horizontal, needsYou ? (count < 10 ? 3 : 1.5) * textScale : 0)
             .padding(.vertical, needsYou ? 1 * textScale : 0)
             .background {
                 if needsYou {
@@ -1509,6 +1544,8 @@ private struct Sideways: Layout {
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
+    /// The column it's in: its stage's, or Completed, whose color is on its edge and which VoiceOver says before its stage.
+    let column: BoardColumn
     /// The Up Next slots it's the pull request of: Fix next's, and its column's.
     let nexts: [UpNextSlot]
     /// Of those, the ones you chose it for (`UpNextPicks`).
@@ -1536,6 +1573,10 @@ private struct BoardCardView: View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
     }
 
+    private var color: Color {
+        column.color
+    }
+
     var body: some View {
         withBadgeLine
             .padding(.leading, 13 * textScale)
@@ -1544,9 +1585,9 @@ private struct BoardCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GlassCard(cornerRadius: 10, isHovered: isHovered, raised: true))
             .overlay {
-                // Its stage's color on its edge.
+                // Its column's color on its edge.
                 shape
-                    .fill(card.stage.color)
+                    .fill(color)
                     .mask(alignment: .leading) { Rectangle().frame(width: 4 * textScale) }
                     .allowsHitTesting(false)
             }
@@ -1670,7 +1711,9 @@ private struct BoardCardView: View {
     }
 
     private var accessibilityValue: String {
-        var parts = [StageWords.spoken(card.reading, order: order, now: now)]
+        // Its stage stays Merged there: the column says where it is.
+        var parts = column == .completed ? [column.title] : []
+        parts.append(StageWords.spoken(card.reading, order: order, now: now))
         parts += content.details
         for slot in nexts {
             let name = slot == .fix ? "Fix next" : "Up Next"
@@ -1679,11 +1722,11 @@ private struct BoardCardView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// What follows the pointer as it's dragged: its number and title, in its stage's color.
+    /// What follows the pointer as it's dragged: its number and title, in its column's color.
     private var preview: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(card.stage.color)
+                .fill(color)
                 .frame(width: 8, height: 8)
             Text(content.label)
                 .font(size: 12.5, weight: .semibold)
@@ -1697,7 +1740,7 @@ private struct BoardCardView: View {
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(card.stage.color, lineWidth: 1.5)
+                        .strokeBorder(color, lineWidth: 1.5)
                 )
         )
     }
