@@ -210,17 +210,17 @@ private struct MyWorkContent: View {
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
-            let shown = shownDetails
+            let detailsShown = shownDetails
             DetailsSplit(
-                showsDetails: shown.showsAny,
-                preferredWidth: shown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
+                showsDetails: detailsShown.showsAny,
+                preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
                 content
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
-                    if shown.workItem != nil {
+                    if detailsShown.workItem != nil {
                         WorkItemDetailsPanel()
                     } else {
                         PullRequestDetailsPanel()
