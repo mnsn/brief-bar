@@ -150,6 +150,13 @@ public struct Git: Sendable {
         return commit
     }
 
+    /// The commit a folder's checkout has checked out: its full ID. Throws when there's none, or git can't say.
+    public func commit(checkedOutIn folder: URL) async throws -> String {
+        let commit = try await run(["-C", folder.path, "rev-parse", "--verify", "HEAD^{commit}"], timeout: 30)
+        guard Self.isCommit(commit) else { throw GitError.failed("git didn't name the commit it has checked out.") }
+        return commit
+    }
+
     /// The commit `origin/<branch>` is at in a folder's checkout, as git there last fetched or pushed it: where a push to the
     /// branch from there starts, once BriefBar fetched it (`checkPush(in:source:target:)`), for `pushedItsOwn(in:branch:since:)`
     /// to tell what it pushed. Nil when it can't be read.
@@ -435,11 +442,14 @@ public struct Git: Sendable {
     /// are now. Commits made on the branch, merges aside, are the work to push. Throws when it can't tell: as when what it
     /// would push has a commit without parents, as where a shallow clone's history stops, which hides whether it's a merge;
     /// or a merge is going on that it can't read (`mergingIn`).
-    public func checkPush(in folder: URL, source: String, target: String) async throws -> PushCheck {
+    /// - Parameter commit: what it would push: the checkout's `HEAD`, or a commit's full ID, as Push & Reply's check of a
+    ///   push names the one it pushes (`PushGuard`).
+    public func checkPush(in folder: URL, source: String, target: String, commit: String = "HEAD") async throws -> PushCheck {
         guard !target.isEmpty else { throw GitError.failed("BriefBar doesn't know which branch the pull request merges into.") }
         for branch in [source, target] where !Self.isBranchName(branch) {
             throw GitError.failed("“\(branch)” isn't a branch name git takes.")
         }
+        guard commit == "HEAD" || Self.isCommit(commit) else { throw GitError.failed("“\(commit)” isn't a commit's ID.") }
         let sourceRef = "refs/remotes/origin/\(source)"
         let targetRef = "refs/remotes/origin/\(target)"
         _ = try await run(
@@ -450,13 +460,13 @@ public struct Git: Sendable {
         // A commit without parents: where a shallow clone's history stops, which git takes for a root, though it may be a
         // merge, of anything; or the start of history the branch doesn't come from.
         let parentless = try await run(
-            ["-C", folder.path, "rev-list", "--max-parents=0", "--max-count=1", "HEAD", "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
+            ["-C", folder.path, "rev-list", "--max-parents=0", "--max-count=1", commit, "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
         )
         guard parentless.isEmpty else { throw GitError.failed(Self.cutShort) }
         // Each merge with its parents: the first is the branch it merged into, the others what it merged in. One the target
         // has merged in only what the target has.
         let merges = try await run(
-            ["-C", folder.path, "rev-list", "--merges", "--parents", "HEAD", "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
+            ["-C", folder.path, "rev-list", "--merges", "--parents", commit, "^\(sourceRef)", "^\(targetRef)", "--"], timeout: 120
         )
         let mergedIn = merges.split(whereSeparator: \.isNewline).flatMap { $0.split(separator: " ").dropFirst(2).map(String.init) }
         var seen = Set<String>()
@@ -470,6 +480,48 @@ public struct Git: Sendable {
             if !outside.isEmpty { return .foreignMerge }
         }
         return .clean
+    }
+
+    /// The options a push of one branch from a folder's checkout needs so that it pushes that branch alone, as git's
+    /// configuration there has it, its own and yours: `--no-follow-tags`, when `push.followTags` would push the annotated
+    /// tags the commit reaches too; `--no-recurse-submodules`, when `push.recurseSubmodules` is `on-demand` or `only`, or,
+    /// with that unset, `submodule.recurse` is on, which would push its submodules' commits to their remotes. None by
+    /// default. Throws when git can't read its configuration.
+    public func pushOptions(in folder: URL) async throws -> [String] {
+        let result = try await runner.run(
+            executable,
+            arguments: ["-C", folder.path, "config", "--get-regexp", #"^(push\.followtags|push\.recursesubmodules|submodule\.recurse)$"#],
+            environment: environment, timeout: 30
+        )
+        // 1: none of them is set.
+        guard result.status == 0 || (result.status == 1 && result.stdout.isEmpty) else {
+            throw GitError.failed(Self.message(String(decoding: result.stderr, as: UTF8.self)))
+        }
+        // The last of each, as git takes it; a name with no value is on.
+        var values: [String: String?] = [:]
+        for line in String(decoding: result.stdout, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+            values[parts[0].lowercased()] = .some(parts.count > 1 ? String(parts[1]) : nil)
+        }
+        var options: [String] = []
+        if let followTags = values["push.followtags"], Self.isOn(followTags) { options.append("--no-follow-tags") }
+        let recurses: Bool
+        if let pushes = values["push.recursesubmodules"] {
+            recurses = pushes.map { ["on-demand", "only"].contains($0.lowercased()) } ?? false
+        } else {
+            recurses = values["submodule.recurse"].map(Self.isOn) ?? false
+        }
+        if recurses { options.append("--no-recurse-submodules") }
+        return options
+    }
+
+    /// A boolean of git's configuration as git reads it: a name with no value, `true`, `yes`, `on`, or a number other than
+    /// 0. One git can't read counts as on, so that the option that turns it off is asked for.
+    static func isOn(_ value: String?) -> Bool {
+        guard let value = value?.trimmingCharacters(in: .whitespaces).lowercased() else { return true }
+        if ["true", "yes", "on"].contains(value) { return true }
+        if ["false", "no", "off", ""].contains(value) { return false }
+        return Int(value).map { $0 != 0 } ?? true
     }
 
     /// Why `checkPush` can't tell what a commit without parents brings in.

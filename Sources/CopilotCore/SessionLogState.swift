@@ -58,6 +58,9 @@ public struct SessionLogState: Sendable, Equatable {
     public private(set) var pendingTools: [String: PendingTool] = [:]
     public private(set) var pendingPermissions: [String: PendingPermission] = [:]
     public private(set) var lastMainMessageHadTools = false
+    /// The latest push BriefBar's check stopped, in one of its Push & Reply tasks, with when: whatever follows, a task
+    /// that made it didn't push that.
+    public private(set) var pushStop: PushStop?
 
     private static let interactionTools: Set<String> = ["ask_user", "exit_plan_mode", "report_intent", "task_complete"]
 
@@ -110,6 +113,10 @@ public struct SessionLogState: Sendable, Equatable {
 
         case .toolComplete(let callId):
             pendingTools.removeValue(forKey: callId)
+
+        case .pushStopped(let callId, let reason):
+            pendingTools.removeValue(forKey: callId)
+            pushStop = PushStop(reason: reason, at: at)
 
         case .permissionRequested(let request):
             pendingPermissions[request.requestId] = PendingPermission(

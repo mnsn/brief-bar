@@ -343,6 +343,47 @@ import Testing
         #expect(settings.copilotRuns.map(\.pullRequest) == [nil, URL(string: opened)])
     }
 
+    /// A push BriefBar's check stopped fails the run, with why; and BriefBar keeps that it did, without why, so that the run
+    /// still failed after a restart whose read of its log no longer has it, as when much came after it.
+    @Test func keepsThatItsCheckStoppedAPushAcrossARestart() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        func at(_ seconds: TimeInterval) -> String {
+            now.addingTimeInterval(seconds).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        }
+        let reason = "the pull request was completed."
+        let denied = "Denied by preToolUse hook: BriefBar stopped this push: \(reason) Don't push again, in any way: stop, and say why in your summary."
+        let prompt = #"{"type":"user.message","data":{"content":"Push and reply"},"id":"e1","timestamp":"\#(at(5))","parentId":null}"#
+        let stop = #"{"type":"tool.execution_complete","data":{"toolCallId":"c1","success":false,"error":{"message":"\#(denied)","code":"denied"}},"id":"e2","timestamp":"\#(at(10))","parentId":null}"#
+        let done = #"{"type":"session.task_complete","data":{"summary":"Pushed and replied","success":true},"id":"e3","timestamp":"\#(at(20))","parentId":null}"#
+        let folder = home.appendingPathComponent("session-state/\(first)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let events = folder.appendingPathComponent("events.jsonl")
+        try ([prompt, stop, done].joined(separator: "\n") + "\n").write(to: events, atomically: true, encoding: .utf8)
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.copilotEnabled = true
+        settings.copilotRuns = [run(first, startedAt: now)]
+
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        store.useEnvironment(["COPILOT_HOME": home.path])
+        store.refresh()
+        try await settle { store.statuses[first] != nil }
+        #expect(store.statuses[first]?.phase == .failed)
+        #expect(store.statuses[first]?.detail == "BriefBar stopped the push: \(reason)")
+        #expect(settings.copilotRuns.first?.pushStopped == true)
+        #expect(!readable(defaults).contains(reason))
+
+        // After a restart, its log read without the stop.
+        try ([prompt, done].joined(separator: "\n") + "\n").write(to: events, atomically: true, encoding: .utf8)
+        let restarted = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        restarted.useEnvironment(["COPILOT_HOME": home.path])
+        restarted.refresh()
+        try await settle { restarted.statuses[first] != nil }
+        #expect(restarted.statuses[first]?.phase == .failed)
+        #expect(restarted.statuses[first]?.detail == "BriefBar stopped a push it made.")
+    }
+
     /// The demo shows made-up sends of its own tasks, and never starts anything.
     @Test func theDemoSendsNothing() {
         let settings = AppSettings(defaults: MemoryDefaults())

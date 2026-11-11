@@ -174,7 +174,11 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   instance with `OS_ACTIVITY_DT_MODE` set.
 
 That's how the app always runs once installed, from Finder, a login item or an update, so it changes
-nothing for it. Run from a shell, nothing changes either.
+nothing for it. Run from a shell, nothing changes either. Nor does it for the Copilot CLI that BriefBar
+starts for one of its own Push & Reply tasks, which runs BriefBar too, before each shell command, to
+check the task's pushes (`--push-guard`, [below](#send-work-to-copilot)): BriefBar started the CLI
+responsible for itself, so the BriefBar it runs is attributed to the CLI, as from a shell, with the
+CLI's permissions, not its own.
 
 To tell, BriefBar asks macOS who's responsible for it (`responsibility_get_responsible_for_pid`), and
 compares the executable it names with its own: privacy permissions are checked against that
@@ -2819,7 +2823,9 @@ suggested change, stays as it was written. Then BriefBar:
    --allow-all-tools --no-ask-user --session-id <id> --name <work item> -C <worktree> --silent`, with
    a session ID it chose, in a session of its own (`DetachedProgram`), responsible for itself, so it
    has none of BriefBar's permissions and goes on if BriefBar quits. Its output goes to
-   `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read.
+   `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read. A Push & Reply
+   gets `--plugin-dir ~/Library/Application Support/BriefBar/Copilot/<id>.guard` too, BriefBar's check
+   of each push it makes (**BriefBar checks each push too**, below).
 
 **Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
 (`PullRequestAction`). In the main window, every row has a visible **Actions** menu; the same actions
@@ -2919,6 +2925,52 @@ it goes on BriefBar's reads, from right before it started. The push has no lease
 git move the branch to any commit while its tip is the one it names, even one that drops what's on it, where a plain
 push only ever adds to the branch and is rejected once it moved, unless it was moved back; and BriefBar writes the
 prompt before it checks, so the prompt can't name the tip BriefBar saw.
+
+**BriefBar checks each push too**, as Copilot makes it, in the Push & Reply tasks it runs itself (not in a prompt sent
+to one of the Copilot app's sessions), so that what goes no longer depends on Copilot following the prompt. It gives the
+Copilot CLI a plugin for that run alone, a folder of its own beside what the run prints, `<id>.guard`, which the CLI
+loads with `--plugin-dir` and no other session ever does (`PushGuardPlugin`): a `preToolUse` hook, from the CLI's
+documented hooks, which the CLI runs before each shell command (`bash`), with the command on its standard input. The
+hook runs BriefBar itself, `BriefBar --push-guard <pull request> --worktree=<folder> --source-branch=<branch>
+--target-branch=<branch>`, each value in the word of its option, so no branch's name is read as another option
+(`PushGuardCLI`, `PushGuard`). A command that pushes nothing runs at once, without git or Azure DevOps; BriefBar reads
+it as a shell would, its quotes, `$(…)`, `case` arms, `sh -c`, `sh -s`, `eval`, `trap`, here-documents, the programs
+that run others, such as `env` and `xargs`, or a string of theirs, such as `parallel` and `flock -c`, or the shell's own
+commands through `builtin`, and git's commands that run one, `submodule foreach`, `rebase --exec`, `difftool --extcmd`,
+`filter-branch`'s filters and `bisect run`, with their options as git takes them, included, with program names as macOS
+finds them, whatever their case (`GIT` runs git), and NULs and carriage returns as bash takes them, and takes what it
+can't read for a push when it says push, or when it sets git's aliases, autocorrect or includes, which can run another
+command than the one it names, with `-c`, `GIT_CONFIG_*` or `git config`, or nests scripts deeper than it reads, or a
+command git runs from the environment, such as `GIT_EDITOR`'s, that says push, or words `xargs` fills in, or a program
+it doesn't know that names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar
+doesn't know, such as `--no-dry-run`, may undo it. What a variable, an alias, a script file or another language's code
+would push is out of its reach, and so is where a shell went in an earlier command. A command longer than it reads, a
+mebibyte, doesn't run. A push runs only in the form the prompt names, `git push origin <commit>:refs/heads/<branch>`,
+optionally `git -C <worktree> …`, as a command of its own, with nothing else in it that could change what it does first,
+such as a `cd` or `git config` (`PushCommand.isAlone`), where `<commit>` is the commit the worktree has checked out, by
+its ID; with `--no-follow-tags` or `--no-recurse-submodules` when git's configuration there would push the annotated
+tags the commit reaches, or submodules' commits, too (`push.followTags`, `push.recurseSubmodules`, `submodule.recurse`:
+`Git.pushOptions(in:)`); and only once git finds nothing in it merged in that the branch the prompt names doesn't have
+(`Git.checkPush(in:source:target:commit:)`), and then, last, so that it's as late as can be, BriefBar has read the pull
+request again from Azure DevOps, with one request, and found it active and still merging into that branch. A push in
+another form, such as `git push` alone, a branch's name or `HEAD` for the commit, options, a wrapper such as `env`,
+other commands with it, or two pushes in one command, doesn't run, and Copilot is told the exact command to run instead,
+which it can, and is checked again. One that would force, delete what's on the remote or push more than the branch
+(`--mirror`, `--all`, `--tags`, a refspec with `+`, …), or that the check finds wrong, or that BriefBar can't check, is
+stopped: when Azure DevOps can't be read, or is off in the app, which BriefBar asks again right before it reads the pull
+request, when git fails, or when the check takes more than four minutes, since after the hook's five the CLI would run
+it. Copilot is told why and to stop, and the task ends as failed, with that reason, whatever Copilot says after it
+(`PushStop`, `RunStatus.derive`), even once the part of its log BriefBar reads after a restart no longer has the stop:
+BriefBar keeps that it stopped one, not why (`CopilotRun.pushStopped`). The reasons name only what the prompt names,
+never the branch a retargeted pull request merges into now, and what BriefBar logs of a check is what it decided, never
+the command. The checks above, before Copilot starts, and the prompt's own steps, stay as they are: this is one more, at
+the moment of the push. The CLI runs such a hook, and stops a command when its hook fails, only from 1.0.57, so BriefBar
+asks `copilot --version` as it sends the task; with an older CLI, or one that doesn't say its version, the task goes as
+before, without the check. So it does when BriefBar runs from where macOS moved it for now (App Translocation), a path
+that doesn't last, when it can't write the plugin's folder, and when hooks are turned off in Copilot
+(`disableAllHooks`), which the CLI then doesn't run. It checks the `bash` tool only: what Copilot types into a shell it
+started earlier (`write_bash`) isn't. The folder goes with what the run printed, when you clear the task or turn Azure
+DevOps off, and a later task in the session writes its own again, or none.
 
 **A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
@@ -3177,7 +3229,8 @@ start time, so one that gets its ID after a restart isn't mistaken for it. While
 working, whatever its log says for now: in autopilot, Copilot goes on after a turn that looks like its
 last, and after an error. Once it's gone, and BriefBar has heard how it ended if it started it, its log
 and output are complete, and say how it went: done if Copilot called it done or exited cleanly, failed
-if Copilot reported an error or exited badly, and stopped otherwise. A task that went on with a session,
+if Copilot reported an error or exited badly, or BriefBar's check stopped a push it made, with why, whatever Copilot
+said after it ([above](#send-work-to-copilot)), and stopped otherwise. A task that went on with a session,
 or forked one, has that session's history in its log too, which doesn't count: one that stops before
 Copilot writes anything, as when the CLI refuses its options, failed, even if the session had finished,
 and didn't open the session's pull request (`CopilotRun.launchedAt`). The pull request is then the one
@@ -3199,8 +3252,8 @@ Neither source reads anything more for it.
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
 which comment threads, builds and conflicts it took on, by their IDs, and the pull request's link go to the preferences
 (`ado.copilot.runs`), without their titles, with, for a comment's fix sent to push and reply, the ID of the commit git
-fetched the pull request's branch at as it went, and whether it pushed; and so are the prompts about them sent to the
-app's sessions, by references
+fetched the pull request's branch at as it went, and whether it pushed, and, for a Push & Reply, whether BriefBar's
+check stopped one of its pushes, not why; and so are the prompts about them sent to the app's sessions, by references
 only (`ado.copilot.sentPrompts`); and so
 do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
 and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
@@ -3209,7 +3262,8 @@ preferences, and BriefBar may have Full Disk Access, so the files it reads for a
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
 are read without following a symbolic link. What Copilot printed when it ended stays in a file only you
 can read. Turning Azure DevOps off forgets the tasks, the repositories and those prompts, and deletes what Copilot
-printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
+printed, and the plugins of Push & Reply's check of each push. **Clear** forgets a task and deletes what it printed, and
+its plugin; **Remove Worktree…** deletes its
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
 task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's

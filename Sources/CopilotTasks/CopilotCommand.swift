@@ -9,8 +9,11 @@ public enum CopilotCommand {
     /// - Parameters:
     ///   - name: the new session's name; nil to go on with an existing session, under its own.
     ///   - denied: tools the CLI refuses, though every other tool is allowed.
+    ///   - plugins: folders of plugins for this run alone (`--plugin-dir`), such as Push & Reply's check of each push
+    ///     (`PushGuardPlugin`).
     public static func arguments(
-        prompt: String, options: CopilotRunOptions, sessionId: String, name: String?, directory: URL, denied: [String] = []
+        prompt: String, options: CopilotRunOptions, sessionId: String, name: String?, directory: URL, denied: [String] = [],
+        plugins: [URL] = []
     ) -> [String] {
         var arguments = ["-p", prompt, "--model", options.model]
         if let effort = options.effort {
@@ -19,6 +22,9 @@ public enum CopilotCommand {
         arguments += ["--autopilot", "--allow-all-tools", "--no-ask-user"]
         for tool in denied {
             arguments += ["--deny-tool", tool]
+        }
+        for plugin in plugins {
+            arguments += ["--plugin-dir", plugin.path]
         }
         arguments += ["--session-id", sessionId]
         if let name { arguments += ["--name", name] }
