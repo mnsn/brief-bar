@@ -154,6 +154,22 @@ extension PullRequestBoard {
             }
         }
     }
+
+    /// Whether the column a card moves to from another shows folded once it's there, as this Board, from before the move,
+    /// tells it: with the card in it, a column folded only for having no cards opens, and one where it's your move once
+    /// there (`BoardCard.isYourMove`) stays open, as BriefBar folds it (`BoardFolding`).
+    /// - Parameter reading: its stage once moved, the column's, with the sessions at work on it in its flags.
+    public func foldsOnceMoved(
+        _ card: BoardCard, as reading: StageReading, choices: BoardFolds, open: Set<BoardColumn>, widths: BoardWidths
+    ) -> Bool {
+        var moved = card
+        moved.reading = reading
+        let column = BoardColumn.stage(reading.stage)
+        return BoardFolding.make(
+            columns: columns, count: { count(of: $0) + ($0 == column ? 1 : 0) },
+            yourMove: { hasYourMove(in: $0) || $0 == column && moved.isYourMove }, choices: choices, open: open, widths: widths
+        ).isFolded(column)
+    }
 }
 
 // MARK: - Widths

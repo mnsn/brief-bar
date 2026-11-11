@@ -1313,28 +1313,20 @@ package struct OrderBoardView: View {
         let spot = CardSpot(lane: lane, ref: card.ref)
         if keepsFocus { keepFocus(on: spot, leaving: card.stage) }
         let reading = order.stage(of: card.ref)
-        guard Self.owesFocus(after: reading, leaving: card.stage), let stage = reading?.stage else { return true }
-        let column = BoardColumn.stage(stage)
+        guard Self.owesFocus(after: reading, leaving: card.stage), let reading else { return true }
+        let column = BoardColumn.stage(reading.stage)
         if opensColumn {
             withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: column, spot: spot) }
             return true
         }
         // A key opened the column it was in: that's over.
         if keyOpened?.spot.ref == card.ref { keyOpened = nil }
-        // Into a column that stays folded: its title flashes, and its strip counts the card.
-        if foldsOnceMoved(card, to: column) { flash(column) }
+        // Into a column that stays folded once the drag's springs end: its title flashes, and its strip counts the card.
+        let widths = BoardWidths(scale: textScale, available: width)
+        if board.foldsOnceMoved(card, as: reading, choices: order.boardFolds, open: openForNow.subtracting(sprung), widths: widths) {
+            flash(column)
+        }
         return true
-    }
-
-    /// Whether the column a card moves to shows folded once it's there and a drag's springs end: with the card in it, a
-    /// column folded only for having no cards opens, and Your review, or In progress you set it to, is your move.
-    private func foldsOnceMoved(_ card: BoardCard, to column: BoardColumn) -> Bool {
-        let yours: Set<BoardColumn> = [.stage(.yourReview), .stage(.inProgress)]
-        return BoardFolding.make(
-            columns: board.columns, count: { board.count(of: $0) + ($0 == column ? 1 : 0) },
-            yourMove: { board.hasYourMove(in: $0) || $0 == column && yours.contains(column) },
-            choices: order.boardFolds, open: openForNow.subtracting(sprung), widths: BoardWidths(scale: textScale, available: width)
-        ).isFolded(column)
     }
 
     /// Why a card didn't move, or where it still waits once it did, under its lane until its stage changes; and while the

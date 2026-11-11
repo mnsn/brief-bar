@@ -1280,6 +1280,25 @@ import Testing
             .hasYourMove(in: .stage(.inProgress)))
     }
 
+    /// A card you drop where its column shows folded once it's in it, its title flashes: as the Board was before the drop,
+    /// with the card as its reading has it once there.
+    @Test func aCardMovedInKeepsItsColumnOpenOnlyWhereItsYourMoveThere() {
+        let session = StageSession(ref: Self.cart, activity: .working, since: t(20))
+        let board = Self.board([
+            4091: Self.reading(.teammateReview, .findReviewer), 4101: Self.reading(.inProgress, .working(session)),
+            4104: Self.reading(.yourReview, .asked("Sam asked you")), 4105: Self.reading(.approved, .approvedBy("Maria")),
+        ])
+        let card = Self.card(.teammateReview, .findReviewer)
+        let widths = BoardWidths(scale: 1, available: 664)
+        let setByYou = Self.reading(.inProgress, .set, mark: StageMark(stage: .inProgress, at: t(30)))
+        var atWork = setByYou
+        atWork.flags = [.working(session)]
+        // Set in progress by you, it's your move there: In progress stays open, and Teammate's review folds instead.
+        #expect(!board.foldsOnceMoved(card, as: setByYou, choices: BoardFolds(), open: [], widths: widths))
+        // Not while a session writes it: there you wait, so In progress folds for room.
+        #expect(board.foldsOnceMoved(card, as: atWork, choices: BoardFolds(), open: [], widths: widths))
+    }
+
     @Test func itRemembersTheColumnsYouFoldedOrOpenedAndAClickBackForgetsIt() {
         let defaults = MemorySettings()
         #expect(BoardFolds.load(from: defaults) == BoardFolds())
