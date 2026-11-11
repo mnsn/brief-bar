@@ -57,8 +57,9 @@ import Testing
         }
     }
 
-    /// Your work is what the sprint counts as yours left, in its order, each with its story, how far along it is, what Show
-    /// Links links it to of pull requests, what those are, and whether Copilot works on it.
+    /// Your work is what the sprint counts as yours left, then what it counts as yours done, each in its order, with its
+    /// story, how far along it is, what Show Links links it to of pull requests, what those are, and whether Copilot works on
+    /// it.
     @Test func yourSprintWorkHasItsStoryAndWhatItsPullRequestsAre() {
         let board = DemoData.sprintBoard(now: Date())
         func workItem(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
@@ -82,14 +83,82 @@ import Testing
             PRKey("contoso", 4132): (pullRequest(4132, by: "Robin Ray"), true),
         ]
         let work = MyWorkFacts.work(in: board, linked: { links[$0] ?? [] }, pullRequest: { known[$0] }, copilotWorks: { $0.id == 5103 })
-        #expect(work.map(\.ref) == [5103, 5112, 5104, 5150].map(workItem))
-        #expect(work.map(\.story) == [workItem(5101), workItem(5110), workItem(5101), nil])
-        #expect(work.map(\.progress) == [.inProgress, .inProgress, .toDo, .toDo])
-        #expect(work.map(\.copilotWorks) == [true, false, false, false])
+        #expect(work.map(\.ref) == [5103, 5112, 5104, 5150, 5102].map(workItem))
+        #expect(work.map(\.story) == [workItem(5101), workItem(5110), workItem(5101), nil, workItem(5101)])
+        #expect(work.map(\.progress) == [.inProgress, .inProgress, .toDo, .toDo, .completed])
+        #expect(work.map(\.copilotWorks) == [true, false, false, false, false])
         #expect(work[0].pullRequests == [LinkedPullRequest(ref: github, state: .open(author: nil))])
         #expect(work[1].pullRequests.map(\.state) == [.unknown])
         #expect(work[2].pullRequests == [LinkedPullRequest(ref: .pullRequest(organization: "contoso", number: 4120), state: .open(author: "Sam"))])
         #expect(work[3].pullRequests.map(\.state) == [.merged, .abandoned, .open(author: nil), .unknown])
+        #expect(work[4].pullRequests.isEmpty)
+    }
+
+    /// One of your merged pull requests is out once BriefBar follows its pipelines after the merge no more and none failed or
+    /// waits; or where it follows none. Until then its card says why it's in Merged, and after that, the work of yours on it
+    /// that's still open.
+    @Test func aMergedPullRequestIsOutOnceBriefBarFollowsItsPipelinesNoMore() throws {
+        let now = Date()
+        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
+        let demo = try #require(DemoData.records(now: now).first { $0.pullRequest.status == .completed })
+        func merged(at minutes: Double, _ runs: [(PipelineRun.Status, PipelineStage?)]?, following: Bool = false) -> PRRecord {
+            var record = demo
+            record.pullRequest.closedAt = ago(minutes)
+            record.pullRequest.mergeCommit = "m1"
+            record.merge = runs.map { runs in
+                MergePipelines(
+                    pullRequest: demo.id, title: "Badges", targetBranch: "main", mergedAt: ago(minutes), url: demo.pullRequest.webURL,
+                    pipelines: runs.enumerated().map { index, run in
+                        let (status, stage) = run
+                        let pipeline = PipelineRef(
+                            organization: "contoso", projectId: "p", projectName: "Storefront", definitionId: index, name: "Pipeline \(index)"
+                        )
+                        let latest = PipelineRun(
+                            id: index, organization: "contoso", projectName: "Storefront", number: "1", status: status, trigger: .push,
+                            branch: "main", queuedAt: ago(minutes), startedAt: ago(minutes), finishedAt: status.isFinished ? ago(1) : nil
+                        )
+                        return PipelineStatus(pipeline: pipeline, runs: [latest], stages: stage.map { [$0] } ?? [])
+                    },
+                    isFollowing: following
+                )
+            }
+            return record
+        }
+        func out(_ record: PRRecord, follows: Bool = true) -> Bool {
+            MyWorkFacts.isOut(record, followsMerges: follows, now: now)
+        }
+        func held(_ record: PRRecord, open: [String] = []) -> String? {
+            MyWorkFacts.held(record, open: open, followsMerges: true, now: now)
+        }
+        let production = PipelineStage(id: "s1", name: "Production", state: .waiting)
+
+        // Its pipelines run, wait or failed: Merged, saying why but for a failure, which its mark says.
+        let running = merged(at: 40, [(.succeeded, nil), (.running, nil)], following: true)
+        #expect(!out(running))
+        #expect(held(running) == "1 pipeline running")
+        let waiting = merged(at: 40, [(.running, production)], following: true)
+        #expect(held(waiting) == "Production waits for approval")
+        let failed = merged(at: 90, [(.failed, nil)])
+        #expect(!out(failed))
+        #expect(held(failed) == nil)
+        #expect(held(failed, open: ["Task 5112"]) == "Task 5112 still open")
+        // They passed, but more may start: still Merged, rather than back to it from Completed.
+        let passing = merged(at: 40, [(.succeeded, nil)], following: true)
+        #expect(!out(passing))
+        #expect(held(passing, open: ["Task 5112", "Bug 5110"]) == "Its pipelines finished · more may start · Task 5112, Bug 5110 still open")
+        // No run yet: for half an hour after the merge.
+        #expect(held(merged(at: 10, nil)) == "No pipeline has started yet")
+        #expect(out(merged(at: 31, nil)))
+
+        // Out: they passed, or one was canceled, and BriefBar follows them no more; or it follows none.
+        #expect(out(merged(at: 90, [(.succeeded, nil), (.succeeded, nil)])))
+        #expect(out(merged(at: 90, [(.succeeded, nil), (.canceled, nil)])))
+        #expect(held(merged(at: 90, [(.succeeded, nil)])) == nil)
+        #expect(out(running, follows: false))
+        #expect(MyWorkFacts.held(running, open: [], followsMerges: false, now: now) == nil)
+        var open = running
+        open.pullRequest.status = .active
+        #expect(out(open))
     }
 
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and

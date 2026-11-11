@@ -1181,8 +1181,8 @@ import Testing
     }
 
     /// Your sprint work goes on the Board as cards of its own: in To start until it's started, then in In progress, in its
-    /// story's mission's lane, else in a lane for its story, else in no mission's; one with a pull request on the board only
-    /// on that pull request's card, a resolved one too. Nothing about the pull requests changes.
+    /// story's mission's lane, else in a lane for its story, else in no mission's; one resolved in Merged; one with a pull
+    /// request on the board only on that pull request's card, a resolved one too. Nothing about the pull requests changes.
     @Test func sprintWorkHasCardsOfItsOwnUntilAPullRequestOnTheBoardNamesIt() throws {
         var checkout = Self.mission([Self.step(4101, .next), Self.step(4102, .waiting(open: [Self.pr(4101)], unknown: []))])
         checkout.story = MissionStory(ref: Self.task(5001))
@@ -1210,15 +1210,18 @@ import Testing
         let labels = { (lane: BoardLane, column: BoardTask.Column) in lane.tasks(in: column).map(\.ref.shortOrderLabel) }
         #expect(labels(board.lanes[0], .toStart) == ["5104"])
         #expect(board.lanes[0].tasks(in: .inProgress).isEmpty)
+        #expect(labels(board.lanes[0], .merged) == ["5106"])
         #expect(labels(board.lanes[1], .inProgress) == ["5201", "5202"])
         #expect(board.lanes[1].story == Self.task(5002))
         #expect(labels(board.lanes[2], .toStart) == ["5301", "5401", "5002"])
-        #expect(board.taskCounts == [.toStart: 4, .inProgress: 2])
-        #expect(board.columns == [.toStart] + PullRequestStage.columns.map(BoardColumn.stage))
+        #expect(board.taskCounts == [.toStart: 4, .inProgress: 2, .merged: 1])
+        #expect(board.columns == [.toStart] + PullRequestStage.columns.map(BoardColumn.stage) + [.completed])
         #expect(base.columns == PullRequestStage.columns.map(BoardColumn.stage))
         #expect(board.count(of: .toStart) == 4)
         #expect(board.count(of: .stage(.inProgress)) == 3)
         #expect(board.count(of: .stage(.yourReview)) == 1)
+        #expect(board.count(of: .stage(.merged)) == 1)
+        #expect(board.count(of: .completed) == 0)
         #expect(board.workOfPullRequests == [Self.pr(4101): [Self.task(5103), Self.task(5105)]])
         let copilot = try #require(board.lanes[1].tasks.last)
         #expect(copilot.why == .copilot)
@@ -1232,42 +1235,127 @@ import Testing
         // With Lanes: None, every card is in one lane, which a board with no pull request has too.
         let one = Self.board(stages, missions: [checkout], lanes: .none).withWork(work, missions: [checkout], stories: [])
         #expect(one.lanes.map(\.kind) == [.all])
-        #expect(one.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5104", "5201", "5202", "5301", "5401", "5002"])
+        #expect(one.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5104", "5106", "5201", "5202", "5301", "5401", "5002"])
         let empty = Self.board([:]).withWork([Self.work(5401, .toDo)], missions: [], stories: [])
         #expect(empty.lanes.map(\.kind) == [.notInAMission])
         #expect(!empty.lanes[0].isEmpty)
     }
 
     /// A work item whose pull requests aren't on your board is in In progress, its card saying what its pull request is: an
-    /// open one first, then one that merged, then one BriefBar couldn't read. One abandoned counts as none, and its card says
-    /// so.
+    /// open one first, then one that merged, which puts it in Merged, then one BriefBar couldn't read. One abandoned counts
+    /// as none, and its card says so.
     @Test func aWorkItemsPullRequestOffTheBoardSaysWhatItIs() throws {
-        func task(_ work: SprintWork) throws -> (column: BoardTask.Column, why: String) {
-            let task = try #require(BoardTask(work))
-            return (task.column, BoardText.why(task, state: work.progress == .toDo ? "New" : "Active", type: "Task"))
+        func task(_ work: SprintWork) -> (column: BoardTask.Column, why: String) {
+            let task = BoardTask(work)
+            let state = switch work.progress {
+            case .toDo: "New"
+            case .inProgress: "Active"
+            case .resolved: "Resolved"
+            case .completed: "Closed"
+            }
+            return (task.column, BoardText.why(task, state: state, type: "Task"))
         }
-        let sams = try task(Self.work(5103, .toDo, linked: [Self.linked(4120, .open(author: "Sam"))]))
+        let sams = task(Self.work(5103, .toDo, linked: [Self.linked(4120, .open(author: "Sam"))]))
         #expect(sams.column == .inProgress)
         #expect(sams.why == "Sam's !4120")
-        #expect(try task(Self.work(5103, .toDo, linked: [Self.linked(4120)])).why == "Your !4120")
+        #expect(task(Self.work(5103, .toDo, linked: [Self.linked(4120)])).why == "Your !4120")
         let github = LinkedPullRequest(ref: Self.gh(412), state: .open(author: nil))
-        #expect(try task(Self.work(5103, .inProgress, linked: [github])).why == "#412 on GitHub")
-        #expect(try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .merged)])).why == "!4120 merged · task still open")
-        #expect(try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .unknown)])).why == "!4120 can't be read")
+        #expect(task(Self.work(5103, .inProgress, linked: [github])).why == "#412 on GitHub")
+        #expect(task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .merged)])) == (.merged, "!4120 merged · task still open"))
+        #expect(task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .unknown)])) == (.inProgress, "!4120 can't be read"))
         let several = [Self.linked(4118, .abandoned), Self.linked(4119, .unknown), Self.linked(4120, .merged), Self.linked(4121, .open(author: "Sam"))]
-        #expect(try task(Self.work(5103, .inProgress, linked: several)).why == "Sam's !4121")
-        #expect(try task(Self.work(5103, .inProgress, linked: Array(several.prefix(3)))).why == "!4120 merged · task still open")
+        #expect(task(Self.work(5103, .inProgress, linked: several)) == (.inProgress, "Sam's !4121"))
+        #expect(task(Self.work(5103, .inProgress, linked: Array(several.prefix(3)))) == (.merged, "!4120 merged · task still open"))
 
-        let abandoned = try task(Self.work(5103, .toDo, linked: [Self.linked(4120, .abandoned)]))
+        let abandoned = task(Self.work(5103, .toDo, linked: [Self.linked(4120, .abandoned)]))
         #expect(abandoned.column == .toStart)
         #expect(abandoned.why == "New · !4120 abandoned")
-        let started = try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .abandoned)]))
+        let started = task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .abandoned)]))
         #expect(started.column == .inProgress)
         #expect(started.why == "Active · no pull request yet · !4120 abandoned")
-        #expect(try task(Self.work(5103, .toDo, copilot: true)) == (column: .inProgress, why: "New · Copilot works on it"))
+        #expect(task(Self.work(5103, .toDo, copilot: true)) == (column: .inProgress, why: "New · Copilot works on it"))
+    }
 
-        // A resolved one has no card of its own.
-        #expect(BoardTask(Self.work(5103, .resolved)) == nil)
-        #expect(BoardTask(Self.work(5103, .resolved, linked: [Self.linked(4120, .open(author: "Sam"))])) == nil)
+    /// Resolved work is in Merged, its card saying so after its state, but in In progress while its pull request is still
+    /// under way, or Copilot works on it. Done work is in Completed, whatever its pull requests are.
+    @Test func resolvedWorkIsInMergedAndDoneWorkInCompleted() {
+        func task(_ work: SprintWork) -> (column: BoardTask.Column, why: String) {
+            let task = BoardTask(work)
+            return (task.column, BoardText.why(task, state: work.progress == .resolved ? "Resolved" : "Closed", type: "Bug"))
+        }
+        #expect(task(Self.work(5110, .resolved)) == (.merged, "Resolved"))
+        #expect(task(Self.work(5110, .resolved, linked: [Self.linked(4120, .merged)])) == (.merged, "Resolved · !4120 merged"))
+        #expect(task(Self.work(5110, .resolved, linked: [Self.linked(4120, .abandoned)])) == (.merged, "Resolved · !4120 abandoned"))
+        #expect(task(Self.work(5110, .resolved, linked: [Self.linked(4120, .open(author: "Sam"))])) == (.inProgress, "Resolved · Sam's !4120"))
+        #expect(task(Self.work(5110, .resolved, linked: [Self.linked(4120, .unknown)])) == (.inProgress, "Resolved · !4120 can't be read"))
+        #expect(task(Self.work(5110, .resolved, copilot: true)) == (.inProgress, "Resolved · Copilot works on it"))
+
+        #expect(task(Self.work(5102, .completed)) == (.completed, "Closed"))
+        #expect(task(Self.work(5102, .completed, linked: [Self.linked(4120, .merged)])) == (.completed, "Closed · !4120 merged"))
+        #expect(task(Self.work(5102, .completed, linked: [Self.linked(4120, .open(author: "Sam"))])) == (.completed, "Closed · Sam's !4120"))
+        #expect(task(Self.work(5102, .completed, linked: [Self.linked(4120, .abandoned)])) == (.completed, "Closed · !4120 abandoned"))
+        #expect(task(Self.work(5102, .completed, copilot: true)) == (.completed, "Closed"))
+    }
+
+    /// With your work on the board, a merged pull request's card is in Completed once it's out and every work item of yours
+    /// it names is done, one that names none too; else in Merged, with your resolved work. Its stage stays Merged, and
+    /// Merged and Completed count each card once, whatever lanes show it. Pull requests alone have no Completed.
+    @Test func aMergedPullRequestIsInCompletedOnceItsOutAndYourWorkOnItIsDone() throws {
+        var checkout = Self.mission([Self.step(4301, status: .merged), Self.step(4302, status: .merged)])
+        checkout.story = MissionStory(ref: Self.task(5001))
+        let stages: [Int: StageReading] = [
+            // Your work on it is still open.
+            4301: Self.reading(.merged, .merged, at: 5),
+            // Out, its work done.
+            4302: Self.reading(.merged, .merged, at: 4),
+            // Out, with none of your work on it.
+            4303: Self.reading(.merged, .merged, at: 3),
+            // Its work done, but its pipelines still run.
+            4304: Self.reading(.merged, .merged, at: 2),
+            4305: Self.reading(.yourReview, .asked("Priya asked you"), at: 1),
+        ]
+        let base = Self.board(stages, missions: [checkout])
+        let work = [
+            Self.work(5501, .inProgress, story: 5001, linked: [Self.linked(4301, .merged)]),
+            Self.work(5502, .completed, story: 5001, linked: [Self.linked(4302, .merged)]),
+            Self.work(5504, .completed, linked: [Self.linked(4304, .merged)]),
+            Self.work(5505, .completed, linked: [Self.linked(4305)]),
+            Self.work(5506, .completed, story: 5001),
+            Self.work(5507, .resolved, story: 5001),
+        ]
+        let board = base.withWork(work, missions: [checkout], stories: [Self.task(5001)]) { $0 != Self.pr(4304) }
+        #expect(board.completed == [Self.pr(4302), Self.pr(4303)])
+        let labels = { (lane: BoardLane, column: BoardColumn) in lane.cards(in: column).map(\.ref.shortOrderLabel) }
+        #expect(board.lanes.map(\.kind) == [.mission(checkout.key), .notInAMission])
+        #expect(labels(board.lanes[0], .stage(.merged)) == ["!4301"])
+        #expect(labels(board.lanes[0], .completed) == ["!4302"])
+        #expect(board.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5506", "5507"])
+        #expect(board.lanes[0].tasks(in: .completed).map(\.ref.shortOrderLabel) == ["5506"])
+        #expect(board.lanes[0].tasks(in: .merged).map(\.ref.shortOrderLabel) == ["5507"])
+        #expect(labels(board.lanes[1], .stage(.merged)) == ["!4304"])
+        #expect(labels(board.lanes[1], .completed) == ["!4303"])
+        #expect(labels(board.lanes[1], .stage(.yourReview)) == ["!4305"])
+        #expect(board.lanes[1].completed == [Self.pr(4303)])
+        #expect(board.count(of: .stage(.merged)) == 3)
+        #expect(board.count(of: .completed) == 3)
+        #expect(board.count(of: .stage(.yourReview)) == 1)
+        #expect(board.workOfPullRequests[Self.pr(4305)] == [Self.task(5505)])
+
+        // Only where they show: their stage, the counts by stage and Up Next stay.
+        #expect(board.lanes[0].cards(in: PullRequestStage.merged).map(\.ref.shortOrderLabel) == ["!4301", "!4302"])
+        #expect(board.counts == base.counts)
+        #expect(board.upNext == base.upNext)
+
+        // With Lanes: None, in the one lane, each once; out by default.
+        let one = Self.board(stages, missions: [checkout], lanes: .none).withWork(work, missions: [checkout], stories: [])
+        #expect(one.completed == [Self.pr(4302), Self.pr(4303), Self.pr(4304)])
+        #expect(labels(one.lanes[0], .stage(.merged)) == ["!4301"])
+        #expect(labels(one.lanes[0], .completed) == ["!4302", "!4303", "!4304"])
+        #expect(one.count(of: .completed) == 4)
+
+        // Pull requests alone: no Completed, and Merged has every merged one.
+        #expect(!base.columns.contains(.completed))
+        #expect(base.count(of: .stage(.merged)) == 4)
+        #expect(labels(base.lanes[0], .stage(.merged)) == ["!4301", "!4302"])
     }
 }

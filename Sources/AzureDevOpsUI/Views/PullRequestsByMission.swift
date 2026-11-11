@@ -137,6 +137,8 @@ struct PullRequestBoardCard: View {
     @ObservedObject var ordering: PullRequestOrder
     /// The work items of yours it's for, on My Work with + Sprint Tasks, which have no cards of their own: "Task 5112".
     var work: [String] = []
+    /// What keeps it in Merged, on My Work with + Sprint Tasks, after "Merged": "Production waits for approval".
+    var held: String? = nil
     let now: Date
 
     var body: some View {
@@ -163,7 +165,7 @@ struct PullRequestBoardCard: View {
                 .help("Your sprint work it's for, through Show Links' links")
             }
             // Why alone: its flags are its marks, below.
-            Text(StageText.reason(reading, name: name))
+            Text([StageText.reason(reading, name: name), held].compactMap { $0 }.joined(separator: " · "))
                 .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -217,18 +219,21 @@ struct PullRequestBoardCard: View {
     /// - Parameters:
     ///   - lanes: the Board's lanes, for where Undo shows.
     ///   - work: the work items of yours it's for, on My Work with + Sprint Tasks: "Task 5112".
+    ///   - held: what keeps it in Merged, on My Work with + Sprint Tasks: "Production waits for approval".
     ///   - select: shows its details.
     @MainActor
     static func content(
         _ item: PRSnapshot, _ card: BoardCard, store: PRStore, ordering: PullRequestOrder, lanes: BoardLanes, work: [String] = [],
-        select: @escaping () -> Void
+        held: String? = nil, select: @escaping () -> Void
     ) -> BoardCardContent {
         let order = card.step.map {
             OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
         }
         let mission = MissionMenuContext.of(item.key.linkRef, order: ordering, mission: card.mission, undo: .onBoard(lanes))
         return BoardCardContent(
-            view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, work: work, now: store.now)),
+            view: AnyView(PullRequestBoardCard(
+                item: item, card: card, order: order, ordering: ordering, work: work, held: held, now: store.now
+            )),
             menu: AnyView(Group {
                 Button("Show Details", action: select)
                 Button("Open in Azure DevOps") { store.open(item) }
@@ -241,7 +246,7 @@ struct PullRequestBoardCard: View {
             }),
             label: "!\(item.key.number) \(item.title)",
             details: details(item, reading: card.reading, order: order, ordering: ordering)
-                + (work.isEmpty ? [] : ["for " + work.joined(separator: ", ")]),
+                + (work.isEmpty ? [] : ["for " + work.joined(separator: ", ")]) + [held].compactMap { $0 },
             mission: mission
         )
     }

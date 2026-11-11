@@ -8,8 +8,10 @@ import SwiftUI
 // hover them. Its column titles stay at the top as the page scrolls, and the board scrolls sideways when the window is too
 // narrow for its columns, which grow with the text. Scrolling redraws only what follows it: the column titles and the lanes'
 // headers. On My Work, with + Sprint Tasks, your sprint work has cards of its own (`PullRequestBoard.withWork`): in To start,
-// a column before In progress, until it's started, then in In progress, after the pull requests. They don't move: their work
-// does, in Azure DevOps.
+// a column before In progress, until it's started, then in In progress, after the pull requests; in Merged once it's
+// resolved, and in Completed, a column after Merged, once it's done, where a merged pull request's card goes too once it's
+// out, with your work on it done. They don't move: their work does, in Azure DevOps. Merged and Completed fold to their
+// counts until you open them.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -66,24 +68,23 @@ extension BoardColumn {
         switch self {
         case .toStart: BoardText.toStart
         case .stage(let stage): stage.columnTitle
+        case .completed: BoardText.completed
         }
     }
 
     /// Its color: its stage's; for To start, the gray of the Sprint page's To Do, which is Waits' too: only To start's
-    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side.
+    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side. Completed is gray too, with the
+    /// Sprint page's Done checkmark in place of a dot, Merged between it and Waits: what's done needs nothing from you.
     var color: Color {
         switch self {
-        case .toStart: Color(nsColor: .systemGray)
+        case .toStart, .completed: Color(nsColor: .systemGray)
         case .stage(let stage): stage.color
         }
     }
 
-    /// The column a work item's card is in.
-    init(_ column: BoardTask.Column) {
-        switch column {
-        case .toStart: self = .toStart
-        case .inProgress: self = .stage(.inProgress)
-        }
+    /// The columns that fold to their count until you open them: what's done, Merged and Completed.
+    var foldsToCount: Bool {
+        self == .stage(.merged) || self == .completed
     }
 }
 
@@ -117,22 +118,23 @@ private struct BoardNotice: Equatable {
     var isRefusal = true
 }
 
-/// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged narrow while
-/// it's folded; all of it from the columns it shows.
+/// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged and Completed
+/// narrow while they're folded; all of it from the columns it shows.
 private struct BoardMetrics {
     let scale: CGFloat
     /// The page's width.
     let available: CGFloat
     /// The columns it shows, from left to right.
     let columns: [BoardColumn]
-    let showsMerged: Bool
+    /// Of the columns that fold to their count, those you opened.
+    let opened: Set<BoardColumn>
 
     var gap: CGFloat { 10 * scale }
     var minimum: CGFloat { 172 * scale }
     var folded: CGFloat { 132 * scale }
 
     private func isFolded(_ column: BoardColumn) -> Bool {
-        column == .stage(.merged) && !showsMerged
+        column.foldsToCount && !opened.contains(column)
     }
 
     /// The room the gaps between the columns take.
@@ -265,7 +267,8 @@ package struct OrderBoardView: View {
     @LocalState private var isDragging = false
     @LocalState private var hovered: BoardCell?
     @LocalState private var notice: BoardNotice?
-    @LocalState private var showsMerged = false
+    /// Of Merged and Completed, which fold to their count, those you opened.
+    @LocalState private var opened: Set<BoardColumn> = []
     @LocalState private var unfolded: Set<MissionKey> = []
     @LocalState private var width: CGFloat = 0
     @LocalState private var flashing: PullRequestStage?
@@ -319,7 +322,7 @@ package struct OrderBoardView: View {
     }
 
     package var body: some View {
-        let metrics = BoardMetrics(scale: textScale, available: width, columns: board.columns, showsMerged: showsMerged)
+        let metrics = BoardMetrics(scale: textScale, available: width, columns: board.columns, opened: opened)
         let lanes = board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions)
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
@@ -454,6 +457,12 @@ package struct OrderBoardView: View {
                     .font(size: 10, weight: .bold)
                     .foregroundStyle(column.color)
                     .frame(width: 8 * textScale, height: 8 * textScale)
+            } else if column == .completed {
+                // Done, as the Sprint page's Done says it: not Waits' grey dot.
+                Image(systemName: BoardText.completedSymbol)
+                    .font(size: 9.5, weight: .bold)
+                    .foregroundStyle(column.color)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
             } else {
                 Circle()
                     .fill(column.color)
@@ -468,11 +477,11 @@ package struct OrderBoardView: View {
                 .font(size: 12.5, weight: .medium)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-            if column == .stage(.merged) {
+            if column.foldsToCount {
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
                     .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(showsMerged ? 90 : 0))
+                    .rotationEffect(.degrees(opened.contains(column) ? 90 : 0))
             }
         }
         .padding(.horizontal, 6)
@@ -489,16 +498,17 @@ package struct OrderBoardView: View {
                 .frame(height: 3 * textScale)
         }
         .contentShape(Rectangle())
-        if column == .stage(.merged) {
+        if column.foldsToCount {
+            let isOpen = opened.contains(column)
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { showsMerged.toggle() }
+                withAnimation(.easeOut(duration: 0.15)) { toggle(column) }
             } label: {
                 label
             }
             .buttonStyle(.plain)
-            .help(showsMerged ? "Fold Merged to its count" : "Show what merged: Done lists it for a day")
-            .accessibilityLabel("Merged, \(count)")
-            .accessibilityHint(showsMerged ? "Folds it" : "Shows its cards")
+            .help(isOpen ? "Fold \(column.title) to its count" : foldedHelp(column))
+            .accessibilityLabel("\(column.title), \(count)")
+            .accessibilityHint(isOpen ? "Folds it" : "Shows its cards")
         } else {
             label
                 .help(help(column))
@@ -508,14 +518,30 @@ package struct OrderBoardView: View {
         }
     }
 
-    /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, while the board
-    /// shows it.
+    /// Opens or folds Merged or Completed.
+    private func toggle(_ column: BoardColumn) {
+        if opened.contains(column) { opened.remove(column) } else { opened.insert(column) }
+    }
+
+    /// What a click on Merged's or Completed's folded title shows.
+    private func foldedHelp(_ column: BoardColumn) -> String {
+        switch column {
+        case .completed: "Show what you finished: " + BoardText.completedHolds
+        case .stage(.merged) where board.showsWork: "Show what merged but isn't out yet, and your sprint work that's resolved"
+        default: "Show what merged: Done lists it for a day"
+        }
+    }
+
+    /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, and Merged what
+    /// isn't out yet, while the board shows it.
     private func help(_ column: BoardColumn) -> String {
         switch column {
         case .toStart: BoardText.toStartHelp
         case .stage(.inProgress) where board.showsWork:
             Self.help(.inProgress) + "; then your sprint work that has started, with no pull request on your board"
+        case .stage(.merged) where board.showsWork: BoardText.mergedWithWorkHelp
         case .stage(let stage): Self.help(stage)
+        case .completed: BoardText.completedHelp
         }
     }
 
@@ -743,7 +769,7 @@ package struct OrderBoardView: View {
     // MARK: Cells
 
     private func cell(_ lane: BoardLane, column: BoardColumn, width: CGFloat, moves: BoardMoves) -> some View {
-        let cards = column.stage.map(lane.cards(in:)) ?? []
+        let cards = lane.cards(in: column)
         // Your sprint work's own cards, after the pull requests'.
         let tasks = lane.tasks.filter { BoardColumn($0.column) == column }
         let target = BoardCell(lane: lane.kind, column: column)
@@ -753,11 +779,11 @@ package struct OrderBoardView: View {
         let isHovered = hovered == target
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
         return VStack(alignment: .leading, spacing: 8 * textScale) {
-            if column == .stage(.merged), !showsMerged {
-                foldedMerged(cards)
+            if column.foldsToCount, !opened.contains(column) {
+                foldedCount(cards, tasks, in: column)
             } else {
                 ForEach(cards) { card in
-                    cardView(card, in: lane, moves: moves)
+                    cardView(card, in: lane, column: column, moves: moves)
                 }
                 ForEach(tasks) { task in
                     taskView(task, in: lane)
@@ -805,17 +831,21 @@ package struct OrderBoardView: View {
             .overlay(shape.strokeBorder(column.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
     }
 
-    /// Merged, folded: how many merged in the lane, which a click shows.
+    /// Merged or Completed, folded: how many cards the lane has there, which a click shows.
     @ViewBuilder
-    private func foldedMerged(_ cards: [BoardCard]) -> some View {
-        if !cards.isEmpty {
+    private func foldedCount(_ cards: [BoardCard], _ tasks: [BoardTask], in column: BoardColumn) -> some View {
+        let count = cards.count + tasks.count
+        if count > 0 {
+            let words = column == .completed ? "\(count) completed" : "\(count) merged"
+            let names = cards.map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
+                + tasks.map { work?.card($0)?.label ?? $0.ref.shortOrderLabel }
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { showsMerged = true }
+                withAnimation(.easeOut(duration: 0.15)) { _ = opened.insert(column) }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(PullRequestStage.merged.color)
-                    Text("\(cards.count) merged")
+                        .foregroundStyle(column.color)
+                    Text(words)
                         .lineLimit(1)
                 }
                 .font(size: 11.5, weight: .medium)
@@ -825,19 +855,18 @@ package struct OrderBoardView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 2)
             .padding(.vertical, 4)
-            .help(cards.map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
-                .joined(separator: "\n") + "\nClick to show them")
-            .accessibilityLabel("\(cards.count) merged")
+            .help(names.joined(separator: "\n") + "\nClick to show them")
+            .accessibilityLabel(words)
             .accessibilityHint("Shows them")
         }
     }
 
     @ViewBuilder
-    private func cardView(_ card: BoardCard, in lane: BoardLane, moves: BoardMoves) -> some View {
+    private func cardView(_ card: BoardCard, in lane: BoardLane, column: BoardColumn, moves: BoardMoves) -> some View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
-                card: card, content: content, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
+                card: card, content: content, color: column.color, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
                 picked: Set(board.picked.filter { $0.value == card.ref }.keys), isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
@@ -913,24 +942,34 @@ package struct OrderBoardView: View {
             return false
         }
         drag = nil
+        // A work item's card, a pull request's on To start or Completed, or one in Completed, stays where it is.
+        if case .refused(let why) = outcome {
+            refuse(why, about: ref, in: lane.kind)
+            return false
+        }
         guard let stage = column.stage, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
-            // A work item's card, or a pull request's on To start, stays where it is.
-            if case .refused(let why) = outcome { refuse(why, about: ref, in: lane.kind) }
             return false
         }
         return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref)
     }
 
     /// What dropping a card on a column of a lane does, to the card as it is now: a work item's stays where its work puts it,
-    /// and To start takes no pull request. Nil for a card that left the board.
+    /// To start and Completed take no pull request, and one in Completed goes nowhere. Nil for a card that left the board.
     private func moving(_ ref: ItemRef, to column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> BoardMove? {
         if let task = board.lanes.lazy.flatMap(\.tasks).first(where: { $0.ref == ref }) {
             let stays = BoardColumn(task.column) == column && lane.tasks.contains { $0.ref == ref }
             return stays ? .stays : .refused(BoardText.workStays)
         }
         guard let card = moves.card(ref, in: lane.kind) else { return nil }
-        guard let stage = column.stage else { return .refused(BoardText.toStartTakesNoPullRequest) }
-        return moves.move(card, to: stage, in: lane.kind)
+        let isCompleted = board.completed.contains(ref)
+        switch column {
+        case .toStart: return .refused(BoardText.toStartTakesNoPullRequest)
+        case .completed:
+            if lane.completed.contains(ref) { return .stays }
+            return .refused(isCompleted ? BoardText.hasMerged : BoardText.completedTakesNoPullRequest)
+        case .stage(let stage):
+            return isCompleted ? .refused(BoardText.hasMerged) : moves.move(card, to: stage, in: lane.kind)
+        }
     }
 
     /// Why a card can't go where you moved it: a beep, which VoiceOver says, and its lane says until its stage changes.
@@ -1080,6 +1119,8 @@ package struct OrderBoardView: View {
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
+    /// Its column's color, on its edge: its stage's, but Completed's there.
+    let color: Color
     /// The Up Next slots it's the pull request of: Fix next's, and its column's.
     let nexts: [UpNextSlot]
     /// Of those, the ones you chose it for (`UpNextPicks`).
@@ -1115,9 +1156,9 @@ private struct BoardCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GlassCard(cornerRadius: 10, isHovered: isHovered, raised: true))
             .overlay {
-                // Its stage's color on its edge.
+                // Its column's color on its edge.
                 shape
-                    .fill(card.stage.color)
+                    .fill(color)
                     .mask(alignment: .leading) { Rectangle().frame(width: 4 * textScale) }
                     .allowsHitTesting(false)
             }
@@ -1250,11 +1291,11 @@ private struct BoardCardView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// What follows the pointer as it's dragged: its number and title, in its stage's color.
+    /// What follows the pointer as it's dragged: its number and title, in its column's color.
     private var preview: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(card.stage.color)
+                .fill(color)
                 .frame(width: 8, height: 8)
             Text(content.label)
                 .font(size: 12.5, weight: .semibold)
@@ -1268,7 +1309,7 @@ private struct BoardCardView: View {
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(card.stage.color, lineWidth: 1.5)
+                        .strokeBorder(color, lineWidth: 1.5)
                 )
         )
     }
