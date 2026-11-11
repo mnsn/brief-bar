@@ -228,7 +228,7 @@ import Testing
     @Test func yoursGoesBackOnlyAsItLosesWhatItsStageStandsFor() {
         let waiting = StageFacts(role: .author, failure: "Build expired", waitingFor: "Waiting on Priya")
         let writing = [Self.session(.working, at: 150)]
-        // The user's !17775444: waiting for reviewers with an expired build stays in Teammate's review.
+        // Waiting for reviewers with an expired build, it stays in Teammate's review.
         #expect(Self.why(Self.reading(waiting, reached: StageReach(.teammateReview))) == "Waiting on Priya · build expired")
         let rewritten = Self.reading(waiting, sessions: writing, reached: StageReach(.teammateReview))
         #expect(rewritten?.stage == .teammateReview)
