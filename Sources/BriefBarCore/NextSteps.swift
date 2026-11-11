@@ -796,6 +796,12 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     /// The pull request you chose for Fix next, which comes first of what it has to fix, while it needs you, whatever its
     /// column.
     public var fixFirst: ItemRef?
+    /// Of its merged pull requests, those in Completed rather than Merged, on My Work with your work
+    /// (`PullRequestBoard.completed`): their stage is still Merged.
+    public var completed: Set<ItemRef> = []
+    /// Whether a pull request's card in it names work of yours not resolved yet, on My Work with your work
+    /// (`PullRequestBoard.withWork`): with its work items' own cards, what keeps a finished mission's lane open.
+    public var namesWorkToDo = false
 
     public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
@@ -873,12 +879,16 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var kinds: Set<ItemRef.Kind>
     /// A lane for each mission, or one for every card.
     public var mode: BoardLanes
-    /// It shows your sprint work, on My Work with + Sprint Tasks (`withWork`): To start comes before In progress.
+    /// It shows your sprint work, on My Work with + Sprint Tasks (`withWork`): To start comes before In progress, and
+    /// Completed after Merged.
     public var showsWork = false
     /// How many work items' own cards each of those columns has.
     public var taskCounts: [BoardTask.Column: Int] = [:]
     /// The work items of yours linked to each pull request on the board, which its card names, in the sprint's order.
     public var workOfPullRequests: [ItemRef: [ItemRef]] = [:]
+    /// Of its merged pull requests, those in Completed rather than Merged, with your work on it (`withWork`): out, with no
+    /// work item of yours that its card names still open. Only where they show: their stage is still Merged.
+    public var completed: Set<ItemRef> = []
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],
@@ -1239,7 +1249,7 @@ public enum BoardText {
     public static let notOnBoardHelp =
         "Others' pull requests you approved or declined, others' drafts, and those closed without merging. By Status lists them."
 
-    static let hasMerged = "It merged: nothing changes its stage now"
+    public static let hasMerged = "It merged: nothing changes its stage now"
     static let azureDevOpsDecides = "Azure DevOps decides when it can merge: once it says it's ready to complete"
     static let azureDevOpsApproves = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
     static let mergesInAzureDevOps = "It merges in Azure DevOps: complete it there"

@@ -1816,21 +1816,22 @@ scrolls (`PinnedTitles`), not a lazy stack's pinned header, which loses the lane
 scrolled down the board, as when the details open beside it.
 
 A column folds to a strip as you click its title, and opens as you click the strip (`BoardFolding`). What you chose is
-kept by column (`BoardFolds`), To start or a stage, folded or open; a click that does what BriefBar would do by itself
-then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no cards folds,
-and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip 20, 10
-between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar folds,
-until they fit: Merged, Waits and To start, whatever they hold; then those where you wait, the one that needs least from
-you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and Approved, one step from done,
-last, then any other from the left;
-never one where it's your move (`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and
-doesn't complete by itself; one in In progress that's your draft or that you set there, while no session writes it or
-asks you about it, which its flags say; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`),
-nor one you chose. What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points
-the Board has in a 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too.
-A strip's count is in a pill bordered in its column's color where one of its cards needs you (`BoardCard.needsYou`: a
-review waiting on you, one you can complete, or a problem Fix next ranks, `fixRank`, but none in Merged), which only
-marks it, and the strip wears its column's mark, To start's dashed ring, Approved's seal or a dot: a shape as well as a color. With
+kept by column (`BoardFolds`), To start, a stage or Completed, folded or open; a click that does what BriefBar would do
+by itself then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no
+cards folds, and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip
+18, 10 between open columns and 3 beside a strip, each grown with Text Size in Windows, a strip to 22 at 150%), BriefBar
+folds, until they fit: Completed, Merged, Waits and To start, whatever they hold; then those where you wait, the one
+that needs least from you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and
+Approved, one step from done, last, then any other from the left; never one where it's your move
+(`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and doesn't complete by itself;
+one in In progress that's your draft or that you set there, while no session writes it or asks you about it, which its
+flags say; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`), nor one you chose.
+What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points the Board has in a
+946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too, whose nine columns
+take 3 × 172 + 6 × 18 + 2 × 10 + 6 × 3 = 662. A strip's count is in a pill bordered in its column's color where one of
+its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or a problem Fix next ranks,
+`fixRank`, but none in Merged), which only marks it, and the strip wears its column's mark, To start's dashed ring,
+Approved's seal, Completed's checkmark or a dot: a shape as well as a color. With
 every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
 card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
 column of a lane being one drop destination, folded or open, so that the one under the card stays as it springs open;
@@ -1867,49 +1868,74 @@ no lanes.
 
 **Show** (`ado.myWorkShows`), on a row of its own under the header, where its three choices keep their words and the
 title and subtitle their room in a narrow window, offers Pull Requests, the Board as it was, **+ Sprint Tasks**, your
-sprint work on it too, and **+ All My Tasks**, your work outside the sprint as well. Your sprint work is `SprintBoard.myWork`, your tasks
-and your stories and bugs without tasks that aren't done. Your work outside the sprint (`OutsideWork`) is your open tasks
-and bugs in the sprint's team's project that its board doesn't have: in older sprints, later ones, iterations outside the
-team's sprints, or none. Azure DevOps' Assigned to me query lists what's assigned to you there, up to 500, by ID only;
-`OutsideWork.yours` keeps those of the team's task types, such as Task, and bugs, not resolved, done or removed, as their
-states' categories say, leaves out a bug that's the parent of a task of yours, as the sprint leaves out a story with tasks,
-and orders them by iteration, the latest name first and those in none last. `MyWorkFacts.work` takes, for each, its story
-(for one outside the sprint, its parent for a task, itself for a bug), whether it has started, the pull requests
-[Show Links](#links) links it to, and whether a task you sent to Copilot works on it now. A linked pull request is what
-your lists have of it, else what Show Links read of it (`WorkLinksStore.linkedPullRequest`): open, someone else's by their
-first name; merged; abandoned; or, unread or gone, can't be read. One on GitHub, linked in BriefBar, counts as open, as
-nothing more of it is read; Azure DevOps' links from a work item to a GitHub pull request aren't read
-(`ArtifactLink.pullRequest` takes only Azure DevOps' own), so that work stays in To start. Work items and pull requests go
-together only through those links, never by their states: with Show Links off, + Sprint Tasks and + All My Tasks show
-none of your work, and offer to turn it on.
+sprint work on it too, and **+ All My Tasks**, your work outside the sprint as well. Your sprint work is
+`SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done, then `SprintBoard.myDone`,
+those that are. Your work outside the sprint (`OutsideWork`) is your open tasks and bugs in the sprint's team's project
+that its board doesn't have: in older sprints, later ones, iterations outside the team's sprints, or none. Azure DevOps'
+Assigned to me query lists what's assigned to you there, up to 500, by ID only; `OutsideWork.yours` keeps those of the
+team's task types, such as Task, and bugs, not resolved, done or removed, as their states' categories say, leaves out a
+bug that's the parent of a task of yours, as the sprint leaves out a story with tasks, and orders them by iteration, the
+latest name first and those in none last. `MyWorkFacts.work` takes, for each, its story (for one outside the sprint, its
+parent for a task, itself for a bug), how far along it is, the pull requests [Show Links](#links) links it to, and
+whether a task you sent to Copilot works on it now. A linked pull request is what your lists have of it, else what Show
+Links read of it (`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged; abandoned; or,
+unread or gone, can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is read; Azure
+DevOps' links from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only Azure DevOps'
+own), so that work stays in To start. Work items and pull requests go together only through those links, never by their
+states: with Show Links off, + Sprint Tasks and + All My Tasks show none of your work, and offer to turn it on.
 
 `PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
 agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
-names it, resolved too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181 (Sprint 41)"
-(`MyWorkText.mention`). One without, a `BoardTask`, goes in **To start**, a column before In
-progress (`BoardColumn.toStart`), while it hasn't started and no Copilot task works on it; else in In progress, after
-its pull requests: with a pull request that isn't on the board, the first of an open one, one that merged, one that
-can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task still open"; with a Copilot task; or
-started, "Active · no pull request yet". An abandoned pull request counts as none, its card saying so. A resolved one
-without a pull request on the board has no card yet. Its card goes in its story's mission's lane; else, for a story in
-the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the missions'; else in that of those in no
-mission; with Lanes: None, in the one lane. Your work outside the sprint comes after the sprint's in each column, even
-with no sprint going on, and its card says where it is (`OutsideWork.place`): its iteration's name, such as "Sprint 38",
-or "No sprint" at the project's root; one in the sprint's own iteration that its board doesn't have, under another team's
-area, says nothing. A task of yours outside the sprint goes in its story's lane, as the sprint's do; a story or bug of
-yours in the sprint with no tasks there, a card of its own with + Sprint Tasks, is then no card, as on the Sprint page a
-story with tasks isn't: they're its work (`MyWorkFacts.work(sprint:outside:)`). The columns, their widths and their counts come from one list
-(`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
-and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
-card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
+names it, resolved and done too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181
+(Sprint 41)" (`MyWorkText.mention`). One without, a `BoardTask`, goes in **Completed**, a column after Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
+request is, "Closed · !4120 merged"; else, with a pull request that isn't on the board, the first of an open one, one that
+merged, one that can't be read, saying what it is: in Merged for one that merged, "!4120 merged · task still open", or
+"Resolved · !4120 merged" for one resolved, and in In progress for the rest, such as "Sam's !4120"; else in In progress
+with a Copilot task; in Merged once it's resolved, "Resolved"; in **To start**, a column before In progress
+(`BoardColumn.toStart`), while it hasn't started; else in In progress, after its pull requests, "Active · no pull request
+yet". An abandoned pull request counts as none, its card saying so. Removed work items aren't in the sprint's board, so
+they have no card. Its card goes in its story's mission's lane; else, for a story in the sprint, in a lane of the story's
+own (`BoardLane.Kind.story`), after the missions'; else in that of those in no mission; with Lanes: None, in the one lane.
+Your work outside the sprint comes after the sprint's in each column, even with no sprint going on, and its card says
+where it is (`OutsideWork.place`): its iteration's name, such as "Sprint 38", or "No sprint" at the project's root; one
+in the sprint's own iteration that its board doesn't have, under another team's area, says nothing. A task of yours
+outside the sprint goes in its story's lane, as the sprint's do; a story or bug of yours in the sprint with no tasks
+there, a card of its own with + Sprint Tasks, is then no card, as on the Sprint page a story with tasks isn't: they're
+its work (`MyWorkFacts.work(sprint:outside:)`).
+
+A merged pull request's card is in Merged while it isn't out, or a work item of yours it names isn't done; then in
+Completed (`PullRequestBoard.completed`, and each lane's `completed`), its stage still Merged. Out comes from what
+BriefBar already reads of the [pipelines after your merges](#pipelines-after-your-merges): it isn't while BriefBar still
+follows them, for half an hour after the merge until a run starts, while one runs or waits, and a little while after the
+last one finished, as more may start (`MergeChain.isFollowing`), nor once one failed; it is once they passed, or one was
+canceled, as Done counts them finished, and whenever BriefBar follows none, with Follow Pipelines After You Merge off
+(`MyWorkFacts.isOut`). One with no work of yours goes the same way. Its card in Merged says what keeps it there, after
+"Merged": "Production waits for approval", "1 pipeline running", "No pipeline has started yet", "Its pipelines finished
+· more may start", then "Task 5112 still open"; one that failed after its merge has its ✕ mark (`MyWorkFacts.held`).
+Completed keeps your sprint's done work for as long as the sprint is the one shown: on a card of its own, or on a pull
+request's that's out, which stays while Done lists it, as Merged's do; once it leaves the list, the work items it named
+have cards of their own there. Done work that a pull request in another column names, such as one held in Merged, is on
+that card. Completed counts its cards, as every column does: a pull request's once, whatever work items it names; where
+the Board is too narrow, it folds first (`BoardFolding.foldsFirst`). A pull request's card in Completed tells VoiceOver
+so before its stage, Merged. A story's lane whose work is all resolved or done, in Merged and Completed
+(`BoardLane.isFinishedStory`), folds to its header, as a finished mission's does, until you open it: its header doesn't
+say its pull requests aren't on your board yet, and the line under it says what it holds, "1 merged · 2 completed"
+(`finishedWork`). A finished mission's lane folds while none of its cards is work of yours still to do
+(`BoardLane.hasWorkToDo`): in To start or In progress, not resolved yet, or named by a pull request's card. The line a
+lane folds to takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation, so that Tab reaches
+what it hides, and Return, Space or a click folds the lane or shows it. The columns, their widths and their counts come
+from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull
+request's does, and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a
+pull request's card dropped on To start or Completed, are refused, saying why (`BoardText.workStays`,
+`toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
 
 With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
 with + Sprint Tasks offering **Show Them**, + All My Tasks, with the Board at the first card of that work
-(`MyWorkFacts.card`): its own, lanes from the top, To start before In progress, else a pull request's that names one. Its
-column opens for the moment where it's folded, and its title flashes; a finished mission's lane it's in unfolds; the page
-scrolls to its lane, as to a mission's; and the card takes the keyboard's focus, for VoiceOver to read it
-(`PullRequestOrder.revealedCard`); or says "All your open tasks and bugs are in Sprint 42";
+(`MyWorkFacts.card`): its own, lanes from the top, columns from the left, else a pull request's that names one. Its
+column opens for the moment where it's folded, and its title flashes; the page scrolls to its lane, as to a mission's; and
+the card takes the keyboard's focus, for VoiceOver to read it (`PullRequestOrder.revealedCard`); or says "All your open
+tasks and bugs are in Sprint 42";
 "Looking for…" until the first read, and why when one fails, keeping what was read before. It shows under the sprint's
 problem too, as the Sprint page shows the cards read before under it. With no sprint going on, it says how many are open
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,

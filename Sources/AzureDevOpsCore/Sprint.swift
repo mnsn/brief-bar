@@ -385,9 +385,7 @@ public struct SprintBoard: Sendable, Equatable {
     /// What you have to do: your tasks, and your stories and bugs without tasks, that aren't done. In progress
     /// first, then to do, each in backlog order.
     public var myWork: [WorkItem] {
-        var items = tasks.filter { $0.isAssigned(to: me) }
-        items += rows.filter(\.tasks.isEmpty).compactMap(\.parent).filter { $0.isAssigned(to: me) }
-        return items
+        mine
             .filter { $0.category.column == .toDo || $0.category.column == .inProgress }
             .sorted { lhs, rhs in
                 let left = lhs.category.column == .inProgress ? 0 : 1
@@ -396,10 +394,18 @@ public struct SprintBoard: Sendable, Equatable {
             }
     }
 
+    /// What you finished: your tasks, and your stories and bugs without tasks, that are done, in backlog order.
+    public var myDone: [WorkItem] {
+        mine.filter(\.isDone).sorted(by: WorkItem.ordered)
+    }
+
     /// Your tasks, and stories and bugs without tasks, that are done.
     public var myDoneCount: Int {
-        let tasks = self.tasks.filter { $0.isAssigned(to: me) && $0.isDone }.count
-        let parents = rows.filter(\.tasks.isEmpty).compactMap(\.parent).filter { $0.isAssigned(to: me) && $0.isDone }.count
-        return tasks + parents
+        myDone.count
+    }
+
+    /// Your tasks, and your stories and bugs without tasks.
+    private var mine: [WorkItem] {
+        tasks.filter { $0.isAssigned(to: me) } + rows.filter(\.tasks.isEmpty).compactMap(\.parent).filter { $0.isAssigned(to: me) }
     }
 }
