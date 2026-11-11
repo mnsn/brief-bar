@@ -18,9 +18,12 @@ import Testing
 /// that, all at once, they kept the other tests on it waiting past their time limits.
 @MainActor
 @Suite(.serialized, .opensNothing) struct YourCommentsViewTests {
-    /// Which composer the details have open, as the test opens them.
+    /// Which composer the details have open, as the test opens them; and what your comment on the long thread said as
+    /// SwiftUI last drew the comments, which it does as the main run loop gets to the window, not as the comment changes.
     final class Composing: ObservableObject {
         @Published var open: CopilotComposing?
+        /// Not published: drawing sets it.
+        var drawn: String?
     }
 
     /// The comments, drawn as the details draw them, as the list has them now, with the composer open that `composing` says.
@@ -101,6 +104,7 @@ import Testing
                 guard let record = store.record(for: key), let item = store.items.first(where: { $0.key == key }) else {
                     return AnyView(EmptyView())
                 }
+                composing.drawn = record.details?.threads.first { $0.id == 70 }?.comments.first { $0.id == 2 }?.markdown
                 return AnyView(
                     PullRequestCommentsSection(
                         item: item, panel: PullRequestPanel(item, record: record), pullRequest: record.pullRequest, me: record.me,
@@ -181,7 +185,9 @@ import Testing
 
     /// Presses a key in a window once SwiftUI takes it, as a button's shortcut, which it takes only once it has drawn the
     /// button enabled, as after a change that went, for as long as a busy machine could need (`waitLimit`): whether it took
-    /// it.
+    /// it. A button drawn before a change began takes it too, as the main run loop may not have got to the window since, and
+    /// acts as things are now: Save, with your edit on its way, only beeps. So a test presses it again once the change has
+    /// landed.
     private func press(_ key: NSEvent, in host: NSView) async throws -> Bool {
         var taken = false
         try await settle {
@@ -472,12 +478,12 @@ import Testing
         #expect(sent.writes.isEmpty)
 
         #expect(try await press(saveAnyway, in: host))
-        try await settle { sent.writes.count == 1 }
+        // Refused: what you chose stays chosen, and the notice gone; Save is back once the refusal has landed.
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: thread.id)
+        try await settle { if case .failed? = changes.state(of: threadKey) { true } else { false } }
         #expect(sent.edits == [written])
-        // Refused: what you chose stays chosen, and the notice gone.
         #expect(try await press(commandReturn, in: host))
         try await settle { sent.writes.count == 2 }
-        let threadKey = ThreadChanges.Key(pullRequest: key, thread: thread.id)
         try await settle { if case .failed? = changes.state(of: threadKey) { true } else { false } }
         #expect(sent.edits == [written, written])
         #expect(!host.performKeyEquivalent(with: saveAnyway))
@@ -628,7 +634,10 @@ import Testing
         try await settle { fields(in: host) == [mine.markdown + " Per client too."] }
         let commandReturn = try key("\r", code: 36, .command, in: window)
         #expect(try await press(commandReturn, in: host))
-        try await settle { sent.writes.count == 1 }
+        // Unanswered: Save is back once that has landed, not as soon as the stand-in has the edit, still on its way then.
+        let threadKey = ThreadChanges.Key(pullRequest: key, thread: thread.id)
+        try await settle { if case .failed? = changes.state(of: threadKey) { true } else { false } }
+        #expect(sent.writes.count == 1)
 
         var read = thread
         read.comments[1].text = "It reads RetryOptions.MaxDelay, a minute by default."
@@ -637,6 +646,9 @@ import Testing
         changes.readThreads = { _ in threads }
         #expect(try await press(commandReturn, in: host))
         try await settle { !sent.spoken.isEmpty }
+        // Your edit shows it changed, and dims Save, once SwiftUI draws the comment as read again: until then, Save as it was
+        // drawn takes ⌘Return.
+        try await settle { composing.drawn == read.comments[1].markdown }
         try await settle(at: 30)
         #expect(sent.spoken == [
             ThreadChanges.changedSentence + " " + ThreadChanges.unsavedSentence + " " + ThreadChanges.changedChoices,
