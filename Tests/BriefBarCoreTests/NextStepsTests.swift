@@ -1242,15 +1242,24 @@ import Testing
         #expect(failing.needsYou && !failing.isYourMove)
         #expect([completesItself, reviewer, merged].allSatisfy { !$0.needsYou && !$0.isYourMove })
         // In progress, what only you are working on is your move, though it doesn't need you: your draft, or one you set
-        // there yourself. Not one a session set there, nor one a session writes.
+        // there yourself. Not one a session set there, nor one a session writes, or asks you about, which leaves a draft
+        // and what you set as they are, with the session in their flags. A failing build there is only a mark.
         let draft = Self.card(.inProgress, .draft)
         var setByYou = Self.card(.inProgress, .set)
         setByYou.reading.mark = StageMark(stage: .inProgress, at: t(10))
         var setBySession = setByYou
         setBySession.reading.mark?.by = Self.cart
-        let writing = Self.card(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(20))))
+        let session = StageSession(ref: Self.cart, activity: .working, since: t(20))
+        let writing = Self.card(.inProgress, .working(session))
+        var draftAtWork = draft
+        draftAtWork.reading.flags = [.working(session)]
+        var setByYouAsking = setByYou
+        setByYouAsking.reading.flags = [.asksYou(StageSession(ref: Self.cart, activity: .waitsForYou, since: t(20)))]
+        var draftFailing = draft
+        draftFailing.reading.flags = [.failing("Build failed")]
         #expect([draft, setByYou].allSatisfy { $0.isYourMove && !$0.needsYou })
-        #expect([setBySession, writing].allSatisfy { !$0.isYourMove })
+        #expect(draftFailing.isYourMove)
+        #expect([setBySession, writing, draftAtWork, setByYouAsking].allSatisfy { !$0.isYourMove })
 
         // Each once, whatever lanes show it.
         let first = Self.mission([Self.step(4101), Self.step(4102)])

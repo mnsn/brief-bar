@@ -83,12 +83,14 @@ extension BoardColumn {
 extension BoardCard {
     /// It's your move, which keeps its column open where the Board is narrow (`BoardFolding`): a review that waits on you;
     /// one you complete yourself, not one set to complete by itself; or one only you are working on, with no session at
-    /// it: your draft, or one you set in progress yourself. A session at work on yours reads as working on it instead.
+    /// it: your draft, or one you set in progress yourself, while no session writes it or asks you about it. Those stay
+    /// a draft, or as you set them, with the session in their flags.
     public var isYourMove: Bool {
         switch stage {
         case .yourReview: true
         case .canMerge: reading.why == .ready(autoComplete: false)
-        case .inProgress: reading.why == .draft || reading.why == .set && reading.isSetByYou
+        case .inProgress:
+            (reading.why == .draft || reading.why == .set && reading.isSetByYou) && !reading.flags.contains(where: \.isSession)
         default: false
         }
     }
@@ -99,6 +101,16 @@ extension BoardCard {
     public var needsYou: Bool {
         guard stage != .merged else { return false }
         return stage == .yourReview || stage == .canMerge && reading.why == .ready(autoComplete: false) || reading.fixRank != nil
+    }
+}
+
+private extension StageFlag {
+    /// Whether it's a session at work on the pull request: one that writes it, or waits for your answer.
+    var isSession: Bool {
+        switch self {
+        case .asksYou, .working: true
+        case .failing, .changesWanted: false
+        }
     }
 }
 

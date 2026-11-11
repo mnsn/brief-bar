@@ -1823,8 +1823,8 @@ until they fit: Merged, Waits and To start, whatever they hold; then those where
 you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and Approved, one step from done,
 last, then any other from the left;
 never one where it's your move (`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and
-doesn't complete by itself; one in In progress that's your draft or that you set there, a session busy on it since
-reading as working instead; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`),
+doesn't complete by itself; one in In progress that's your draft or that you set there, while no session writes it or
+asks you about it, which its flags say; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`),
 nor one you chose. What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points
 the Board has in a 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too.
 A strip's count is in a pill bordered in its column's color where one of its cards needs you (`BoardCard.needsYou`: a
