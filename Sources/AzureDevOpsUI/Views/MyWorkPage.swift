@@ -234,7 +234,7 @@ private struct MyWorkContent: View {
                 if let record = store.record(for: key) { return (record.pullRequest, record.role == .author) }
                 return linkedPullRequest(key).map { ($0, !board.me.isEmpty && $0.author.id == board.me.lowercased()) }
             },
-            copilotWorks: { item in copilot.isOn && copilot.latest(for: item)?.status.phase.isActive == true }
+            copilotWorks: { item in copilot.isOn && copilot.working(on: item) != nil }
         )
     }
 
@@ -468,7 +468,8 @@ struct MyWorkTaskCard: View {
                 .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if copilot.isOn, let entry = copilot.latest(for: item) {
+            // The send that works on it, which its why line names, else the latest.
+            if copilot.isOn, let entry = copilot.working(on: item) ?? copilot.latest(for: item) {
                 CopilotRunBadge(entry: entry)
             }
         }
