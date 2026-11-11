@@ -3357,7 +3357,11 @@ ended since; on a detached HEAD it logs no finish, so its last step ends it ther
 of a merge, a cherry-pick or a revert, which keep HEAD where it is until they end: one going on that started since HEAD
 last moved before the turn ended leaves it unknown, and so does one that HEAD's first move since may have ended, as
 calling it off on a branch logs a reset. So does a move of HEAD, a push of its commit, or a rebase's start or end, in the
-second the turn ended, since git's logs keep whole seconds; and logs that don't reach back to before then. A push moves
+second the turn ended, since git's logs keep whole seconds; and logs that don't reach back to before then, or that go
+back in time past it: git logs each move at the time `GIT_COMMITTER_DATE` says, or else at the clock's, so a clock set
+back, or a rebase with `--committer-date-is-author-date`, which logs its steps at their commits' authors' times, can
+log a move before the one before it (`Git.isOrdered(_:around:)`). A rebase whose steps or end git logged before its
+start was partway between the earliest and the latest of its times. A push moves
 the branch there only when the clone's fetch settings name it, which a clone of one branch's don't
 (`Git.tracksPushes(to:in:)`): there git fetches the branch first, and goes by whether it has the commit now, or, when it
 can't fetch, as offline, had it. For a prompt, git is asked only on the read that ends its turn, of its log or of its

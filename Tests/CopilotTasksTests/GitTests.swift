@@ -410,6 +410,25 @@ import Testing
         #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(130).addingTimeInterval(0.5)) == nil)
         #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: last, at: at(129)) == false)
 
+        // origin/<branch>'s log can go back in time too. Someone else's commit came to it by a fetch, and the checkout checked
+        // it out; then a push from another worktree of the clone, which shares origin/<branch>, took that commit along, at an
+        // earlier time, as a clock set back would have it. Its turn ending between the two, git can't tell which came first,
+        // rather than take the push for that commit's arrival; after both, it came by the fetch.
+        let before = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await pushFromElsewhere("Theirs", fixture)
+        try await fixture.git(["-C", checkout.path, "fetch", "--quiet", "origin"], at: base + 300)
+        let theirs = try #require(await git.remoteHead(of: checkout, branch: Self.source))
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", theirs], at: base + 150)
+        let other = fixture.folder.appendingPathComponent("other-worktree")
+        try await fixture.git(["-C", checkout.path, "worktree", "add", "--quiet", "--detach", other.path, theirs], at: base + 155)
+        try "On theirs\n".write(to: other.appendingPathComponent("on-theirs.txt"), atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", other.path, "add", "on-theirs.txt"], at: base + 160)
+        try await fixture.git(["-C", other.path] + Self.identity + ["commit", "--quiet", "-m", "On theirs"], at: base + 160)
+        try await fixture.git(["-C", other.path, "push", "--quiet", "origin", "HEAD:refs/heads/\(Self.source)"], at: base + 170)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: before, at: at(200)) == nil)
+        #expect(await git.pushedItsOwn(in: checkout, branch: Self.source, since: before, at: at(400)) == false)
+        try await fixture.git(["-C", checkout.path, "checkout", "--quiet", "--detach", pushed], at: base + 410)
+
         // Without git's log of where HEAD was, it can't tell where the checkout was as the turn ended, only where it is now;
         // without origin/<branch>'s, how the commit came to the branch, or when, whatever the branch has now.
         func log(of ref: String) async throws -> URL {
@@ -555,6 +574,23 @@ import Testing
         #expect(await git.stoppedPartway(checkout, at: at(420).addingTimeInterval(0.5)) == nil)
         #expect(await git.stoppedPartway(checkout, at: at(440)) == false)
         #expect(await pushed(since: start, at: 440) == true)
+
+        // The next fix's rebase on what someone pushed meanwhile stops on the conflict, on a detached HEAD, which logs no
+        // finish; it goes on with it at an earlier time, as a clock set back would have it, which git logs before the
+        // rebase's start. It pushes, and its turn ends after all that: it pushed. Had its turn ended between the two, git
+        // couldn't tell.
+        try await run(["checkout", "--quiet", "--detach", "origin/\(Self.source)"], at: 450)
+        start = try await remote()
+        try await commit("Dated", at: 460)
+        try await theirs("Fifth", at: 470)
+        await #expect(throws: TestError.self) { try await run(["rebase", "--quiet", "origin/\(Self.source)"], at: 480) }
+        try "Dated and Fifth\n".write(to: checkout.appendingPathComponent("fix.txt"), atomically: true, encoding: .utf8)
+        try await run(["add", "fix.txt"], at: 465)
+        try await run(["-c", "core.editor=true", "rebase", "--continue"], at: 465)
+        try await push(at: 490)
+        #expect(await git.stoppedPartway(checkout, at: at(500)) == false)
+        #expect(await pushed(since: start, at: 500) == true)
+        #expect(await pushed(since: start, at: 475) == nil)
     }
 
     /// What git's log of where HEAD was says of a rebase, a merge, a cherry-pick or a revert going on at a time in a second,
@@ -583,6 +619,19 @@ import Testing
         #expect(partway([(10, "rebase (start): checkout x")], .rebase, at: 5) == false)
         #expect(partway([(5, "commit: Mine")], .rebase, at: 20) == nil)
         #expect(partway([(10, "rebase (continue): Mine"), (20, "rebase (finish): returning to refs/heads/b")], at: 15) == true)
+        // git logs a move at the time GIT_COMMITTER_DATE says, as a rebase with --committer-date-is-author-date logs each of
+        // its steps at its commit's author's, or as a clock set back has it: a rebase's step, or its end, may be logged
+        // before its start. It was partway between the earliest and the latest of them; where HEAD's log goes back in time
+        // past the end, git can't tell.
+        let dated = [(100, "rebase (start): checkout x"), (40, "rebase (pick): Mine")]
+        #expect(partway(dated, at: 200) == false)
+        #expect(partway(dated, at: 20) == false)
+        #expect(partway(dated, at: 70) == nil)
+        #expect(partway(dated, .rebase, at: 200) == true)
+        #expect(partway(dated + [(150, "rebase (start): checkout y")], at: 200) == false)
+        let continued = [(100, "rebase (start): checkout x"), (40, "rebase (continue): Mine"), (40, "rebase (finish): returning to refs/heads/b")]
+        #expect(partway(continued + [(150, "rebase (start): checkout y"), (160, "rebase (pick): More")], at: 155) == true)
+        #expect(partway(continued, at: 200) == false)
         // A merge, a cherry-pick or a revert going on now started since HEAD last moved; one going on then may have ended with
         // HEAD's first move since.
         #expect(partway([(10, "commit: Mine")], .other, at: 20) == nil)
@@ -607,6 +656,13 @@ import Testing
         #expect(Git.commit(at: 20, of: refMoves) == nil)
         #expect(Git.commit(at: 25, of: refMoves) == b)
         #expect(Git.commit(at: 20, of: [Git.Move(second: 20, commit: a, subject: "checkout: moving from a to a")] + refMoves.dropFirst()) == a)
+        // Its log going back in time past then, git can't tell where it was.
+        let back = [Git.Move(second: 10, commit: b, subject: "commit: Later"), Git.Move(second: 20, commit: a, subject: "commit: Mine")]
+        #expect(Git.commit(at: 15, of: back) == nil)
+        #expect(Git.commit(at: 25, of: back) == b)
+        #expect(Git.isOrdered(back, around: 5))
+        #expect(!Git.isOrdered(back, around: 15))
+        #expect(Git.isOrdered(back, around: 25))
     }
 
     /// A push moves origin/<branch> as the remote's fetch settings map the branch to it: by default, but not in a clone of
