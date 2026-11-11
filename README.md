@@ -95,7 +95,8 @@ stage to change it, or **Finished My Review** to pass a pull request on to your 
   stage, your next review, the next one for a teammate, the next approved, the next to merge and the next that waits.
   Choose another yourself, and BriefBar keeps it until that pull request moves on.
 - **The Board** has a column for each stage and a lane for each mission. Drag a card to another column, or press
-  **⌘→** or **⌘←**, to change its stage.
+  **⌘→** or **⌘←**, to change its stage. Click a column's title to fold it to a strip; in a narrow window, BriefBar
+  folds the columns you need least, so those where it's your move stay in sight.
 - **By Mission** puts together the pull requests that go together, such as a stack's or a story's, in the order they
   merge where BriefBar can tell: from stacked branches, and what Copilot sessions tell it. **Map** draws each mission in
   merge waves. Apple Intelligence names each mission on your Mac, and suggests a split when one has become two pieces
