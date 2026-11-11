@@ -261,15 +261,9 @@ private struct MyWorkContent: View {
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
                 PageRefreshStatus(page: .pullRequests, withSprint: showsWork)
-                SegmentedPicker("Show", selection: Binding(get: { shown }, set: { settings.myWorkShows = $0 }), segments: [
-                    .init(MyWorkShows.pullRequests, title: "Pull Requests"),
-                    .init(MyWorkShows.sprintTasks, title: "+ Sprint Tasks"),
-                    .init(MyWorkShows.allTasks, title: "+ All My Tasks"),
-                ])
-                .fixedSize()
-                .help(MyWorkText.showHelp)
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
+            showPicker
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
             let detailsShown = shownDetails
             DetailsSplit(
@@ -290,6 +284,30 @@ private struct MyWorkContent: View {
                 .environment(\.isOnMyWork, true)
             }
         }
+    }
+
+    /// What the Board shows, on a row of its own under the header: in the header, its three choices, which have no symbols
+    /// to shrink to, took the title's and the subtitle's room in a narrow window.
+    private var showPicker: some View {
+        HStack(spacing: 6) {
+            Text("Show")
+                .font(size: 12)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            SegmentedPicker("Show", selection: Binding(get: { shown }, set: { settings.myWorkShows = $0 }), segments: [
+                .init(MyWorkShows.pullRequests, title: "Pull Requests"),
+                .init(MyWorkShows.sprintTasks, title: "+ Sprint Tasks"),
+                .init(MyWorkShows.allTasks, title: "+ All My Tasks"),
+            ])
+            .fixedSize()
+            .help(MyWorkText.showHelp)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 24)
+        .padding(.bottom, 10)
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
     }
 
     private var subtitle: String {
@@ -370,7 +388,7 @@ private struct MyWorkContent: View {
     /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard, board: PullRequestBoard) -> BoardCardContent {
         let work = (board.workOfPullRequests[card.ref] ?? []).map { ref in
-            workItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
+            workItem(ref).map { MyWorkText.mention($0, place: outside?.place(of: $0)) } ?? ref.shortOrderLabel
         }
         return PullRequestBoardCard.content(item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work) {
             select(item)
@@ -604,6 +622,7 @@ private struct OutsideSprintLine: View {
                     Button("Show Them", action: show)
                         .buttonStyle(.borderless)
                         .help("Show them on the Board: + All My Tasks")
+                        .accessibilityHint("Shows them on the Board: + All My Tasks")
                 }
             } else {
                 ProgressView().controlSize(.small)
@@ -640,6 +659,14 @@ enum MyWorkText {
         let one = tasks + bugs == 1
         let verb = if let sprint { "\(one ? "isn't" : "aren't") in \(sprint)" } else { one ? "is open" : "are open" }
         return "\(partial ? "At least " : "")\(counts.joined(separator: " and ")) of yours \(verb)."
+    }
+
+    /// A work item of yours on a pull request's card: "Task 5112"; with where it is, for one outside the sprint, "Task 5181
+    /// (Sprint 41)" or "Task 4870 (no sprint)".
+    static func mention(_ item: WorkItem, place: String?) -> String {
+        let name = "\(item.type) \(item.id)"
+        guard let place else { return name }
+        return "\(name) (\(place == OutsideWork.noSprint ? "no sprint" : place))"
     }
 
     /// While your work outside the sprint is read for the first time: "Looking for your tasks and bugs outside Sprint 42…".

@@ -1015,6 +1015,40 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(await engine.currentSnapshot().outside == nil)
     }
 
+    /// No longer wanted while it's read, as when My Work goes while the Sprint page still shows, your work outside the sprint
+    /// isn't read further; and a read for a team no longer chosen says nothing of the next one's, even that it failed.
+    @Test func stopsReadingYourWorkOutsideTheSprintOnceItsNoLongerWantedOrTheTeamChanges() async throws {
+        for change in ["wanted", "team"] {
+            let server = StubServer()
+            WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+                WorkFixture.workItem(1), WorkFixture.workItem(10, assignee: People.me, iteration: "Shop\\Sprint 5"),
+            ])
+            server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in
+                change == "team" ? .status(500) : .json(["results": [["id": 10]]])
+            }
+            // Who's signed in, then your teams, the sprint, your identity, the board's setup, the sprint's work items and
+            // their fields: the eighth token is the query's.
+            let tokens = HeldTokens(server.id, holdAt: 8)
+            let engine = SprintEngine(
+                client: server.client(tokens: tokens),
+                configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team), now: { t(0) },
+                calendar: WorkFixture.utc
+            ) { _ in }
+            await engine.setReadsOutside(true)
+            let refresh = Task { await engine.refreshNow() }
+            try await waitUntilHeld(tokens)
+            if change == "wanted" {
+                await engine.setReadsOutside(false)
+            } else {
+                await engine.setConfiguration(SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.otherTeam))
+            }
+            await tokens.release()
+            await refresh.value
+            #expect(server.requests.last?.url?.path.hasSuffix("/AssignedToMe") == true, "\(change)")
+            #expect(await engine.currentSnapshot().outside == nil, "\(change)")
+        }
+    }
+
     /// Wanted again soon after it was read, your work outside the sprint waits for the next refresh.
     @Test func readsYourWorkOutsideTheSprintAgainOnlyWhenItsDue() async throws {
         let server = StubServer()

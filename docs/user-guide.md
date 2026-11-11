@@ -410,7 +410,7 @@ shows List where you chose the Board.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
-for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, at its top, offers **Pull
+for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, under its title, offers **Pull
 Requests**, the Board as it was; **+ Sprint Tasks**, which puts your sprint work on it too: what the Sprint page counts
 as yours and not done; and **+ All My Tasks**, which adds your open tasks and bugs outside the sprint, in your team's
 project: from older sprints, later ones, iterations outside your team's sprints, or none. BriefBar remembers which.
@@ -420,7 +420,7 @@ Sprint 42**, so that one left behind in an older sprint doesn't go unnoticed, an
 says how many are open instead. What hasn't started, with no pull request linked to it and no
 task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
 request, or has Copilot working on it, has a card of its own in In progress; and a pull request's card names the work
-items of yours it's for, such as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull
+items of yours it's for, such as **Task 5112**, or **Task 5181 (Sprint 41)** for one outside the sprint. A work item's card says why it's there: **New**, **Active · no pull
 request yet** or **New · Copilot works on it**, or, when its pull request isn't on your board, what that is: **Sam's
 !4120**, a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task still open**; or **!4120 can't be
 read**. An abandoned pull request counts as none, and the card says so, as in **New · !4118 abandoned**. Of several, one

@@ -392,10 +392,12 @@ public actor SprintEngine {
     /// Your open tasks and bugs in the team's project that its sprint's board doesn't have (`OutsideWork.yours`): Azure
     /// DevOps' Assigned to me query, then those it lists that the board doesn't have, 200 a request, with the iteration each
     /// is in. A read that fails keeps what was read before, saying why; but Azure DevOps asking to slow down, or the read
-    /// stopping, ends the refresh, as for the sprint.
+    /// stopping, ends the refresh, as for the sprint. Once My Work no longer wants them, as when it goes while the Sprint
+    /// page still shows, the rest isn't read, and what was read before stays.
     private func readOutside(of team: TeamRef, at date: Date) async throws {
         do {
             let setup = try await boardSetup(of: team)
+            guard readsOutside else { return }
             let query = try await get(
                 ADOEndpoint.assignedToMe(organization: team.organization, project: team.projectId), as: ADOPredefinedQuery.self
             )
@@ -404,6 +406,7 @@ public actor SprintEngine {
             let ids = query.ids.filter { !onBoard.contains($0) && seen.insert($0).inserted }
             var found: [WorkItem] = []
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
+                guard readsOutside else { return }
                 let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
                 let list = try await get(
                     ADOEndpoint.workItems(organization: team.organization, ids: batch, fields: ADOWorkItem.fieldNamesWithIteration),
@@ -429,8 +432,9 @@ public actor SprintEngine {
     }
 
     /// The read of your work outside the sprint failed: what was read before stays, without what the sprint's board has
-    /// now, saying why.
+    /// now, saying why; but for a team no longer chosen, as one changed while its read was under way, it says nothing.
     private func outsideFailed(_ problem: String, team: TeamRef) {
+        guard configuration.team == nil || configuration.team?.id == team.id else { return }
         var failed = (outside ?? OutsideWork()).without(board)
         failed.sprintPath = board?.sprint.path
         failed.problem = problem

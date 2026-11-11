@@ -1831,8 +1831,9 @@ opens Pull Requests by status, and a pull request's mission in its details shows
 (`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
 no lanes.
 
-**Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, **+ Sprint Tasks**, your sprint work on it
-too, and **+ All My Tasks**, your work outside the sprint as well. Your sprint work is `SprintBoard.myWork`, your tasks
+**Show** (`ado.myWorkShows`), on a row of its own under the header, where its three choices keep their words and the
+title and subtitle their room in a narrow window, offers Pull Requests, the Board as it was, **+ Sprint Tasks**, your
+sprint work on it too, and **+ All My Tasks**, your work outside the sprint as well. Your sprint work is `SprintBoard.myWork`, your tasks
 and your stories and bugs without tasks that aren't done. Your work outside the sprint (`OutsideWork`) is your open tasks
 and bugs in the sprint's team's project that its board doesn't have: in older sprints, later ones, iterations outside the
 team's sprints, or none. Azure DevOps' Assigned to me query lists what's assigned to you there, up to 500, by ID only;
@@ -1850,7 +1851,8 @@ none of your work, and offer to turn it on.
 
 `PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
 agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
-names it, resolved too (`workOfPullRequests`). One without, a `BoardTask`, goes in **To start**, a column before In
+names it, resolved too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181 (Sprint 41)"
+(`MyWorkText.mention`). One without, a `BoardTask`, goes in **To start**, a column before In
 progress (`BoardColumn.toStart`), while it hasn't started and no Copilot task works on it; else in In progress, after
 its pull requests: with a pull request that isn't on the board, the first of an open one, one that merged, one that
 can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task still open"; with a Copilot task; or
