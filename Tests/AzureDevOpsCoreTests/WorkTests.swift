@@ -495,6 +495,8 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         ]
         let items = OutsideWork.yours(found, board: board, taskTypes: ["Task"])
         #expect(items.map(\.id) == [11, 22, 18, 19, 10, 12])
+        // A bug with your tasks under it is theirs to show where the team tracks bugs as tasks too.
+        #expect(OutsideWork.yours(found, board: board, taskTypes: ["Task", "Bug"]).map(\.id) == items.map(\.id))
         let work = OutsideWork(items: items, sprintPath: "shop\\sprint 7", readAt: t(0))
         #expect(work.count == 5)
         #expect(work.bugCount == 2)

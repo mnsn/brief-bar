@@ -548,6 +548,29 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.details?.readAt == clock.now)
     }
 
+    /// One of your work items outside the sprint, shown from My Work, follows My Work's reads of them as one in the sprint
+    /// follows the sprint: read again once it changed.
+    @Test func readsAgainWhenYourWorkOutsideTheSprintShowsItChanged() throws {
+        let store = makeStore()
+        var outside = DemoData.outsideWork(now: clock.now).items
+        let index = try #require(outside.firstIndex { $0.id == 4990 })
+        store.outsideChanged(outside)
+        let first = clock.now
+        store.show(outside[index])
+        #expect(store.details?.readAt == first)
+        // Read again, with nothing new about it.
+        clock.now += 10
+        store.outsideChanged(outside)
+        #expect(store.details?.readAt == first)
+        // Someone changed it.
+        outside[index].state = "New"
+        outside[index].category = .proposed
+        outside[index].changedAt = clock.now
+        store.outsideChanged(outside)
+        #expect(store.details?.readAt == clock.now)
+        #expect(store.selected?.state == "New")
+    }
+
     @Test func anotherTeamsSprintClosesTheDetails() throws {
         let store = makeStore()
         store.show(try item(5103))

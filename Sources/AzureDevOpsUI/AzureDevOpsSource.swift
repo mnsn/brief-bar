@@ -310,7 +310,10 @@ package final class AzureDevOpsSource: BriefBarSource {
             links: services.links, stories: services.stories, store: store, sprint: sprint, copilot: copilot, settings: settings,
             order: services.pullRequestOrder
         )
-        let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
+        let details = WorkItemDetailsStore(
+            mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher(),
+            outside: sprint.$outside.map { $0?.items ?? [] }.eraseToAnyPublisher()
+        )
         details.hasPage = { [services] in services.hasPage(.azureDevOpsSprint) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
         let pullRequestDetails = makePullRequestDetails(store: store)

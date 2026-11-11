@@ -97,9 +97,9 @@ public struct OutsideWork: Sendable, Equatable {
         var seen: Set<Int> = []
         let yours = found.filter { item in
             guard !onBoard.contains(item.id), item.category == .proposed || item.category == .inProgress else { return false }
-            guard isTask(item) || (item.type.caseInsensitiveCompare("Bug") == .orderedSame && !parents.contains(item.id)) else {
-                return false
-            }
+            // A bug with tasks of yours under it is theirs to show, whether or not the team tracks bugs as tasks.
+            let isBug = item.type.caseInsensitiveCompare("Bug") == .orderedSame
+            guard isTask(item) || isBug, !(isBug && parents.contains(item.id)) else { return false }
             return seen.insert(item.id).inserted
         }
         return yours.sorted { lhs, rhs in
