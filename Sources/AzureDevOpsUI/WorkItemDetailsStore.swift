@@ -45,6 +45,9 @@ final class WorkItemDetailsStore: ObservableObject {
     var openPage: () -> Void = {}
 
     private var board: SprintBoard?
+    /// Your work outside the sprint, as My Work last read it, by key: what shows of one of them follows it, as a work item in
+    /// the sprint follows the sprint.
+    private var outside: [WorkItemKey: WorkItem] = [:]
     /// The team whose sprint showed last: another's closes the details.
     private var team: String?
     /// The windows that show the Sprint page on screen, where the details are: a work item that changes is read again
@@ -69,9 +72,13 @@ final class WorkItemDetailsStore: ObservableObject {
     static let keptFor: TimeInterval = 15 * 60
     static let keptCount = 30
 
-    /// - Parameter reader: how to read a work item's details live; Azure DevOps, with `client`, by default.
+    /// - Parameters:
+    ///   - outside: your work outside the sprint, as My Work reads it (`SprintStore.outside`), nil while nothing's read of it;
+    ///     none by default.
+    ///   - reader: how to read a work item's details live; Azure DevOps, with `client`, by default.
     init(
-        mode: PRStore.Mode, client: ADOClient, board: AnyPublisher<SprintBoard?, Never>, now: @escaping () -> Date = Date.init,
+        mode: PRStore.Mode, client: ADOClient, board: AnyPublisher<SprintBoard?, Never>,
+        outside: AnyPublisher<[WorkItem]?, Never> = Empty().eraseToAnyPublisher(), now: @escaping () -> Date = Date.init,
         reader: Reader? = nil
     ) {
         self.mode = mode
@@ -80,6 +87,10 @@ final class WorkItemDetailsStore: ObservableObject {
         board
             .receive(on: DispatchQueue.main)
             .sink { [weak self] board in MainActor.assumeIsolated { self?.boardChanged(board) } }
+            .store(in: &cancellables)
+        outside
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] items in MainActor.assumeIsolated { self?.outsideChanged(items) } }
             .store(in: &cancellables)
     }
 
@@ -233,7 +244,7 @@ final class WorkItemDetailsStore: ObservableObject {
     /// the details.
     func linked(_ link: WorkItemDetails.Link) -> WorkItem? {
         guard let organization = selected?.organization else { return link.item }
-        return Self.newest(board?.item(WorkItemKey(organization, link.workItemId)), link.item)
+        return Self.newest(known(WorkItemKey(organization, link.workItemId)), link.item)
     }
 
     /// Someone signed in to the Azure CLI, as the pull requests' refresh or a read tells. When it's someone else than
@@ -254,6 +265,7 @@ final class WorkItemDetailsStore: ObservableObject {
         close()
         cache = [:]
         board = nil
+        outside = [:]
         account = nil
         viewers = []
         expiry?.cancel()
@@ -276,7 +288,7 @@ final class WorkItemDetailsStore: ObservableObject {
     private func select(_ item: WorkItem) {
         // The newest of what the sprint knows and what came with it, such as a link read with other details: what it
         // knows of when it changed decides whether what's kept of it is still fresh.
-        let item = Self.newest(board?.item(item.key), item) ?? item
+        let item = Self.newest(known(item.key), item) ?? item
         let key = item.key
         if selected?.key != key {
             cancelLoading()
@@ -359,7 +371,7 @@ final class WorkItemDetailsStore: ObservableObject {
             details = read
             failure = nil
             // What the sprint, or a link, last said of it.
-            let shown = Self.newest(board?.item(key), selected)
+            let shown = Self.newest(known(key), selected)
             selected = Self.newest(shown, read.item)
             // The sprint showed it changed while it was read, after what was read: read it again, while it's on screen,
             // rather than show an old description under a new title.
@@ -420,6 +432,34 @@ final class WorkItemDetailsStore: ObservableObject {
         }
         team = board.team.id
         guard let selected, let fresh = board.item(selected.key) else { return }
+        keepUp(with: fresh)
+    }
+
+    /// Your work outside the sprint was read again, for My Work: what shows of one of them follows it, and its details are
+    /// read again when it changed, as for the sprint's (`boardChanged`); or once it's no longer among them, as once it's
+    /// done, to show what it is now; but not when what was read goes (nil), as for another team or account. The source's
+    /// store calls it through `init`'s publisher.
+    func outsideChanged(_ items: [WorkItem]?) {
+        let before = outside
+        outside = Dictionary((items ?? []).map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        guard items != nil, let selected, board?.item(selected.key) == nil else { return }
+        if let fresh = outside[selected.key] {
+            keepUp(with: fresh)
+        } else if before[selected.key] != nil {
+            // Now, or once more after a read under way, which may be from before.
+            reloadIfShowing([selected.key])
+        }
+    }
+
+    /// A work item as the sprint, or your work outside it, has it now.
+    private func known(_ key: WorkItemKey) -> WorkItem? {
+        board?.item(key) ?? outside[key]
+    }
+
+    /// What shows of the work item follows it as the sprint, or your work outside it, has it now, and its details are read
+    /// again when it changed since, while they're on screen.
+    private func keepUp(with fresh: WorkItem) {
+        guard let selected else { return }
         let changed = Self.isNewer(fresh.changedAt, than: selected.changedAt)
         let newest = Self.newest(fresh, selected)
         if newest != selected { self.selected = newest }

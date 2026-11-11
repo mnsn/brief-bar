@@ -520,6 +520,52 @@ import Testing
         }
     }
 
+    /// My Work's Show Them asks the Board for a work item's card in a column you folded: the column opens for the moment, and
+    /// the card takes the keyboard, for Return to show its details and VoiceOver to read it. What you chose stays.
+    @Test func aCardShowThemAsksForTakesTheKeyboardWithItsFoldedColumnOpenForTheMoment() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.toStart: .folded]))
+        let task = ItemRef.workItem(organization: "contoso", id: 5052)
+        let work = [SprintWork(ref: task, story: nil, progress: .toDo, pullRequests: [], copilotWorks: false)]
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: Sprint(work: work, stories: [])) { window, _, drawn in
+            #expect(!drawn.isDrawn(task))
+            order.revealedCard = task
+            try await until("To start to open for it") { drawn.isDrawn(task) }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return details.shown == task
+            }
+            #expect(drawn.shown == 0)
+            #expect(order.revealedCard == nil)
+            #expect(order.boardFolds == BoardFolds([.toStart: .folded]))
+        }
+    }
+
+    /// Show Them asks for a merged pull request's card that names your work outside the sprint, in a finished mission's
+    /// lane, which folds but while it holds work still to do: the lane stays open for it, so that the card is drawn and takes
+    /// the keyboard.
+    @Test func aCardShowThemAsksForInAFinishedMissionsLaneIsDrawnThereAndTakesTheKeyboard() async throws {
+        let order = try Self.finishedMission()
+        let merged = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        #expect(order.missions.first { $0.contains(merged) }?.isFinished == true)
+        let task = ItemRef.workItem(organization: "contoso", id: 5181)
+        let work = [SprintWork(
+            ref: task, story: nil, progress: .inProgress, pullRequests: [LinkedPullRequest(ref: merged, state: .merged)],
+            copilotWorks: false
+        )]
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: Sprint(work: work, stories: [])) { window, _, drawn in
+            try await until("its card, in the lane its work keeps open") { drawn.isDrawn(merged) }
+            order.revealedCard = merged
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return details.shown == merged
+            }
+            #expect(order.revealedCard == nil)
+        }
+    }
+
     /// The column a key moved a card to stays open while a card in it has the keyboard: click another card there, and it
     /// stays open for that one, rather than fold under it.
     @Test func aColumnAKeyOpenedStaysOpenForAnotherCardInItYouGoTo() async throws {

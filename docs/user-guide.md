@@ -429,13 +429,19 @@ in that lane. **2 more ›** in Up Next opens its column for the moment.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
-for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, at its top, offers **Pull
-Requests**, the Board as it was, and **+ Sprint Tasks**, which puts your sprint work on it too: what the Sprint page
-counts as yours, done or not. BriefBar remembers which. What hasn't started, with no pull request linked to it and no
+for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, under its title, offers **Pull
+Requests**, the Board as it was; **+ Sprint Tasks**, which puts your sprint work on it too: what the Sprint page counts
+as yours, done or not; and **+ All My Tasks**, which adds your open tasks and bugs outside the sprint, in your team's
+project: from older sprints, later ones, iterations outside your team's sprints, or none. BriefBar remembers which.
+Under the header, with either, a line counts yours outside the sprint, such as **5 tasks and 1 bug of yours aren't in
+Sprint 42**, so that one left behind in an older sprint doesn't go unnoticed, and **Show Them** shows them: + All My
+Tasks, with the Board at the first of them, which has the keyboard, its column opened for the moment if it's folded; or
+it says **All your open tasks and bugs are in Sprint 42**. With no sprint going on, for a team you chose on the Sprint
+page, it says how many are open instead. What hasn't started, with no pull request linked to it and no
 task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
 request, or has Copilot working on it, has a card of its own in In progress; what's resolved is in **Merged**; what's
 done is in **Completed**, a column after Merged; and a pull request's card names the work items of yours it's for, such
-as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull request yet**, **New · Copilot
+as **Task 5112**, or **Task 5181 (Sprint 41)** for one outside the sprint. A work item's card says why it's there: **New**, **Active · no pull request yet**, **New · Copilot
 works on it**, **Resolved** or **Closed**, or, when its pull request isn't on your board, what that is: **Sam's !4120**,
 a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task still open**, in Merged; or **!4120 can't be
 read**. An abandoned pull request counts as none, and the card says so, as in **New · !4118 abandoned**. Of several, one
@@ -450,15 +456,19 @@ to turn it on until it is; and it doesn't read Azure DevOps' links from a work i
 work stays in To start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull
 requests aren't on your board, in a lane of the story's own, which folds to its header once that work is all resolved
 or done, as a finished mission's lane does, saying what it holds, such as **1 merged · 2 completed**: click that, or
-press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. Click a card, or
+press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. With + All My
+Tasks, those outside the sprint come after the sprint's, each card saying where it is: its sprint, such as **Sprint
+38**, or **No sprint**. Stories, features and epics assigned to you outside the sprint aren't shown; a story of yours in
+the sprint whose tasks of yours are outside it has no card of its own then: those tasks are its work. Click a card, or
 press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its
 menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘←
 say so instead.
 On My Work, **2 more ›** scrolls the Board to its column, opened if it's folded, a pull request's mission in its details
 shows its lane, and **Show By Status** shows Pull Requests by status. To start, Completed and work items' cards are only
-on the Board: stages, Up Next's slots, groups, counts and what agents are told stay as they were. While My Work shows
-+ Sprint Tasks, BriefBar
-reads your sprint, as it does for the Sprint page.
+on the Board: stages, Up Next's slots, groups, counts and what agents are told stay as they were. While My Work shows +
+Sprint Tasks or + All My Tasks, BriefBar reads your sprint, as it does for the Sprint page, and your open tasks and bugs
+in its team's project, through Azure DevOps' Assigned to me query; with + All My Tasks, also the pull requests linked to
+them.
 
 **Suggested splits**, with Apple Intelligence on: when a mission's pull requests look like they've become different
 pieces of work, such as an unrelated fix or a tooling change among a story's feature, a box under the mission's header,
@@ -1437,7 +1447,7 @@ DevOps' gear menu has its own too, all but My Work Page, which goes with Pull Re
 | Works with | Setting | Options |
 |---|---|---|
 | Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
-| Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, with Show Links (see [Azure DevOps](#azure-devops)) |
+| Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, and **+ All My Tasks** your tasks and bugs outside the sprint as well, with Show Links (see [Azure DevOps](#azure-devops)) |
 | | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1522,7 +1532,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, such as the Sprint page, or My
-  Work with **+ Sprint Tasks**, with the same sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
+  Work with **+ Sprint Tasks** or **+ All My Tasks**, with the same sign-in and GET requests as your pull requests. So
+  are your open tasks and bugs outside the sprint, in its team's project, only while My Work shows either, through Azure
+  DevOps' Assigned to me query, kept in memory only. The pipelines that run after you merge a pull request
   are read with your pull requests, while Done keeps it, unless you turn **Follow Pipelines After You
   Merge** off. A work item's details are read only when you open them, and again when it changes while
   they show, and kept in memory only: they're forgotten a quarter of an hour after they're read, unless
@@ -1548,7 +1560,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   preferences or to disk, where other programs running as you could read it. It forgets them when you turn it off.
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
-  work items while it's on screen, on the Sprint page or My Work, and what the linked ones your lists don't show are; with **Pull Request
+  work items while it's on screen, on the Sprint page or My Work, and to your other tasks and bugs while My Work shows
+  them, and what the linked ones your lists don't show are; with **Pull Request
   Order** on too, each linked work item's parent and place in the backlog, and what those parents, its stories, are
   when BriefBar hasn't read them, kept in memory only, to put a story's pull requests together; from the Copilot
   app's database, read-only, which pull request each session started from or opened. The links you add

@@ -85,9 +85,10 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] on in MainActor.assumeIsolated { self?.showLinks(on) } }
             .store(in: &cancellables)
-        // What the rows show, and what's in the sprint.
+        // What the rows show, and what's in the sprint, with your work outside it while My Work shows its cards.
         store.$items.map { _ in () }
             .merge(with: sprint.$board.map { _ in () }, sprint.$isShowing.removeDuplicates().map { _ in () })
+            .merge(with: sprint.$outside.map { _ in () }, sprint.$showsOutside.removeDuplicates().map { _ in () })
             .merge(with: copilot.objectWillChange.map { _ in () }, settings.$showToReview.removeDuplicates().map { _ in () })
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.update() } }
@@ -249,9 +250,12 @@ final class WorkLinksStore {
         Set(read.workItemsOfPullRequests.flatMap { key, ids in ids.map { WorkItemKey(key.organization, $0) } })
     }
 
-    /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'.
+    /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'; with no
+    /// sprint, by the types your work outside it was read with, as My Work's cards take them.
     private var storyFinder: WorkItemStories {
-        WorkItemStories(workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board)
+        WorkItemStories(
+            workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board, outside: sprint.outside
+        )
     }
 
     /// Works out which stories your pull requests are for, while Show Links reads them and Pull Request Order wants them;
@@ -309,8 +313,12 @@ final class WorkLinksStore {
         return (workItems, pullRequests)
     }
 
+    /// The sprint's work items, and while My Work shows their cards (+ All My Tasks), your open tasks and bugs outside it:
+    /// whose pull requests Show Links reads, as the sprint shows, and which it tells as it tells the sprint's.
     private var sprintItems: [WorkItem] {
-        (sprint.board?.rows ?? []).flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+        let board = sprint.board?.items ?? []
+        guard sprint.showsOutside, let outside = sprint.outside?.without(sprint.board) else { return board }
+        return board + outside.items
     }
 
     // MARK: Telling Show Links

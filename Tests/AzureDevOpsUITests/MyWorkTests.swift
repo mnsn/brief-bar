@@ -161,6 +161,134 @@ import Testing
         #expect(out(open))
     }
 
+    /// Your open tasks and bugs outside the sprint are read while My Work shows + Sprint Tasks, for its line, or + All My Tasks,
+    /// whose cards have Show Links read their pull requests; with neither, or without Show Links, or once My Work goes, not.
+    @Test func itReadsYourWorkOutsideTheSprintForItsLineAndItsCardsForAllMyTasks() async throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        source.start()
+        defer { source.stop() }
+        services.pullRequestOrder.setMyWorkPage(true)
+        let sprint = try #require(source.sprint)
+        let window = SectionViewer(.window, id: "7")
+        source.sectionVisibilityChanged(.azureDevOpsMyWork, isShowing: true, by: window)
+        #expect(!sprint.readsOutside && !sprint.showsOutside)
+
+        source.settings.myWorkShows = .sprintTasks
+        try await settle { sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+        source.settings.myWorkShows = .allTasks
+        try await settle { sprint.showsOutside }
+        #expect(sprint.readsOutside && sprint.isShowing)
+        services.links.setOn(false)
+        try await settle { !sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+        services.links.setOn(true)
+        try await settle { sprint.showsOutside }
+        source.settings.myWorkShows = .pullRequests
+        try await settle { !sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+
+        source.settings.myWorkShows = .allTasks
+        try await settle { sprint.showsOutside }
+        source.sectionVisibilityChanged(.azureDevOpsMyWork, isShowing: false, by: window)
+        #expect(!sprint.readsOutside && !sprint.showsOutside)
+    }
+
+    /// Your work outside the sprint goes on the Board as the sprint's does: a task with its parent's story, a bug as its own,
+    /// with what Show Links links it to.
+    @Test func yourWorkOutsideTheSprintHasItsStoryAsTheSprintsDoes() throws {
+        let outside = DemoData.outsideWork(now: Date())
+        func workItem(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        let links: [ItemRef: [ItemRef]] = [workItem(5181): [.pullRequest(organization: "contoso", number: 4113)]]
+        let work = MyWorkFacts.work(outside: outside, linked: { links[$0] ?? [] }, pullRequest: { _ in nil }, copilotWorks: { _ in false })
+        #expect(work.map(\.ref) == outside.items.map(\.linkRef))
+        #expect(try #require(work.first { $0.ref == workItem(4990) }).story == workItem(4990))
+        let task = try #require(work.first { $0.ref == workItem(5181) })
+        #expect(task.story == workItem(5180))
+        #expect(task.pullRequests.map(\.state) == [.unknown])
+        #expect(work.first { $0.ref == workItem(4870) }?.progress == .toDo)
+    }
+
+    /// The line under the header counts tasks and bugs apart, in the singular for one, and says when there may be more; with
+    /// no sprint going on, how many are open.
+    @Test func theLineCountsYourTasksAndBugsOutsideTheSprint() {
+        #expect(MyWorkText.outside(tasks: 5, bugs: 1, sprint: "Sprint 42", partial: false) == "5 tasks and 1 bug of yours aren't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 1, bugs: 0, sprint: "Sprint 42", partial: false) == "1 task of yours isn't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 2, sprint: "Sprint 42", partial: true) == "At least 2 bugs of yours aren't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 0, sprint: "Sprint 42", partial: false) == "All your open tasks and bugs are in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 5, bugs: 1, sprint: nil, partial: false) == "5 tasks and 1 bug of yours are open.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 1, sprint: nil, partial: false) == "1 bug of yours is open.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 0, sprint: nil, partial: false) == "You have no open tasks or bugs.")
+    }
+
+    /// A story or bug of yours in the sprint with no tasks there is a card of its own, but for once tasks of yours under it
+    /// outside the sprint show: they're its work then, in its lane. A task in the sprint stays, and a bug outside it, its own
+    /// story, takes no card from one.
+    @Test func aStoryInTheSprintIsNoCardOnceItsTasksOutsideItShow() {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        func work(_ id: Int, story: Int?) -> SprintWork {
+            SprintWork(ref: ref(id), story: story.map(ref), progress: .toDo, pullRequests: [], copilotWorks: false)
+        }
+        let sprint = [work(1, story: 1), work(2, story: 2), work(3, story: 9), work(4, story: 4)]
+        let outside = [work(10, story: 1), work(11, story: 11), work(12, story: 3)]
+        #expect(MyWorkFacts.work(sprint: sprint, outside: outside).map(\.ref) == [2, 3, 4, 10, 11, 12].map(ref))
+        #expect(MyWorkFacts.work(sprint: sprint, outside: []).map(\.ref) == [1, 2, 3, 4].map(ref))
+    }
+
+    /// Show Them takes the Board to the first card of its own of your work outside the sprint, lanes from the top, columns
+    /// from the left, whatever the sprint's work there, Merged too, where a task whose pull request merged while it's still
+    /// open is; else to the first pull request's card that names one.
+    @Test func showThemTakesTheBoardToTheFirstCardOfYourWorkOutsideTheSprint() {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        let onBoard = ItemRef.pullRequest(organization: "contoso", number: 4113)
+        let mergedOffBoard = ItemRef.pullRequest(organization: "contoso", number: 4090)
+        func work(
+            _ id: Int, _ progress: SprintWork.Progress, story: Int? = nil, linked: [ItemRef] = [], merged: [ItemRef] = []
+        ) -> SprintWork {
+            SprintWork(
+                ref: ref(id), story: story.map(ref), progress: progress,
+                pullRequests: linked.map { LinkedPullRequest(ref: $0, state: .open(author: nil)) }
+                    + merged.map { LinkedPullRequest(ref: $0, state: .merged) },
+                copilotWorks: false
+            )
+        }
+        let pullRequests = PullRequestBoard.make(
+            stages: [onBoard: StageReading(stage: .inProgress, why: .draft)], missions: [], kinds: PullRequestsByMission.kinds
+        )
+        func card(sprint: [SprintWork], outside: [SprintWork]) -> ItemRef? {
+            let board = pullRequests.withWork(sprint + outside, missions: [], stories: [ref(100)])
+            return MyWorkFacts.card(of: Set(outside.map(\.ref)), on: board)
+        }
+        // Story 100's lane comes before Not in a mission: its In progress before a later lane's To start.
+        #expect(card(sprint: [work(1, .toDo, story: 100)], outside: [work(11, .toDo), work(10, .inProgress, story: 100)]) == ref(10))
+        #expect(card(sprint: [], outside: [work(10, .inProgress), work(11, .toDo)]) == ref(11))
+        // A task whose pull request, off the board, merged while it's still open is in Merged: in an earlier lane, it comes
+        // first; in the same, after In progress.
+        let merged = work(13, .inProgress, story: 100, merged: [mergedOffBoard])
+        #expect(card(sprint: [], outside: [work(11, .toDo), merged]) == ref(13))
+        #expect(card(sprint: [], outside: [merged, work(10, .inProgress, story: 100)]) == ref(10))
+        #expect(card(sprint: [work(1, .toDo)], outside: [work(12, .toDo, linked: [onBoard])]) == onBoard)
+        #expect(card(sprint: [work(1, .toDo)], outside: []) == nil)
+    }
+
+    /// Show Them goes to what the line counts: past one of yours in the sprint's own iteration that its board doesn't have,
+    /// such as one under another team's area, which has a card with + All My Tasks, but isn't counted.
+    @Test func showThemPassesYourWorkInTheSprintsIterationThatTheLineDoesntCount() {
+        func item(_ id: Int, in sprint: String) -> WorkItem {
+            WorkItem(
+                id: id, organization: "contoso", project: "Storefront", type: "Task", title: "Totals", state: "New", category: .proposed,
+                iteration: #"Storefront\"# + sprint
+            )
+        }
+        let outside = OutsideWork(items: [item(20, in: "Sprint 42"), item(21, in: "Sprint 41")], sprintPath: #"Storefront\Sprint 42"#)
+        let work = outside.items.map { SprintWork(ref: $0.linkRef, story: nil, progress: .toDo, pullRequests: [], copilotWorks: false) }
+        let board = PullRequestBoard.make(stages: [:], missions: [], kinds: PullRequestsByMission.kinds)
+            .withWork(work, missions: [], stories: [])
+        #expect(outside.count == 1)
+        #expect(MyWorkFacts.card(of: outside, on: board) == outside.items[1].linkRef)
+    }
+
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and
     /// window shares, shows one since: that pull request's card isn't marked, and while the details cover the Board, ⌘→ and
     /// ⌘← don't move it. A pull request's card clicked last, its details show and the keys move it; with none, a work item's
