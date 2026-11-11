@@ -1334,11 +1334,17 @@ import Testing
         #expect(board.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5506", "5507"])
         #expect(board.lanes[0].tasks(in: .completed).map(\.ref.shortOrderLabel) == ["5506"])
         #expect(board.lanes[0].tasks(in: .merged).map(\.ref.shortOrderLabel) == ["5507"])
-        // Its pull requests merged, and its work is resolved or done: nothing in it keeps the finished mission's lane open.
-        #expect(!board.lanes[0].hasWorkToDo)
+        // !4301 names 5501, still open: a merged pull request naming your work that's still to do keeps a finished mission's
+        // lane open, as that work's own card would.
+        #expect(board.lanes[0].hasWorkToDo)
+        // Once its pull requests' work and its own cards' is resolved or done, nothing keeps it open.
+        var resolved = work
+        resolved[0] = Self.work(5501, .resolved, story: 5001, linked: [Self.linked(4301, .merged)])
+        let finished = base.withWork(resolved, missions: [checkout], stories: [Self.task(5001)]) { $0 != Self.pr(4304) }
+        #expect(!finished.lanes[0].hasWorkToDo)
         // But a work item still open, whose pull request merged off the board, does, though it's in Merged.
         let stillOpen = Self.work(5508, .inProgress, story: 5001, linked: [Self.linked(4399, .merged)])
-        let open = base.withWork(work + [stillOpen], missions: [checkout], stories: [Self.task(5001)]) { $0 != Self.pr(4304) }
+        let open = base.withWork(resolved + [stillOpen], missions: [checkout], stories: [Self.task(5001)]) { $0 != Self.pr(4304) }
         #expect(open.lanes[0].tasks(in: .merged).map(\.ref.shortOrderLabel) == ["5507", "5508"])
         #expect(open.lanes[0].hasWorkToDo)
         #expect(labels(board.lanes[1], .stage(.merged)) == ["!4304"])

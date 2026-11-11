@@ -22,6 +22,11 @@ public struct SprintWork: Equatable, Sendable, Identifiable {
         case resolved
         /// Done, as Closed is.
         case completed
+
+        /// Not resolved or done yet: still to do.
+        public var isOpen: Bool {
+            self == .toDo || self == .inProgress
+        }
     }
 
     public var ref: ItemRef
@@ -190,11 +195,12 @@ extension BoardLane {
     }
 
     /// Whether it has cards of your work that's still to do, which keep a finished mission's lane from folding, as it would
-    /// hide them: in To start or In progress, or not resolved yet, as one still open whose pull request merged, in Merged.
-    /// Resolved and done work folds with it, as a merged pull request's card does.
+    /// hide them: in To start or In progress, or not resolved yet, as one still open whose pull request merged, in Merged;
+    /// or a pull request's card that names work of yours not resolved yet (`namesWorkToDo`). Resolved and done work folds
+    /// with it, as a merged pull request's card does.
     public var hasWorkToDo: Bool {
-        tasks.contains { task in
-            task.column == .toStart || task.column == .inProgress || task.work.progress == .toDo || task.work.progress == .inProgress
+        namesWorkToDo || tasks.contains { task in
+            task.column == .toStart || task.column == .inProgress || task.work.progress.isOpen
         }
     }
 
@@ -241,9 +247,11 @@ extension PullRequestBoard {
         board.showsWork = true
         var named: [ItemRef: [ItemRef]] = [:]
         var done: Set<ItemRef> = []
+        var open: Set<ItemRef> = []
         var tasks: [BoardTask] = []
         for item in work {
             if item.progress == .completed { done.insert(item.ref) }
+            if item.progress.isOpen { open.insert(item.ref) }
             let onBoard = item.pullRequests.map(\.ref).filter(refs.contains)
             for ref in onBoard where named[ref]?.contains(item.ref) != true {
                 named[ref, default: []].append(item.ref)
@@ -255,7 +263,9 @@ extension PullRequestBoard {
         let merged = Set(lanes.flatMap { $0.cards(in: PullRequestStage.merged) }.map(\.ref))
         board.completed = merged.filter { ref in isOut(ref) && (named[ref] ?? []).allSatisfy(done.contains) }
         for index in board.lanes.indices {
-            board.lanes[index].completed = board.completed.intersection(board.lanes[index].cards(in: PullRequestStage.merged).map(\.ref))
+            let lane = board.lanes[index]
+            board.lanes[index].completed = board.completed.intersection(lane.cards(in: PullRequestStage.merged).map(\.ref))
+            board.lanes[index].namesWorkToDo = lane.cards.contains { (named[$0.ref] ?? []).contains(where: open.contains) }
         }
 
         let shown = missions.filter { $0.shows(kinds) }
