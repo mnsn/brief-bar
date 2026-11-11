@@ -1101,23 +1101,28 @@ import Testing
     }
 
     /// The user's window, 946 points wide, leaves the Board 664: its sidebar takes 240 and the page's margins 42.
-    @Test func tooNarrowFoldsMergedWaitsAndToStartThenWhereYouWaitTheFurthestFromDoneNeverWhereItsYourMove() {
+    @Test func tooNarrowFoldsMergedWaitsAndToStartThenWhereYouWaitWhatNeedsLeastFromYouFirst() {
         let counts = Dictionary(uniqueKeysWithValues: Self.allColumns.map { ($0, 1) })
-        let yourMove: Set<BoardColumn> = [.stage(.yourReview), .stage(.canMerge)]
+        let review: Set<BoardColumn> = [.stage(.yourReview)]
         let least: [BoardColumn: BoardFolding.Why] = [.stage(.merged): .narrow, .stage(.waits): .narrow, .toStart: .narrow]
+        func also(_ columns: PullRequestStage...) -> [BoardColumn: BoardFolding.Why] {
+            least.merging(columns.map { (.stage($0), .narrow) }) { $1 }
+        }
         // Only as many as it takes.
-        #expect(Self.folded(counts, yourMove: yourMove, width: 900) == least)
-        // Then those where you wait, Teammate's review first: In progress, your reviews and what you can complete stay open.
-        let waiting = least.merging([.stage(.teammateReview): .narrow]) { $1 }
-        #expect(Self.folded(counts, yourMove: yourMove, width: 664) == waiting)
-        // Narrower, the Board scrolls rather than fold where it's your move, or In progress.
-        #expect(Self.folded(counts, yourMove: yourMove, width: 400) == waiting)
-        // What completes by itself folds once Teammate's review has.
-        #expect(Self.folded(counts, yourMove: [.stage(.yourReview)], width: 400) == waiting.merging([.stage(.canMerge): .narrow]) { $1 })
+        #expect(Self.folded(counts, yourMove: review, width: 900) == least)
+        // Then where you wait: Can merge, whose pull requests complete by themselves; In progress, where nothing's yours
+        // alone; Teammate's review. Your review, where it's your move, stays open, and the Board scrolls past that.
+        #expect(Self.folded(counts, yourMove: review, width: 664) == also(.canMerge))
+        #expect(Self.folded(counts, yourMove: review, width: 600) == also(.canMerge, .inProgress))
+        #expect(Self.folded(counts, yourMove: review, width: 400) == also(.canMerge, .inProgress, .teammateReview))
+        #expect(Self.folded(counts, yourMove: review, width: 300) == also(.canMerge, .inProgress, .teammateReview))
+        // One you complete yourself keeps Can merge open, and your draft In progress: the next folds instead.
+        #expect(Self.folded(counts, yourMove: review.union([.stage(.canMerge)]), width: 664) == also(.inProgress))
+        #expect(Self.folded(counts, yourMove: review.union([.stage(.inProgress)]), width: 600) == also(.canMerge, .teammateReview))
         // A column you opened yourself, or one open for the moment, stays open: the next folds instead.
         let opened = BoardFolds([.stage(.merged): .open])
-        #expect(Self.folded(counts, yourMove: yourMove, choices: opened, open: [.toStart], width: 664)
-            == [.stage(.waits): .narrow, .stage(.teammateReview): .narrow])
+        #expect(Self.folded(counts, yourMove: review, choices: opened, open: [.toStart], width: 664)
+            == [.stage(.waits): .narrow, .stage(.canMerge): .narrow, .stage(.inProgress): .narrow, .stage(.teammateReview): .narrow])
     }
 
     @Test func threeOpenColumnsFitTheUsersWindowAndShareTheRoomTheStripsLeave() {
@@ -1145,6 +1150,16 @@ import Testing
         #expect([review, complete].allSatisfy { $0.isYourMove && $0.needsYou })
         #expect(failing.needsYou && !failing.isYourMove)
         #expect([completesItself, reviewer, merged].allSatisfy { !$0.needsYou && !$0.isYourMove })
+        // In progress, what only you are working on is your move, though it doesn't need you: your draft, or one you set
+        // there yourself. Not one a session set there, nor one a session writes.
+        let draft = Self.card(.inProgress, .draft)
+        var setByYou = Self.card(.inProgress, .set)
+        setByYou.reading.mark = StageMark(stage: .inProgress, at: t(10))
+        var setBySession = setByYou
+        setBySession.reading.mark?.by = Self.cart
+        let writing = Self.card(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(20))))
+        #expect([draft, setByYou].allSatisfy { $0.isYourMove && !$0.needsYou })
+        #expect([setBySession, writing].allSatisfy { !$0.isYourMove })
 
         // Each once, whatever lanes show it.
         let first = Self.mission([Self.step(4101), Self.step(4102)])
@@ -1155,7 +1170,14 @@ import Testing
         ], missions: [first, second])
         #expect(board.needingYou(in: .stage(.inProgress)) == 2)
         #expect(board.lanes.map { $0.needingYou(in: .stage(.inProgress)).count } == [2, 1, 0])
-        #expect(board.hasYourMove(in: .stage(.yourReview)) && !board.hasYourMove(in: .stage(.inProgress)))
+        #expect(board.hasYourMove(in: .stage(.yourReview)) && board.hasYourMove(in: .stage(.inProgress)))
+
+        // Problems only mark a strip: they aren't your move. A work item you started is, not one you sent to Copilot.
+        let problems = Self.board([4101: Self.reading(.inProgress, .failing("Build failed"))])
+        #expect(!problems.hasYourMove(in: .stage(.inProgress)))
+        #expect(problems.withWork([Self.work(5201, .inProgress)], missions: [], stories: []).hasYourMove(in: .stage(.inProgress)))
+        #expect(!problems.withWork([Self.work(5202, .inProgress, copilot: true)], missions: [], stories: [])
+            .hasYourMove(in: .stage(.inProgress)))
     }
 
     @Test func itRemembersTheColumnsYouFoldedOrOpenedAndAClickBackForgetsIt() {

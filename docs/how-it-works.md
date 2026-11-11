@@ -1774,19 +1774,25 @@ kept by column (`BoardFolds`), To start or a stage, folded or open; a click that
 then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no cards folds,
 and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip 20, 10
 between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar folds,
-until they fit: Merged, Waits and To start, whatever they hold; then the others from the left, the furthest from done
-first, but never In progress, one where it's your move (`BoardCard.isYourMove`: a card in Your review, or one in Can
-merge that's ready and doesn't complete by itself), nor one you chose. What still doesn't fit scrolls, and open columns
-share the room the strips leave. So the 664 points the Board has in a 946-point window take three open columns and the
-rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill bordered in its column's color where one
-of its cards needs you (`BoardCard.needsYou`: your move, or a problem Fix next ranks, `fixRank`, but none in Merged), and
-the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. Some columns open for
-the moment, unsaved: one a card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's
-spring-loaded folders do, a column of a lane being one drop destination, folded or open, so that the one under the card
-stays as it springs open; the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, while a
-card in it has the keyboard's focus, until a card in another column has it, or none has for half a second while the
-board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be folded otherwise, or
-before the board knows its width, until you fold it or the board goes. A click that folds or opens a column while
+until they fit: Merged, Waits and To start, whatever they hold; then those where you wait, the one that needs least from
+you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress and Teammate's review, then any other from the left;
+never one where it's your move (`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and
+doesn't complete by itself; one in In progress that's your draft or that you set there, a session busy on it since
+reading as working instead; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`),
+nor one you chose. What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points
+the Board has in a 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too.
+A strip's count is in a pill bordered in its column's color where one of its cards needs you (`BoardCard.needsYou`: a
+review waiting on you, one you can complete, or a problem Fix next ranks, `fixRank`, but none in Merged), which only
+marks it, and the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. With
+every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
+card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
+column of a lane being one drop destination, folded or open, so that the one under the card stays as it springs open;
+the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, or Return or Space opened from a
+lane's strip, while a card in it has the keyboard's focus, until a card in another column has it, or none has for half
+a second while the board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be
+folded otherwise, or before the board knows its width, until you fold it or the board goes. A lane's strip with cards
+takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation (`focusable(interactions: .edit)`),
+in the same Tab order, and owes it to its first card in the lane as its column opens, on Return, Space or a click. A click that folds or opens a column while
 another is open for the moment is kept, unless BriefBar would do the same once that moment ends. A drop leaves each
 column as it folds once the drag's springs end: one that stays folded, with the card in it, as one you folded, counts it
 in its strip, and its title flashes. Folding changes no stage, count or Up Next slot. The Board, its lanes, the columns

@@ -166,6 +166,11 @@ private struct BoardMetrics {
         folded.contains(column)
     }
 
+    /// Every column shows folded: none is open to set a lane's height.
+    var isAllFolded: Bool {
+        columns.allSatisfy(folded.contains)
+    }
+
     func width(_ column: BoardColumn) -> CGFloat {
         isFolded(column) ? widths.strip : open
     }
@@ -525,6 +530,20 @@ package struct OrderBoardView: View {
             choices[column] = nil
             order.setBoardFolds(choices)
         }
+    }
+
+    /// Return or Space on a lane's strip: its column opens for the moment, as a key move into it opens it, while a card in
+    /// it has the keyboard, which goes to the first one there, owed it until it's drawn.
+    private func openForKeyboard(_ column: BoardColumn, at spot: CardSpot) {
+        withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: column, spot: spot) }
+        oweFocus(to: spot)
+    }
+
+    /// A lane's first card in a column, a pull request's, else a work item's: where the keyboard goes as its strip opens.
+    private func firstSpot(in lane: BoardLane, column: BoardColumn) -> CardSpot? {
+        let card = column.stage.flatMap { lane.cards(in: $0).first?.ref }
+        let ref = card ?? lane.tasks.first { BoardColumn($0.column) == column }?.ref
+        return ref.map { CardSpot(lane: lane.kind, ref: $0) }
     }
 
     /// The column titles over the lanes, with where each mission's lane starts. The titles stay at the page's top while it
@@ -1012,11 +1031,14 @@ package struct OrderBoardView: View {
 
     /// A folded column's strip in a lane: how many cards it has there, in a pill where one needs you, and its name, cut
     /// short where the lane is shorter. A click opens the column. A card you drag drops on it as on the open column, and
-    /// springs it open once it stays a moment, where it would go there.
+    /// springs it open once it stays a moment, where it would go there. One with cards takes the keyboard's focus as a card
+    /// does, on a click or with Tab, whatever the Mac's keyboard navigation, and hands it to its first card in the lane as
+    /// its column opens: Return or Space opens it for the moment, until the keyboard leaves it.
     private func stripCell(_ lane: BoardLane, column: BoardColumn, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let count = lane.count(of: column)
         let needing = lane.needingYou(in: column).count
         let target = BoardCell(lane: lane.kind, column: column)
+        let first = firstSpot(in: lane, column: column)
         let move = dropping(on: column, in: lane, moves: moves)
         let takes = move?.isTaken == true
         let isHovered = hovered == target
@@ -1028,7 +1050,7 @@ package struct OrderBoardView: View {
             if count > 0 {
                 StripCount(count: count, column: column, needsYou: needing > 0)
             }
-            Sideways {
+            Sideways(isWhole: metrics.isAllFolded) {
                 Text(column.title)
                     .font(size: 11, weight: .medium)
                     .foregroundStyle(count > 0 ? .secondary : .tertiary)
@@ -1050,8 +1072,20 @@ package struct OrderBoardView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { open(column, metrics: metrics) }
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onTapGesture {
+            open(column, metrics: metrics)
+            // The click gave the strip the keyboard, as it gives a card: the card it opens on here has it.
+            if let first { oweFocus(to: first) }
+        }
         .contextMenu { columnMenu(column, isFolded: true, metrics: metrics) }
+        // As a field takes the keyboard's focus, on a click and with Tab, whatever the Mac's keyboard navigation, as a card.
+        .focusable(first != nil, interactions: .edit)
+        .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+            guard let first else { return .ignored }
+            openForKeyboard(column, at: first)
+            return .handled
+        }
         .help(stripCellHelp(lane, column: column, count: count, needing: needing, why: metrics.folding.folded[column]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.stripWords(title: column.stage?.title ?? column.title, count: count, needing: needing, here: true))
@@ -1130,6 +1164,7 @@ package struct OrderBoardView: View {
             let spot = CardSpot(lane: lane.kind, ref: task.ref)
             BoardTaskCardView(
                 task: task, content: content, isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
+                takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
                     lastFocus = spot
                     work.select(task.ref)
@@ -1279,11 +1314,12 @@ package struct OrderBoardView: View {
     }
 
     /// Whether the column a card moves to shows folded once it's there and a drag's springs end: with the card in it, a
-    /// column folded only for having no cards opens, and Your review is your move.
+    /// column folded only for having no cards opens, and Your review, or In progress you set it to, is your move.
     private func foldsOnceMoved(_ card: BoardCard, to column: BoardColumn) -> Bool {
-        BoardFolding.make(
+        let yours: Set<BoardColumn> = [.stage(.yourReview), .stage(.inProgress)]
+        return BoardFolding.make(
             columns: board.columns, count: { board.count(of: $0) + ($0 == column ? 1 : 0) },
-            yourMove: { board.hasYourMove(in: $0) || $0 == column && column == .stage(.yourReview) },
+            yourMove: { board.hasYourMove(in: $0) || $0 == column && yours.contains(column) },
             choices: order.boardFolds, open: openForNow.subtracting(sprung), widths: BoardWidths(scale: textScale, available: width)
         ).isFolded(column)
     }
@@ -1309,6 +1345,12 @@ package struct OrderBoardView: View {
             refocus.took(spot)
             return
         }
+        oweFocus(to: spot)
+    }
+
+    /// A card is owed the keyboard's focus, which it takes as it's drawn: until it does, or ten seconds on, the test's own
+    /// wait where it has one.
+    private func oweFocus(to spot: CardSpot) {
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
             if let focusWait {
@@ -1425,12 +1467,15 @@ private struct StripCount: View {
 }
 
 /// What it holds, turned a quarter to the right to read from top to bottom, as a folded column's name on its strip: as long
-/// as it is, but only as long as it's given room for, cut short there, so that it never makes a lane taller.
+/// as it is, but only as long as it's given room for, cut short there, so that it never makes a lane taller; whole where
+/// it sets the lane's height, as no open column does when every column is folded.
 private struct Sideways: Layout {
+    var isWhole = false
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let content = subviews.first else { return .zero }
         let size = content.sizeThatFits(.unspecified)
-        return CGSize(width: size.height, height: min(size.width, proposal.height ?? 0))
+        return CGSize(width: size.height, height: isWhole ? size.width : min(size.width, proposal.height ?? 0))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -1617,6 +1662,12 @@ private struct BoardTaskCardView: View {
     let isSelected: Bool
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
+    /// Owed the keyboard's focus as it's drawn, as when Return on its column's strip opened the column for it: it takes it
+    /// as it appears.
+    let takesFocus: Bool
+    let tookFocus: () -> Void
+    /// Whether it may take the focus now: not from a field you type in.
+    let mayTakeFocus: () -> Bool
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
@@ -1667,6 +1718,15 @@ private struct BoardTaskCardView: View {
             }
             .focusable(interactions: .edit)
             .focused(focus, equals: spot)
+            .onAppear {
+                guard takesFocus else { return }
+                tookFocus()
+                // Once this update is done: unless another card, or a field you type in, took the keyboard meanwhile.
+                DispatchQueue.main.async {
+                    guard focus.wrappedValue == nil || focus.wrappedValue == spot, mayTakeFocus() else { return }
+                    focus.wrappedValue = spot
+                }
+            }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 guard press.modifiers.isCommandAlone else { return .ignored }
                 move()

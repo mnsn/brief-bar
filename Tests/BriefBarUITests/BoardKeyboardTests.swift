@@ -500,6 +500,41 @@ import Testing
         }
     }
 
+    /// With the Mac's keyboard navigation off too, Tab goes on from a card to a folded column's strip in its lane, as to a
+    /// card: Return there opens the column for the moment, with the keyboard on its first card in the lane, which keeps it
+    /// open until the keyboard leaves it. What you chose stays.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesAFoldedColumnsStripWhereReturnOpensItOnItsFirstCard() async throws {
+        let order = Self.withAReview()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            // Tab to the card, then on.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            // Nothing else opens Your review, which you folded.
+            try await Self.pressUntil("Return on Your review's strip, which Tab went to, to open it") {
+                Self.press(.return, in: window)
+                return drawn.isDrawn(Self.review)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "Your review folded under the review that has the keyboard")
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+            let card = try #require(drawn.frames[Self.ref])
+            try await Self.pressUntil("a click on the card to take the keyboard from Your review") {
+                Self.click(at: drawn.frames[Self.ref] ?? card, in: host)
+                return details.shown == Self.ref
+            }
+            try await until("Your review to fold back once the keyboard left it") { !drawn.isDrawn(Self.review) }
+        }
+    }
+
     /// On a narrow page, or at a bigger text size, a card's details cover the Board, which they disable: the card a click
     /// focused loses the keyboard's focus. ⌘→ and ⌘← move the card of the pull request they show then, as the app takes
     /// the keys, in the Board's window and while no field has them; once they close, the card has the focus back, and its

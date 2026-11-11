@@ -81,20 +81,32 @@ extension BoardColumn {
 // MARK: - What needs you
 
 extension BoardCard {
-    /// It's your move: a review that waits on you, or one you can complete. Its column stays open, where the Board is
-    /// narrow, while it has one (`BoardFolding`).
+    /// It's your move, which keeps its column open where the Board is narrow (`BoardFolding`): a review that waits on you;
+    /// one you complete yourself, not one set to complete by itself; or one only you are working on, with no session at
+    /// it: your draft, or one you set in progress yourself. A session at work on yours reads as working on it instead.
     public var isYourMove: Bool {
         switch stage {
         case .yourReview: true
         case .canMerge: reading.why == .ready(autoComplete: false)
+        case .inProgress: reading.why == .draft || reading.why == .set && reading.isSetByYou
         default: false
         }
     }
 
-    /// It needs you, as BriefBar counts it: it's your move, or Fix next offers it, as a session asks you something, a build
-    /// failed or someone wants changes; never one that merged. A folded column's strip marks it.
+    /// It needs you, as BriefBar counts it: a review that waits on you, one you can complete, or one Fix next offers, as a
+    /// session asks you something, a build failed or someone wants changes; never one that merged. A folded column's strip
+    /// marks it.
     public var needsYou: Bool {
-        stage != .merged && (isYourMove || reading.fixRank != nil)
+        guard stage != .merged else { return false }
+        return stage == .yourReview || stage == .canMerge && reading.why == .ready(autoComplete: false) || reading.fixRank != nil
+    }
+}
+
+extension BoardTask {
+    /// It's your move: work of yours that started, which only you are working on, with no pull request yet and no task you
+    /// sent to Copilot on it.
+    public var isYourMove: Bool {
+        if case .started = why { true } else { false }
     }
 }
 
@@ -119,10 +131,16 @@ extension PullRequestBoard {
         Set(lanes.flatMap { $0.needingYou(in: column) }.map(\.ref)).count
     }
 
-    /// Whether it's your move on a card in a column, in any lane.
+    /// Whether it's your move on a card in a column, a pull request's or a work item's, in any lane.
     public func hasYourMove(in column: BoardColumn) -> Bool {
-        guard let stage = column.stage else { return false }
-        return lanes.contains { $0.cards(in: stage).contains(where: \.isYourMove) }
+        lanes.contains { lane in
+            switch column {
+            case .toStart: lane.tasks(in: .toStart).contains(where: \.isYourMove)
+            case .stage(let stage):
+                lane.cards(in: stage).contains(where: \.isYourMove)
+                    || stage == .inProgress && lane.tasks(in: .inProgress).contains(where: \.isYourMove)
+            }
+        }
     }
 }
 
@@ -187,9 +205,9 @@ public struct BoardWidths: Equatable, Sendable {
 /// Which of the Board's columns show folded, and why: worked out each time it's drawn, from your choices (`BoardFolds`),
 /// what's in each column and the page's width. A column you chose shows as you chose it, one open for a moment open, and
 /// BriefBar decides the rest: one with no cards folds; and where the Board is too narrow for its open columns at their
-/// narrowest, the least needed of those it opened fold: first Merged, Waits and To start, whatever's in them; then, the
-/// furthest from done first, those where it isn't your move (`BoardCard.isYourMove`), as what needs you otherwise only
-/// marks a strip; never In progress. Whatever's still too wide scrolls sideways.
+/// narrowest, the least needed of those it opened fold: first Merged, Waits and To start, whatever's in them; then those
+/// where you wait, where it isn't your move (`BoardCard.isYourMove`), the one that needs least from you first, as what
+/// needs you otherwise only marks a strip. Whatever's still too wide scrolls sideways.
 public struct BoardFolding: Equatable, Sendable {
     /// Why a column shows folded.
     public enum Why: Equatable, Sendable {
@@ -244,10 +262,15 @@ public struct BoardFolding: Equatable, Sendable {
     /// pull request, then the sprint work nobody started.
     static let foldsFirst: [BoardColumn] = [.stage(.merged), .stage(.waits), .toStart]
 
-    /// The order BriefBar folds columns in where the Board is too narrow: those it folds first, then the others, the
-    /// furthest from done first, as Teammate's review is, where you wait the longest; never In progress.
+    /// Then, where it isn't your move, the columns where you wait, the one that needs least from you first: Can merge,
+    /// where what's there completes by itself; In progress, where none of it is yours alone; Teammate's review.
+    static let thenWhereYouWait: [BoardColumn] = [.stage(.canMerge), .stage(.inProgress), .stage(.teammateReview)]
+
+    /// The order BriefBar folds columns in where the Board is too narrow: those it folds first, then those where you wait,
+    /// then any other, from the left, as Approved, last. Your review, whose every card is your move, never folds for room.
     static func foldOrder(_ columns: [BoardColumn]) -> [BoardColumn] {
-        foldsFirst.filter(columns.contains) + columns.filter { !foldsFirst.contains($0) && $0 != .stage(.inProgress) }
+        let listed = foldsFirst + thenWhereYouWait
+        return listed.filter(columns.contains) + columns.filter { !listed.contains($0) }
     }
 }
 

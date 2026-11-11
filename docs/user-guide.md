@@ -398,14 +398,18 @@ how many of the lane's cards it holds; a count is in a pill where something ther
 pull request you can complete, or a problem Fix next would show you, such as a failed build. A column with no cards
 folds by itself, and opens once a card arrives, unless you folded it. Where the window is too narrow for every open
 column, as with bigger text, BriefBar folds those you need least: **Merged**, **Waits** and **To start** first, then
-those where you wait on others, the furthest from done first, as **Teammate's review**; never **In progress**, a column
-where it's your move, as **Your review** while a review waits on you or **Can merge** while you can complete one, or one
-you opened yourself. Only past that does the Board scroll sideways. Right-click a title or a strip for why it's folded,
-**Fold** or **Open**, and, once you chose, **Let BriefBar Decide**. While you drag a card, a strip that takes it springs
-open as you hold the card over it a moment, as Finder's folders do; once you drop it, each column folds as it would
-have, so one you folded keeps the card in its strip, counted, and its title flashes. **⌘→** and **⌘←** move a card into
-a folded column too, even while its details cover the Board, and the column opens while a card in it has the keyboard,
-so the next key moves the card on; VoiceOver says where it went. **2 more ›** in Up Next opens its column for the moment.
+those where you wait on others, the one that needs least from you first: **Can merge** while its pull requests complete
+by themselves, **In progress** while nothing in it is yours alone, then **Teammate's review**. Never a column where it's
+your move, as **Your review** while a review waits on you, **Can merge** while you can complete one, or **In progress**
+while it holds something only you are working on, with no session at it: your draft, one you set there yourself, or a
+work item you started; nor one you opened yourself. Only past that does the Board scroll sideways. Right-click a title or
+a strip for why it's folded, **Fold** or **Open**, and, once you chose, **Let BriefBar Decide**. While you drag a card, a
+strip that takes it springs open as you hold the card over it a moment, as Finder's folders do; once you drop it, each
+column folds as it would have, so one you folded keeps the card in its strip, counted, and its title flashes. **⌘→** and
+**⌘←** move a card into a folded column too, even while its details cover the Board, and the column opens while a card in
+it has the keyboard, so the next key moves the card on; VoiceOver says where it went. **Tab** goes to a lane's strip as
+it goes to a card, and **Return** or **Space** there opens its column the same way, with the keyboard on its first card
+in that lane. **2 more ›** in Up Next opens its column for the moment.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
