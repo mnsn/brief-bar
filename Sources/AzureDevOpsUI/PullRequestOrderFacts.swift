@@ -268,7 +268,10 @@ final class PullRequestOrderFacts {
                 item.kind == .approvals || item.kind == .requiredReviewers
                     || (item.kind == .policy && reviewerPolicies.contains(item.label))
             }
-            facts.isApproved = Self.isApproved(pr, reviews: reviews, isCurrent: readiness?.isCurrent == true)
+            // Where BriefBar could read its policies, as they are now; else the votes alone, as What's Left's approval then
+            // stands for one vote, whatever its policies want.
+            let policiesRead = readiness?.isCurrent == true && record.details?.checksKnown == true
+            facts.isApproved = Self.isApproved(pr, reviews: reviews, isCurrent: policiesRead)
             facts.approvedBy = Self.approvers(others.filter { !$0.isGroup && $0.vote.isApproval })
             // What's left once it's approved, but what its flags say: what fails, and changes someone wants.
             if facts.isApproved == true, !facts.isReady {
@@ -307,9 +310,11 @@ final class PullRequestOrderFacts {
     /// requires and its other reviewer policies, all done. Never while a reviewer it requires hasn't approved, as one who
     /// wants changes, or rejected it, which What's Left says only as changes someone wants. One that requires nobody's
     /// review, as where its reviewer policy doesn't apply, isn't approved until someone approves it, which What's Left
-    /// then counts. While what was read of its policies isn't current, after a push or a vote, only what its reviewers'
-    /// votes tell: not approved while nobody approved it; else nil, as BriefBar can't tell until it reads them again.
-    /// - Parameter reviews: What's Left's items for its reviews, as last read.
+    /// then counts. While what was read of its policies isn't current, after a push or a vote, or where BriefBar can't read
+    /// them, only what its reviewers' votes tell: not approved while nobody approved it; else nil, as BriefBar can't tell.
+    /// - Parameters:
+    ///   - reviews: What's Left's items for its reviews, as last read.
+    ///   - isCurrent: BriefBar read its policies, as it is now.
     static func isApproved(_ pr: PullRequest, reviews: [PRReadiness.Item], isCurrent: Bool) -> Bool? {
         if pr.reviewers.contains(where: { !$0.isGroup && $0.isRequired && !$0.vote.isApproval }) { return false }
         if isCurrent { return !reviews.isEmpty && reviews.allSatisfy(\.isDone) }

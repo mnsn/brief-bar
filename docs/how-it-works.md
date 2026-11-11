@@ -1557,9 +1557,10 @@ Approved means what Azure DevOps counts: its approvals, the reviewers it require
 done, as What's Left reads them (`PullRequestOrderFacts.isApproved`), and never while a reviewer it requires hasn't
 approved, as one who wants changes or rejected it, which What's Left says only as changes someone wants; one that
 requires nobody's review, as where its reviewer policy doesn't apply, isn't approved until someone approves it. While
-what BriefBar read of its policies isn't current, as after a push or a vote until it reads them again, only the votes
-tell: not approved while a reviewer it requires hasn't approved, or nobody has; else it stays in Approved or Can merge
-where it got.
+what BriefBar read of its policies isn't current, as after a push or a vote until it reads them again, or where its
+project doesn't let you read them, as What's Left's approval then stands for one vote, only the votes tell: not approved
+while a reviewer it requires hasn't approved, or nobody has; else it stays where it got, Approved or Can merge too, so
+one whose policies you can't read gets to Approved no more than to Can merge.
 
 On yours, what goes on with it besides why it's in its stage never moves it: a session that asks you or writes it, a
 required item that failed or expired, conflicts or a merge Azure DevOps couldn't make, and changes someone wants, each
@@ -1580,10 +1581,11 @@ review, Teammate's review, Approved, or Can merge, for Waits too; nothing for In
 moves it either way, and once that ends, BriefBar goes on from the stage that was set
 (`StageRules.reached(kept:ended:)`): Your review or Teammate's review, or, after In progress, from what Azure DevOps
 shows alone, as it was sent back. Azure DevOps can list a new pull request before the Copilot app says which session
-opened it: until BriefBar knows of a session writing it, at work or done, and for ten minutes at most, one it first kept
-in Teammate's review is that session's, where the session was at work, or done, by then: In progress while it writes it,
-Your review once it finished (`StagesReached.firstSight`). It's kept in the preferences for each account you sign in
-with, each as its pull request's reference, its stage, when it got there, whether that's where BriefBar first kept it,
+opened it: until BriefBar knows of a session writing it, at work or done, or a stage you or a session set on it ends,
+and for ten minutes at most, one it first kept in Teammate's review is that session's, where the session was at work,
+or done, by then: In progress while it writes it, Your review once it finished (`StagesReached.firstSight`). It's kept
+in the preferences for each account you sign in with, each as its pull request's reference, its stage, when it got
+there, whether that's where BriefBar first kept it,
 and when a list last had it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no
 list has had it for 30 days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and
 its stage comes from what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none. `--mcp` only reads
@@ -1687,7 +1689,8 @@ you, then a build or check that failed, conflicts or a merge Azure DevOps couldn
 oldest first; but none while a session writes it, which may be fixing just that. Its pull request wears **Fix next**
 wherever it is, and stays in its column's slot too, as one in Your review is still your next review, whatever its
 build. A mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
-(`MissionNextStep.of`). The pull request you chose for a slot comes first in its column (below); then the mission you
+(`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
+(`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
 focus on comes first in each stage, but in In progress, what needs you comes before it:
 
 | Stage | Which comes first |
@@ -1714,7 +1717,8 @@ each with why it's there, the one it shows checked; a Board card's menu has **Ma
 actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
 one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
 (`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
-needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is;
+needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is, in its
+mission's next steps too;
 the slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on
 your board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
 it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull

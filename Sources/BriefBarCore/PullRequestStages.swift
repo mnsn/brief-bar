@@ -158,8 +158,8 @@ public struct StageFacts: Equatable, Sendable {
     public var autoComplete: Bool
     /// Yours: whether the reviewers it requires approved, as Azure DevOps counts them, whatever else is left: every review
     /// What's Left has of it done, approvals, the reviewers it requires and any other reviewer policy, with one at least;
-    /// nil while BriefBar can't tell, as before its details are read, or while they were read before its latest push or
-    /// vote.
+    /// nil while BriefBar can't tell, as before its details are read, while they were read before its latest push or vote,
+    /// or where its project doesn't let you read its policies.
     public var isApproved: Bool?
     /// Yours: who approved it but you, by their first names, as a team by its name: "Maria", "Maria and Priya"; nil while
     /// nobody did.
@@ -661,7 +661,9 @@ public enum StageRules {
         case nil, .yourReview?:
             if !othersApproved {
                 if let finished { return StageReading(stage: .yourReview, why: .finished(finished), since: finished.since) }
-                if reached == .yourReview { return StageReading(stage: .yourReview, why: .awaitsYourReview, since: since) }
+                if reached == .yourReview {
+                    return StageReading(stage: .yourReview, why: .awaitsYourReview, since: reach?.since ?? since)
+                }
             }
         case .teammateReview?:
             if !othersApproved, let finished, unknownThen(finished) {

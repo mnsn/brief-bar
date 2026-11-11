@@ -684,6 +684,28 @@ private final class Clock {
         #expect(reached() == .yourReview)
     }
 
+    /// Where BriefBar first saw one stops being that once a stage set on it ends, as that moved it: a session the Copilot
+    /// app tells of next, done before BriefBar first saw it, doesn't take it from your teammates back to your review.
+    @Test func aStageSetThatEndedMovedItFromWhereBriefBarFirstSawIt() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        let first = clock.now
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Maria")])
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        #expect(order.finishedReview(Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(
+            role: .author, changesWanted: "Maria wants changes", waitingFor: "Waiting on Maria", othersVoted: true, votes: "-5"
+        )])
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .done, since: first - 120)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(order, 4093) == "Waiting on Maria · Maria wants changes")
+    }
+
     /// Forget Stages… is there for how far yours got while Pull Request Order is off, when nothing else forgets it: while
     /// it's on, BriefBar keeps that again at once, or forgets it on its own after 30 days.
     @Test func forgetStagesIsThereForHowFarYoursGotWhileOrderIsOff() {

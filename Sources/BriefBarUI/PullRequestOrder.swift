@@ -1938,9 +1938,12 @@ package final class PullRequestOrder: ObservableObject {
             let order = StageOrder.of(ref, in: missions, names: names)
             if let yours, facts.state == .open {
                 let worked = StageRules.worked(facts: facts, sessions: sessions, reached: got, order: order)
-                // A session whose end BriefBar can't tell says nothing of it yet.
+                // A session whose end BriefBar can't tell says nothing of it yet. A stage set on it that ended moved it, as a
+                // known session would: it isn't where BriefBar first saw it any more.
                 let knowsSessions = sessions.contains { !$0.isReview && $0.activity != .stopped }
-                if reached.set(StageRules.reached(worked), of: ref, for: yours, at: now(), knowsSessions: knowsSessions) {
+                if reached.set(
+                    StageRules.reached(worked), of: ref, for: yours, at: now(), knowsSessions: knowsSessions || counted.ended != nil
+                ) {
                     reachedChanged = true
                 }
             }

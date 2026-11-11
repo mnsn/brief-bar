@@ -793,11 +793,15 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var columns: [PullRequestStage: [BoardCard]]
     /// Its work items' own cards, on My Work with + Sprint Tasks (`PullRequestBoard.withWork`), in the sprint's order.
     public var tasks: [BoardTask]
+    /// The pull request you chose for Fix next, which comes first of what it has to fix, while it needs you, whatever its
+    /// column.
+    public var fixFirst: ItemRef?
 
-    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = []) {
+    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
         self.columns = columns
         self.tasks = tasks
+        self.fixFirst = fixFirst
     }
 
     public var id: Kind { kind }
@@ -819,10 +823,20 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var isEmpty: Bool { columns.values.allSatisfy(\.isEmpty) && tasks.isEmpty }
 
     /// Its next steps that are yours, in the order Up Next takes them: what a session asks you, what to fix, reviews, finding
-    /// a reviewer, completing; in each, as its column has them, the one you chose for Up Next's slot first.
+    /// a reviewer, completing. What asks you and what to fix as Fix next has them, from every column, the one you chose for
+    /// it first; the rest as their column has them, the one you chose for Up Next's slot first.
     public var nextSteps: [MissionNextStep] {
-        cards.compactMap(MissionNextStep.of).enumerated().sorted { lhs, rhs in
-            if lhs.element.kind != rhs.element.kind { return lhs.element.kind < rhs.element.kind }
+        let cards = cards
+        let fixOrder = Dictionary(
+            BoardOrder.fixOrder(cards, first: fixFirst).enumerated().map { ($0.element.ref, $0.offset) }, uniquingKeysWith: min
+        )
+        return cards.compactMap(MissionNextStep.of).enumerated().sorted { lhs, rhs in
+            let kind = lhs.element.kind
+            if kind != rhs.element.kind { return kind < rhs.element.kind }
+            if kind == .answer || kind == .fix, let left = fixOrder[lhs.element.ref], let right = fixOrder[rhs.element.ref],
+               left != right {
+                return left < right
+            }
             return lhs.offset < rhs.offset
         }.map(\.element)
     }
@@ -951,13 +965,17 @@ public struct PullRequestBoard: Equatable, Sendable {
         switch lanes {
         case .missions:
             for (mission, cards) in zip(shown, laneCards) {
-                boardLanes.append(BoardLane(kind: .mission(mission.key), columns: columns(cards, stages: stages, picks: picks)))
+                boardLanes.append(BoardLane(
+                    kind: .mission(mission.key), columns: columns(cards, stages: stages, picks: picks), fixFirst: picked[.fix]
+                ))
             }
             if !outside.isEmpty {
-                boardLanes.append(BoardLane(kind: .notInAMission, columns: columns(outside, stages: stages, picks: picks)))
+                boardLanes.append(BoardLane(
+                    kind: .notInAMission, columns: columns(outside, stages: stages, picks: picks), fixFirst: picked[.fix]
+                ))
             }
         case .none:
-            if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted)) }
+            if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted, fixFirst: picked[.fix])) }
         }
         return PullRequestBoard(
             lanes: boardLanes, counts: counts, next: next, picked: picked, upNext: UpNext(slots: slots), refs: Set(onBoard.keys),

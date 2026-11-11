@@ -254,8 +254,9 @@ public struct StagesReached: Equatable, Sendable {
     /// true when that changed what's kept. A new one isn't kept once the account keeps the most.
     /// - Parameters:
     ///   - now: when it got there, for a stage it didn't keep, and when a list last had it.
-    ///   - knowsSessions: BriefBar knows of a session writing it, at work or done, not one whose end it can't tell: where it
-    ///     keeps it first isn't where it first saw it before it knew of them, and where it kept it before stops being that.
+    ///   - knowsSessions: BriefBar knows of a session writing it, at work or done, not one whose end it can't tell, or
+    ///     something moved it, as a stage set on it that ended: where it keeps it first isn't where it first saw it before it
+    ///     knew of them, and where it kept it before stops being that.
     @discardableResult
     public mutating func set(
         _ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date, knowsSessions: Bool = false

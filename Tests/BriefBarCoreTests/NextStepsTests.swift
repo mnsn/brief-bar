@@ -822,14 +822,30 @@ import Testing
     }
 
     /// Of its next steps of one kind, the one you chose for Up Next's slot comes first, as it does in its column; a session
-    /// that asks you is still Answer, before what to fix.
+    /// that asks you is still Answer, before what to fix. What to fix comes as Fix next has it, from every column: the one
+    /// you chose for Fix next first, then what failed, then changes someone wants, the oldest first.
     @Test func aMissionsNextStepsPutTheOneYouChoseFirst() {
         let payments = Self.mission([Self.step(4101), Self.step(4102), Self.step(4103), Self.step(4104)])
-        func titles(_ picks: UpNextPicks) -> [String] {
-            Self.board(Self.fixes, missions: [payments], picks: picks).lane(for: payments.key)?.nextSteps.map(\.title) ?? []
+        func titles(_ picks: UpNextPicks, _ stages: [Int: StageReading] = Self.fixes, in mission: OrderMission? = nil) -> [String] {
+            let mission = mission ?? payments
+            return Self.board(stages, missions: [mission], picks: picks).lane(for: mission.key)?.nextSteps.map(\.title) ?? []
         }
         #expect(titles(UpNextPicks()) == ["Answer !4103", "Fix !4101", "Fix !4102"])
         #expect(titles(UpNextPicks([.fix: Self.pr(4102)])) == ["Answer !4103", "Fix !4102", "Fix !4101"])
+
+        // Two approved whose builds failed: the one you chose for Fix next is its next fix, as it's Up Next's, while the
+        // Approved column keeps the one you chose for Approved next first.
+        var approved = Self.fixes
+        approved[4105] = Self.flagged(.approved, .approvedBy("Maria"), at: 3, [.failing("Build failed")])
+        approved[4106] = Self.flagged(.approved, .approvedBy("Sam"), at: 4, [.failing("Build failed")])
+        let shop = Self.mission([4101, 4102, 4103, 4104, 4105, 4106].map { Self.step($0) })
+        #expect(titles(UpNextPicks(), approved, in: shop) == ["Answer !4103", "Fix !4105", "Fix !4106", "Fix !4101", "Fix !4102"])
+        let picks = UpNextPicks([.fix: Self.pr(4106), .approved: Self.pr(4105)])
+        let chosen = Self.board(approved, missions: [shop], picks: picks)
+        #expect(chosen.next[.fix] == Self.pr(4106))
+        #expect(chosen.lane(for: shop.key)?.nextSteps.map(\.title)
+            == ["Answer !4103", "Fix !4106", "Fix !4105", "Fix !4101", "Fix !4102"])
+        #expect(chosen.lane(for: shop.key)?.cards(in: .approved).map(\.ref) == [Self.pr(4105), Self.pr(4106)])
     }
 
     // MARK: Moving a card

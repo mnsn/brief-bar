@@ -419,7 +419,7 @@ import Testing
     /// A pull request's stage's facts, as the lists read it, with its details' checks when given.
     private static func stageFacts(
         _ number: Int, role: PRRole = .author, author: Person = me, reviewers: [Reviewer] = [], checks: [Check]? = nil,
-        merge: String? = "succeeded"
+        checksKnown: Bool = true, merge: String? = "succeeded"
     ) -> StageFacts? {
         let pr = PullRequest(
             key: PRKey("Contoso", number), title: "Pull request \(number)", author: author,
@@ -427,7 +427,9 @@ import Testing
             repositoryId: "Repository-Shop", repositoryName: "shop-web", mergeStatus: merge, reviewers: reviewers,
             sourceCommit: "c\(number)"
         )
-        let details = checks.map { PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0) }
+        let details = checks.map {
+            PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0, checksKnown: checksKnown)
+        }
         return PullRequestOrderFacts.stageFacts(PRRecord(pullRequest: pr, role: role, details: details, me: me.id), item: nil, tasks: [])
     }
 
@@ -600,7 +602,7 @@ import Testing
     /// Yours is approved once its reviews are done, as What's Left reads them, and what's left then is What's Left's first
     /// item. Where its reviewer policy doesn't apply, it isn't until someone approves it; a reviewer policy of another name
     /// counts as a review while it's pending; and a reviewer it requires who rejected it keeps it from being approved,
-    /// where one it doesn't require only marks it.
+    /// where one it doesn't require only marks it. Where it can't read its policies, only the votes tell.
     @Test func itsApprovedOnceItsReviewsAreDoneAndWhatsLeftIsSaid() throws {
         let running = Check(name: "shop-web CI", kind: .build, state: .running)
         let sam = [Reviewer(person: Self.sam, vote: .none)]
@@ -641,6 +643,15 @@ import Testing
         ))
         #expect(optional.isApproved == true)
         #expect(optional.changesWanted == "Sam rejected it")
+
+        // Where it can't read its policies, What's Left's approval stands for one vote, whatever they want: only the votes
+        // tell, as before its details are read again.
+        let unreadable = try #require(Self.stageFacts(
+            4105, reviewers: [Reviewer(person: Self.sam, vote: .approved)], checks: [], checksKnown: false
+        ))
+        #expect(unreadable.isApproved == nil)
+        #expect(unreadable.leftAfterReviews == nil)
+        #expect(try #require(Self.stageFacts(4106, reviewers: sam, checks: [], checksKnown: false)).isApproved == false)
 
         // Before its details are read, nothing's said to be left, and its votes alone tell it isn't approved.
         let unread = try #require(Self.stageFacts(4102, reviewers: sam))

@@ -237,6 +237,12 @@ import Testing
         let review = Self.reading(StageFacts(role: .author), sessions: writing, reached: StageReach(.yourReview))
         #expect(review?.stage == .yourReview)
         #expect(Self.why(review) == "Waiting for your review · ‘Cart’ is writing it")
+        // It waited in Your review since it got there, not since it was opened: a session writing it again keeps its place
+        // in Your review's order.
+        let opened = StageFacts(role: .author, since: t(0))
+        let gotThere = StageReach(.yourReview, since: t(120))
+        #expect(Self.reading(opened, sessions: [Self.session(.finished, at: 110)], reached: gotThere)?.since == t(110))
+        #expect(Self.reading(opened, sessions: writing, reached: gotThere)?.since == t(120))
         // Never seen further, it's the opening session's to write; so is one BriefBar first saw in Teammate's review while
         // the session was already at work, or done, as before the Copilot app said which session opened it.
         #expect(Self.reading(StageFacts(role: .author), sessions: writing)?.stage == .inProgress)
