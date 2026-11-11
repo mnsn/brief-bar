@@ -93,7 +93,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// git into the task's worktree, with which commits a merge in what it would push brings in, and whether git's
     /// configuration there would push tags or submodules' commits with it; then the pull request, with one request, for
     /// the branch it merges into and whether it's still active.
-    nonisolated package static let descriptionVersion = 28
+    /// 29: only with My Work Page, while My Work shows + Sprint Tasks with Show Links on, your team's current sprint,
+    /// as while its Sprint section is on screen, and the pull requests linked to its work items.
+    nonisolated package static let descriptionVersion = 29
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
