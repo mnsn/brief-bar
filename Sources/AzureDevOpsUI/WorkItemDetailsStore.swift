@@ -445,8 +445,9 @@ final class WorkItemDetailsStore: ObservableObject {
         guard items != nil, let selected, board?.item(selected.key) == nil else { return }
         if let fresh = outside[selected.key] {
             keepUp(with: fresh)
-        } else if before[selected.key] != nil, loading?.key != selected.key, !viewers.isEmpty {
-            load(selected)
+        } else if before[selected.key] != nil {
+            // Now, or once more after a read under way, which may be from before.
+            reloadIfShowing([selected.key])
         }
     }
 

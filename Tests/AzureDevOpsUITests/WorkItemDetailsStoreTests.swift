@@ -582,6 +582,25 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.details?.readAt == done)
     }
 
+    /// Done while its details are read, one of your work items outside the sprint is read once more after that read, which
+    /// may be from before.
+    @Test func readsYourWorkOutsideTheSprintOnceMoreWhenItsDoneWhileRead() async throws {
+        let gate = ReadGate()
+        let store = makeStore(reader: gate.reader)
+        let outside = DemoData.outsideWork(now: clock.now).items
+        let bug = try #require(outside.first { $0.id == 4990 })
+        let read = WorkItemDetailsStore.Read(result: .success(WorkItemDetails(item: bug, readAt: clock.now)), account: nil)
+        store.outsideChanged(outside)
+        store.show(bug)
+        try await until("the read") { gate.asked.count == 1 }
+        store.outsideChanged(outside.filter { $0.id != bug.id })
+        try await gate.answer(read)
+        try await until("the read after it") { gate.asked.count == 2 }
+        try await gate.answer(read)
+        try await until("the second read") { !store.isLoading }
+        #expect(gate.asked.count == 2)
+    }
+
     @Test func anotherTeamsSprintClosesTheDetails() throws {
         let store = makeStore()
         store.show(try item(5103))
