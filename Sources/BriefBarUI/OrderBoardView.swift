@@ -69,10 +69,11 @@ extension BoardColumn {
         }
     }
 
-    /// Its color: its stage's; for To start, a color no stage has.
+    /// Its color: its stage's; for To start, the gray of the Sprint page's To Do, which is Waits' too: only To start's
+    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side.
     var color: Color {
         switch self {
-        case .toStart: Color(nsColor: .systemTeal)
+        case .toStart: Color(nsColor: .systemGray)
         case .stage(let stage): stage.color
         }
     }
@@ -432,7 +433,8 @@ package struct OrderBoardView: View {
         .clipped()
         .padding(.vertical, 6)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Stages")
+        // To start isn't a stage.
+        .accessibilityLabel(board.showsWork ? "Columns" : "Stages")
     }
 
     @ViewBuilder

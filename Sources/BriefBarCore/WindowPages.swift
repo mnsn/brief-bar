@@ -44,6 +44,16 @@ public struct WindowPages: Equatable, Sendable {
         chosen.flatMap { pages.contains($0) ? $0 : nil } ?? pages.first
     }
 
+    /// The page to choose as pages that go with a section come or go, so that the window keeps showing what it showed
+    /// (`before`'s): that page, while the window still has it, as one comes; once it goes, the section it went with, as
+    /// once My Work Page is off. Nil while what shows doesn't change, or when the window has neither.
+    public func keepingShown(_ chosen: SectionID?, from before: WindowPages) -> SectionID? {
+        guard let shown = before.current(chosen: chosen), shown != current(chosen: chosen) else { return nil }
+        if pages.contains(shown) { return shown }
+        let section = before.companions.first { $0.value.contains(shown) }?.key
+        return section.flatMap { pages.contains($0) ? $0 : nil }
+    }
+
     /// The page to choose when asked for `section`: its page, if the window has one. Asked for none, a window opens on
     /// its Overview; one without keeps what it shows (nil).
     public func page(for section: SectionID?) -> SectionID? {

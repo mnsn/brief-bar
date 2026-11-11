@@ -170,13 +170,13 @@ private struct MyWorkContent: View {
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
-                PageRefreshStatus(page: .pullRequests)
+                PageRefreshStatus(page: .pullRequests, withSprint: showsWork)
                 SegmentedPicker("Show", selection: Binding(get: { shown }, set: { settings.myWorkShows = $0 }), segments: [
                     .init(MyWorkShows.pullRequests, title: "Pull Requests"),
                     .init(MyWorkShows.sprintTasks, title: "+ Sprint Tasks"),
                 ])
                 .fixedSize()
-                .help("+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start, with Show Links")
+                .help("+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start. It needs Show Links.")
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
@@ -188,12 +188,15 @@ private struct MyWorkContent: View {
             ) {
                 content
             } details: {
-                if workItem != nil {
-                    WorkItemDetailsPanel()
-                } else {
-                    PullRequestDetailsPanel()
-                        .environment(\.isOnMyWork, true)
+                // A pull request's, or one linked to a work item's, shows its mission's lane here.
+                Group {
+                    if workItem != nil {
+                        WorkItemDetailsPanel()
+                    } else {
+                        PullRequestDetailsPanel()
+                    }
                 }
+                .environment(\.isOnMyWork, true)
             }
         }
     }
@@ -333,12 +336,12 @@ private struct MyWorkContent: View {
     }
 
     /// What + Sprint Tasks needs, or what's in the way: Show Links, which puts work items with their pull requests; and the
-    /// sprint, while it's read, when it can't be, or when there's none.
+    /// sprint, while it's read, when it can't be, above the cards read before, as on the Sprint page, or when there's none.
     @ViewBuilder
     private var sprintLines: some View {
         if !links.isOn {
             SprintTasksNeedShowLinks(links: links)
-        } else if let problem = sprint.problem, sprint.board == nil {
+        } else if let problem = sprint.problem {
             ProblemView(problem: problem) { store.signIn(for: problem) }
         } else if sprint.board == nil {
             HStack(spacing: 8) {

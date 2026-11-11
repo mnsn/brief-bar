@@ -145,7 +145,7 @@ final class WindowContent: ObservableObject {
     /// closed, minimized or hidden behind other windows.
     private var visible: [SectionID: SectionViewer.Kind] = [:]
     /// Its pages as they were last, to tell when a page that goes with a section comes or goes.
-    private var lastPages: [SectionID] = []
+    private var lastPages = WindowPages(sections: [])
     /// A page that goes with a section came or went, for the window's title and size.
     var pagesChanged: (() -> Void)?
 
@@ -214,16 +214,20 @@ final class WindowContent: ObservableObject {
                 .sink { [weak self] in MainActor.assumeIsolated { self?.segmentsChanged() } }
                 .store(in: &cancellables)
         }
-        lastPages = pages
+        lastPages = windowPages
         pagesChanged?()
     }
 
-    /// What a section shows in the menu bar may have changed, and with it the pages that go with it: once one goes while it
-    /// shows, the window shows another, and its source hears it no longer shows.
+    /// What a section shows in the menu bar may have changed, and with it the pages that go with it: the window stays at
+    /// the page it showed as one comes, and once the one it showed goes, shows the section it went with, for good; its
+    /// source hears it no longer shows.
     private func segmentsChanged() {
         objectWillChange.send()
-        let pages = self.pages
-        guard pages != lastPages else { return }
+        let pages = windowPages
+        guard pages.pages != lastPages.pages else { return }
+        if let page = pages.keepingShown(selected, from: lastPages) {
+            select(page, notify: false)
+        }
         lastPages = pages
         pagesChanged?()
         updateVisible()
