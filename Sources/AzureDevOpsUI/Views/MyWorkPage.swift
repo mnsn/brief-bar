@@ -152,9 +152,9 @@ extension MyWorkPage {
     ) -> [(name: String, view: AnyView)] {
         guard services.pullRequestOrder.isOn else { return [] }
         let shown: [(name: String, shows: MyWorkShows, lanes: BoardLanes, size: CGSize)] = [
-            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_400, height: 2_050)),
+            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_600, height: 2_050)),
             ("my-work-sprint-tasks-narrow", .sprintTasks, .missions, CGSize(width: 560, height: 2_250)),
-            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_400, height: 950)),
+            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_600, height: 950)),
             ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250)),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))

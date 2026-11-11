@@ -1831,28 +1831,44 @@ opens Pull Requests by status, and a pull request's mission in its details shows
 no lanes.
 
 **Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, and **+ Sprint Tasks**, your sprint work on it
-too: `SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done. `MyWorkFacts.work` takes,
-for each, its story, whether it has started, the pull requests [Show Links](#links) links it to, and whether a task you
-sent to Copilot works on it now. A linked pull request is what your lists have of it, else what Show Links read of it
-(`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged; abandoned; or, unread or gone,
-can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is read; Azure DevOps' links
-from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only Azure DevOps' own), so
-that work stays in To start. Work items and pull requests go together only through those links, never by their states:
-with Show Links off, + Sprint Tasks shows none of your sprint work, and offers to turn it on.
+too: `SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done, then `SprintBoard.myDone`,
+those that are. `MyWorkFacts.work` takes, for each, its story, how far along it is, the pull requests [Show Links](#links)
+links it to, and whether a task you sent to Copilot works on it now. A linked pull request is what your lists have of it,
+else what Show Links read of it (`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged;
+abandoned; or, unread or gone, can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is
+read; Azure DevOps' links from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only
+Azure DevOps' own), so that work stays in To start. Work items and pull requests go together only through those links,
+never by their states: with Show Links off, + Sprint Tasks shows none of your sprint work, and offers to turn it on.
 
 `PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
 agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
-names it, resolved too (`workOfPullRequests`). One without, a `BoardTask`, goes in **To start**, a column before In
-progress (`BoardColumn.toStart`), while it hasn't started and no Copilot task works on it; else in In progress, after
-its pull requests: with a pull request that isn't on the board, the first of an open one, one that merged, one that
-can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task still open"; with a Copilot task; or
-started, "Active · no pull request yet". An abandoned pull request counts as none, its card saying so. A resolved one
-without a pull request on the board has no card yet. Its card goes in its story's mission's lane; else, for a story in
-the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the missions'; else in that of those in no
-mission; with Lanes: None, in the one lane. The columns, their widths and their counts come from one list
-(`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
-and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
-card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
+names it, resolved and done too (`workOfPullRequests`). One without, a `BoardTask`, goes in **Completed**, a column after
+Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
+request is, "Closed · !4120 merged"; else, with a pull request that isn't on the board, the first of an open one, one that
+merged, one that can't be read, saying what it is: in Merged for one that merged, "!4120 merged · task still open", or
+"Resolved · !4120 merged" for one resolved, and in In progress for the rest, such as "Sam's !4120"; else in In progress
+with a Copilot task; in Merged once it's resolved, "Resolved"; in **To start**, a column before In progress
+(`BoardColumn.toStart`), while it hasn't started; else in In progress, after its pull requests, "Active · no pull request
+yet". An abandoned pull request counts as none, its card saying so. Removed work items aren't in the sprint's board, so
+they have no card. Its card goes in its story's mission's lane; else, for a story in the sprint, in a lane of the story's
+own (`BoardLane.Kind.story`), after the missions'; else in that of those in no mission; with Lanes: None, in the one lane.
+
+A merged pull request's card is in Merged while it isn't out, or a work item of yours it names isn't done; then in
+Completed (`PullRequestBoard.completed`, and each lane's `completed`), its stage still Merged. Out comes from what
+BriefBar already reads of the [pipelines after your merges](#pipelines-after-your-merges): it isn't while BriefBar
+still follows them, for half an hour after the merge until a run starts, while one runs or waits, and a little while after
+the last one finished, as more may start (`MergeChain.isFollowing`), nor once one failed; it is once they passed, or one
+was canceled, as Done counts them finished, and whenever BriefBar follows none, with Follow Pipelines After You Merge off
+(`MyWorkFacts.isOut`). One with no work of yours goes the same way. Its card in Merged says what keeps it there, after
+"Merged": "Production waits for approval", "1 pipeline running", "No pipeline has started yet", "Its pipelines finished ·
+more may start", then "Task 5112 still open"; one that failed after its merge has its ✕ mark (`MyWorkFacts.held`).
+Completed keeps your sprint's done work for as long as the sprint is the one shown, so its count is what you finished in
+it, and a pull request's card while Done lists it, as Merged does; once it leaves the list, the work items it named have
+cards of their own there. Merged and Completed fold to their counts until you click their titles. The columns, their
+widths and their counts come from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the
+keyboard's focus as a pull request's does, and Return or Space shows its details beside the Board; it doesn't move: a
+drag, ⌘→ or ⌘← on it, and a pull request's card dropped on To start or Completed, are refused, saying why
+(`BoardText.workStays`, `toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
 
 While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
 screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to
