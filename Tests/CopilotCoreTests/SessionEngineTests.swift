@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import CopilotCore
 
@@ -226,6 +227,43 @@ import Testing
         #expect(collector.count == published)
     }
 
+    @Test func readsOnceMoreForACommitItCouldntSeeYet() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = CopilotPaths(root: root)
+        let db = try TestDatabase(at: paths.database, journalMode: "WAL")
+        defer { db.close() }
+        try db.createAppSchema()
+        try db.addProject("p1", name: "Pulse")
+        try db.addSession("live", title: "Live", running: true, updatedAt: Date())
+        try db.addWorkspace("w-live", session: "live", name: "Live session")
+
+        let reads = HeldReads<DatabaseSnapshot>()
+        let collector = SnapshotCollector()
+        // No safety rescan within the test: only the engine's reads after a write can find it.
+        let engine = SessionEngine(
+            paths: paths, metadataThrottle: 0.05, rereadDelay: 0.1, safetyInterval: 3_600,
+            loadDatabase: { url, links in try reads.read { try AppDatabase.load(at: url, links: links) } }
+        ) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        try await collector.wait("the initial load") { $0.records.first?.meta.isRunning == true }
+
+        // The session ends, but the read the app's write brings still finds it running, as when SQLite hasn't let readers
+        // see the commit yet.
+        reads.hold()
+        try db.exec("UPDATE sessions SET is_running = 0 WHERE id = 'live';")
+        try await reads.waitForAHeldRead()
+        // So does the read the app's next write brings, its last for a while, though readers can see the update by then,
+        // however busy the Mac: only a read after it can find the update.
+        reads.release()
+        try db.commitSomethingElse()
+        try await collector.wait("the session ending") { $0.records.first?.meta.isRunning == false }
+
+        // Once more, not over and over.
+        try await reads.waitUntilTheyStop()
+    }
+
     @Test func locatesCopilotData() {
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".copilot").path
         #expect(CopilotPaths.default(environment: [:]).root.path == home)
@@ -291,13 +329,80 @@ import Testing
 
 private extension TestDatabase {
     /// Commits something the engine doesn't read, as the app goes on doing, so that the engine reads the commit before.
-    /// SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads once,
-    /// `metadataThrottle` after hearing of that write: a writer held up between the two, as on a busy runner, leaves
-    /// that read with nothing new, and with nothing else written, only the safety rescan, an hour here, reads again. On
-    /// CI on 2026-11-09 an update went unread for the four minutes the test waited. A commit is written only once the
-    /// one before it can be read, so the read this one brings finds that.
+    /// SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads
+    /// `metadataThrottle` after hearing of that write and once more `rereadDelay` later: a writer held up in between for
+    /// longer than both, as on a busy runner, leaves them with nothing new, and with nothing else written, only the
+    /// safety rescan, an hour here, reads again. On CI on 2026-11-09, before the engine read once more, an update went
+    /// unread for the four minutes the test waited. A commit is written only once the one before it can be read, so the
+    /// read this one brings finds that.
     func commitSomethingElse() throws {
         // A commit whatever the value: SQLite writes the database's first page each time.
         try exec("PRAGMA user_version = 1;")
+    }
+}
+
+/// Stands in for the engine's reads of the database, to hold them up as SQLite does between writing a commit to its
+/// write-ahead log, which is what the engine hears of, and letting readers see it: a held read finds what the last read
+/// before it did.
+private final class HeldReads<Value: Sendable>: Sendable {
+    private struct State {
+        var last: Value?
+        var holding = false
+        var releasing = false
+        var held = 0
+        var reads = 0
+    }
+
+    private let state = Mutex(State())
+
+    /// Holds every read from now on.
+    func hold() {
+        state.withLock { $0.holding = true }
+    }
+
+    /// Holds one more read, and none after it.
+    func release() {
+        state.withLock { $0.releasing = true }
+    }
+
+    func read(_ readForReal: () throws -> Value) rethrows -> Value {
+        let held: Value? = state.withLock { state in
+            state.reads += 1
+            guard state.holding, let last = state.last else { return nil }
+            state.held += 1
+            if state.releasing {
+                state.holding = false
+                state.releasing = false
+            }
+            return last
+        }
+        if let held { return held }
+        let value = try readForReal()
+        state.withLock { $0.last = value }
+        return value
+    }
+
+    func waitForAHeldRead() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        while state.withLock({ $0.held }) == 0 {
+            guard clock.now < deadline else { throw TestError("Timed out waiting for a held read") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Waits until no read was made for half a second, five times the `rereadDelay` the tests give: reads that go on one
+    /// after another never leave that long.
+    func waitUntilTheyStop() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        var reads = state.withLock { $0.reads }
+        while clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(500))
+            let now = state.withLock { $0.reads }
+            if now == reads { return }
+            reads = now
+        }
+        throw TestError("The reads hadn't stopped after \(waitLimit), at \(reads)")
     }
 }
