@@ -4,8 +4,8 @@ import SwiftUI
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
 /// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
 /// pull requests, the mission you focus on, your changes to missions, the names you gave missions and the suggested splits
-/// you kept together; and Forget Stages…, which forgets the stages you and sessions set, and the pull requests you chose
-/// in Up Next.
+/// you kept together; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
+/// got, and the pull requests you chose in Up Next.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
     /// Tells the rest of the app, such as Agents, which adds Pull Request Order's skill to Copilot while both are on.
@@ -37,13 +37,15 @@ package struct PullRequestOrderSettingView: View {
         on, BriefBar also reads, from GitHub, each pull request's base branch, whether it's from a fork, \
         its repository's default branch and its place in a stack, in its usual refresh; and, from the Copilot app, which \
         pull request each session opened. On Azure DevOps' pull requests, in the window and the menu bar, it also shows \
-        each one's stage, In progress, Your review, Teammate's review, Can merge or Waits for another PR, as BriefBar \
-        works it out from Azure DevOps and Copilot, or as you or a session set it, the latest winning; what's next, at \
+        each one's stage, In progress, Your review, Teammate's review, Approved, Can merge or Waits for another PR, as \
+        BriefBar works it out from Azure DevOps and Copilot, never moving one of yours back on its own, or as you or a \
+        session set it, the latest winning; what's next, at \
         the top of the Pull Requests page, where you can choose which pull request each kind shows; and a Board beside \
         List and Map. With agents on, sessions get the tools to tell BriefBar an order, and each pull request's stage, as \
         they work, and Copilot gets a skill that says when to. It keeps the orders and your changes to missions, by \
         reference, the names you give missions, and the pull request you choose for each kind of next, by reference, with \
-        the account you chose it with, until it moves on; and the stages you set, for each Azure DevOps account you sign \
+        the account you chose it with, until it moves on; how far each of your pull requests got, for each account, by \
+        reference, until it merges or closes; and the stages you set, for each Azure DevOps account you sign \
         in with, and those each session set, as references only, with only what would end each: for In progress, its \
         commit; for Teammate's review, the votes it was set over, never who cast them (on someone else's, your own vote \
         and its commit); until they end or you forget them; what a session set shows only while the Copilot app lists \
@@ -76,8 +78,9 @@ package struct PullRequestOrderSettingView: View {
                 Button("Forget Stages", role: .destructive) { order.forgetStages() }
             } message: {
                 Text("""
-                    BriefBar forgets the stages you set on pull requests, for every account, those Copilot sessions set, and \
-                    the pull requests you chose in Up Next, and works each one's stage out again from Azure DevOps and Copilot.
+                    BriefBar forgets the stages you set on pull requests, for every account, those Copilot sessions set, how \
+                    far each of your pull requests got, and the pull requests you chose in Up Next, and works each one's stage \
+                    out again from Azure DevOps and Copilot.
                     """)
             }
     }

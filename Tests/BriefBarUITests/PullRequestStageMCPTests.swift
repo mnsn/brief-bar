@@ -489,10 +489,12 @@ private final class Announcements: Sendable {
             "Name at most 20 pull requests at once.")
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso"}"#) ==
             "Give stage: in_progress, user_review, teammate_review or clear.")
-        #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "can_merge"}"#) == """
-            BriefBar sets Can merge, Waits and Merged itself, from what Azure DevOps shows and the order: give stage as \
-            in_progress, user_review, teammate_review or clear.
-            """)
+        for stage in ["can_merge", "approved"] {
+            #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "\#(stage)"}"#) == """
+                BriefBar sets Approved, Can merge, Waits and Merged itself, from what Azure DevOps shows and the order: \
+                give stage as in_progress, user_review, teammate_review or clear.
+                """)
+        }
         #expect(await refusal(#"{"pull_requests": [4093], "organization": "contoso", "stage": "done"}"#) ==
             "There's no stage “done”: give stage as in_progress, user_review, teammate_review or clear.")
         // Only its own session's.
