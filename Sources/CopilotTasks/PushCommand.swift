@@ -286,17 +286,14 @@ public struct PushCommand: Sendable, Equatable {
             if says { isUnreadable = true }
             return
         }
-        // Settings set right there that may have git run another command than the one it names: an alias, whatever the
-        // case of its name, as git reads them; autocorrect, which runs the command closest to a typo, such as `psuh`; an
-        // include, of a file's settings; and any whose value says push.
+        // Settings set right there that may have git run another command than the one it names (`redirects`), or whose
+        // value says push.
         let settings = zip(options, options.dropFirst()).compactMap { option, value in
             option.value == "-c" || option.value == "--config-env" ? value.value : nil
         } + options.compactMap { $0.value.hasPrefix("--config-env=") ? String($0.value.dropFirst("--config-env=".count)) : nil }
         for setting in settings {
             let parts = setting.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            let key = parts[0].lowercased()
-            if key.hasPrefix("alias.") || key == "help.autocorrect" || key.hasPrefix("include.") || key.hasPrefix("includeif.")
-                || (parts.count > 1 && parts[1].contains("push")) {
+            if Self.redirects(String(parts[0])) || (parts.count > 1 && parts[1].contains("push")) {
                 isUnreadable = true
                 return
             }
@@ -332,9 +329,30 @@ public struct PushCommand: Sendable, Equatable {
         case "bisect" where rest.first == Word(value: "run"):
             // `git bisect run <command>`, which runs it at each commit it tries.
             evaluate(Array(rest.dropFirst()), plain: false, depth: depth, says: says)
+        case "config":
+            // The same settings, in git's configuration, for the commands after it: `git config alias.p push`, a key in
+            // any of its words; or a value, a word that says push and isn't a setting's name, as a pager's that pushes.
+            if rest.contains(where: { word in
+                Self.redirects(word.value) || (word.value.contains("push") && !Self.isSettingName(word.value)) || (says && !word.isLiteral)
+            }) {
+                isUnreadable = true
+            }
         default:
             return
         }
+    }
+
+    /// A setting that may have git run another command than the one it names: an alias, whatever the case of its name, as
+    /// git reads them; autocorrect, which runs the command closest to a typo, such as `psuh`; or an include, of a file's
+    /// settings.
+    private static func redirects(_ key: String) -> Bool {
+        let key = key.lowercased()
+        return key.hasPrefix("alias.") || key == "help.autocorrect" || key.hasPrefix("include.") || key.hasPrefix("includeif.")
+    }
+
+    /// A setting's name, `<section>.<name>` or `<section>.<subsection>.<name>`, as `push.default` or `remote.origin.push`.
+    private static func isSettingName(_ word: String) -> Bool {
+        word.range(of: #"^[A-Za-z][A-Za-z0-9-]*(\.\S+)?\.[A-Za-z][A-Za-z0-9-]*$"#, options: .regularExpression) != nil
     }
 
     /// A shell: the script its `-c` runs, or, with `-s`, or no script file, or /dev/stdin for one, the one it reads from a

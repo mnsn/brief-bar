@@ -19,6 +19,8 @@ struct ShellReader {
     static let deepest = 8
     /// Reserved words that a command, such as `case`, may come after on its line.
     private static let leading: Set<String> = ["!", "if", "then", "elif", "else", "do", "while", "until", "time"]
+    /// Reserved words that a name comes after, and then what runs: `function f { git push; }`, `for x do git push; done`.
+    private static let naming: Set<String> = ["function", "for", "select"]
 
     /// A here-document whose body comes after its line.
     private struct Heredoc {
@@ -63,6 +65,8 @@ struct ShellReader {
         var parentheses = 0
         // `case` statements begun and not ended yet, whose patterns end with a `)` that closes nothing.
         var cases = 0
+        // The command a `function`, `for` or `select` began, whose name comes next.
+        var named: Int?
         while index < bytes.count {
             switch bytes[index] {
             case .space, .tab:
@@ -123,11 +127,21 @@ struct ShellReader {
                     guard redirection(into: current, heredocs: &heredocs) else { return false }
                 } else {
                     guard let word = readWord() else { return false }
-                    if !word.isQuoted, word.word.isLiteral, commands[current].words.allSatisfy({ $0.isLiteral && Self.leading.contains($0.value) }) {
+                    let mayBeReserved = !word.isQuoted && word.word.isLiteral
+                        && commands[current].words.allSatisfy({ $0.isLiteral && Self.leading.contains($0.value) })
+                    if mayBeReserved {
                         if word.word.value == "case" { cases += 1 }
                         if word.word.value == "esac", cases > 0 { cases -= 1 }
                     }
                     commands[current].words.append(word.word)
+                    if named == current {
+                        // The name: what comes after it is a command of its own, such as the body of `function f { … }`,
+                        // `{` included, or `for x do …`'s, or `in` and its list, which runs nothing.
+                        named = nil
+                        current = begin()
+                    } else if mayBeReserved, Self.naming.contains(word.word.value) {
+                        named = current
+                    }
                 }
             }
         }

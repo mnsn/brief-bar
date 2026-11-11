@@ -66,6 +66,7 @@ import Testing
             "git push origin \(refspec) > \"$(git config push.followTags true; echo /dev/null)\"",
             "git push origin \(refspec) <<EOF\n$(git config push.followTags true)\nEOF",
             "push() { git push origin \(refspec); }; push",
+            "function push { git push origin \(refspec); }; push",
             "for remote in origin; do git push origin \(refspec); done",
         ] {
             #expect(!PushCommand(command).isAlone, "\(command)")
@@ -437,6 +438,10 @@ import Testing
             "export GIT_CONFIG_PARAMETERS=\"'alias.p=push'\"; git p -f origin main",
             "env -S $'git pu\\x73h --force origin main'",
             "git -c core.sshCommand='git push --force origin main; ssh' fetch",
+            // Or in git's configuration, for the commands after it.
+            "git config alias.p push && git p --force origin main",
+            "git config --global --add Alias.pf 'push --force'",
+            "git config core.pager 'git push --force origin main; less' && git log",
         ]
         for command in unreadable {
             #expect(PushCommand(command).isUnreadable, "\(command)")
@@ -453,8 +458,15 @@ import Testing
         for command in [
             "git -c help.autocorrect=immediate psuh --force origin main", "git -c include.path=/tmp/more.gitconfig p -f origin main",
             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=help.autocorrect GIT_CONFIG_VALUE_0=1 git psuh -f origin main",
+            "git config help.autocorrect immediate && git psuh -f origin main",
+            "git config --global include.path /tmp/more.gitconfig && git p -f origin main",
         ] {
             #expect(PushCommand(command).isUnreadable, "\(command)")
+        }
+        // git's other settings, and those that only name push, as they are.
+        for command in ["git config push.default current", "git config --get remote.origin.push", "git config user.name 'Robin Doe'"] {
+            let read = PushCommand(command)
+            #expect(!read.isUnreadable && read.pushes.isEmpty, "\(command)")
         }
         // A pattern in parentheses, and a `case` that ended, read as they are.
         #expect(forms("echo \"$(case yes in (yes) git push --force origin main;; esac)\"") == [.unsafe(.force)])
@@ -466,6 +478,23 @@ import Testing
     @Test func findsEveryPush() {
         let command = "git push origin \(refspec) && git -C /tmp/other push origin main; (git push origin \(refspec))"
         #expect(forms(command) == [.exact(commit: commit), .other, .exact(commit: commit)])
+    }
+
+    /// What runs after a function's name or a loop's, as bash reads it: a function's body, without parentheses after its
+    /// name too, and a loop's without `in` and its list, which runs nothing.
+    @Test func readsWhatRunsAfterAFunctionsOrALoopsName() {
+        for command in [
+            "function f { git push --force origin main; }; f",
+            "function f() { git push --force origin main; }; f",
+            "f() { git push --force origin main; }; f",
+            "function f\n{ git push --force origin main; }; f",
+            "set -- a; for x do git push --force origin main; done",
+            "set -- a; select x do git push --force origin main; break; done <<< 1",
+        ] {
+            #expect(forms(command) == [.unsafe(.force)], "\(command)")
+        }
+        let read = PushCommand("for word in git push --force origin main; do echo \"$word\"; done")
+        #expect(read.pushes.isEmpty && !read.isUnreadable)
     }
 
     /// The pushes in a command another program, or a command of git's, runs: in a string it runs through a shell, as

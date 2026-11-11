@@ -2939,15 +2939,15 @@ such as `env` and `xargs`, or a string of theirs, such as `parallel` and `flock 
 `submodule foreach`, `rebase --exec` and `bisect run`, included, with program names as macOS finds them, whatever their
 case (`GIT` runs git), and NULs and carriage returns as bash takes them, and takes what it can't read for a push when it
 says push, or when it sets git's aliases, autocorrect or includes, which can run another command than the one it names,
-with `-c` or `GIT_CONFIG_*`, as a `case` in a substitution, or words `xargs` fills in, or a program it doesn't know that
-names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar doesn't know, such as
-`--no-dry-run`, may undo it. What a variable, an alias, a script file or another language's code would push is out of
-its reach, and so is where a shell went in an earlier command. A command longer than it reads, a mebibyte, doesn't run.
-A push runs only in the form the prompt names, `git push origin <commit>:refs/heads/<branch>`, optionally `git -C
-<worktree> …`, as a command of its own, with nothing else in it that could change what it does first, such as a `cd` or
-`git config` (`PushCommand.isAlone`), where `<commit>` is the commit the worktree has checked out, by its ID; with
-`--no-follow-tags` or `--no-recurse-submodules` when git's configuration there would push the annotated tags the commit
-reaches, or submodules' commits, too (`push.followTags`, `push.recurseSubmodules`, `submodule.recurse`:
+with `-c`, `GIT_CONFIG_*` or `git config`, as a `case` in a substitution, or words `xargs` fills in, or a program it
+doesn't know that names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar
+doesn't know, such as `--no-dry-run`, may undo it. What a variable, an alias, a script file or another language's code
+would push is out of its reach, and so is where a shell went in an earlier command. A command longer than it reads, a
+mebibyte, doesn't run. A push runs only in the form the prompt names, `git push origin <commit>:refs/heads/<branch>`,
+optionally `git -C <worktree> …`, as a command of its own, with nothing else in it that could change what it does first,
+such as a `cd` or `git config` (`PushCommand.isAlone`), where `<commit>` is the commit the worktree has checked out, by
+its ID; with `--no-follow-tags` or `--no-recurse-submodules` when git's configuration there would push the annotated
+tags the commit reaches, or submodules' commits, too (`push.followTags`, `push.recurseSubmodules`, `submodule.recurse`:
 `Git.pushOptions(in:)`); and only once git finds nothing in it merged in that the branch the prompt names doesn't have
 (`Git.checkPush(in:source:target:commit:)`), and then, last, so that it's as late as can be, BriefBar has read the pull
 request again from Azure DevOps, with one request, and found it active and still merging into that branch. A push in
