@@ -113,6 +113,27 @@ import Testing
         #expect(stories.parents(ofTasksIn: [WorkItemKey(Self.organization, 5121)]).isEmpty)
     }
 
+    /// With no sprint today, the task types your work outside the sprint was read with decide in the team's project, as My
+    /// Work's cards take them: a bug tracked as a task, or a task of the team's own type, gives its parent. Elsewhere, and
+    /// without them, as every process has them.
+    @Test func withNoSprintTheTypesYourWorkOutsideItWasReadWithDecideInItsProject() {
+        let items = [
+            Self.item(5101, "User Story"), Self.item(5170, "Bug", parent: 5101), Self.item(5171, "Dev Task", parent: 5101),
+            Self.item(5180, "Bug", parent: 5101, project: "Payments"),
+        ]
+        let outside = OutsideWork(items: [Self.item(5170, "Bug", parent: 5101)], taskTypes: ["Task", "Bug", "Dev Task"])
+        let stories = WorkItemStories(workItems: items, board: nil, outside: outside)
+        for id in [5170, 5171] {
+            #expect(stories.stories(of: Self.pullRequest, workItems: [id]) == [
+                OrderStory(ref: Self.ref(5101), type: "User Story", task: Self.ref(id), rank: nil),
+            ])
+        }
+        #expect(stories.stories(of: Self.pullRequest, workItems: [5180]) == [OrderStory(ref: Self.ref(5180), type: "Bug")])
+        let standard = WorkItemStories(workItems: items, board: nil)
+        #expect(standard.stories(of: Self.pullRequest, workItems: [5170]) == [OrderStory(ref: Self.ref(5170), type: "Bug")])
+        #expect(standard.stories(of: Self.pullRequest, workItems: [5171]) == [OrderStory(ref: Self.ref(5171), type: "Dev Task")])
+    }
+
     @Test func aPullRequestIsForEachStoryOnceWithItsTaskThatComesFirst() {
         let stories = WorkItemStories(workItems: [
             Self.item(5101, "User Story"), Self.item(5102, "Task", parent: 5101, rank: 5), Self.item(5103, "Task", parent: 5101, rank: 2),

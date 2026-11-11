@@ -250,9 +250,12 @@ final class WorkLinksStore {
         Set(read.workItemsOfPullRequests.flatMap { key, ids in ids.map { WorkItemKey(key.organization, $0) } })
     }
 
-    /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'.
+    /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'; with no
+    /// sprint, by the types your work outside it was read with, as My Work's cards take them.
     private var storyFinder: WorkItemStories {
-        WorkItemStories(workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board)
+        WorkItemStories(
+            workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board, outside: sprint.outside
+        )
     }
 
     /// Works out which stories your pull requests are for, while Show Links reads them and Pull Request Order wants them;
