@@ -73,11 +73,12 @@ final class WorkItemDetailsStore: ObservableObject {
     static let keptCount = 30
 
     /// - Parameters:
-    ///   - outside: your work outside the sprint, as My Work reads it (`SprintStore.outside`); none by default.
+    ///   - outside: your work outside the sprint, as My Work reads it (`SprintStore.outside`), nil while nothing's read of it;
+    ///     none by default.
     ///   - reader: how to read a work item's details live; Azure DevOps, with `client`, by default.
     init(
         mode: PRStore.Mode, client: ADOClient, board: AnyPublisher<SprintBoard?, Never>,
-        outside: AnyPublisher<[WorkItem], Never> = Empty().eraseToAnyPublisher(), now: @escaping () -> Date = Date.init,
+        outside: AnyPublisher<[WorkItem]?, Never> = Empty().eraseToAnyPublisher(), now: @escaping () -> Date = Date.init,
         reader: Reader? = nil
     ) {
         self.mode = mode
@@ -435,12 +436,18 @@ final class WorkItemDetailsStore: ObservableObject {
     }
 
     /// Your work outside the sprint was read again, for My Work: what shows of one of them follows it, and its details are
-    /// read again when it changed, as for the sprint's (`boardChanged`). The source's store calls it through `init`'s
-    /// publisher.
-    func outsideChanged(_ items: [WorkItem]) {
-        outside = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        guard let selected, board?.item(selected.key) == nil, let fresh = outside[selected.key] else { return }
-        keepUp(with: fresh)
+    /// read again when it changed, as for the sprint's (`boardChanged`); or once it's no longer among them, as once it's
+    /// done, to show what it is now; but not when what was read goes (nil), as for another team or account. The source's
+    /// store calls it through `init`'s publisher.
+    func outsideChanged(_ items: [WorkItem]?) {
+        let before = outside
+        outside = Dictionary((items ?? []).map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        guard items != nil, let selected, board?.item(selected.key) == nil else { return }
+        if let fresh = outside[selected.key] {
+            keepUp(with: fresh)
+        } else if before[selected.key] != nil, loading?.key != selected.key, !viewers.isEmpty {
+            load(selected)
+        }
     }
 
     /// A work item as the sprint, or your work outside it, has it now.

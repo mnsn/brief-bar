@@ -549,7 +549,8 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
     }
 
     /// One of your work items outside the sprint, shown from My Work, follows My Work's reads of them as one in the sprint
-    /// follows the sprint: read again once it changed.
+    /// follows the sprint: read again once it changed, and once it's no longer among them, as once it's done; not when what
+    /// was read goes, as for another team.
     @Test func readsAgainWhenYourWorkOutsideTheSprintShowsItChanged() throws {
         let store = makeStore()
         var outside = DemoData.outsideWork(now: clock.now).items
@@ -569,6 +570,16 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.outsideChanged(outside)
         #expect(store.details?.readAt == clock.now)
         #expect(store.selected?.state == "New")
+
+        // Done, it's no longer among them.
+        clock.now += 10
+        let done = clock.now
+        outside.remove(at: index)
+        store.outsideChanged(outside)
+        #expect(store.details?.readAt == done)
+        clock.now += 10
+        store.outsideChanged(nil)
+        #expect(store.details?.readAt == done)
     }
 
     @Test func anotherTeamsSprintClosesTheDetails() throws {
