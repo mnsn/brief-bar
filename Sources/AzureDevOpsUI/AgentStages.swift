@@ -13,6 +13,8 @@ struct OrderKept: Sendable {
     var marks: StageMarks
     /// The stages sessions set (`SessionStages`).
     var sessionStages: SessionStages
+    /// How far each of your pull requests got, for each account, as the app keeps it: `--mcp` only reads it.
+    var reached = StagesReached()
     /// The pull requests you chose for Up Next's slots, which come first in their columns, as on the Board: those the app
     /// keeps in the preferences, for each account, not those only sent to you in a chat, which it keeps in memory.
     var picks = UpNextPicks.Kept()
@@ -135,7 +137,12 @@ extension AzureDevOpsAgent {
             )
             let marks = [counted.yours].compactMap { $0 } + counted.theirs
             let order = StageOrder.of(ref, in: missions)
-            if let reading = StageRules.reading(facts: fact, sessions: sessions, marks: marks, order: order, setters: setters) {
+            let got = StageRules.reached(
+                kept: fact.isYours ? account.flatMap { kept.reached.reach(of: ref, for: $0) } : nil, ended: counted.ended
+            )
+            if let reading = StageRules.reading(
+                facts: fact, sessions: sessions, marks: marks, order: order, setters: setters, reached: got
+            ) {
                 readings[ref] = reading
             }
         }
@@ -188,14 +195,14 @@ extension AgentText {
         return line
     }
 
-    /// Why it's in its stage, in BriefBar's words, with what fails too, as the Board says, when that happened, if that's
+    /// Why it's in its stage, in BriefBar's words, with its flags too, as the Board says, when that happened, if that's
     /// what it says, and who set it: "Priya asked you", "‘Cart’ finished, 10m ago", "Nobody's asked to review it yet · build
-    /// failed (You set it 2h ago)", "‘Cart’ says it's ready (set 5m ago, after you)". What sessions and people are called
+    /// failed (You set it 2h ago)", "Maria approved it · build failed", "‘Cart’ says it's ready (set 5m ago, after you)". What sessions and people are called
     /// is quoted as other tools quote what others named (`QuotedText.inLine`), so all of it stays on its line.
     static func words(_ reading: StageReading, stages: AgentStages) -> String {
         var words = switch reading.why {
-        case .findReviewer: "Nobody's asked to review it yet" + StageText.alsoFailing(reading)
-        case .ready(autoComplete: false): "Ready to complete" + StageText.alsoFailing(reading)
+        case .findReviewer: "Nobody's asked to review it yet" + StageText.flags(reading, name: stages.name)
+        case .ready(autoComplete: false): "Ready to complete" + StageText.flags(reading, name: stages.name)
         default: StageText.why(reading, name: stages.name)
         }
         if reading.why.saysWhen, let since = reading.since { words += ", \(ago(since, now: stages.now))" }

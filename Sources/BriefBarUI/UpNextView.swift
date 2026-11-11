@@ -88,14 +88,21 @@ package struct UpNextView: View {
     /// where you did: "Cart asks you, build failed, Not in a mission", where its tooltip says "‘Cart’ asks you · build
     /// failed".
     package static func spoken(_ slot: UpNext.Slot, mission: String, order: PullRequestOrder) -> String {
-        let spoken = SpokenText.unquoted(StageText.why(slot.card.reading, name: order.name(of:), then: ", ") + ", " + mission)
+        let spoken = SpokenText.unquoted(why(slot.card, in: slot.kind, order: order, then: ", ") + ", " + mission)
         return slot.isPicked ? spoken + ", you chose it" : spoken
     }
 
     /// A pull request as a slot's ⌄ lists it, with why it's there: "!4131 Fix the coupon rounding error — Build failed".
-    package static func choice(_ card: BoardCard, order: PullRequestOrder) -> String {
+    package static func choice(_ card: BoardCard, in kind: UpNextSlot? = nil, order: PullRequestOrder) -> String {
         [card.ref.shortOrderLabel, order.name(of: card.ref)].compactMap { $0 }.joined(separator: " ") + " — "
-            + StageText.why(card.reading, name: order.name(of:))
+            + why(card, in: kind, order: order)
+    }
+
+    /// Why a slot has a pull request: in Fix next, what needs you first, and where it is, "Build failed · in Approved"
+    /// (`StageText.fixWords`); else why it's in its stage.
+    package static func why(_ card: BoardCard, in kind: UpNextSlot?, order: PullRequestOrder, then separator: String = " · ") -> String {
+        kind == .fix ? StageText.fixWords(card.reading, name: order.name(of:), then: separator)
+            : StageText.why(card.reading, name: order.name(of:), then: separator)
     }
 
     /// Whether a slot's menu offers Let BriefBar Choose: once you chose a pull request for it, whether the slot shows it now
@@ -136,7 +143,7 @@ private struct UpNextSlotView: View {
 
     var body: some View {
         let title = order.name(of: ref)
-        let why = StageText.why(slot.card.reading, name: order.name(of:))
+        let why = UpNextView.why(slot.card, in: slot.kind, order: order)
         let mission = missionTitle
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
@@ -209,12 +216,18 @@ private struct UpNextSlotView: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// The column "2 more ›" shows: its own; for Fix next, which has what needs you from every column, the next one's.
+    private var moreColumn: PullRequestStage {
+        slot.kind == .fix && slot.cards.count > 1 ? slot.cards[1].stage : stage
+    }
+
     /// "2 more ›", which shows the rest on the Board; nothing for one alone.
     @ViewBuilder
     private var moreLine: some View {
         if let more = slot.more {
+            let column = moreColumn
             Button {
-                showColumn(stage)
+                showColumn(column)
             } label: {
                 HStack(spacing: 2) {
                     Text(more)
@@ -226,8 +239,9 @@ private struct UpNextSlotView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Show the rest on By Mission's Board, in \(stage.title)")
-            .accessibilityLabel("\(more) in \(stage.title)")
+            .help(slot.kind == .fix ? "Show the next on By Mission's Board, in \(column.title)"
+                : "Show the rest on By Mission's Board, in \(column.title)")
+            .accessibilityLabel(slot.kind == .fix ? "\(more), the next in \(column.title)" : "\(more) in \(column.title)")
             .accessibilityHint("Shows them on By Mission's Board")
         }
     }
@@ -250,7 +264,7 @@ private struct UpNextChooser: View {
         let textColor = slot.kind.stage.textColor
         Menu {
             ForEach(slot.cards) { card in
-                Toggle(UpNextView.choice(card, order: order), isOn: Binding(get: { card.ref == slot.card.ref }, set: { _ in
+                Toggle(UpNextView.choice(card, in: slot.kind, order: order), isOn: Binding(get: { card.ref == slot.card.ref }, set: { _ in
                     choose(card.ref)
                 }))
             }

@@ -1,16 +1,19 @@
 import Foundation
 
-/// Where a pull request is in its flow, as a column of a kanban board says it: whose turn it is, and what to do about it.
-/// With Pull Request Order on, for Azure DevOps' pull requests. BriefBar works it out from what its sources show
-/// (`StageRules`); you, or a session, can set one of the first three when you know better (`StageMark`), and the latest
-/// change wins. Can merge, Waits and Merged come only from what BriefBar sees.
+/// Where a pull request is in its flow, as a column of a kanban board says it: how far it got, and whose turn it is. With
+/// Pull Request Order on, for Azure DevOps' pull requests. BriefBar works it out from what its sources show, and how far
+/// each of yours got (`StageRules`, `StagesReached`); you, or a session, can set one of the first three when you know
+/// better (`StageMark`), and the latest change wins. Approved, Can merge, Waits and Merged come only from what BriefBar
+/// sees. What goes wrong on one doesn't move it: its words and its card say it (`StageFlag`).
 public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
-    /// Its work isn't done: its code is being written or fixed, or its builds or what else Azure DevOps requires aren't.
+    /// Its work isn't done: it's a draft, or its code is being written, or you or a session sent it back.
     case inProgress
     /// You review it next.
     case yourReview
     /// Others review it next.
     case teammateReview
+    /// Yours: the reviewers it requires approved, as Azure DevOps counts them, but it can't complete yet.
+    case approved
     /// Azure DevOps says it's ready to complete, and BriefBar saw everything its order puts before it merge.
     case canMerge
     /// Azure DevOps says it's ready to complete, but its order puts it after one BriefBar hasn't seen merge.
@@ -18,8 +21,8 @@ public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
     /// BriefBar saw it merge.
     case merged
 
-    /// What you, or a session, can set: the rest come only from what BriefBar sees, so nobody can claim a pull request can
-    /// merge, or merged, before Azure DevOps shows it.
+    /// What you, or a session, can set: the rest come only from what BriefBar sees, so nobody can claim a pull request is
+    /// approved, can merge, or merged, before Azure DevOps shows it.
     public static let settable: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview]
 
     public var isSettable: Bool { Self.settable.contains(self) }
@@ -30,6 +33,7 @@ public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
         case .inProgress: "In progress"
         case .yourReview: "Your review"
         case .teammateReview: "Teammate's review"
+        case .approved: "Approved"
         case .canMerge: "Can merge"
         case .waits: "Waits for another PR"
         case .merged: "Merged"
@@ -42,6 +46,7 @@ public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
         case .inProgress: "In Progress"
         case .yourReview: "Your Review"
         case .teammateReview: "Teammate's Review"
+        case .approved: "Approved"
         case .canMerge: "Can Merge"
         case .waits: "Waits for Another PR"
         case .merged: "Merged"
@@ -53,6 +58,7 @@ public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
         case .inProgress: "hammer.fill"
         case .yourReview: "eye.fill"
         case .teammateReview: "person.2.fill"
+        case .approved: "checkmark.seal.fill"
         case .canMerge: "checkmark.circle.fill"
         case .waits: "hourglass"
         case .merged: "arrow.triangle.merge"
@@ -66,8 +72,9 @@ public enum PullRequestStage: String, Codable, Sendable, CaseIterable {
         case .inProgress: 0
         case .yourReview: 1
         case .teammateReview: 2
-        case .canMerge, .waits: 3
-        case .merged: 4
+        case .approved: 3
+        case .canMerge, .waits: 4
+        case .merged: 5
         }
     }
 
@@ -149,7 +156,16 @@ public struct StageFacts: Equatable, Sendable {
     public var isReady: Bool
     /// It completes by itself once it's ready.
     public var autoComplete: Bool
-    /// Yours, its reviews done, but not ready: What's Left's first item, such as "Build running" or "Resolve 2 comments".
+    /// Yours: whether the reviewers it requires approved, as Azure DevOps counts them, whatever else is left: every review
+    /// What's Left has of it done, approvals, the reviewers it requires and any other reviewer policy, with one at least;
+    /// nil while BriefBar can't tell, as before its details are read, or while they were read before its latest push or
+    /// vote.
+    public var isApproved: Bool?
+    /// Yours: who approved it but you, by their first names, as a team by its name: "Maria", "Maria and Priya"; nil while
+    /// nobody did.
+    public var approvedBy: String?
+    /// Yours, approved, but not ready: What's Left's first item that isn't what fails or changes someone wants, which say
+    /// themselves (`StageFlag`), such as "Build running" or "Resolve 2 comments"; nil while nothing else is left.
     public var leftAfterReviews: String?
     /// Yours: who it waits for, such as "Waiting on Priya" or "1 of 2 approvals"; nil while nobody but you is asked to
     /// review it, people or teams.
@@ -179,9 +195,10 @@ public struct StageFacts: Equatable, Sendable {
 
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
-        isReady: Bool = false, autoComplete: Bool = false, leftAfterReviews: String? = nil, waitingFor: String? = nil,
-        othersVoted: Bool = false, youWantChanges: String? = nil, votes: String = "", commit: String? = nil,
-        sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true, author: String? = nil, readAt: Date? = nil
+        isReady: Bool = false, autoComplete: Bool = false, isApproved: Bool? = false, approvedBy: String? = nil,
+        leftAfterReviews: String? = nil, waitingFor: String? = nil, othersVoted: Bool = false, youWantChanges: String? = nil,
+        votes: String = "", commit: String? = nil, sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true,
+        author: String? = nil, readAt: Date? = nil
     ) {
         self.role = role
         self.state = state
@@ -190,6 +207,8 @@ public struct StageFacts: Equatable, Sendable {
         self.asksYou = asksYou
         self.isReady = isReady
         self.autoComplete = autoComplete
+        self.isApproved = isApproved
+        self.approvedBy = approvedBy
         self.leftAfterReviews = leftAfterReviews
         self.waitingFor = waitingFor
         self.othersVoted = othersVoted
@@ -364,9 +383,11 @@ public struct StageReading: Equatable, Sendable {
     public var followed: StageMark?
     /// Whether it's on your board: not someone else's that you finished reviewing, until something new needs you there.
     public var isOnBoard: Bool
-    /// On yours, a failed build or merge, where a session or a stage you set decides its stage rather than the failure: its
-    /// words still say it, after their reason: "‘Cart’ asks you · build failed".
-    public var alsoFailing: String?
+    /// On yours, what else goes on with it than why it's in its stage, which doesn't move it: marks on its card, and its
+    /// words after why, in this order: a session that asks you, one that writes it, what fails, changes someone wants;
+    /// each only where why doesn't say it already: "Waiting on Sam · build failed", "‘Cart’ finished · Priya wants
+    /// changes".
+    public var flags: [StageFlag]
     /// Where why it's in its stage names a mission, as the order where two go round does: the same naming none, "Another
     /// order puts !4102 after it: check the order", as agents read it. Whether it reads the same goes by that
     /// (`readTheSame`).
@@ -374,7 +395,7 @@ public struct StageReading: Equatable, Sendable {
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
-        replacedOutlasts: Bool = false, followed: StageMark? = nil, isOnBoard: Bool = true, alsoFailing: String? = nil
+        replacedOutlasts: Bool = false, followed: StageMark? = nil, isOnBoard: Bool = true, flags: [StageFlag] = []
     ) {
         self.stage = stage
         self.why = why
@@ -384,7 +405,24 @@ public struct StageReading: Equatable, Sendable {
         self.replacedOutlasts = replacedOutlasts
         self.followed = followed
         self.isOnBoard = isOnBoard
-        self.alsoFailing = alsoFailing
+        self.flags = flags
+    }
+
+    /// What fails on it, where why doesn't say it: its failing flag's words, "Build failed".
+    public var alsoFailing: String? {
+        flags.lazy.compactMap { flag -> String? in
+            if case .failing(let words) = flag { return words }
+            return nil
+        }.first
+    }
+
+    /// The session that writes it now, as why it's in its stage or its flags say.
+    public var writer: StageSession? {
+        if case .working(let session) = why { return session }
+        return flags.lazy.compactMap { flag -> StageSession? in
+            if case .working(let session) = flag { return session }
+            return nil
+        }.first
     }
 
     /// Whether you set what it shows.
@@ -437,6 +475,11 @@ public enum StageWhy: Equatable, Sendable {
     case orderHolds(String)
     /// What's Left's first item: "Build running".
     case left(String)
+    /// Yours, approved, with nothing else left but what its flags say: who approved it, "Maria approved it".
+    case approvedBy(String)
+    /// Yours, back to your review where it got before, which the session that finished writing it no longer says, as it
+    /// writes it again: "Waiting for your review".
+    case awaitsYourReview
     case findReviewer
     /// "Waiting on Priya", "1 of 2 approvals".
     case waitingFor(String)
@@ -455,47 +498,76 @@ public enum StageWhy: Equatable, Sendable {
     }
 }
 
+/// What else goes on with one of your pull requests than why it's in its stage, which doesn't move it, wherever it is: a
+/// mark on its card, and its words after why. What needs you of them, Fix next offers, from every column
+/// (`StageReading.fixRank`).
+public enum StageFlag: Equatable, Sendable {
+    /// "‘Cart’ asks you": a session on it waits for your answer, a plan's approval or a permission.
+    case asksYou(StageSession)
+    /// "‘Cart’ is writing it": a session writes or fixes its code now.
+    case working(StageSession)
+    /// "Build failed", "Merge conflicts": a required build or check failed or expired, or its merge can't be made.
+    case failing(String)
+    /// "Priya wants changes", "Sam rejected it".
+    case changesWanted(String)
+}
+
+/// How far one of your pull requests got, as BriefBar keeps it (`StagesReached`), and since when.
+public struct StageReach: Equatable, Sendable {
+    public var stage: PullRequestStage
+    /// When it got there, as BriefBar saw it.
+    public var since: Date?
+    /// It's where BriefBar first saw it, and nothing moved it since: a session already at work on it then, or done, may be
+    /// the one that opened it, which BriefBar didn't know of yet.
+    public var isFirst: Bool
+
+    public init(_ stage: PullRequestStage, since: Date? = nil, isFirst: Bool = false) {
+        self.stage = stage
+        self.since = since
+        self.isFirst = isFirst
+    }
+}
+
 /// How BriefBar works a pull request's stage out: the first rule that applies (plan §2.2), from what its source shows, the
-/// Copilot sessions on it, what you or a session set, and its order.
+/// Copilot sessions on it, what you or a session set, its order, and, for yours, how far it got (`StagesReached`).
+/// BriefBar never moves one of yours back on its own, but where it loses what its stage stands for: its approval, back to
+/// Teammate's review, or Azure DevOps' readiness while it's still approved, back to Approved. What goes wrong on it doesn't
+/// move it: a session that asks you or writes it, what fails, and changes someone wants are its flags (`StageFlag`).
 public enum StageRules {
     /// - Parameters:
     ///   - sessions: every Copilot session on it, its source's and the Copilot app's, each once.
     ///   - marks: what you and sessions set, in any order: the latest decides, while it stands (`stands`).
     ///   - setters: what the sessions that set them do now, as the sources list them, on it or not (`stands`).
+    ///   - reached: how far it got, for yours, as BriefBar kept it (`reached(kept:ended:)`): nil for one that got no further
+    ///     than In progress, or that BriefBar hasn't seen before.
     /// - Returns: nil for one that isn't on your board, such as someone else's you approved, or one closed without merging.
-    ///   On yours, a failed build or merge is said too, after the reason of a session or a stage you set that decides it.
+    ///   On yours, its flags too.
     public static func reading(
-        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession] = [:]
+        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession] = [:],
+        reached: StageReach? = nil
     ) -> StageReading? {
-        guard var reading = decided(facts: facts, sessions: sessions, marks: marks, order: order, setters: setters) else { return nil }
-        if facts.isYours, facts.state.isOpen, let failure = facts.failure, reading.why != .failing(failure) {
-            reading.alsoFailing = failure
-        }
+        guard var reading = decided(
+            facts: facts, sessions: sessions, marks: marks, order: order, setters: setters, reached: reached
+        ) else { return nil }
+        if facts.isYours, facts.state.isOpen { reading.flags = flags(facts: facts, sessions: sessions, for: reading) }
         return reading
     }
 
     /// The first rule that applies.
     private static func decided(
-        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession]
+        facts: StageFacts, sessions: [StageSession], marks: [StageMark], order: StageOrder, setters: [ItemRef: StageSession],
+        reached: StageReach?
     ) -> StageReading? {
         if facts.state == .merged { return StageReading(stage: .merged, why: .merged, since: facts.since) }
         guard facts.state.isOpen else { return nil }
         let (mark, replaced, followed) = standingMark(marks, facts: facts, sessions: sessions, setters: setters)
 
-        // A session at work on it now, since after what was set. On yours, one writing it puts it in progress: one that
-        // waits for you first, else the latest to start. Never on someone else's: there, only a review, such as Copilot's
-        // pre-review, shows, keeping it yours to review while it runs. One whose start BriefBar doesn't know leaves what was
-        // set as it is.
-        let busy = sessions.filter { session in
-            session.activity.isBusy && mark.map { (session.since ?? .distantPast) > $0.at } ?? true
-        }
-        if facts.isYours {
-            let writing = busy.filter { !$0.isReview }
-            if let session = writing.first(where: { $0.activity == .waitsForYou }) ?? latest(writing) {
-                let why: StageWhy = session.activity == .waitsForYou ? .asksYou(session) : .working(session)
-                return StageReading(stage: .inProgress, why: why, since: session.since)
-            }
-        } else if let review = latest(busy.filter(\.isReview)) {
+        // On someone else's, a review at work on it now, since after what was set, such as Copilot's pre-review, keeps it
+        // yours to review while it runs. One whose start BriefBar doesn't know leaves what was set as it is. On yours, a
+        // session at work moves nothing that was set: it's a flag.
+        if !facts.isYours, let review = latest(sessions.filter { session in
+            session.isReview && session.activity.isBusy && mark.map { (session.since ?? .distantPast) > $0.at } ?? true
+        }) {
             return StageReading(stage: .yourReview, why: .preReviewing(review), since: review.since)
         }
 
@@ -514,31 +586,140 @@ public enum StageRules {
             }
         }
 
-        let since = facts.since
         guard facts.isYours else {
             if let asked = facts.asksYou, facts.state != .draft {
-                return StageReading(stage: .yourReview, why: .asked(asked), since: since)
+                return StageReading(stage: .yourReview, why: .asked(asked), since: facts.since)
             }
             if let changes = facts.youWantChanges {
-                return StageReading(stage: .inProgress, why: .authorChanges(changes), since: since)
+                return StageReading(stage: .inProgress, why: .authorChanges(changes), since: facts.since)
             }
             return nil
         }
-        if let failure = facts.failure { return StageReading(stage: .inProgress, why: .failing(failure), since: since) }
-        if let changes = facts.changesWanted { return StageReading(stage: .inProgress, why: .changesWanted(changes), since: since) }
-        if !facts.othersVoted, let session = latest(sessions.filter { $0.activity == .finished && !$0.isReview }) {
-            return StageReading(stage: .yourReview, why: .finished(session), since: session.since)
+        return worked(facts: facts, sessions: sessions, reached: reached, order: order)
+    }
+
+    /// Where BriefBar puts one of your open pull requests itself, whatever you or a session set: as far as what its source
+    /// shows takes it, and never back from how far it got (`reached`), but where it lost what that stage stands for. A
+    /// draft is in progress, unless a session finished writing it and nobody else approved it, as for one that isn't; one
+    /// that's ready to complete can merge, or waits, by its order; one approved is Approved; one that isn't, after it got
+    /// to Teammate's review or further, as when a push reset its votes, waits for teammates again. Before that: in
+    /// progress while the session that opened it writes it, nobody else having voted on it yet; yours to review once a
+    /// session finished writing it, or once it got there before, as when a session writes it again, until someone else
+    /// approves it; else your teammates'. One BriefBar first saw in Teammate's review before it knew of the session on it,
+    /// as when Azure DevOps listed it before the Copilot app said which session opened it, is that session's, as one
+    /// BriefBar saw nowhere yet, where the session's turn began, or ended, by then. Where BriefBar can't tell whether it's
+    /// approved, as while its details are read again after a push or a vote, it stays in Approved or Can merge where it was.
+    public static func worked(
+        facts: StageFacts, sessions: [StageSession], reached reach: StageReach?, order: StageOrder
+    ) -> StageReading {
+        let reached = reach?.stage
+        let since = facts.since
+        let writing = sessions.filter { !$0.isReview }
+        let finished = latest(writing.filter { $0.activity == .finished })
+        let othersApproved = facts.approvedBy != nil
+        if facts.state == .draft {
+            if !othersApproved, let finished { return StageReading(stage: .yourReview, why: .finished(finished), since: finished.since) }
+            return StageReading(stage: .inProgress, why: .draft, since: since)
         }
-        if facts.state == .draft { return StageReading(stage: .inProgress, why: .draft, since: since) }
-        if facts.isReady {
+        if facts.isReady || (facts.isApproved == nil && reached == .canMerge) {
             switch order {
             case .free: return StageReading(stage: .canMerge, why: .ready(autoComplete: facts.autoComplete), since: since)
             case .waits(let refs, let words): return StageReading(stage: .waits, why: .waitsFor(refs, words: words), since: since)
             case .holds(let words): return StageReading(stage: .waits, why: .orderHolds(words), since: since)
             }
         }
-        if let left = facts.leftAfterReviews { return StageReading(stage: .inProgress, why: .left(left), since: since) }
-        return StageReading(stage: .teammateReview, why: facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer, since: since)
+        if facts.isApproved ?? (reached == .approved) {
+            return StageReading(stage: .approved, why: approvedWhy(facts), since: since)
+        }
+        // Seen in Teammate's review before BriefBar knew of this session, which was at work, or done, by then.
+        let unknownThen = { (session: StageSession) in
+            reach.map { $0.stage == .teammateReview && $0.isFirst && isAtOrBefore(session.since, $0.since) } ?? false
+        }
+        let busy = writing.filter(\.activity.isBusy)
+        if !facts.othersVoted, let session = busy.first(where: { $0.activity == .waitsForYou }) ?? latest(busy),
+           reached == nil || unknownThen(session) {
+            let why: StageWhy = session.activity == .waitsForYou ? .asksYou(session) : .working(session)
+            return StageReading(stage: .inProgress, why: why, since: session.since)
+        }
+        let teammates = StageReading(
+            stage: .teammateReview, why: facts.waitingFor.map(StageWhy.waitingFor) ?? .findReviewer, since: since
+        )
+        switch reached {
+        case nil, .yourReview?:
+            if !othersApproved {
+                if let finished { return StageReading(stage: .yourReview, why: .finished(finished), since: finished.since) }
+                if reached == .yourReview { return StageReading(stage: .yourReview, why: .awaitsYourReview, since: since) }
+            }
+        case .teammateReview?:
+            if !othersApproved, let finished, unknownThen(finished) {
+                return StageReading(stage: .yourReview, why: .finished(finished), since: finished.since)
+            }
+        default:
+            break
+        }
+        return teammates
+    }
+
+    /// Whether one date is the other or before it, both known.
+    private static func isAtOrBefore(_ date: Date?, _ other: Date?) -> Bool {
+        guard let date, let other else { return false }
+        return date <= other
+    }
+
+    /// Why one of yours is approved: what's left that its flags don't say, else who approved it, else what fails or who
+    /// wants changes, else that it isn't ready yet.
+    private static func approvedWhy(_ facts: StageFacts) -> StageWhy {
+        if let left = facts.leftAfterReviews { return .left(left) }
+        if let names = facts.approvedBy { return .approvedBy(names) }
+        if let failure = facts.failure { return .failing(failure) }
+        if let changes = facts.changesWanted { return .changesWanted(changes) }
+        return .left(StageText.notReadyYet)
+    }
+
+    /// How far one of your pull requests got, as BriefBar works its stage out itself (`worked`), for it to keep: nil for
+    /// In progress, which BriefBar keeps nothing of, and for one that merged or closed; Waits as Can merge, which its order
+    /// tells apart.
+    public static func reached(_ worked: StageReading) -> PullRequestStage? {
+        switch worked.stage {
+        case .inProgress, .merged: nil
+        case .waits: .canMerge
+        case .yourReview, .teammateReview, .approved, .canMerge: worked.stage
+        }
+    }
+
+    /// How far it got, for what BriefBar works out once what you or a session set no longer stands, as the pull request
+    /// moved on: from the stage that was set, which moved it there, whatever BriefBar had worked out meanwhile; nil for In
+    /// progress.
+    public static func reached(set stage: PullRequestStage) -> PullRequestStage? {
+        switch stage {
+        case .yourReview, .teammateReview: stage
+        default: nil
+        }
+    }
+
+    /// How far one of yours got, for working its stage out now (`reading`): as BriefBar kept it (`StagesReached`); but as
+    /// what you or a session set ends, from that (`counted`'s ended, `reached(set:)`), as it moved it there then.
+    public static func reached(kept: StageReach?, ended: StageMark?) -> StageReach? {
+        guard let ended else { return kept }
+        return reached(set: ended.stage).map { StageReach($0, since: ended.at) }
+    }
+
+    /// One of yours' flags, beside its reading: the sessions that write it or ask you, but a review, which writes nothing,
+    /// and the session whose In progress shows, which why names; what fails; and changes someone wants: each once, and
+    /// not what why says already.
+    static func flags(facts: StageFacts, sessions: [StageSession], for reading: StageReading) -> [StageFlag] {
+        let setter = reading.why == .set && reading.stage == .inProgress ? reading.mark?.by : nil
+        let busy = sessions.filter { !$0.isReview && $0.activity.isBusy && $0.ref != setter }
+        var flags: [StageFlag] = []
+        if let asking = busy.first(where: { $0.activity == .waitsForYou }), reading.why != .asksYou(asking) {
+            flags.append(.asksYou(asking))
+        }
+        if let working = latest(busy.filter { $0.activity == .working }), reading.why != .working(working) {
+            flags.append(.working(working))
+        }
+        if let failure = facts.failure, reading.why != .failing(failure) { flags.append(.failing(failure)) }
+        if let changes = facts.changesWanted, reading.why != .changesWanted(changes) { flags.append(.changesWanted(changes)) }
+        return flags
     }
 
     /// The latest of what was set, while it stands; yours when a session's later change replaced it with another stage;
@@ -566,9 +747,11 @@ public enum StageRules {
     /// - Parameters:
     ///   - theirs: what the sessions the sources list set on it (`SessionStages.marks`).
     ///   - setters: what those sessions do now, on it or not (`stands`).
+    /// - Returns: with `ended`, the latest, once it ended and nothing of yours outlasts it: what moved it last, for how far
+    ///   it got (`reached(kept:ended:)`).
     public static func counted(
         yours: StageMark?, theirs: [StageMark], facts: StageFacts, sessions: [StageSession], setters: [ItemRef: StageSession] = [:]
-    ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool) {
+    ) -> (yours: StageMark?, theirs: [StageMark], latestEnded: Bool, ended: StageMark?) {
         let theirs = theirs.filter { !$0.followsYours || yours.map($0.follows) == true }
         let latest = ([yours].compactMap { $0 } + theirs).max { $0.at < $1.at }
         let latestEnded = !facts.state.isOpen || latest.map { !stands($0, facts: facts, sessions: sessions, setters: setters) } == true
@@ -576,8 +759,8 @@ public enum StageRules {
         let mine = yours.flatMap {
             (latestEnded && !lasts) || !stands($0, facts: facts, sessions: sessions, setters: setters) ? nil : $0
         }
-        guard latestEnded else { return (mine, theirs, false) }
-        return (mine, mine.map { yours in theirs.filter { $0.follows(yours) } } ?? [], true)
+        guard latestEnded else { return (mine, theirs, false, nil) }
+        return (mine, mine.map { yours in theirs.filter { $0.follows(yours) } } ?? [], true, mine == nil ? latest : nil)
     }
 
     /// A stage you or a session set now, keeping of what it was set over only what `stands` reads to end it: the
@@ -600,8 +783,9 @@ public enum StageRules {
     /// set Teammate's review ends when its votes change (`StageFacts.votes`): on yours, the votes others cast; on
     /// someone else's that you finished reviewing, your own vote, and new commits. A Your review you set stands until
     /// it's changed: BriefBar can't tell you reviewed it. One a session set ends as its votes change, as Teammate's
-    /// review does: it said its work was ready for you, as ‘Cart’ finished does, which gives way once someone else
-    /// votes, so that one approved and ready to complete moves on to Can merge or Waits. Votes and commits count only
+    /// review does: it said its work was ready for you, as ‘Cart’ finished does, so that one a teammate approved moves on
+    /// to Approved, Can merge or Waits; once it ends, BriefBar goes on from Your review (`reached(set:)`), so that one
+    /// someone only wants changes on stays there, marked. Votes and commits count only
     /// as its source read them after it was set, when it says when it read them (`StageFacts.readAt`): a session that
     /// read the pull request itself, just now, may have seen what its source hasn't yet. A session's own In progress
     /// ends as that session finishes too, whether or not BriefBar sees it on the pull request otherwise: it was writing
@@ -623,7 +807,7 @@ public enum StageRules {
         case .yourReview:
             if !mark.isYours, readSince, let votes = mark.votes, votes != facts.votes { return false }
             return true
-        case .canMerge, .waits, .merged:
+        case .approved, .canMerge, .waits, .merged:
             return false
         }
     }
@@ -695,23 +879,69 @@ public enum StageUndoPlace: Sendable {
 /// What a stage says, in BriefBar's words, for the pull requests' rows, their details and VoiceOver: sessions by their
 /// names, pull requests by their numbers.
 public enum StageText {
-    /// Why it's in its stage: "‘Cart’ finished", "Find a reviewer", "After !4102"; with a failed build or merge after it
-    /// where something else decides its stage: "‘Cart’ asks you · build failed".
+    /// Why it's in its stage: "‘Cart’ finished", "Find a reviewer", "After !4102"; with its flags after it, on yours:
+    /// "Waiting on Sam · build failed", "‘Cart’ finished · ‘Cart’ asks you · Priya wants changes".
     /// - Parameters:
     ///   - name: what the sources call a session, when they say.
-    ///   - separator: before the failure: ", " for VoiceOver, which reads it as a pause.
+    ///   - separator: before each flag: ", " for VoiceOver, which reads it as a pause.
     public static func why(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
-        reason(reading, name: name) + alsoFailing(reading, then: separator)
+        reason(reading, name: name) + flags(reading, name: name, then: separator)
     }
 
-    /// What fails too, after why it's in its stage, where something else decides its stage: " · build failed"; nothing
-    /// when nothing does.
-    public static func alsoFailing(_ reading: StageReading, then separator: String = " · ") -> String {
-        guard let failing = reading.alsoFailing, let first = failing.first else { return "" }
-        return separator + first.lowercased() + failing.dropFirst()
+    /// Its flags, after why it's in its stage: " · ‘Cart’ is writing it · build failed"; nothing without any.
+    public static func flags(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
+        reading.flags.map { separator + words($0, name: name) }.joined()
     }
 
-    private static func reason(_ reading: StageReading, name: (ItemRef) -> String?) -> String {
+    /// A flag, as it follows why: "‘Cart’ asks you", "build failed", "Priya wants changes", "changes requested".
+    public static func words(_ flag: StageFlag, name: (ItemRef) -> String?) -> String {
+        switch flag {
+        case .asksYou(let session): return "\(called(session, name: name)) asks you"
+        case .working(let session): return "\(called(session, name: name)) is writing it"
+        case .failing(let words): return lowercasingFirst(words)
+        // Who wants changes keeps their name's capital.
+        case .changesWanted(let words): return words.hasPrefix("Changes ") ? lowercasingFirst(words) : words
+        }
+    }
+
+    /// A flag on its own, as a card's mark says it: "‘Cart’ asks you", "Build failed", "Priya wants changes".
+    public static func mark(_ flag: StageFlag, name: (ItemRef) -> String?) -> String {
+        switch flag {
+        case .asksYou, .working: words(flag, name: name)
+        case .failing(let words), .changesWanted(let words): words
+        }
+    }
+
+    private static func lowercasingFirst(_ words: String) -> String {
+        guard let first = words.first else { return words }
+        return first.lowercased() + words.dropFirst()
+    }
+
+    /// What Fix next says of one that needs you: what needs you first, as its flags or why say it, then, for one in
+    /// another column than In progress, where it is: "Build failed · in Approved", "‘Cart’ asks you · in Your review";
+    /// else why it's in its stage, as `why` says it, "‘Cart’ asks you".
+    public static func fixWords(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
+        func needs(_ rank: Int, _ flag: StageFlag) -> Bool {
+            switch (rank, flag) {
+            case (0, .asksYou), (1, .failing), (2, .changesWanted): true
+            default: false
+            }
+        }
+        guard reading.stage != .inProgress, let rank = reading.fixRank else { return why(reading, name: name, then: separator) }
+        let saysIt: Bool = switch (rank, reading.why) {
+        case (0, .asksYou), (1, .failing), (2, .changesWanted): true
+        default: false
+        }
+        let first = saysIt ? reason(reading, name: name) : reading.flags.first { needs(rank, $0) }.map { mark($0, name: name) }
+        guard let first else { return why(reading, name: name, then: separator) }
+        return first + separator + "in " + reading.stage.columnTitle
+    }
+
+    /// What an approved pull request says when nothing tells what's left of it, nor who approved it.
+    public static let notReadyYet = "Not ready to complete yet"
+
+    /// Why it's in its stage alone, without its flags, as a card says it above its marks: "Maria approved it".
+    public static func reason(_ reading: StageReading, name: (ItemRef) -> String?) -> String {
         switch reading.why {
         case .merged: return "Merged"
         case .working(let session): return "\(called(session, name: name)) is writing it"
@@ -726,6 +956,8 @@ public enum StageText {
         case .failing(let words), .changesWanted(let words), .asked(let words), .left(let words), .waitingFor(let words),
              .authorChanges(let words), .orderHolds(let words):
             return words
+        case .approvedBy(let names): return "\(names) approved it"
+        case .awaitsYourReview: return "Waiting for your review"
         case .finished(let session): return "\(called(session, name: name)) finished"
         case .preReviewing(let session): return "\(called(session, name: name)) is pre-reviewing it"
         case .draft: return "Draft"
@@ -818,6 +1050,7 @@ public enum StageText {
             case .inProgress: "\(count) in progress"
             case .yourReview: "\(count) for your review"
             case .teammateReview: "\(count) for a teammate's review"
+            case .approved: "\(count) approved"
             case .canMerge: "\(count) can merge"
             case .waits: count == 1 ? "1 waits for another PR" : "\(count) wait for other PRs"
             case .merged: "\(count) merged"
@@ -830,9 +1063,13 @@ public enum StageText {
     public static let canMergeHelp =
         "Once Azure DevOps says it's ready to complete, and BriefBar saw what its order puts before it merge"
 
-    /// Why Can merge and Waits can't be chosen, in the stage's menu.
+    /// When Approved comes, for its step of the track that can't be clicked.
+    public static let approvedHelp = "Once the reviewers it requires approve, as Azure DevOps counts them"
+
+    /// Why Approved, Can merge and Waits can't be chosen, in the stage's menu.
     public static func whyNotSettable(_ stage: PullRequestStage) -> String? {
         switch stage {
+        case .approved: "Azure DevOps decides: once the reviewers it requires approve"
         case .canMerge: "Azure DevOps decides: once it's approved and its checks pass"
         case .waits: "Its order decides"
         case .merged: "It merges in Azure DevOps"

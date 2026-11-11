@@ -22,9 +22,10 @@ import Testing
     }
 
     static func reading(
-        _ facts: StageFacts, sessions: [StageSession] = [], marks: [StageMark] = [], order: StageOrder = .free
+        _ facts: StageFacts, sessions: [StageSession] = [], marks: [StageMark] = [], order: StageOrder = .free,
+        reached: StageReach? = nil
     ) -> StageReading? {
-        StageRules.reading(facts: facts, sessions: sessions, marks: marks, order: order)
+        StageRules.reading(facts: facts, sessions: sessions, marks: marks, order: order, reached: reached)
     }
 
     static func why(_ reading: StageReading?) -> String? {
@@ -43,6 +44,8 @@ import Testing
         #expect(Self.reading(StageFacts(role: .author, state: .closed)) == nil)
     }
 
+    /// Before it got anywhere, and before anyone else voted on it, the session that opened it puts it in progress while it
+    /// writes it; one waiting for you asks, and another writing it, and what fails, are its flags.
     @Test func aSessionAtWorkPutsItInProgressAndOneWaitingForYouAsks() {
         let failing = StageFacts(role: .author, failure: "Build failed")
         let working = Self.reading(failing, sessions: [Self.session(.working, at: 10)])
@@ -53,7 +56,7 @@ import Testing
         let asking = Self.reading(
             failing, sessions: [Self.session(.working, at: 30, Self.backoff), Self.session(.waitsForYou, at: 20)]
         )
-        #expect(Self.why(asking) == "‘Cart’ asks you · build failed")
+        #expect(Self.why(asking) == "‘Cart’ asks you · ‘Retry backoff’ is writing it · build failed")
 
         // A task BriefBar sent, which the sources don't name, has its own.
         let task = StageSession(ref: .session("9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4")!, activity: .working, since: t(5), name: "Copilot")
@@ -79,37 +82,44 @@ import Testing
         #expect(set?.stage == .yourReview)
         #expect(Self.why(set) == "Waiting for your review · merge conflicts")
 
-        #expect(Self.why(Self.reading(failing)) == "Merge conflicts")
+        #expect(Self.why(Self.reading(failing)) == "Find a reviewer · merge conflicts")
         #expect(Self.reading(StageFacts(role: .author), sessions: [Self.session(.waitsForYou, at: 20)])?.alsoFailing == nil)
         #expect(Self.reading(StageFacts(role: .reviewer, failure: "Build failed", asksYou: "Jordan asked you"))?.alsoFailing == nil)
     }
 
-    @Test func aStageYouSetShowsUntilASessionStartsAfterIt() {
+    /// A session that starts on one of yours after you set its stage moves nothing: it's a flag on it.
+    @Test func aStageYouSetStaysWhileASessionWorksOnItMarked() {
         let facts = StageFacts(role: .author, waitingFor: "Waiting on Priya")
         let set = StageMark(stage: .yourReview, at: t(100))
 
         let before = Self.reading(facts, sessions: [Self.session(.working, at: 50)], marks: [set])
         #expect(before?.stage == .yourReview)
         #expect(before?.mark == set)
-        #expect(Self.why(before) == "Waiting for your review")
+        #expect(Self.why(before) == "Waiting for your review · ‘Cart’ is writing it")
 
         let after = Self.reading(facts, sessions: [Self.session(.working, at: 150)], marks: [set])
-        #expect(after?.stage == .inProgress)
-        #expect(after?.mark == nil)
-
-        // Once it's no longer at work, what you set shows again.
-        #expect(Self.reading(facts, sessions: [Self.session(.waitsForYou, at: 150)], marks: [set])?.stage == .inProgress)
-        // A session whose start BriefBar doesn't know leaves it.
-        let unknown = StageSession(ref: Self.cart, activity: .working, since: nil)
-        #expect(Self.reading(facts, sessions: [unknown], marks: [set])?.stage == .yourReview)
+        #expect(after?.stage == .yourReview)
+        #expect(after?.mark == set)
+        #expect(after?.flags == [.working(Self.session(.working, at: 150))])
+        let asking = Self.reading(facts, sessions: [Self.session(.waitsForYou, at: 150)], marks: [set])
+        #expect(Self.why(asking) == "Waiting for your review · ‘Cart’ asks you")
+        #expect(asking?.fixRank == 0)
     }
 
-    @Test func whatFailsThenWhatsWantedPutYoursInProgress() {
+    /// What fails and what someone wants are flags, wherever it is: they never put yours in progress.
+    @Test func whatFailsAndWhatsWantedAreFlagsWhereverItIs() {
         let both = StageFacts(role: .author, failure: "Merge conflicts", changesWanted: "Priya wants changes", isReady: true)
-        #expect(Self.reading(both)?.stage == .inProgress)
-        #expect(Self.why(Self.reading(both)) == "Merge conflicts")
+        #expect(Self.reading(both)?.stage == .canMerge)
+        #expect(Self.why(Self.reading(both)) == "Complete it · merge conflicts · Priya wants changes")
         let wanted = StageFacts(role: .author, changesWanted: "Priya wants changes", othersVoted: true)
-        #expect(Self.why(Self.reading(wanted, sessions: [Self.session(.finished, at: 10)])) == "Priya wants changes")
+        let finished = Self.reading(wanted, sessions: [Self.session(.finished, at: 10)])
+        #expect(finished?.stage == .yourReview)
+        #expect(Self.why(finished) == "‘Cart’ finished · Priya wants changes")
+        #expect(finished?.fixRank == 2)
+        // Many who want changes say so lowercased, as what fails does.
+        var many = wanted
+        many.changesWanted = "Changes requested"
+        #expect(Self.why(Self.reading(many, sessions: [Self.session(.finished, at: 10)])) == "‘Cart’ finished · changes requested")
     }
 
     @Test func someoneElsesWaitsForYourReviewWhileTheyAskYou() {
@@ -137,9 +147,11 @@ import Testing
         #expect(Self.why(finished) == "‘Cart’ finished")
         #expect(finished?.since == t(60))
 
-        // Once someone else voted, it's theirs: a draft is still in progress, else it waits for them.
+        // Once someone else approved it, it's theirs; a vote that only wants changes leaves it yours to review.
+        let approved = StageFacts(role: .author, approvedBy: "Sam", waitingFor: "Waiting on Priya", othersVoted: true)
+        #expect(Self.reading(approved, sessions: [Self.session(.finished, at: 60)])?.stage == .teammateReview)
         let voted = StageFacts(role: .author, waitingFor: "Waiting on Priya", othersVoted: true)
-        #expect(Self.reading(voted, sessions: [Self.session(.finished, at: 60)])?.stage == .teammateReview)
+        #expect(Self.reading(voted, sessions: [Self.session(.finished, at: 60)])?.stage == .yourReview)
         // A session that stopped before it was done doesn't make it yours to review.
         #expect(Self.reading(StageFacts(role: .author), sessions: [Self.session(.stopped, at: 60)])?.stage == .teammateReview)
     }
@@ -188,10 +200,101 @@ import Testing
         #expect(StageReading.readTheSame(nil, nil) && !StageReading.readTheSame(named, nil))
     }
 
-    @Test func yoursWithItsReviewsDoneButNotReadyIsInProgressWithWhatsLeft() {
-        let left = Self.reading(StageFacts(role: .author, leftAfterReviews: "Build running", othersVoted: true))
-        #expect(left?.stage == .inProgress)
-        #expect(Self.why(left) == "Build running")
+    /// The user's case: approved, but not ready, it's Approved, saying what's left that isn't a flag, else who approved
+    /// it, else what fails or who wants changes, else that it isn't ready yet; what fails is a flag after that.
+    @Test func yoursApprovedButNotReadyIsApprovedSayingWhatsLeftOrWhoApprovedIt() {
+        let approved = StageFacts(role: .author, failure: "Build failed", isApproved: true, approvedBy: "Maria", othersVoted: true)
+        let failed = Self.reading(approved)
+        #expect(failed?.stage == .approved)
+        #expect(Self.why(failed) == "Maria approved it · build failed")
+        #expect(failed?.flags == [.failing("Build failed")])
+        #expect(failed?.fixRank == 1)
+
+        var left = approved
+        left.failure = nil
+        left.leftAfterReviews = "Build running"
+        #expect(Self.why(Self.reading(left)) == "Build running")
+        let alone = Self.reading(StageFacts(role: .author, failure: "Merge conflicts", isApproved: true))
+        #expect(Self.why(alone) == "Merge conflicts")
+        #expect(alone?.flags.isEmpty == true)
+        #expect(Self.why(Self.reading(StageFacts(role: .author, isApproved: true))) == "Not ready to complete yet")
+        #expect(PullRequestStage.approved.step == 3 && PullRequestStage.canMerge.step == 4)
+        #expect(StageText.counts([.approved, .approved, .canMerge]) == "2 approved · 1 can merge")
+    }
+
+    /// BriefBar never moves one of yours back but where it loses what its stage stands for: its approval, back to
+    /// Teammate's review; Azure DevOps' readiness while it's still approved, back to Approved. A session that writes it
+    /// again, what fails or changes someone wants leave it where it got, flagged; one it can't tell is approved stays.
+    @Test func yoursGoesBackOnlyAsItLosesWhatItsStageStandsFor() {
+        let waiting = StageFacts(role: .author, failure: "Build expired", waitingFor: "Waiting on Priya")
+        let writing = [Self.session(.working, at: 150)]
+        // The user's !17775444: waiting for reviewers with an expired build stays in Teammate's review.
+        #expect(Self.why(Self.reading(waiting, reached: StageReach(.teammateReview))) == "Waiting on Priya · build expired")
+        let rewritten = Self.reading(waiting, sessions: writing, reached: StageReach(.teammateReview))
+        #expect(rewritten?.stage == .teammateReview)
+        #expect(Self.why(rewritten) == "Waiting on Priya · ‘Cart’ is writing it · build expired")
+        #expect(rewritten?.fixRank == nil)
+        let review = Self.reading(StageFacts(role: .author), sessions: writing, reached: StageReach(.yourReview))
+        #expect(review?.stage == .yourReview)
+        #expect(Self.why(review) == "Waiting for your review · ‘Cart’ is writing it")
+        // Never seen further, it's the opening session's to write; so is one BriefBar first saw in Teammate's review while
+        // the session was already at work, or done, as before the Copilot app said which session opened it.
+        #expect(Self.reading(StageFacts(role: .author), sessions: writing)?.stage == .inProgress)
+        #expect(Self.reading(StageFacts(role: .author, othersVoted: true), sessions: writing)?.stage == .teammateReview)
+        let firstSeen = StageReach(.teammateReview, since: t(200), isFirst: true)
+        #expect(Self.reading(waiting, sessions: writing, reached: firstSeen)?.stage == .inProgress)
+        let done = Self.reading(waiting, sessions: [Self.session(.finished, at: 150)], reached: firstSeen)
+        #expect(done?.stage == .yourReview)
+        #expect(Self.why(done) == "‘Cart’ finished · build expired")
+        // Not a session that started after, nor once something moved it there, as when its approval was lost.
+        let before = StageReach(.teammateReview, since: t(100), isFirst: true)
+        #expect(Self.reading(waiting, sessions: writing, reached: before)?.stage == .teammateReview)
+        #expect(Self.reading(waiting, sessions: [Self.session(.finished, at: 150)], reached: before)?.stage == .teammateReview)
+        let moved = StageReach(.teammateReview, since: t(200))
+        #expect(Self.reading(waiting, sessions: writing, reached: moved)?.stage == .teammateReview)
+        #expect(Self.reading(waiting, sessions: [Self.session(.finished, at: 150)], reached: moved)?.stage == .teammateReview)
+        #expect(Self.reading(waiting, sessions: writing, reached: StageReach(.yourReview, since: t(200), isFirst: true))?.stage
+            == .yourReview)
+
+        // Its approval lost, as a push reset the votes: back to Teammate's review.
+        for reached in [PullRequestStage.approved, .canMerge] {
+            let lost = Self.reading(StageFacts(role: .author, waitingFor: "Waiting on Sam"), reached: StageReach(reached))
+            #expect(lost?.stage == .teammateReview)
+            #expect(Self.why(lost) == "Waiting on Sam")
+        }
+        // Not ready while still approved, as its build failed: back to Approved, flagged.
+        let notReady = Self.reading(
+            StageFacts(role: .author, failure: "Build failed", isApproved: true, approvedBy: "Maria"), reached: StageReach(.canMerge)
+        )
+        #expect(notReady?.stage == .approved)
+        // Can't tell whether it's approved, as while its policies are read again: it stays where it got.
+        let unknown = StageFacts(role: .author, isApproved: nil, waitingFor: "Waiting on Sam")
+        #expect(Self.reading(unknown, reached: StageReach(.approved))?.stage == .approved)
+        #expect(Self.reading(unknown, reached: StageReach(.canMerge))?.stage == .canMerge)
+        #expect(Self.reading(unknown, reached: StageReach(.teammateReview))?.stage == .teammateReview)
+        // A draft again is in progress: you moved it.
+        #expect(Self.reading(StageFacts(role: .author, state: .draft, isApproved: true), reached: StageReach(.approved))?.stage == .inProgress)
+    }
+
+    /// How far it got, for BriefBar to keep: none for In progress, Can merge for Waits; once what was set ends, from that,
+    /// so that one you sent to Teammate's review that someone only wants changes on stays there.
+    @Test func howFarItGotComesFromWhatWasSetOnceThatEnds() {
+        #expect(StageRules.reached(StageReading(stage: .waits, why: .waitsFor([Self.pr(4102)], words: "After !4102"))) == .canMerge)
+        #expect(StageRules.reached(StageReading(stage: .inProgress, why: .draft)) == nil)
+        #expect(StageRules.reached(StageReading(stage: .approved, why: .approvedBy("Maria"))) == .approved)
+        #expect(StageRules.reached(kept: StageReach(.approved), ended: nil) == StageReach(.approved))
+        #expect(StageRules.reached(kept: StageReach(.approved), ended: StageMark(stage: .inProgress, at: t(10))) == nil)
+
+        // ‘Cart’ finished, so it got to your review; you finished yours; then Priya wants changes, which ends yours.
+        let facts = StageFacts(role: .author, changesWanted: "Priya wants changes", othersVoted: true, votes: "-5")
+        let yours = StageMark(stage: .teammateReview, at: t(100), votes: "")
+        let counted = StageRules.counted(yours: yours, theirs: [], facts: facts, sessions: [])
+        #expect(counted.yours == nil && counted.ended == yours)
+        let got = StageRules.reached(kept: StageReach(.yourReview, since: t(50)), ended: counted.ended)
+        #expect(got == StageReach(.teammateReview, since: t(100)))
+        let reading = Self.reading(facts, sessions: [Self.session(.finished, at: 50)], reached: got)
+        #expect(reading?.stage == .teammateReview)
+        #expect(Self.why(reading) == "Find a reviewer · Priya wants changes")
     }
 
     @Test func otherwiseYoursWaitsForATeammate() {
@@ -218,7 +321,8 @@ import Testing
     @Test func onlyThreeStagesCanBeSetAndNoneEndsAsCanMerge() {
         #expect(PullRequestStage.settable == [.inProgress, .yourReview, .teammateReview])
         let facts = StageFacts(role: .author, isReady: true)
-        for stage in [PullRequestStage.canMerge, .waits, .merged] {
+        #expect(StageText.whyNotSettable(.approved) == "Azure DevOps decides: once the reviewers it requires approve")
+        for stage in [PullRequestStage.approved, .canMerge, .waits, .merged] {
             #expect(!StageRules.stands(StageMark(stage: stage, at: t(10)), facts: facts, sessions: []))
             #expect(Self.reading(facts, marks: [StageMark(stage: stage, at: t(10))])?.mark == nil)
         }
@@ -369,7 +473,8 @@ import Testing
         #expect(!StageRules.stands(mark, facts: approved, sessions: []))
         #expect(Self.reading(approved, marks: [mark])?.stage == .canMerge)
         let wanted = StageFacts(role: .author, changesWanted: "Priya wants changes", othersVoted: true, votes: "-5")
-        #expect(Self.reading(wanted, marks: [mark])?.stage == .inProgress)
+        #expect(Self.reading(wanted, marks: [mark])?.stage == .teammateReview)
+        #expect(Self.why(Self.reading(wanted, marks: [mark])) == "Find a reviewer · Priya wants changes")
     }
 
     /// On someone else's, its votes are your own (`StageFacts.votes`): voting ends it, as new commits do.
@@ -631,7 +736,7 @@ import Testing
         #expect(PullRequestStage.inProgress.previousSettable == nil)
         #expect(PullRequestStage.teammateReview.previousSettable == .yourReview)
         #expect(PullRequestStage.canMerge.nextSettable == nil)
-        #expect(PullRequestStage.allCases.map(\.step) == [0, 1, 2, 3, 3, 4])
+        #expect(PullRequestStage.allCases.map(\.step) == [0, 1, 2, 3, 4, 4, 5])
     }
 
     /// A mission's progress bar counts its pull requests in each stage, in the stages' order.

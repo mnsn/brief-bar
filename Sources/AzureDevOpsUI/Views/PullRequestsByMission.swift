@@ -144,11 +144,12 @@ struct PullRequestBoardCard: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(StageText.why(reading, name: name))
+            // Why alone: its flags are its marks, below.
+            Text(StageText.reason(reading, name: name))
                 .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            let flags = Self.flags(item, reading: reading)
+            let flags = Self.flags(item, reading: reading, name: name)
             if !flags.isEmpty || order?.isSaid(by: card.stage) == false {
                 FlowLayout(spacing: 5, lineSpacing: 4) {
                     ForEach(flags, id: \.text) { flag in
@@ -199,14 +200,39 @@ struct PullRequestBoardCard: View {
         var color: Color
     }
 
-    /// What it shows whatever its stage, as its row does: what needs you, what failed, a draft; each only where its stage's
-    /// words don't say it already, as its why or after it, "‘Cart’ is writing it · build failed".
-    static func flags(_ item: PRSnapshot, reading: StageReading) -> [Flag] {
+    /// What it shows whatever its stage, as marks under why it's there: on yours, its flags, which never move it
+    /// (`StageReading.flags`): a session that asks you, one that writes it, what fails, ✋ changes someone wants; then the
+    /// rest (`others`).
+    static func flags(_ item: PRSnapshot, reading: StageReading, name: (ItemRef) -> String? = { _ in nil }) -> [Flag] {
+        reading.flags.map { mark($0, name: name) } + others(item, reading: reading)
+    }
+
+    /// A flag of yours as a mark: "‘Cart’ asks you", "‘Cart’ is writing it", "Build failed", "Priya wants changes".
+    static func mark(_ flag: StageFlag, name: (ItemRef) -> String?) -> Flag {
+        let text = StageText.mark(flag, name: name)
+        return switch flag {
+        case .asksYou: Flag(symbol: "bubble.left.fill", text: text, color: PullRequestStage.inProgress.textColor)
+        case .working: Flag(symbol: PullRequestStage.inProgress.symbol, text: text, color: PullRequestStage.inProgress.textColor)
+        case .failing: Flag(symbol: "xmark.circle.fill", text: text, color: PRGroup.failing.color)
+        case .changesWanted: Flag(symbol: "hand.raised.fill", text: text, color: PRGroup.needsYou.color)
+        }
+    }
+
+    /// Its marks besides its flags, as its row says them: what needs you, but changes someone wants, which ✋ says already;
+    /// what failed; a draft; each only where its stage's words don't say it already.
+    static func others(_ item: PRSnapshot, reading: StageReading) -> [Flag] {
+        let says = { (isIt: (StageFlag) -> Bool, why: Bool) in why || reading.flags.contains(where: isIt) }
+        let wantsChanges = says({ if case .changesWanted = $0 { true } else { false } }, {
+            if case .changesWanted = reading.why { true } else { false }
+        }())
+        let failing = says({ if case .failing = $0 { true } else { false } }, {
+            if case .failing = reading.why { true } else { false }
+        }())
         var flags: [Flag] = []
-        if item.group == .needsYou {
+        if item.group == .needsYou, !(wantsChanges && [.changesRequested, .rejected].contains(item.reason)) {
             flags.append(Flag(symbol: "hand.raised.fill", text: item.headline, color: PRGroup.needsYou.color))
         }
-        if item.group == .failing, reading.fixRank == nil, reading.alsoFailing == nil {
+        if item.group == .failing, !failing {
             flags.append(Flag(symbol: "xmark.circle.fill", text: item.headline, color: PRGroup.failing.color))
         }
         if item.isDraft, reading.why != .draft {
@@ -215,10 +241,11 @@ struct PullRequestBoardCard: View {
         return flags
     }
 
-    /// What VoiceOver says of it, after its stage: its flags, where it stands in its order, who works on it, and where it is.
+    /// What VoiceOver says of it, after its stage, whose words say its flags: its other marks, where it stands in its order,
+    /// who works on it, and where it is.
     @MainActor
     static func details(_ item: PRSnapshot, reading: StageReading, order: OrderRowContext?, ordering: PullRequestOrder) -> [String] {
-        var details = flags(item, reading: reading).map(\.text)
+        var details = others(item, reading: reading).map(\.text)
         if let sentence = order?.sentence, order?.isSaid(by: reading.stage) == false { details.append(sentence) }
         if let worker = worker(on: item.key.linkRef, besides: reading, ordering: ordering) {
             details.append(SpokenText.unquoted("‘\(worker.label)’ works on it"))
@@ -228,14 +255,22 @@ struct PullRequestBoardCard: View {
     }
 
     /// The first Copilot session that told BriefBar it works on it (`SessionUpdates`), unless its stage names it already,
-    /// as "‘Cart’ is writing it" does, and "‘Cart’ is on it" does of the session that set it (`StageText.namesWhoSetIt`).
+    /// as "‘Cart’ is writing it" does, as why or a flag, and "‘Cart’ is on it" does of the session that set it
+    /// (`StageText.namesWhoSetIt`).
     @MainActor
     static func worker(on ref: ItemRef, besides reading: StageReading, ordering: PullRequestOrder) -> LinkedItem? {
-        let named: ItemRef? = switch reading.why {
+        let byWhy: ItemRef? = switch reading.why {
         case .working(let session), .asksYou(let session), .finished(let session), .preReviewing(let session): session.ref
         default: StageText.namesWhoSetIt(reading) ? reading.mark?.by : nil
         }
-        return ordering.sessionsWorking(on: ref).filter { $0 != named }.lazy.compactMap(ordering.describe).first
+        let byFlags = reading.flags.compactMap { flag -> ItemRef? in
+            switch flag {
+            case .asksYou(let session), .working(let session): session.ref
+            case .failing, .changesWanted: nil
+            }
+        }
+        let named = Set([byWhy].compactMap { $0 } + byFlags)
+        return ordering.sessionsWorking(on: ref).filter { !named.contains($0) }.lazy.compactMap(ordering.describe).first
     }
 }
 

@@ -140,10 +140,10 @@ import Testing
     }
 
     private static let ref = ItemRef.pullRequest(organization: "contoso", number: 4093)
-    /// Why a card can't go to Can merge from Teammate's review, as the Board says it.
-    private static let azureDevOpsDecides = "Azure DevOps decides when it can merge: once it says it's ready to complete"
+    /// Why a card can't go to Approved from Teammate's review, as the Board says it.
+    private static let azureDevOpsDecides = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
 
-    /// Pull Request Order, on, told of one pull request of yours whose build failed: In progress.
+    /// Pull Request Order, on, told of one pull request of yours, a draft: In progress.
     private static func order() -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
@@ -154,14 +154,14 @@ import Testing
                 ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
                 createdAt: Date(timeIntervalSince1970: 1_791_000_000)
             )],
-            stages: [ref: StageFacts(role: .author, failure: "Build failed")], account: "robin@contoso.com"
+            stages: [ref: StageFacts(role: .author, state: .draft)], account: "robin@contoso.com"
         )
         return order
     }
 
     /// Pull Request Order, on, with a session's order of !4101, then !4102 after it, which can complete: it waits.
-    /// - Parameter firstFails: !4101's build failed: it's In progress, which ⌘→ moves to Your review.
-    private static func ordered(firstFails: Bool = false) throws -> PullRequestOrder {
+    /// - Parameter firstIsADraft: !4101 is a draft: it's In progress, which ⌘→ moves to Your review.
+    private static func ordered(firstIsADraft: Bool = false) throws -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
         var orders = DeclaredOrders()
@@ -180,7 +180,7 @@ import Testing
             },
             stages: [
                 .pullRequest(organization: "contoso", number: 4101):
-                    firstFails ? StageFacts(role: .author, failure: "Build failed") : StageFacts(role: .author),
+                    firstIsADraft ? StageFacts(role: .author, state: .draft) : StageFacts(role: .author),
                 .pullRequest(organization: "contoso", number: 4102): StageFacts(role: .author, isReady: true),
             ],
             account: "robin@contoso.com"
@@ -198,7 +198,9 @@ import Testing
         _ = NSApplication.shared
         let drawn = Drawn()
         let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits))
-        let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_200, height: 500), styleMask: .borderless,
+        // Wide enough for every column, so that the Board doesn't scroll sideways: its scroller, which shows only while the
+        // details don't cover the Board, would change its height as they close.
+        let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: 500), styleMask: .borderless,
                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
@@ -356,7 +358,7 @@ import Testing
 
     /// Nor from another card you went to meanwhile, which Return shows the details of still.
     @Test func aMovedCardDrawnLateLeavesTheKeyboardToAnotherCardYouWentTo() async throws {
-        let order = try Self.ordered(firstFails: true)
+        let order = try Self.ordered(firstIsADraft: true)
         let moved = ItemRef.pullRequest(organization: "contoso", number: 4101)
         let waits = ItemRef.pullRequest(organization: "contoso", number: 4102)
         #expect(order.stage(of: moved)?.stage == .inProgress && order.stage(of: waits)?.stage == .waits)
@@ -598,7 +600,7 @@ import Testing
             }
             try await move(.rightArrow, to: .yourReview, "⌘→ to Your review")
             try await move(.rightArrow, to: .teammateReview, "⌘→ to Teammate's review")
-            // Only Azure DevOps decides that it can merge. The key beeps, through ThisMac, which refuses it in tests.
+            // Only Azure DevOps decides that it's approved. The key beeps, through ThisMac, which refuses it in tests.
             let notes = ThisMac.Notes()
             ThisMac.$noting.withValue(notes) {
                 Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
@@ -640,7 +642,7 @@ import Testing
         try await Self.showing(order, details: details) { window, host, drawn in
             Self.click(at: try #require(drawn.frame), in: host)
             try await until("the click to show its details beside the Board") { details.shown == Self.ref }
-            // ⌘→, which it can't take, as only Azure DevOps decides that it can merge, then ⌘←, which moves it, with
+            // ⌘→, which it can't take, as only Azure DevOps decides that it's approved, then ⌘←, which moves it, with
             // nothing between them: once ⌘← moves it, the card had the keys for ⌘→ too.
             var toldTheDetails = false
             try await Self.pressUntil("⌘← to move the card after ⌘→, which it couldn't take") {

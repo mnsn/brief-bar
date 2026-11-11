@@ -77,10 +77,18 @@ private struct BoardMetrics {
     var minimum: CGFloat { 172 * scale }
     var folded: CGFloat { 132 * scale }
 
+    /// The columns it shows, from left to right.
+    var columns: [PullRequestStage] { PullRequestStage.columns }
+
+    /// Between each column and the next.
+    private var gaps: CGFloat { gap * CGFloat(max(columns.count - 1, 0)) }
+
+    /// Those as wide as `column`: all of them, but Merged while it's folded.
+    private var open: [PullRequestStage] { columns.filter { $0 != .merged || showsMerged } }
+
     var column: CGFloat {
-        let open = CGFloat(showsMerged ? 6 : 5)
-        let room = available - gap * 5 - (showsMerged ? 0 : folded)
-        return max(minimum, room / open)
+        let folding = CGFloat(columns.count - open.count) * folded
+        return max(minimum, (available - gaps - folding) / CGFloat(max(open.count, 1)))
     }
 
     func width(_ stage: PullRequestStage) -> CGFloat {
@@ -88,7 +96,7 @@ private struct BoardMetrics {
     }
 
     var content: CGFloat {
-        PullRequestStage.columns.reduce(gap * 5) { $0 + width($1) }
+        columns.reduce(gaps) { $0 + width($1) }
     }
 
     /// What shows of the board at once.
@@ -355,7 +363,7 @@ package struct OrderBoardView: View {
 
     private func columnTitles(_ metrics: BoardMetrics) -> some View {
         FollowsScroll(scroll: scroll, direction: -1, content: HStack(alignment: .bottom, spacing: metrics.gap) {
-            ForEach(PullRequestStage.columns, id: \.self) { stage in
+            ForEach(metrics.columns, id: \.self) { stage in
                 columnTitle(stage, width: metrics.width(stage))
             }
         })
@@ -371,9 +379,17 @@ package struct OrderBoardView: View {
     private func columnTitle(_ stage: PullRequestStage, width: CGFloat) -> some View {
         let count = board.counts[stage] ?? 0
         let label = HStack(spacing: 6 * textScale) {
-            Circle()
-                .fill(stage.color)
-                .frame(width: 8 * textScale, height: 8 * textScale)
+            if stage == .approved {
+                // Its seal, not a dot: as some see colors, its mint reads as Waits' grey or Can merge's green.
+                Image(systemName: stage.symbol)
+                    .font(size: 10, weight: .bold)
+                    .foregroundStyle(stage.color)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
+            } else {
+                Circle()
+                    .fill(stage.color)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
+            }
             Text(stage.columnTitle)
                 .font(size: 13, weight: .semibold)
                 .lineLimit(1)
@@ -426,9 +442,10 @@ package struct OrderBoardView: View {
     /// What a column holds, for its title's tooltip.
     static func help(_ stage: PullRequestStage) -> String {
         switch stage {
-        case .inProgress: "Its work isn't done: a session or someone writes or fixes it, or its builds or what else Azure DevOps requires aren't"
+        case .inProgress: "Its work isn't done: a draft, or a session still writes it before anyone else reviews it"
         case .yourReview: "You review it next"
         case .teammateReview: "Others review it next: yours that wait for reviewers, and those you finished reviewing"
+        case .approved: "The reviewers Azure DevOps requires approved it, but it can't complete it yet: its card says why"
         case .canMerge: "Azure DevOps says it's ready to complete, and BriefBar saw everything its order puts before it merge"
         case .waits: "Azure DevOps says it's ready to complete, but its order puts it after one BriefBar hasn't seen merge"
         case .merged: "BriefBar saw it merge"
@@ -446,7 +463,7 @@ package struct OrderBoardView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Where Up Next's "2 more ›" scrolls to.
                     HStack(spacing: metrics.gap) {
-                        ForEach(PullRequestStage.columns, id: \.self) { stage in
+                        ForEach(metrics.columns, id: \.self) { stage in
                             Color.clear
                                 .frame(width: metrics.width(stage), height: 0)
                                 .id(ColumnAnchor(stage: stage))
@@ -541,7 +558,7 @@ package struct OrderBoardView: View {
             // A lane kept only for the Undo line of a pull request that left the board has no columns to show.
             if !isFolded, !(lane.isEmpty && lane.mission == nil) {
                 HStack(alignment: .top, spacing: metrics.gap) {
-                    ForEach(PullRequestStage.columns, id: \.self) { stage in
+                    ForEach(metrics.columns, id: \.self) { stage in
                         cell(lane, stage: stage, width: metrics.width(stage), moves: moves)
                     }
                 }
@@ -721,8 +738,8 @@ package struct OrderBoardView: View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
-                card: card, content: content, isNext: board.next[card.stage] == card.ref,
-                isPicked: board.picked[card.stage] == card.ref, isSelected: isSelected(card.ref),
+                card: card, content: content, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
+                picked: Set(board.picked.filter { $0.value == card.ref }.keys), isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
@@ -908,16 +925,17 @@ package struct OrderBoardView: View {
 
 // MARK: - A card
 
-/// A card on the Board: the page's content, framed in its stage's color, Next on Up Next's, with ✎ where you chose it, a
-/// click showing its details and giving it the keyboard's focus, as a field takes it, whatever the Mac's keyboard
-/// navigation: then ⌘→ and ⌘← move it, and Return or Space shows its details. Tab goes from card to card. It drags to another
-/// column, and VoiceOver has every move among its actions, and Make Next.
+/// A card on the Board: the page's content, framed in its stage's color, Next on its column's Up Next, Fix next on Fix
+/// next's, wherever it is, with ✎ where you chose it, a click showing its details and giving it the keyboard's focus, as a
+/// field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and Return or Space shows its details.
+/// Tab goes from card to card. It drags to another column, and VoiceOver has every move among its actions, and Make Next.
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
-    let isNext: Bool
-    /// You chose it for its Up Next slot (`UpNextPicks`).
-    let isPicked: Bool
+    /// The Up Next slots it's the pull request of: Fix next's, and its column's.
+    let nexts: [UpNextSlot]
+    /// Of those, the ones you chose it for (`UpNextPicks`).
+    let picked: Set<UpNextSlot>
     let isSelected: Bool
     @ObservedObject var order: PullRequestOrder
     let now: Date
@@ -956,20 +974,13 @@ private struct BoardCardView: View {
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
-                if isNext {
-                    HStack(spacing: 2) {
-                        if isPicked {
-                            Image(systemName: "pencil")
+                if !nexts.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(nexts) { slot in
+                            badge(slot)
                         }
-                        Text("Next")
                     }
-                    .font(size: 10, weight: .bold)
-                    .foregroundStyle(card.stage.textColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1.5)
-                    .background(Capsule().fill(card.stage.color.opacity(0.2)))
                     .padding(7 * textScale)
-                    .help(isPicked ? "Up Next: you chose it, until it moves on" : "Up Next: it comes first in its column")
                     .allowsHitTesting(false)
                 }
             }
@@ -1026,7 +1037,7 @@ private struct BoardCardView: View {
                     Button("Set as Next to Merge", action: setAsNext)
                 }
                 if let slot = UpNextSlot.of(card) {
-                    if isPicked {
+                    if picked.contains(slot) {
                         Button("Let BriefBar Choose Next") { order.letBriefBarChoose(slot) }
                     } else {
                         Button("Make Next") { order.pickNext(card.ref, in: slot) }
@@ -1039,10 +1050,39 @@ private struct BoardCardView: View {
             .missionActions(card.ref, context: content.mission, offersNext: card.stage != .waits)
     }
 
+    /// Next, or Fix next, in its slot's color, with ✎ where you chose it.
+    private func badge(_ slot: UpNextSlot) -> some View {
+        let isPicked = picked.contains(slot)
+        return HStack(spacing: 2) {
+            if isPicked {
+                Image(systemName: "pencil")
+            }
+            Text(slot == .fix ? slot.title : "Next")
+        }
+        .font(size: 10, weight: .bold)
+        .foregroundStyle(slot.stage.textColor)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1.5)
+        .background(Capsule().fill(slot.stage.color.opacity(0.2)))
+        .help(Self.help(slot, isPicked: isPicked))
+    }
+
+    static func help(_ slot: UpNextSlot, isPicked: Bool) -> String {
+        switch (slot, isPicked) {
+        case (.fix, true): "Fix next: you chose it, until it moves on"
+        case (.fix, false): "Fix next: it needs you first, of every column"
+        case (_, true): "Up Next: you chose it, until it moves on"
+        case (_, false): "Up Next: it comes first in its column"
+        }
+    }
+
     private var accessibilityValue: String {
         var parts = [StageWords.spoken(card.reading, order: order, now: now)]
         parts += content.details
-        if isNext { parts.append(isPicked ? "Up Next, you chose it" : "Up Next") }
+        for slot in nexts {
+            let name = slot == .fix ? "Fix next" : "Up Next"
+            parts.append(picked.contains(slot) ? "\(name), you chose it" : name)
+        }
         return parts.joined(separator: ", ")
     }
 

@@ -115,4 +115,84 @@ import Testing
         StageMarks.forgetAll(in: defaults)
         #expect(defaults.object(forKey: StageMarks.defaultsKey) == nil)
     }
+
+    // MARK: How far each of yours got
+
+    /// For each account, only Your review, Teammate's review, Approved and Can merge, of pull requests alone: In progress,
+    /// or none, forgets it.
+    @Test func howFarOneGotIsKeptForEachAccountOnlyFromYourReviewOn() {
+        var reached = StagesReached()
+        let approved = reached.set(.approved, of: Self.pr(4088), for: "Robin@Contoso.com", at: t(0))
+        let same = reached.set(.approved, of: Self.pr(4088), for: "robin@contoso.com", at: t(10))
+        #expect(approved && !same)
+        #expect(reached.reach(of: Self.pr(4088), for: "ROBIN@contoso.com") == StageReach(.approved, since: t(0), isFirst: true))
+        // Moved since, it's no longer where BriefBar first kept it.
+        _ = reached.set(.canMerge, of: Self.pr(4088), for: "robin@contoso.com", at: t(5))
+        _ = reached.set(.approved, of: Self.pr(4088), for: "robin@contoso.com", at: t(6))
+        #expect(reached.reach(of: Self.pr(4088), for: "robin@contoso.com") == StageReach(.approved, since: t(6)))
+        #expect(reached.reach(of: Self.pr(4088), for: "sam@contoso.com") == nil)
+
+        let inProgress = reached.set(.inProgress, of: Self.pr(4090), for: "robin", at: t(0))
+        let workItem = reached.set(.yourReview, of: .workItem(organization: "contoso", id: 5101), for: "robin", at: t(0))
+        #expect(!inProgress && !workItem)
+        #expect(reached.count(for: "robin") == 0)
+
+        let backToInProgress = reached.set(.inProgress, of: Self.pr(4088), for: "robin@contoso.com", at: t(20))
+        #expect(backToInProgress && reached.isEmpty)
+        #expect(StagesReached(accounts: ["robin": [Self.pr(1): .init(stage: .waits, since: t(0), listedAt: t(0))]]).isEmpty)
+    }
+
+    /// At the most, a new one isn't kept, and none is dropped; it's noted once a day as lists have it, and goes 30 days
+    /// after the last, or with its source.
+    @Test func howFarOneGotGoesAsAStageYouSetDoes() {
+        var reached = StagesReached()
+        for number in 1...StagesReached.mostPerAccount {
+            _ = reached.set(.teammateReview, of: Self.pr(number), for: "robin", at: t(0))
+        }
+        let oneMore = reached.set(.teammateReview, of: Self.pr(9_999), for: "robin", at: t(0))
+        let changed = reached.set(.approved, of: Self.pr(1), for: "robin", at: t(0))
+        #expect(!oneMore && changed)
+        #expect(reached.count(for: "robin") == StagesReached.mostPerAccount)
+
+        let day: TimeInterval = 86_400
+        let halfADay = reached.listed([Self.pr(1)], for: "robin", at: t(day / 2))
+        let aDay = reached.listed([Self.pr(1)], for: "robin", at: t(day))
+        #expect(!halfADay && aDay)
+        let unlisted = reached.forgetUnlisted(now: t(day * 30 + 1), of: [.pullRequest])
+        #expect(unlisted)
+        #expect(reached.reach(of: Self.pr(1), for: "robin")?.stage == .approved)
+        #expect(reached.reach(of: Self.pr(2), for: "robin") == nil)
+        let gitHub = reached.forget([.gitHubPullRequest])
+        let azureDevOps = reached.forget([.pullRequest])
+        #expect(!gitHub && azureDevOps && reached.isEmpty)
+    }
+
+    /// Kept as references, stages and dates alone; one a later version wrote, with a stage this one doesn't know, drops
+    /// alone; none removes the key.
+    @Test func howFarOneGotIsKeptAsReferencesStagesAndDates() throws {
+        let defaults = MemorySettings()
+        var reached = StagesReached()
+        _ = reached.set(.approved, of: Self.pr(4088), for: "robin@contoso.com", at: t(20))
+        reached.save(to: defaults)
+
+        let data = try #require(defaults.data(forKey: StagesReached.defaultsKey))
+        let saved = try #require(String(data: data, encoding: .utf8))
+        #expect(saved.contains("\"pullRequest\":\"pullRequest/contoso/4088\""))
+        #expect(saved.contains("\"stage\":\"approved\""))
+        #expect(StagesReached.load(from: defaults) == reached)
+
+        var records = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        var later = records[0]
+        later["stage"] = "waitingForDesign"
+        later["pullRequest"] = "pullRequest/contoso/4094"
+        records.append(later)
+        defaults.set(try JSONSerialization.data(withJSONObject: records), forKey: StagesReached.defaultsKey)
+        #expect(StagesReached.load(from: defaults) == reached)
+
+        StagesReached().save(to: defaults)
+        #expect(defaults.data(forKey: StagesReached.defaultsKey) == nil)
+        reached.save(to: defaults)
+        StagesReached.forgetAll(in: defaults)
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) == nil)
+    }
 }

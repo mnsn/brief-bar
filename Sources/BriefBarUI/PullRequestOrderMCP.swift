@@ -130,8 +130,9 @@ package enum PullRequestOrderMCP {
                     user_review once you've pushed your work and it's the user's turn to review it; teammate_review \
                     once the user has reviewed it, as they told you or you reviewed it together, and it's their \
                     teammates' turn; clear to leave it to BriefBar. The latest stage set wins, whether the user set it \
-                    or a session did, and BriefBar shows who. Azure DevOps pull requests only, for now. It changes \
-                    nothing in Azure DevOps.
+                    or a session did, and BriefBar shows who. BriefBar sets Approved, Can merge, Waits and Merged \
+                    itself, from what Azure DevOps shows. Azure DevOps pull requests only, for now. It changes nothing \
+                    in Azure DevOps.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_requests": array(
@@ -490,8 +491,8 @@ package enum PullRequestOrderMCP {
         }
     }
 
-    /// The stage `pull_request_stage` names: nil to clear it. Can merge, Waits and Merged come only from what BriefBar
-    /// sees.
+    /// The stage `pull_request_stage` names: nil to clear it. Approved, Can merge, Waits and Merged come only from what
+    /// BriefBar sees.
     static func stage(_ value: JSONValue?) throws -> PullRequestStage? {
         let names = stageNames.map(\.name)
         let choices = names.dropLast().joined(separator: ", ") + " or " + (names.last ?? "")
@@ -499,10 +500,10 @@ package enum PullRequestOrderMCP {
         let name = text.trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "-", with: "_")
         if let named = stageNames.first(where: { $0.name == name }) { return named.stage }
-        if ["can_merge", "waits", "merged"].contains(name) {
+        if ["approved", "can_merge", "waits", "merged"].contains(name) {
             throw MCPToolError("""
-                BriefBar sets Can merge, Waits and Merged itself, from what Azure DevOps shows and the order: give stage \
-                as \(choices).
+                BriefBar sets Approved, Can merge, Waits and Merged itself, from what Azure DevOps shows and the order: \
+                give stage as \(choices).
                 """)
         }
         throw MCPToolError("There's no stage “\(text)”: give stage as \(choices).")

@@ -78,10 +78,11 @@ make its text bigger.
 ## Know what's next
 
 Turn on **Pull Request Order** in **Settings › Pull Requests**, and each Azure DevOps pull request shows its stage, in
-color: **In progress**, **Your review**, **Teammate's review**, **Can merge**, **Waits for another PR** or **Merged**.
-BriefBar works it out from Azure DevOps and your Copilot sessions, and with agents on, the sessions working on your
-pull requests update it as they go. Click a stage to change it, or **Finished My Review** to pass a pull request on to
-your teammates.
+color: **In progress**, **Your review**, **Teammate's review**, **Approved**, **Can merge**, **Waits for another PR** or
+**Merged**. BriefBar works it out from Azure DevOps and your Copilot sessions, and with agents on, the sessions working
+on your pull requests update it as they go. A failed build, or changes someone wants, marks a pull request where it is:
+BriefBar moves one back only once it loses its approval. Click a stage to change it, or **Finished My Review** to pass
+a pull request on to your teammates.
 
 <p align="center">
   <picture>
@@ -90,9 +91,9 @@ your teammates.
   </picture>
 </p>
 
-- **Up Next**, at the top of the Pull Requests page, picks what's next for you: the pull request to fix next, your
-  next review, the next one for a teammate, the next to merge and the next that waits. Choose another yourself, and
-  BriefBar keeps it until that pull request moves on.
+- **Up Next**, at the top of the Pull Requests page, picks what's next for you: the pull request to fix next, from any
+  stage, your next review, the next one for a teammate, the next approved, the next to merge and the next that waits.
+  Choose another yourself, and BriefBar keeps it until that pull request moves on.
 - **The Board** has a column for each stage and a lane for each mission. Drag a card to another column, or press
   **⌘→** or **⌘←**, to change its stage.
 - **By Mission** puts together the pull requests that go together, such as a stack's or a story's, in the order they

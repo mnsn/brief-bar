@@ -158,9 +158,10 @@ import Testing
     }
 
     /// The skill tells sessions to keep BriefBar current without being asked: the session that did the work tells its pull
-    /// requests' stages, as it pushes and as the user says they reviewed one, never Can merge, Waits or Merged; only the
-    /// session that owns the plan tells an order; what the user set is kept, unless they decided otherwise together; and a
-    /// story's pull requests go together by themselves, so sessions link each to its task and tell only a real order.
+    /// requests' stages, as it pushes and as the user says they reviewed one, never Approved, Can merge, Waits or Merged;
+    /// only the session that owns the plan tells an order; what the user set is kept, unless they decided otherwise
+    /// together; and a story's pull requests go together by themselves, so sessions link each to its task and tell only a
+    /// real order.
     @Test func orderSkillTellsStagesAndKeepsWhatTheUserSet() throws {
         let text = try String(contentsOf: Self.orderSkill, encoding: .utf8)
         let description = try #require(text.components(separatedBy: "\n").first { $0.hasPrefix("description: ") })
@@ -170,7 +171,7 @@ import Testing
         #expect(points.contains { $0.hasPrefix("`in_progress` as you start fixing it again") })
         #expect(points.contains { $0.hasPrefix("`teammate_review` once the user tells you they've reviewed it") })
         #expect(points.contains { $0.hasPrefix("only the session that did the work") && $0.contains("azure devops' pull requests only") })
-        #expect(points.contains { $0.hasPrefix("never claim a pull request can merge, waits or merged") })
+        #expect(points.contains { $0.hasPrefix("never claim a pull request is approved, can merge, waits or merged") })
         let owner = try #require(points.first { $0.hasPrefix("only the session that owns the plan tells it") })
         #expect(owner.contains("never tells an order"))
         let kept = try #require(points.first { $0.contains("what the user changed") })

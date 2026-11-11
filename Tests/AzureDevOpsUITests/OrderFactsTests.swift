@@ -559,8 +559,9 @@ import Testing
         #expect(stage(4071) == "Your review: Chen asked you")
         #expect(stage(4113) == "Your review: Dana sent it in Teams")
         #expect(stage(4102) == "Teammate's review: Waiting on Sam")
-        #expect(stage(4088) == "In progress: Build failed")
-        #expect(stage(4079) == "In progress: Merge conflicts")
+        #expect(stage(4088) == "Approved: Maria approved it · build failed")
+        #expect(stage(4079) == "Teammate's review: Not approved yet · merge conflicts")
+        #expect(stage(3990) == "Teammate's review: Not approved yet · build expired")
         #expect(stage(4060) == "In progress: Waiting for Sam's changes")
         #expect(stage(4091) == "Waits for another PR: After !4102")
         #expect(stage(4085) == "Merged: Merged")
@@ -580,26 +581,65 @@ import Testing
         #expect(try #require(Self.stageFacts(4082)).failure == nil)
     }
 
-    /// With no review that holds it up, what's left of yours is its own work: In progress, with What's Left's first item. A
-    /// reviewer policy of another name counts as a review while it's pending.
-    @Test func withNoReviewHoldingItUpWhatsLeftIsYoursToDo() throws {
+    /// Yours is approved once its reviews are done, as What's Left reads them, and what's left then is What's Left's first
+    /// item. Where its reviewer policy doesn't apply, it isn't until someone approves it; a reviewer policy of another name
+    /// counts as a review while it's pending.
+    @Test func itsApprovedOnceItsReviewsAreDoneAndWhatsLeftIsSaid() throws {
         let running = Check(name: "shop-web CI", kind: .build, state: .running)
         let sam = [Reviewer(person: Self.sam, vote: .none)]
+        let notApplying = Check(name: "Minimum number of reviewers", kind: .reviewers, state: .notApplicable)
 
-        let notApplying = try #require(Self.stageFacts(
-            4099, reviewers: sam, checks: [running, Check(name: "Minimum number of reviewers", kind: .reviewers, state: .notApplicable)]
-        ))
-        #expect(notApplying.leftAfterReviews == "Build running")
+        let unapproved = try #require(Self.stageFacts(4099, reviewers: sam, checks: [running, notApplying]))
+        #expect(unapproved.isApproved == false)
+        #expect(unapproved.leftAfterReviews == nil)
+        #expect(unapproved.waitingFor == "Waiting for reviewers")
+
+        let approved = try #require(Self.stageFacts(4099, reviewers: [Reviewer(person: Self.sam, vote: .approved)], checks: [running, notApplying]))
+        #expect(approved.isApproved == true)
+        #expect(approved.approvedBy == "Sam")
+        #expect(approved.leftAfterReviews == "Build running")
 
         let passed = try #require(Self.stageFacts(4100, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .passed)]))
+        #expect(passed.isApproved == true)
         #expect(passed.leftAfterReviews == "Build running")
 
         let pending = try #require(Self.stageFacts(4101, reviewers: sam, checks: [running, Check(name: "Code owners", kind: .reviewers, state: .pending)]))
+        #expect(pending.isApproved == false)
         #expect(pending.leftAfterReviews == nil)
         #expect(pending.waitingFor == "Code owners")
 
-        // Before its details are read, nothing's said to be left.
-        #expect(try #require(Self.stageFacts(4102, reviewers: sam)).leftAfterReviews == nil)
+        // Before its details are read, nothing's said to be left, and its votes alone tell it isn't approved.
+        let unread = try #require(Self.stageFacts(4102, reviewers: sam))
+        #expect(unread.leftAfterReviews == nil)
+        #expect(unread.isApproved == false)
+    }
+
+    /// Who approved yours, by first names, people only, never you; past three, how many more. While what was read of its
+    /// policies is from before its latest push or vote, the votes alone tell only that it isn't approved: while a reviewer
+    /// it requires hasn't approved, or nobody has; else BriefBar can't tell.
+    @Test func whoApprovedYoursAndWhatTheVotesAloneTell() throws {
+        func person(_ name: String) -> Person { Person(id: UUID().uuidString, name: name) }
+        let maria = person("Maria Lopez"), dana = person("Dana Kim"), alex = person("Alex Chen")
+        let team = Reviewer(person: person("[Storefront]\\Web Team"), vote: .approved, isGroup: true)
+        let approvals = [maria, Self.priya, Self.sam, dana, alex].map { Reviewer(person: $0, vote: .approved) }
+        let mine = Reviewer(person: Self.me, vote: .approved)
+        #expect(try #require(Self.stageFacts(4099, reviewers: [mine, team] + approvals.prefix(2))).approvedBy == "Maria and Priya")
+        #expect(try #require(Self.stageFacts(4099, reviewers: Array(approvals.prefix(3)))).approvedBy == "Maria, Priya and Sam")
+        #expect(try #require(Self.stageFacts(4099, reviewers: approvals)).approvedBy == "Maria, Priya, Sam and 2 more")
+        #expect(try #require(Self.stageFacts(4099, reviewers: [mine, team])).approvedBy == nil)
+
+        func stale(_ reviewers: [Reviewer]) -> Bool? {
+            let pr = PullRequest(
+                key: PRKey("Contoso", 4099), title: "Pull request 4099", author: Self.me,
+                createdAt: Date(timeIntervalSince1970: 1_791_000_000), projectId: "7A0C4E1D", projectName: "Storefront",
+                repositoryId: "Repository-Shop", repositoryName: "shop-web", mergeStatus: "succeeded", reviewers: reviewers,
+                sourceCommit: "c4099"
+            )
+            return PullRequestOrderFacts.isApproved(pr, reviews: [], isCurrent: false)
+        }
+        #expect(stale([Reviewer(person: maria, vote: .approved), Reviewer(person: Self.sam, vote: .none, isRequired: true)]) == false)
+        #expect(stale([Reviewer(person: Self.sam, vote: .none)]) == false)
+        #expect(stale([Reviewer(person: maria, vote: .approved), Reviewer(person: Self.sam, vote: .none)]) == nil)
     }
 
     /// Every task sent to Copilot on it counts, not only the newest: an older one still at work keeps it in progress.
@@ -788,8 +828,8 @@ import Testing
         #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is pre-reviewing it")
     }
 
-    /// A Board card says what failed once: where its stage's words say it after their reason, "Copilot is writing it ·
-    /// build failed", it has no ✕ of its own, and VoiceOver doesn't hear it twice.
+    /// A Board card says what failed once, as its ✕ under why it's in its stage, "Copilot is writing it"; VoiceOver hears it
+    /// once, in its stage's words, "Copilot is writing it · build failed", and not again among its other marks.
     @Test func aBoardCardSaysAFailureOnce() throws {
         let order = Self.onOrder()
         let failing = Self.record(4088, checks: [Check(name: "shop-web CI", kind: .build, state: .failed)])
@@ -799,7 +839,8 @@ import Testing
         Self.tell(order, [failing], tasks: [Self.task(on: 4088, .fixBuild, .working)])
         let reading = try #require(order.stage(of: failing.id.linkRef))
         #expect(StageText.why(reading, name: { _ in nil }) == "Copilot is writing it · build failed")
-        #expect(PullRequestBoardCard.flags(item, reading: reading).isEmpty)
+        #expect(StageText.reason(reading, name: { _ in nil }) == "Copilot is writing it")
+        #expect(PullRequestBoardCard.flags(item, reading: reading).map(\.text) == ["Build failed"])
         #expect(PullRequestBoardCard.details(item, reading: reading, order: nil, ordering: order) == ["shop-web"])
     }
 

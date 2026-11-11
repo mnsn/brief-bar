@@ -6,12 +6,14 @@ import SwiftUI
 
 extension PullRequestStage {
     /// Its color, as the group or state it's closest to reads: Copilot's pink while its work goes on, Needs You's orange for
-    /// your review, Waiting's blue for a teammate's, Ready to Complete's green, grey while it waits, Done's purple.
+    /// your review, Waiting's blue for a teammate's, mint once approved, on its way to Ready to Complete's green, grey while
+    /// it waits, Done's purple.
     package var nsColor: NSColor {
         switch self {
         case .inProgress: .systemPink
         case .yourReview: .systemOrange
         case .teammateReview: .systemBlue
+        case .approved: .systemMint
         case .canMerge: .systemGreen
         case .waits: .systemGray
         case .merged: .systemPurple
@@ -31,6 +33,7 @@ extension PullRequestStage {
             case .yourReview: return isDark ? .systemOrange : NSColor(srgbRed: 0.71, green: 0.28, blue: 0.03, alpha: 1)
             case .teammateReview: return isDark ? NSColor(srgbRed: 0.42, green: 0.71, blue: 1, alpha: 1)
                 : NSColor(srgbRed: 0.04, green: 0.35, blue: 0.79, alpha: 1)
+            case .approved: return isDark ? .systemMint : NSColor(srgbRed: 0, green: 0.45, blue: 0.42, alpha: 1)
             case .canMerge: return isDark ? .systemGreen : NSColor(srgbRed: 0.12, green: 0.48, blue: 0.21, alpha: 1)
             case .waits: return isDark ? NSColor(srgbRed: 0.76, green: 0.76, blue: 0.79, alpha: 1)
                 : NSColor(srgbRed: 0.33, green: 0.33, blue: 0.36, alpha: 1)
@@ -185,7 +188,7 @@ package struct StageMenuItems: View {
                 .disabled(stage == .teammateReview && othersReviews != nil)
             }
         }
-        ForEach([PullRequestStage.canMerge, .waits], id: \.self) { stage in
+        ForEach([PullRequestStage.approved, .canMerge, .waits], id: \.self) { stage in
             Button {} label: {
                 Label(stage.title, systemImage: stage.symbol)
                 if let why = StageText.whyNotSettable(stage) { Text(why) }

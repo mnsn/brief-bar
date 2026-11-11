@@ -180,3 +180,187 @@ public struct StageMarks: Equatable, Sendable {
         defaults.removeObject(forKey: defaultsKey)
     }
 }
+
+/// How far each of your pull requests got, as BriefBar worked its stage out itself (`StageRules.worked`), in BriefBar's
+/// preferences, for each Azure DevOps account you sign in with, as the stages you set are (`StageMarks`): one key,
+/// `order.reached`, which only the app writes, of references, stages, when each got there, whether that's where BriefBar
+/// first kept it, and when a list last had it, and nothing else: so
+/// that BriefBar never moves one back on its own, as a failed build, or a session that writes it again, would, but where
+/// it loses what its stage stands for. Only Your review, Teammate's review, Approved and Can merge, Waits kept as Can merge;
+/// one in progress keeps none. One goes once its pull request merges, closes or is a draft again, or no list has had it for
+/// 30 days; turning a source off forgets its own, and Forget Stages… all of them. At most 500 for each account: past
+/// that, a new one isn't kept, and BriefBar works its stage out from what its source shows alone.
+public struct StagesReached: Equatable, Sendable {
+    public static let defaultsKey = "order.reached"
+    public static let mostPerAccount = StageMarks.mostPerAccount
+    /// The stages it keeps.
+    public static let kept: Set<PullRequestStage> = [.yourReview, .teammateReview, .approved, .canMerge]
+
+    public struct Entry: Equatable, Sendable {
+        public var stage: PullRequestStage
+        /// When it got there, as BriefBar saw it (`StageReach.since`).
+        public var since: Date
+        /// It's where BriefBar first kept it, and nothing moved it since (`StageReach.isFirst`).
+        public var isFirst: Bool
+        /// When a list last had its pull request, as `listed` notes it.
+        public var listedAt: Date
+
+        public init(stage: PullRequestStage, since: Date, isFirst: Bool = false, listedAt: Date) {
+            self.stage = stage
+            self.since = since
+            self.isFirst = isFirst
+            self.listedAt = listedAt
+        }
+
+        /// Whether no list has had its pull request for 30 days, so it goes.
+        public func isUnlisted(at now: Date) -> Bool {
+            now.timeIntervalSince(listedAt) > StageMarks.unlistedFor
+        }
+    }
+
+    /// Each account's, by its name lowercased, then by pull request.
+    public private(set) var accounts: [String: [ItemRef: Entry]]
+
+    public init(accounts: [String: [ItemRef: Entry]] = [:]) {
+        var kept: [String: [ItemRef: Entry]] = [:]
+        for (account, entries) in accounts {
+            let reached = entries.filter { $0.key.kind.isPullRequest && Self.kept.contains($0.value.stage) }
+            if !reached.isEmpty { kept[account.lowercased(), default: [:]].merge(reached) { first, _ in first } }
+        }
+        self.accounts = kept
+    }
+
+    public var isEmpty: Bool { accounts.values.allSatisfy(\.isEmpty) }
+
+    /// How far a pull request got, with this account, and since when; nil for one that got no further than In progress, or
+    /// that BriefBar keeps nothing of.
+    public func reach(of ref: ItemRef, for account: String) -> StageReach? {
+        accounts[account.lowercased()]?[ref].map { StageReach($0.stage, since: $0.since, isFirst: $0.isFirst) }
+    }
+
+    /// How many this account keeps.
+    public func count(for account: String) -> Int {
+        accounts[account.lowercased()]?.count ?? 0
+    }
+
+    /// Keeps how far a pull request got now, in place of what it kept, or forgets it, for nil or a stage it doesn't keep:
+    /// true when that changed what's kept. A new one isn't kept once the account keeps the most.
+    /// - Parameter now: when it got there, for a stage it didn't keep, and when a list last had it.
+    @discardableResult
+    public mutating func set(_ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date) -> Bool {
+        let account = account.lowercased()
+        var entries = accounts[account] ?? [:]
+        guard let stage, Self.kept.contains(stage), ref.kind.isPullRequest else {
+            guard entries.removeValue(forKey: ref) != nil else { return false }
+            accounts[account] = entries.isEmpty ? nil : entries
+            return true
+        }
+        let isNew = entries[ref] == nil
+        if let entry = entries[ref] {
+            guard entry.stage != stage else { return false }
+        } else if entries.count >= Self.mostPerAccount {
+            return false
+        }
+        entries[ref] = Entry(stage: stage, since: now, isFirst: isNew, listedAt: now)
+        accounts[account] = entries
+        return true
+    }
+
+    /// Notes that a list has these now, at most once a day for each, as `StageMarks.listed` does: true when that changed
+    /// what's kept.
+    public mutating func listed(_ refs: Set<ItemRef>, for account: String, at now: Date) -> Bool {
+        let account = account.lowercased()
+        guard var entries = accounts[account] else { return false }
+        var changed = false
+        for ref in refs {
+            guard let entry = entries[ref], now.timeIntervalSince(entry.listedAt) >= StageMarks.listedEvery else { continue }
+            entries[ref]?.listedAt = now
+            changed = true
+        }
+        if changed { accounts[account] = entries }
+        return changed
+    }
+
+    /// Forgets those of these kinds that no list has had for 30 days, with every account: true when it forgot any.
+    /// - Parameter kinds: those whose sources have listed what they show, so that a list could have noted that it has them.
+    public mutating func forgetUnlisted(now: Date, of kinds: Set<ItemRef.Kind>) -> Bool {
+        forget { kinds.contains($0.key.kind) && $0.value.isUnlisted(at: now) }
+    }
+
+    /// Forgets those of the sources you turned off, with every account: true when it forgot any.
+    public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
+        forget { kinds.contains($0.key.kind) }
+    }
+
+    private mutating func forget(where isForgotten: ((key: ItemRef, value: Entry)) -> Bool) -> Bool {
+        var changed = false
+        for (account, entries) in accounts {
+            let kept = entries.filter { !isForgotten($0) }
+            guard kept.count != entries.count else { continue }
+            accounts[account] = kept.isEmpty ? nil : kept
+            changed = true
+        }
+        return changed
+    }
+
+    // MARK: Kept
+
+    private struct Saved: Codable {
+        var account: String
+        var pullRequest: ItemRef
+        var stage: PullRequestStage
+        var since: Date
+        var isFirst: Bool
+        var listedAt: Date
+    }
+
+    /// One that can be read, or none, so that one BriefBar can't read, such as a stage of a later version's, drops alone.
+    private struct Lossy: Decodable {
+        var value: Saved?
+
+        init(from decoder: Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(Saved.self)
+        }
+    }
+
+    /// What was saved, without what can't be read.
+    public static func load(from defaults: some SettingsStorage) -> StagesReached {
+        guard let data = defaults.data(forKey: defaultsKey), let saved = try? JSONDecoder().decode([Lossy].self, from: data)
+        else { return StagesReached() }
+        var accounts: [String: [ItemRef: Entry]] = [:]
+        for record in saved.compactMap(\.value) where accounts[record.account.lowercased()]?[record.pullRequest] == nil {
+            accounts[record.account.lowercased(), default: [:]][record.pullRequest] = Entry(
+                stage: record.stage, since: record.since, isFirst: record.isFirst, listedAt: record.listedAt
+            )
+        }
+        return StagesReached(accounts: accounts)
+    }
+
+    /// Saves each as its account, its pull request's reference, its stage, when it got there, whether that's where BriefBar
+    /// first kept it, and when a list last had it; none removes the key.
+    public func save(to defaults: some SettingsStorage) {
+        guard !isEmpty else {
+            defaults.removeObject(forKey: Self.defaultsKey)
+            return
+        }
+        var saved: [Saved] = []
+        for account in accounts.keys.sorted() {
+            for (ref, entry) in (accounts[account] ?? [:]).sorted(by: { $0.key < $1.key }) {
+                saved.append(Saved(
+                    account: account, pullRequest: ref, stage: entry.stage, since: entry.since, isFirst: entry.isFirst,
+                    listedAt: entry.listedAt
+                ))
+            }
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        if let data = try? encoder.encode(saved) {
+            defaults.set(data, forKey: Self.defaultsKey)
+        }
+    }
+
+    /// Forget Stages…: how far each pull request got, with every account, whether Pull Request Order is on or not.
+    public static func forgetAll(in defaults: some SettingsStorage) {
+        defaults.removeObject(forKey: defaultsKey)
+    }
+}
