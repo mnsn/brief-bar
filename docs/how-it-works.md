@@ -1554,19 +1554,21 @@ what you and sessions set, its order, and, for yours, how far it got (below). Th
 | Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
 
 Approved means what Azure DevOps counts: its approvals, the reviewers it requires and its other reviewer policies, all
-done, as What's Left reads them (`PullRequestOrderFacts.isApproved`); one that requires nobody's review, as where its
-reviewer policy doesn't apply, isn't approved until someone approves it. While what BriefBar read of its policies isn't
-current, as after a push or a vote until it reads them again, only the votes tell: not approved while a reviewer it
-requires hasn't approved, or nobody has; else it stays in Approved or Can merge where it got.
+done, as What's Left reads them (`PullRequestOrderFacts.isApproved`), and never while a reviewer it requires hasn't
+approved, as one who wants changes or rejected it, which What's Left says only as changes someone wants; one that
+requires nobody's review, as where its reviewer policy doesn't apply, isn't approved until someone approves it. While
+what BriefBar read of its policies isn't current, as after a push or a vote until it reads them again, only the votes
+tell: not approved while a reviewer it requires hasn't approved, or nobody has; else it stays in Approved or Can merge
+where it got.
 
 On yours, what goes on with it besides why it's in its stage never moves it: a session that asks you or writes it, a
 required item that failed or expired, conflicts or a merge Azure DevOps couldn't make, and changes someone wants, each
-where why doesn't say it already; the session that set its In progress writes it too, which **‘Cart’ is on it** says, so
-that Fix next doesn't offer it while that session may be fixing it. They're its flags (`StageFlag`): after its reason,
-**Maria approved it · build failed**, **‘Cart’ finished · ‘Cart’ asks you**, wherever its words show: its row, its
-tooltip and its details, Up Next, and what its mission waits for, VoiceOver hearing each after a pause; and marks on its
-card, **✕ Build failed**, **✋ Sam wants changes**. Fix next has what they say needs you, from every column (below).
-Someone else's pull request that asks nothing of you has no stage.
+where why doesn't say it already; the session that set its In progress writes it too, whether or not BriefBar sees it on
+it otherwise, which **‘Cart’ is on it** says, so that Fix next doesn't offer it while that session may be fixing it.
+They're its flags (`StageFlag`): after its reason, **Maria approved it · build failed**, **‘Cart’ finished · ‘Cart’ asks
+you**, wherever its words show: its row, its tooltip and its details, Up Next, and what its mission waits for, VoiceOver
+hearing each after a pause; and marks on its card, **✕ Build failed**, **✋ Sam wants changes**. Fix next has what they
+say needs you, from every column (below). Someone else's pull request that asks nothing of you has no stage.
 
 **How far yours got.** BriefBar never moves one of yours back on its own, but where it loses what its stage stands for:
 its approval, as when a push resets the votes or Azure DevOps requires another reviewer, back to Teammate's review from
@@ -1585,7 +1587,8 @@ with, each as its pull request's reference, its stage, when it got there, whethe
 and when a list last had it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no
 list has had it for 30 days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and
 its stage comes from what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none. `--mcp` only reads
-it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused.
+it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused, and
+Forget Stages… is there for it then: while it's on, what it keeps comes back at once, or goes after 30 days on its own.
 
 Beside Can merge and Waits, whose words say where its order puts it, a row or a card shows its order capsule only where
 a change of yours speaks of it (`OrderRowContext.isSaid(by:)`): ✎ **Next to merge** for one you set as next, or, for one

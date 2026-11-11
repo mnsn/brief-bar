@@ -599,7 +599,8 @@ import Testing
 
     /// Yours is approved once its reviews are done, as What's Left reads them, and what's left then is What's Left's first
     /// item. Where its reviewer policy doesn't apply, it isn't until someone approves it; a reviewer policy of another name
-    /// counts as a review while it's pending.
+    /// counts as a review while it's pending; and a reviewer it requires who rejected it keeps it from being approved,
+    /// where one it doesn't require only marks it.
     @Test func itsApprovedOnceItsReviewsAreDoneAndWhatsLeftIsSaid() throws {
         let running = Check(name: "shop-web CI", kind: .build, state: .running)
         let sam = [Reviewer(person: Self.sam, vote: .none)]
@@ -623,6 +624,23 @@ import Testing
         #expect(pending.isApproved == false)
         #expect(pending.leftAfterReviews == nil)
         #expect(pending.waitingFor == "Code owners")
+
+        // A reviewer it requires who rejected it hasn't approved it, whoever else did, though What's Left says that only as
+        // changes someone wants, which mark it.
+        let rejected = try #require(Self.stageFacts(
+            4103, reviewers: [Reviewer(person: Self.sam, vote: .rejected, isRequired: true), Reviewer(person: Self.priya, vote: .approved)],
+            checks: [running, notApplying]
+        ))
+        #expect(rejected.isApproved == false)
+        #expect(rejected.changesWanted == "Sam rejected it")
+        #expect(rejected.leftAfterReviews == nil)
+        // One it doesn't require leaves it approved, marked.
+        let optional = try #require(Self.stageFacts(
+            4104, reviewers: [Reviewer(person: Self.sam, vote: .rejected), Reviewer(person: Self.priya, vote: .approved)],
+            checks: [running, notApplying]
+        ))
+        #expect(optional.isApproved == true)
+        #expect(optional.changesWanted == "Sam rejected it")
 
         // Before its details are read, nothing's said to be left, and its votes alone tell it isn't approved.
         let unread = try #require(Self.stageFacts(4102, reviewers: sam))

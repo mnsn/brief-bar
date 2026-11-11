@@ -1606,11 +1606,13 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps a stage you or a session set, or a pull request you chose for one of Up Next's slots, on or
-    /// off: for Forget Stages… in Settings. Not how far each of yours got, which BriefBar keeps again at once as it works
-    /// stages out, though Forget Stages… forgets that too.
+    /// off: for Forget Stages… in Settings. How far each of yours got counts only while Pull Request Order is off, when
+    /// nothing else forgets it: while it's on, BriefBar keeps that again at once as it works stages out, or forgets it on
+    /// its own once no list has had its pull request for 30 days. Forget Stages… forgets all of it.
     package var keepsStages: Bool {
         defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty || SessionStages.keepsAny(in: defaults)
             || !sessionStages.isEmpty || defaults.object(forKey: UpNextPicks.Kept.defaultsKey) != nil || !picksInMemory.isEmpty
+            || (!isOn && defaults.object(forKey: StagesReached.defaultsKey) != nil)
     }
 
     /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
@@ -1926,14 +1928,15 @@ package final class PullRequestOrder: ObservableObject {
                 if let account = account(of: ref), marks.clear(ref, for: account) { changed = true }
                 mine = nil
             }
-            // How far yours got, and where it goes from: from what was set, as that ends.
+            // How far yours got, and where it goes from: from what was set, as that ends. It goes once it merges or closes, or
+            // is a draft again, whatever a draft shows.
             let yours = facts.isYours ? account(of: ref) : nil
             let got = StageRules.reached(kept: yours.flatMap { reached.reach(of: ref, for: $0, at: now()) }, ended: counted.ended)
-            if let yours, !facts.state.isOpen, reached.set(nil, of: ref, for: yours, at: now()) { reachedChanged = true }
+            if let yours, facts.state != .open, reached.set(nil, of: ref, for: yours, at: now()) { reachedChanged = true }
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
-            if let yours, facts.state.isOpen {
+            if let yours, facts.state == .open {
                 let worked = StageRules.worked(facts: facts, sessions: sessions, reached: got, order: order)
                 // A session whose end BriefBar can't tell says nothing of it yet.
                 let knowsSessions = sessions.contains { !$0.isReview && $0.activity != .stopped }

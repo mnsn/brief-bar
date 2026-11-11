@@ -560,7 +560,9 @@ public enum StageRules {
         guard var reading = decided(
             facts: facts, sessions: sessions, marks: marks, order: order, setters: setters, reached: reached
         ) else { return nil }
-        if facts.isYours, facts.state.isOpen { reading.flags = flags(facts: facts, sessions: sessions, for: reading) }
+        if facts.isYours, facts.state.isOpen {
+            reading.flags = flags(facts: facts, sessions: sessions, for: reading, setters: setters)
+        }
         return reading
     }
 
@@ -717,10 +719,14 @@ public enum StageRules {
 
     /// One of yours' flags, beside its reading: the sessions that write it or ask you, but a review, which writes nothing;
     /// what fails; and changes someone wants: each once, and not what why says already. Of the sessions that write it,
-    /// one besides the session whose In progress shows, which its words name already (`saidFlags`).
-    static func flags(facts: StageFacts, sessions: [StageSession], for reading: StageReading) -> [StageFlag] {
+    /// one besides the session whose In progress shows, which its words name already (`saidFlags`). That session writes
+    /// it whether or not BriefBar sees it on it otherwise, as `stands` has it: what it does now comes from `setters`.
+    static func flags(
+        facts: StageFacts, sessions: [StageSession], for reading: StageReading, setters: [ItemRef: StageSession] = [:]
+    ) -> [StageFlag] {
         let setter = reading.why == .set && reading.stage == .inProgress ? reading.mark?.by : nil
-        let busy = sessions.filter { !$0.isReview && $0.activity.isBusy }
+        let unseen = setter.flatMap { setter in sessions.contains { $0.ref == setter } ? nil : setters[setter] }
+        let busy = (sessions + [unseen].compactMap { $0 }).filter { !$0.isReview && $0.activity.isBusy }
         var flags: [StageFlag] = []
         if let asking = busy.first(where: { $0.activity == .waitsForYou }), reading.why != .asksYou(asking) {
             flags.append(.asksYou(asking))

@@ -413,19 +413,24 @@ import Testing
     @Test func theSessionThatSetItsInProgressWritesItAndAsksYouAsAnyDoes() {
         let mark = StageMark(stage: .inProgress, at: t(100), by: Self.cart)
         let facts = StageFacts(role: .author, failure: "Build failed", isApproved: true, approvedBy: "Maria")
-        func reading(_ activity: StageSession.Activity) -> StageReading? {
-            let session = Self.session(activity, at: activity == .working ? 90 : 150)
-            return StageRules.reading(facts: facts, sessions: [session], marks: [mark], order: .free, setters: [Self.cart: session])
-        }
-        let working = reading(.working)
-        #expect(working?.stage == .inProgress)
-        #expect(Self.why(working) == "‘Cart’ is on it · build failed")
-        #expect(working?.writer?.ref == Self.cart)
-        #expect(working?.fixRank == nil)
+        // On it, or only listed, as one that set its stage without BriefBar seeing it on it otherwise.
+        for onIt in [true, false] {
+            func reading(_ activity: StageSession.Activity) -> StageReading? {
+                let session = Self.session(activity, at: activity == .working ? 90 : 150)
+                return StageRules.reading(
+                    facts: facts, sessions: onIt ? [session] : [], marks: [mark], order: .free, setters: [Self.cart: session]
+                )
+            }
+            let working = reading(.working)
+            #expect(working?.stage == .inProgress)
+            #expect(Self.why(working) == "‘Cart’ is on it · build failed")
+            #expect(working?.writer?.ref == Self.cart)
+            #expect(working?.fixRank == nil)
 
-        let asking = reading(.waitsForYou)
-        #expect(Self.why(asking) == "‘Cart’ is on it · ‘Cart’ asks you · build failed")
-        #expect(asking?.fixRank == 0)
+            let asking = reading(.waitsForYou)
+            #expect(Self.why(asking) == "‘Cart’ is on it · ‘Cart’ asks you · build failed")
+            #expect(asking?.fixRank == 0)
+        }
     }
 
     /// A session's Your review that followed one of yours, keeping no votes, counts only while that one of yours is there:

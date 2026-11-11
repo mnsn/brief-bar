@@ -304,18 +304,16 @@ final class PullRequestOrderFacts {
     }
 
     /// Whether the reviewers one of yours requires approved it, as What's Left says it: its approvals, the reviewers it
-    /// requires and its other reviewer policies, all done. One that requires nobody's review, as where its reviewer
-    /// policy doesn't apply, isn't approved until someone approves it, which What's Left then counts. While what was read
-    /// of its policies isn't current, after a push or a vote, only what its reviewers' votes tell: not approved while a
-    /// reviewer it requires hasn't approved, or nobody has; else nil, as BriefBar can't tell until it reads them again.
+    /// requires and its other reviewer policies, all done. Never while a reviewer it requires hasn't approved, as one who
+    /// wants changes, or rejected it, which What's Left says only as changes someone wants. One that requires nobody's
+    /// review, as where its reviewer policy doesn't apply, isn't approved until someone approves it, which What's Left
+    /// then counts. While what was read of its policies isn't current, after a push or a vote, only what its reviewers'
+    /// votes tell: not approved while nobody approved it; else nil, as BriefBar can't tell until it reads them again.
     /// - Parameter reviews: What's Left's items for its reviews, as last read.
     static func isApproved(_ pr: PullRequest, reviews: [PRReadiness.Item], isCurrent: Bool) -> Bool? {
+        if pr.reviewers.contains(where: { !$0.isGroup && $0.isRequired && !$0.vote.isApproval }) { return false }
         if isCurrent { return !reviews.isEmpty && reviews.allSatisfy(\.isDone) }
-        let people = pr.reviewers.filter { !$0.isGroup }
-        if people.contains(where: { $0.isRequired && !$0.vote.isApproval }) || !pr.reviewers.contains(where: \.vote.isApproval) {
-            return false
-        }
-        return nil
+        return pr.reviewers.contains(where: \.vote.isApproval) ? nil : false
     }
 
     /// "Maria", "Maria and Priya", "Maria, Priya and Sam"; past three, "and 2 more": who approved it, by their first names;

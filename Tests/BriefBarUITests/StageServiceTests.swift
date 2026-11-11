@@ -660,6 +660,51 @@ private final class Clock {
 
     // MARK: From Copilot's review
 
+    /// A draft keeps nothing of how far it got, even one in Your review as the session that wrote it finished: once it's a
+    /// draft again, what was kept goes; published, where it goes starts again from what Azure DevOps and Copilot say.
+    @Test func aDraftKeepsNothingOfHowFarItGot() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        func reached() -> PullRequestStage? {
+            StagesReached.load(from: defaults).reach(of: Self.ref(4093), for: Self.account, at: clock.now)?.stage
+        }
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .finished)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(reached() == .teammateReview)
+
+        Self.tell(order, [4093: StageFacts(role: .author, state: .draft)], states: [4093: .draft])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(reached() == nil)
+
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(reached() == .yourReview)
+    }
+
+    /// Forget Stages… is there for how far yours got while Pull Request Order is off, when nothing else forgets it: while
+    /// it's on, BriefBar keeps that again at once, or forgets it on its own after 30 days.
+    @Test func forgetStagesIsThereForHowFarYoursGotWhileOrderIsOff() {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) != nil)
+        #expect(!order.keepsStages)
+
+        order.setOn(false)
+        #expect(order.keepsStages)
+        order.forgetStages()
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) == nil)
+        #expect(!order.keepsStages)
+
+        order.setOn(true)
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) != nil)
+        #expect(!order.keepsStages)
+    }
+
     /// A session that ended, then went idle, counts as finished only when its source says its last turn finished: one that
     /// was interrupted or failed, or whose end BriefBar can't tell, says nothing of its pull request, and ends no In progress
     /// you set.
