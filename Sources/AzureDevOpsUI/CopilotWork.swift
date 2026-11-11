@@ -540,12 +540,18 @@ extension CopilotTasksStore {
     /// fixed it first, and finished without pushing what it changed (`CopilotWork.shipsUnpushed`), which says it pushed only
     /// once it pushed a commit of its own (`CopilotWork.pushSeen`). Nil when none did, while Send Work to Copilot is off, and
     /// for what the demo made nothing up for.
-    /// - Parameter purposes: only work for these, such as fixes and shipping them, past a question asked since.
-    func work(on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>? = nil) -> CopilotWork? {
+    /// - Parameters:
+    ///   - purposes: only work for these, such as fixes and shipping them, past a question asked since.
+    ///   - include: only work this takes, such as what was done in a session, past what was done elsewhere since.
+    func work(
+        on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>? = nil,
+        where include: ((CopilotWork) -> Bool)? = nil
+    ) -> CopilotWork? {
         guard isOn, mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) else { return nil }
         var latest: (since: Date, work: CopilotWork)?
         func consider(_ since: Date, _ work: CopilotWork) {
             if let purposes, !purposes.contains(work.purpose) { return }
+            if let include, !include(work) { return }
             if latest.map({ since > $0.since }) ?? true { latest = (since, work) }
         }
         for entry in entries where entry.isOn(key) {
@@ -588,19 +594,34 @@ extension CopilotTasksStore {
     private func pushCarrying(_ fix: CopilotWork, of key: PRKey) -> CopilotWork? {
         var pushed: (since: Date, work: CopilotWork)?
         var pushing: (since: Date, work: CopilotWork)?
-        /// - Parameter after: when what it pushes was there to push: in the session, once the fix was taken on; in a fork,
-        ///   made once the fix was over.
-        func consider(_ since: Date, _ work: CopilotWork, after: Date) {
-            guard since > after else { return }
+        for (since, work) in pushes(carrying: fix, of: key) {
             switch work.state {
             case .done:
-                guard !work.fixes || work.pushSeen else { return }
+                guard !work.fixes || work.pushSeen else { continue }
                 if pushed.map({ since < $0.since }) ?? true { pushed = (since, work) }
             case .waiting(copied: false), .working, .needsYou:
                 if pushing.map({ since > $0.since }) ?? true { pushing = (since, work) }
             case .waiting(copied: true), .failed, .stopped, .unknown:
                 break
             }
+        }
+        guard var push = (pushed ?? pushing)?.work else { return nil }
+        // It pushed this fix along, without replying on it, whatever it fixed itself first.
+        push.replies = false
+        push.fixes = false
+        return push
+    }
+
+    /// The Push & Replies that take a fix along with the rest of what their session changed, however each went, with when
+    /// it went: those that went on with the fix's session since the fix, or a push of it that failed or stopped, was taken
+    /// on, and fixes sent with Push and Reply on to a fork of the session made once the fix was over, as `pushCarrying` has
+    /// them, which picks the one that pushed it.
+    private func pushes(carrying fix: CopilotWork, of key: PRKey) -> [(since: Date, work: CopilotWork)] {
+        var pushes: [(since: Date, work: CopilotWork)] = []
+        /// - Parameter after: when what it pushes was there to push: in the session, once the fix was taken on; in a fork,
+        ///   made once the fix was over.
+        func consider(_ since: Date, _ work: CopilotWork, after: Date) {
+            if since > after { pushes.append((since, work)) }
         }
         /// When what a push from a session would push of the fix was there: in the session itself, once the fix was taken
         /// on; in a fork of it made once the fix was over, as it was made, unless it's one the Copilot CLI made of one of
@@ -647,11 +668,22 @@ extension CopilotTasksStore {
             guard let after = carrying else { continue }
             consider(prompt.sentAt, CopilotWork.from(prompt, about: fix.part, turn: turn), after: after)
         }
-        guard var push = (pushed ?? pushing)?.work else { return nil }
-        // It pushed this fix along, without replying on it, whatever it fixed itself first.
-        push.replies = false
-        push.fixes = false
-        return push
+        return pushes
+    }
+
+    /// Whether what a fix changed may be committed, though not pushed, by a Push & Reply that went on with its session
+    /// since, and didn't push: it commits all the session changed before it pushes, and git there doesn't tell BriefBar how
+    /// far it got. One that failed or was stopped, or that fixed what it took on first and finished without pushing a commit
+    /// of its own (`CopilotWork.pushSeen`); before `by`, when given, as a fork of the session was made.
+    private func committedAlong(_ fix: CopilotWork, of key: PRKey, by: Date? = nil) -> Bool {
+        pushes(carrying: fix, of: key).contains { _, push in
+            guard push.session == fix.session, by.map({ (push.overBy ?? push.since) < $0 }) ?? true else { return false }
+            switch push.state {
+            case .failed, .stopped: return true
+            case .done: return push.fixes && !push.pushSeen
+            case .waiting, .working, .needsYou, .unknown: return false
+            }
+        }
     }
 
     /// The Copilot app's forks BriefBar made, each as the prompt that made it went, whatever for, with all its session
@@ -717,26 +749,36 @@ extension CopilotTasksStore {
     /// (`CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`), among `parts`, what's still to fix: the fixes
     /// ready to push there (`readyFixes`), and what others left there without pushing it (`leftUnpushed`). The session's
     /// own, and, in a fork BriefBar made, those of the session it forked that were over by then, as a push from there
-    /// carries them (`pushCarrying`). A fork the Copilot CLI made, or makes, of one of BriefBar's tasks has only what's
-    /// committed: of the ready ones, the conflicts' resolution, which Resolve Conflicts commits; of the others, what those
-    /// that were to push and reply committed, if anything. Nil when that's nothing.
+    /// carries them (`pushCarrying`): by the latest fix of each there, as what one changed there stays there, though
+    /// another session took it on since, and the bar at the foot of the details has it there instead. A fork the Copilot
+    /// CLI made, or makes, of one of BriefBar's tasks has only what's committed there, as far as BriefBar can tell: the
+    /// conflicts' resolution, which Resolve Conflicts commits as it merges, even one that stopped after, and what those
+    /// that were to push and reply committed before they stopped, theirs and the fixes before them (`committedAlong`), if
+    /// anything. Nil when that's nothing.
     func alsoPushes(
         _ key: PRKey, among parts: [PullRequestPart], in session: SessionChoice, forkedWithTheCLI: Bool, taking: [PullRequestPart]
     ) -> String? {
         let origin = forkOrigin(of: session.id, key: key)
+        /// Done there, or, in a fork, in the session it forked, over by when the fork was made.
+        func there(_ work: CopilotWork) -> Bool {
+            work.session == session.id || origin.map { $0.from == work.session && $0.madeAt > (work.overBy ?? work.since) } == true
+        }
         var ready: [PullRequestPart] = []
         var unpushed: [PullRequestPart] = []
         for part in parts {
-            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply]) else { continue }
+            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply], where: there) else { continue }
             let isReady = work.waitsToBePushed
             guard isReady || leftUnpushed(work, of: key) else { continue }
-            let committed = isReady ? part == .conflicts : work.purpose == .pushAndReply
-            if work.session != session.id {
-                guard let origin, origin.from == work.session, origin.madeAt > (work.overBy ?? work.since),
-                      !origin.committedOnly || committed else { continue }
+            let inherited = work.session != session.id
+            guard forkedWithTheCLI || (inherited && origin?.committedOnly == true) else {
+                if isReady { ready.append(part) } else { unpushed.append(part) }
+                continue
             }
-            guard !forkedWithTheCLI || committed else { continue }
-            if isReady { ready.append(part) } else { unpushed.append(part) }
+            let committed = part == .conflicts || work.purpose == .pushAndReply
+                || committedAlong(work, of: key, by: inherited ? origin?.madeAt : nil)
+            guard committed else { continue }
+            // Of the ready ones, only the conflicts' resolution is committed for sure.
+            if isReady, part == .conflicts { ready.append(part) } else { unpushed.append(part) }
         }
         let name = CopilotWork.quoted(PullRequestSession.name(of: session), isTask: session.run.map { $0.isAppSession != true } ?? false)
         return CopilotAsking.alsoPushes(ready, unpushed: unpushed, in: name, forkedWithTheCLI: forkedWithTheCLI, taking: taking)

@@ -771,10 +771,11 @@ struct CopilotAsking {
     /// didn't push, `unpushed`: those that were to push and reply and didn't, and those that failed or were stopped, if they
     /// changed anything first. In a fork the Copilot CLI makes of one of BriefBar's tasks, which starts at the commit the
     /// task's checkout has, only what's committed: of the ready ones, the conflicts' resolution, which Resolve Conflicts
-    /// commits; of the others, what they committed before they stopped, if anything, which the caller leaves to those that
-    /// were to push and reply. None of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’, which you
-    /// haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments."
-    /// Nil when that's nothing.
+    /// commits; of the others, what was committed and not pushed, if anything, which the caller works out, and which may be
+    /// fixes that are ready, that one that was to push and reply committed along before it stopped
+    /// (`CopilotTasksStore.alsoPushes`). None of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’,
+    /// which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those
+    /// comments." Nil when that's nothing.
     static func alsoPushes(
         _ ready: [PullRequestPart], unpushed: [PullRequestPart] = [], in name: String, forkedWithTheCLI: Bool, taking: [PullRequestPart]
     ) -> String? {

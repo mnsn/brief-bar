@@ -3335,13 +3335,16 @@ changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pus
 the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
 thread alone and resolves it. Like Push & Reply, it commits all the session changed, so the session's other fixes that
 you haven't pushed go too, without a reply: the box's help says so, and the composer's note names those ready where it
-goes, as the bar at the foot of the details has them, and what other fixes there changed and didn't push, which aren't
-ready to push on their own: one sent to push and reply that didn't, and one that failed or was stopped, if it changed
-anything first, until a later push takes it along (`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`). In a
-fork BriefBar made, it names those of the session it forked that were over by when the fork was made, as a push from the
-fork carries them (`CopilotTasksStore.forkOrigin`). It leaves out what it takes on itself, and, in a fork the Copilot
-CLI made, or makes, of a task, what isn't committed: of the ready ones, all but the conflicts' resolution, and of the
-others, what those that weren't to push and reply changed (`CopilotTasksStore.alsoPushes`,
+goes, and what other fixes there changed and didn't push, which aren't ready to push on their own: one sent to push and
+reply that didn't, and one that failed or was stopped, if it changed anything first, until a later push takes it along
+(`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`). It goes by the latest fix of each there, as what one
+changed there stays there though another session took it on since, which the bar at the foot of the details then has it
+in. In a fork BriefBar made, it names those of the session it forked that were over by when the fork was made, as a push
+from the fork carries them (`CopilotTasksStore.forkOrigin`). It leaves out what it takes on itself, and, in a fork the
+Copilot CLI made, or makes, of a task, what isn't committed, as far as BriefBar can tell: there, it names the conflicts'
+resolution, which Resolve Conflicts commits as it merges, though it stopped after, and what a Push & Reply, or a fix
+sent to push and reply, that didn't push may have committed, which is all the session changed by then, the fixes before
+it too (`CopilotTasksStore.alsoPushes`, `CopilotTasksStore.committedAlong`,
 `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). The Send to Copilot window that Edit the Whole
 Prompt… opens says the same for where it sends it, among what the list has still to fix, leaving out the threads whose
 entries its prompt still lists as you send it, which Send takes on (`CopilotComposerView.alsoPushes`,
