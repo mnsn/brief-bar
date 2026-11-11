@@ -204,6 +204,12 @@ final class WorkLinksStore {
         engine == nil ? nil : lastInputs
     }
 
+    /// A linked pull request your lists don't show, as Show Links read it: for My Work, what a work item's pull request off
+    /// your board is. Nil for one it hasn't read, or couldn't.
+    func linkedPullRequest(_ key: PRKey) -> PullRequest? {
+        read.pullRequests[key]
+    }
+
     /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
     /// any, not only those you chose, as a session or a link you added may link another organization's work item.
     var lookupOrganizations: Set<String> {

@@ -7,7 +7,9 @@ import SwiftUI
 // stage, or click it and press ⌘→ or ⌘←; the columns that take it light up as you drag, and those that don't say why as you
 // hover them. Its column titles stay at the top as the page scrolls, and the board scrolls sideways when the window is too
 // narrow for its columns, which grow with the text. Scrolling redraws only what follows it: the column titles and the lanes'
-// headers.
+// headers. On My Work, with + Sprint Tasks, your sprint work has cards of its own (`PullRequestBoard.withWork`): in To start,
+// a column before In progress, until it's started, then in In progress, after the pull requests. They don't move: their work
+// does, in Azure DevOps.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -29,10 +31,60 @@ package struct BoardCardContent {
     }
 }
 
+/// What a page draws of your sprint work on the Board, on My Work with + Sprint Tasks: a work item's card, and the header of a
+/// story's lane.
+package struct BoardWorkContent {
+    /// A work item's card: its content, its menu, and what VoiceOver says of it; nil for one the page doesn't know.
+    package var card: (BoardTask) -> BoardCardContent?
+    /// The header of a story's lane, for a story with no mission.
+    package var story: (ItemRef) -> AnyView
+    /// Whether a work item's details show.
+    package var isSelected: (ItemRef) -> Bool
+    /// Shows a work item's details.
+    package var select: (ItemRef) -> Void
+
+    package init(
+        card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef) -> AnyView,
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void
+    ) {
+        self.card = card
+        self.story = story
+        self.isSelected = isSelected
+        self.select = select
+    }
+}
+
 /// A column of a lane.
 private struct BoardCell: Hashable {
     var lane: BoardLane.Kind
-    var stage: PullRequestStage
+    var column: BoardColumn
+}
+
+extension BoardColumn {
+    /// Its title on the Board.
+    var title: String {
+        switch self {
+        case .toStart: BoardText.toStart
+        case .stage(let stage): stage.columnTitle
+        }
+    }
+
+    /// Its color: its stage's; for To start, the gray of the Sprint page's To Do, which is Waits' too: only To start's
+    /// dashed ring, in place of a dot, tells them apart, and the two are never side by side.
+    var color: Color {
+        switch self {
+        case .toStart: Color(nsColor: .systemGray)
+        case .stage(let stage): stage.color
+        }
+    }
+
+    /// The column a work item's card is in.
+    init(_ column: BoardTask.Column) {
+        switch column {
+        case .toStart: self = .toStart
+        case .inProgress: self = .stage(.inProgress)
+        }
+    }
 }
 
 /// A card where it shows, for the keyboard's focus: a pull request in two missions' lanes has a card in each. It stays the
@@ -44,7 +96,7 @@ private struct CardSpot: Hashable {
 
 /// Where Up Next's "2 more ›" scrolls the Board to.
 private struct ColumnAnchor: Hashable {
-    var stage: PullRequestStage
+    var column: BoardColumn
 }
 
 /// Where a mission's lane starts, for the page to scroll to: an identity of its own for its spacer, so that only the anchor
@@ -66,29 +118,40 @@ private struct BoardNotice: Equatable {
 }
 
 /// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged narrow while
-/// it's folded.
+/// it's folded; all of it from the columns it shows.
 private struct BoardMetrics {
     let scale: CGFloat
     /// The page's width.
     let available: CGFloat
+    /// The columns it shows, from left to right.
+    let columns: [BoardColumn]
     let showsMerged: Bool
 
     var gap: CGFloat { 10 * scale }
     var minimum: CGFloat { 172 * scale }
     var folded: CGFloat { 132 * scale }
 
-    var column: CGFloat {
-        let open = CGFloat(showsMerged ? 6 : 5)
-        let room = available - gap * 5 - (showsMerged ? 0 : folded)
-        return max(minimum, room / open)
+    private func isFolded(_ column: BoardColumn) -> Bool {
+        column == .stage(.merged) && !showsMerged
     }
 
-    func width(_ stage: PullRequestStage) -> CGFloat {
-        stage == .merged && !showsMerged ? folded : column
+    /// The room the gaps between the columns take.
+    private var gaps: CGFloat {
+        gap * CGFloat(max(0, columns.count - 1))
+    }
+
+    var column: CGFloat {
+        let foldedCount = CGFloat(columns.filter(isFolded).count)
+        let room = available - gaps - folded * foldedCount
+        return max(minimum, room / max(1, CGFloat(columns.count) - foldedCount))
+    }
+
+    func width(_ column: BoardColumn) -> CGFloat {
+        isFolded(column) ? folded : self.column
     }
 
     var content: CGFloat {
-        PullRequestStage.columns.reduce(gap * 5) { $0 + width($1) }
+        columns.reduce(gaps) { $0 + width($1) }
     }
 
     /// What shows of the board at once.
@@ -181,6 +244,8 @@ package struct OrderBoardView: View {
     /// Set as Next to Merge in a mission, which dropping a card from Waits onto Can merge does, saying where its Undo is:
     /// nil where you can't change missions yourself, and the Board says what it waits for instead.
     let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
+    /// Your sprint work's cards and its stories' lanes' headers, as the page draws them, on My Work with + Sprint Tasks.
+    let work: BoardWorkContent?
     /// How many of the page's pull requests aren't on the board.
     let notOnBoard: Int
     /// Lists them By Status; nil where it can't.
@@ -230,8 +295,9 @@ package struct OrderBoardView: View {
         board: PullRequestBoard, missions: [OrderMission], order: PullRequestOrder, elsewhere: String, openElsewhere: (() -> Void)?,
         place: @escaping (OrderMission) -> String?, card: @escaping (BoardCard) -> BoardCardContent?,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
-        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, notOnBoard: Int, showByStatus: (() -> Void)?,
-        now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in }, focusWait: (@MainActor () async -> Void)? = nil
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, work: BoardWorkContent? = nil, notOnBoard: Int,
+        showByStatus: (() -> Void)?, now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in },
+        focusWait: (@MainActor () async -> Void)? = nil
     ) {
         self.board = board
         self.missions = missions
@@ -244,6 +310,7 @@ package struct OrderBoardView: View {
         self.select = select
         self.shownOnTop = shownOnTop
         self.setAsNext = setAsNext
+        self.work = work
         self.notOnBoard = notOnBoard
         self.showByStatus = showByStatus
         self.now = now
@@ -252,12 +319,14 @@ package struct OrderBoardView: View {
     }
 
     package var body: some View {
-        let metrics = BoardMetrics(scale: textScale, available: width, showsMerged: showsMerged)
+        let metrics = BoardMetrics(scale: textScale, available: width, columns: board.columns, showsMerged: showsMerged)
         let lanes = board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions)
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
             if lanes.isEmpty {
-                Text("Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage.")
+                Text(board.showsWork
+                    ? "Nothing's on your board yet. Your pull requests, those you're asked to review, and your sprint work show here by stage."
+                    : "Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage.")
                     .font(size: 12.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -355,8 +424,8 @@ package struct OrderBoardView: View {
 
     private func columnTitles(_ metrics: BoardMetrics) -> some View {
         FollowsScroll(scroll: scroll, direction: -1, content: HStack(alignment: .bottom, spacing: metrics.gap) {
-            ForEach(PullRequestStage.columns, id: \.self) { stage in
-                columnTitle(stage, width: metrics.width(stage))
+            ForEach(board.columns, id: \.self) { column in
+                columnTitle(column, width: metrics.width(column))
             }
         })
         // As wide as the page, whatever the columns need: they scroll sideways under it.
@@ -364,17 +433,26 @@ package struct OrderBoardView: View {
         .clipped()
         .padding(.vertical, 6)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Stages")
+        // To start isn't a stage.
+        .accessibilityLabel(board.showsWork ? "Columns" : "Stages")
     }
 
     @ViewBuilder
-    private func columnTitle(_ stage: PullRequestStage, width: CGFloat) -> some View {
-        let count = board.counts[stage] ?? 0
+    private func columnTitle(_ column: BoardColumn, width: CGFloat) -> some View {
+        let count = board.count(of: column)
         let label = HStack(spacing: 6 * textScale) {
-            Circle()
-                .fill(stage.color)
-                .frame(width: 8 * textScale, height: 8 * textScale)
-            Text(stage.columnTitle)
+            if column == .toStart {
+                // Not started, as the Sprint page's To Do says it.
+                Image(systemName: "circle.dashed")
+                    .font(size: 9 * textScale, weight: .heavy)
+                    .foregroundStyle(column.color)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
+            } else {
+                Circle()
+                    .fill(column.color)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
+            }
+            Text(column.title)
                 .font(size: 13, weight: .semibold)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -383,7 +461,7 @@ package struct OrderBoardView: View {
                 .font(size: 12.5, weight: .medium)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-            if stage == .merged {
+            if column == .stage(.merged) {
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
                     .foregroundStyle(.secondary)
@@ -396,15 +474,15 @@ package struct OrderBoardView: View {
         .frame(width: width, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(stage.color.opacity(flashing == stage ? 0.22 : 0))
+                .fill(column.color.opacity(column.stage != nil && flashing == column.stage ? 0.22 : 0))
         )
         .overlay(alignment: .bottom) {
             Capsule()
-                .fill(stage.color)
+                .fill(column.color)
                 .frame(height: 3 * textScale)
         }
         .contentShape(Rectangle())
-        if stage == .merged {
+        if column == .stage(.merged) {
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { showsMerged.toggle() }
             } label: {
@@ -416,10 +494,21 @@ package struct OrderBoardView: View {
             .accessibilityHint(showsMerged ? "Folds it" : "Shows its cards")
         } else {
             label
-                .help(Self.help(stage))
+                .help(help(column))
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(stage.title), \(count)")
+                .accessibilityLabel("\(column.stage?.title ?? column.title), \(count)")
                 .accessibilityAddTraits(.isHeader)
+        }
+    }
+
+    /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, while the board
+    /// shows it.
+    private func help(_ column: BoardColumn) -> String {
+        switch column {
+        case .toStart: BoardText.toStartHelp
+        case .stage(.inProgress) where board.showsWork:
+            Self.help(.inProgress) + "; then your sprint work that has started, with no pull request on your board"
+        case .stage(let stage): Self.help(stage)
         }
     }
 
@@ -446,10 +535,10 @@ package struct OrderBoardView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Where Up Next's "2 more ›" scrolls to.
                     HStack(spacing: metrics.gap) {
-                        ForEach(PullRequestStage.columns, id: \.self) { stage in
+                        ForEach(board.columns, id: \.self) { column in
                             Color.clear
-                                .frame(width: metrics.width(stage), height: 0)
-                                .id(ColumnAnchor(stage: stage))
+                                .frame(width: metrics.width(column), height: 0)
+                                .id(ColumnAnchor(column: column))
                         }
                     }
                     VStack(alignment: .leading, spacing: 18) {
@@ -527,7 +616,8 @@ package struct OrderBoardView: View {
 
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
-        let isFolded = mission.map { $0.isFinished && !unfolded.contains($0.key) } ?? false
+        // A finished mission's lane folds, but not while it holds your work's cards, which it would hide.
+        let isFolded = mission.map { $0.isFinished && lane.tasks.isEmpty && !unfolded.contains($0.key) } ?? false
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
@@ -541,8 +631,8 @@ package struct OrderBoardView: View {
             // A lane kept only for the Undo line of a pull request that left the board has no columns to show.
             if !isFolded, !(lane.isEmpty && lane.mission == nil) {
                 HStack(alignment: .top, spacing: metrics.gap) {
-                    ForEach(PullRequestStage.columns, id: \.self) { stage in
-                        cell(lane, stage: stage, width: metrics.width(stage), moves: moves)
+                    ForEach(board.columns, id: \.self) { column in
+                        cell(lane, column: column, width: metrics.width(column), moves: moves)
                     }
                 }
                 // Its columns are as tall as its tallest, so that each is as big a place to drop a card.
@@ -569,11 +659,13 @@ package struct OrderBoardView: View {
                             .padding(.leading, 4)
                     }
                     if mission.isFinished {
-                        foldedLine(mission, isFolded: isFolded)
+                        foldedLine(mission, isFolded: isFolded, canFold: lane.tasks.isEmpty)
                     }
                     MissionNextStepsLine(lane: lane, order: order, select: select)
                         .padding(.leading, 4)
                 }
+            case .story(let story):
+                work?.story(story)
             case .notInAMission:
                 Text("Not in a mission")
                     .font(size: 15, weight: .semibold)
@@ -601,28 +693,39 @@ package struct OrderBoardView: View {
     }
 
     /// A finished mission's lane folds to its header, as List's merged line does.
-    private func foldedLine(_ mission: OrderMission, isFolded: Bool) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                if isFolded { unfolded.insert(mission.key) } else { unfolded.remove(mission.key) }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text(OrderText.folded(mission.steps))
+    /// - Parameter canFold: false for a lane with your work's cards, which doesn't fold: the line only says it's finished.
+    @ViewBuilder
+    private func foldedLine(_ mission: OrderMission, isFolded: Bool, canFold: Bool) -> some View {
+        let label = HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(OrderText.folded(mission.steps))
+            if canFold {
                 Image(systemName: "chevron.right")
                     .font(size: 9, weight: .bold)
                     .rotationEffect(.degrees(isFolded ? 0 : 90))
             }
-            .font(size: 11.5, weight: .medium)
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.leading, 4)
-        .help(isFolded ? "Show its lane" : "Fold its lane")
-        .accessibilityLabel(isFolded ? "Show \(OrderText.folded(mission.steps))" : "Hide \(OrderText.folded(mission.steps))")
+        .font(size: 11.5, weight: .medium)
+        .foregroundStyle(.secondary)
+        if canFold {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    if isFolded { unfolded.insert(mission.key) } else { unfolded.remove(mission.key) }
+                }
+            } label: {
+                label
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 4)
+            .help(isFolded ? "Show its lane" : "Fold its lane")
+            .accessibilityLabel(isFolded ? "Show \(OrderText.folded(mission.steps))" : "Hide \(OrderText.folded(mission.steps))")
+        } else {
+            label
+                .padding(.leading, 4)
+                .accessibilityElement(children: .combine)
+        }
     }
 
     private func noticeLine(_ notice: BoardNotice) -> some View {
@@ -631,20 +734,25 @@ package struct OrderBoardView: View {
 
     // MARK: Cells
 
-    private func cell(_ lane: BoardLane, stage: PullRequestStage, width: CGFloat, moves: BoardMoves) -> some View {
-        let cards = lane.cards(in: stage)
-        let target = BoardCell(lane: lane.kind, stage: stage)
+    private func cell(_ lane: BoardLane, column: BoardColumn, width: CGFloat, moves: BoardMoves) -> some View {
+        let cards = column.stage.map(lane.cards(in:)) ?? []
+        // Your sprint work's own cards, after the pull requests'.
+        let tasks = lane.tasks.filter { BoardColumn($0.column) == column }
+        let target = BoardCell(lane: lane.kind, column: column)
         // What dropping the dragged card here would do, to the card as it is now.
-        let move = isDragging ? drag.flatMap { moves.card($0.ref, in: lane.kind) }.map { moves.move($0, to: stage, in: lane.kind) } : nil
+        let move = isDragging ? drag.flatMap { moving($0.ref, to: column, in: lane, moves: moves) } : nil
         let takes = move?.isTaken == true
         let isHovered = hovered == target
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
         return VStack(alignment: .leading, spacing: 8 * textScale) {
-            if stage == .merged, !showsMerged {
+            if column == .stage(.merged), !showsMerged {
                 foldedMerged(cards)
             } else {
                 ForEach(cards) { card in
                     cardView(card, in: lane, moves: moves)
+                }
+                ForEach(tasks) { task in
+                    taskView(task, in: lane)
                 }
             }
         }
@@ -653,7 +761,7 @@ package struct OrderBoardView: View {
         .padding(6 * textScale)
         .frame(width: width, alignment: .topLeading)
         .frame(minHeight: 70 * textScale, maxHeight: .infinity, alignment: .top)
-        .background(cellBackground(stage, takes: takes, isHovered: isHovered))
+        .background(cellBackground(column, takes: takes, isHovered: isHovered))
         .overlay(alignment: .top) {
             // Why it can't go there, as you hover.
             if isHovered, let refusal {
@@ -672,7 +780,7 @@ package struct OrderBoardView: View {
             }
         }
         .dropDestination(for: String.self) { items, _ in
-            drop(items, on: stage, in: lane, moves: moves)
+            drop(items, on: column, in: lane, moves: moves)
         } isTargeted: { isOver in
             if isOver {
                 hovered = target
@@ -682,11 +790,11 @@ package struct OrderBoardView: View {
         }
     }
 
-    private func cellBackground(_ stage: PullRequestStage, takes: Bool, isHovered: Bool) -> some View {
+    private func cellBackground(_ column: BoardColumn, takes: Bool, isHovered: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return shape
-            .fill(stage.color.opacity(takes ? (isHovered ? 0.24 : 0.14) : 0.06))
-            .overlay(shape.strokeBorder(stage.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
+            .fill(column.color.opacity(takes ? (isHovered ? 0.24 : 0.14) : 0.06))
+            .overlay(shape.strokeBorder(column.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
     }
 
     /// Merged, folded: how many merged in the lane, which a click shows.
@@ -747,6 +855,32 @@ package struct OrderBoardView: View {
         }
     }
 
+    /// A work item's own card, which shows its details as a pull request's does, but doesn't move: ⌘→ and ⌘← say why.
+    @ViewBuilder
+    private func taskView(_ task: BoardTask, in lane: BoardLane) -> some View {
+        if let work, let content = work.card(task) {
+            let spot = CardSpot(lane: lane.kind, ref: task.ref)
+            BoardTaskCardView(
+                task: task, content: content, isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
+                select: {
+                    lastFocus = spot
+                    work.select(task.ref)
+                },
+                drag: {
+                    // As a pull request's card starts, for the columns to say why they don't take it.
+                    let started = BoardDrag(ref: task.ref)
+                    DispatchQueue.main.async {
+                        drag = started
+                        isDragging = true
+                        notice = nil
+                    }
+                    return started.payload
+                },
+                move: { refuse(BoardText.workStays, about: task.ref, in: lane.kind) }
+            )
+        }
+    }
+
     /// Set as Next to Merge for a card that waits, as dropping it onto Can merge and ⌘← do, for VoiceOver's action: in its
     /// lane's mission, where that one holds it, with its Undo there, or at the top with a lane for every card. Nil where the
     /// Board wouldn't take it there, such as for one that doesn't wait, one that waits in another of its missions, or where
@@ -761,16 +895,41 @@ package struct OrderBoardView: View {
 
     // MARK: Moving
 
-    private func drop(_ items: [String], on stage: PullRequestStage, in lane: BoardLane, moves: BoardMoves) -> Bool {
+    private func drop(_ items: [String], on column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> Bool {
         let started = drag
         isDragging = false
         hovered = nil
         // Only a card dragged from this board, as it is now: never text dragged in from another app.
-        guard let payload = items.first, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
+        guard let payload = items.first, let ref = started?.ref(dropped: payload),
+              let outcome = moving(ref, to: column, in: lane, moves: moves) else {
             return false
         }
         drag = nil
+        guard let stage = column.stage, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
+            // A work item's card, or a pull request's on To start, stays where it is.
+            if case .refused(let why) = outcome { refuse(why, about: ref, in: lane.kind) }
+            return false
+        }
         return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref)
+    }
+
+    /// What dropping a card on a column of a lane does, to the card as it is now: a work item's stays where its work puts it,
+    /// and To start takes no pull request. Nil for a card that left the board.
+    private func moving(_ ref: ItemRef, to column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> BoardMove? {
+        if let task = board.lanes.lazy.flatMap(\.tasks).first(where: { $0.ref == ref }) {
+            let stays = BoardColumn(task.column) == column && lane.tasks.contains { $0.ref == ref }
+            return stays ? .stays : .refused(BoardText.workStays)
+        }
+        guard let card = moves.card(ref, in: lane.kind) else { return nil }
+        guard let stage = column.stage else { return .refused(BoardText.toStartTakesNoPullRequest) }
+        return moves.move(card, to: stage, in: lane.kind)
+    }
+
+    /// Why a card can't go where you moved it: a beep, which VoiceOver says, and its lane says until its stage changes.
+    private func refuse(_ why: String, about ref: ItemRef, in lane: BoardLane.Kind) {
+        ThisMac.beep()
+        SpokenText.announce(why)
+        say(why, about: ref, in: lane)
     }
 
     /// ⌘→ and ⌘← on a card: the next or previous stage you can set, or why it can't go further. The card keeps the
@@ -826,9 +985,7 @@ package struct OrderBoardView: View {
         case .stays:
             return false
         case .refused(let why):
-            ThisMac.beep()
-            SpokenText.announce(why)
-            say(why, about: card.ref, in: lane)
+            refuse(why, about: card.ref, in: lane)
             return false
         }
         if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref), leaving: card.stage) }
@@ -877,7 +1034,7 @@ package struct OrderBoardView: View {
     private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
         guard let stage else { return }
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(stage: stage), anchor: .leading) }
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(column: .stage(stage)), anchor: .leading) }
             order.revealedColumn = nil
             flashing = stage
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
@@ -1065,6 +1222,110 @@ private struct BoardCardView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(card.stage.color, lineWidth: 1.5)
+                )
+        )
+    }
+}
+
+/// A work item's own card on the Board, on My Work with + Sprint Tasks: the page's content, framed in its column's color, a
+/// click showing its details and giving it the keyboard's focus, as a pull request's card does. It doesn't move, as its work
+/// does in Azure DevOps: ⌘→ and ⌘←, and dropping it on another column, say why.
+private struct BoardTaskCardView: View {
+    let task: BoardTask
+    let content: BoardCardContent
+    let isSelected: Bool
+    let spot: CardSpot
+    var focus: FocusState<CardSpot?>.Binding
+    let select: () -> Void
+    /// The drag's payload, as it starts.
+    let drag: () -> String
+    /// ⌘→ or ⌘←: why it doesn't move.
+    let move: () -> Void
+
+    @LocalState private var isHovered = false
+    @Environment(\.textScale) private var textScale
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+    }
+
+    private var column: BoardColumn {
+        BoardColumn(task.column)
+    }
+
+    var body: some View {
+        content.view
+            .padding(.leading, 13 * textScale)
+            .padding(.trailing, 9 * textScale)
+            .padding(.vertical, 9 * textScale)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GlassCard(cornerRadius: 10, isHovered: isHovered, raised: true))
+            .overlay {
+                // Its column's color on its edge.
+                shape
+                    .fill(column.color)
+                    .mask(alignment: .leading) { Rectangle().frame(width: 4 * textScale) }
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                if isSelected {
+                    shape.strokeBorder(Color.accentColor, lineWidth: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(shape)
+            .contentShape(.focusEffect, shape)
+            .onHover { isHovered = $0 }
+            .onTapGesture {
+                focus.wrappedValue = spot
+                select()
+            }
+            .contextMenu { content.menu }
+            .draggable(drag()) {
+                preview
+            }
+            .focusable(interactions: .edit)
+            .focused(focus, equals: spot)
+            .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
+                guard press.modifiers.isCommandAlone else { return .ignored }
+                move()
+                return .handled
+            }
+            .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                select()
+                return .handled
+            }
+            .help("\(content.label)\nClick to see its details. It moves by itself, as its work goes on in Azure DevOps")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(content.label)
+            .accessibilityValue(([column.stage?.title ?? column.title] + content.details).joined(separator: ", "))
+            .accessibilityHint("Shows its details")
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction(.default, select)
+            .accessibilityActions {
+                Button("Show Details", action: select)
+            }
+    }
+
+    /// What follows the pointer as it's dragged: its name and title, in its column's color.
+    private var preview: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(column.color)
+                .frame(width: 8, height: 8)
+            Text(content.label)
+                .font(size: 12.5, weight: .semibold)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(width: 220, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(column.color, lineWidth: 1.5)
                 )
         )
     }

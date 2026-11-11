@@ -143,8 +143,31 @@ final class AppModel: ObservableObject {
         sources.first { $0.id == id }
     }
 
+    /// The source of a section, or of a page that goes with one (`BriefBarSource.companionPages`).
     func source(for section: SectionID) -> (any BriefBarSource)? {
         sources.first { $0.sections.contains { $0.id == section } }
+            ?? sources.first { $0.companionPages().values.contains { $0.contains { $0.id == section } } }
+    }
+
+    /// The pages that go with each of these sections, right before it, as their sources say now.
+    func companions(of sections: [SectionID]) -> [SectionID: [SectionID]] {
+        var companions: [SectionID: [SectionID]] = [:]
+        for source in sources {
+            for (section, pages) in source.companionPages() where sections.contains(section) && !pages.isEmpty {
+                companions[section] = pages.map(\.id)
+            }
+        }
+        return companions
+    }
+
+    /// The section a page goes with, for a page that goes with one; else the section itself.
+    func section(ofPage page: SectionID) -> SectionID {
+        for source in sources {
+            for (section, pages) in source.companionPages() where pages.contains(where: { $0.id == page }) {
+                return section
+            }
+        }
+        return page
     }
 
     /// The first section of each source among `sections`, for a menu with each source's own items.
@@ -463,7 +486,8 @@ final class AppModel: ObservableObject {
     func openWindow(at section: SectionID?) {
         closePanels()
         let visible = visibleItems(.windows)
-        guard let entry = section.flatMap({ section in visible.first { $0.sections.contains(section) } }) ?? visible.first else {
+        let host = section.map(self.section(ofPage:))
+        guard let entry = host.flatMap({ host in visible.first { $0.sections.contains(host) } }) ?? visible.first else {
             openSettings(.layout(.windows))
             return
         }
@@ -528,9 +552,11 @@ final class AppModel: ObservableObject {
         source(entry.source)?.notificationButton(button.id, userInfo: entry.userInfo)
     }
 
-    /// Whether a window has a page for `section`: not once you've hidden it from windows.
+    /// Whether a window has a page for `section`: not once you've hidden it from windows. A page that goes with a section
+    /// is in the windows that have that section's, while it goes with it.
     func hasPage(_ section: SectionID) -> Bool {
-        visibleItems(.windows).contains { $0.sections.contains(section) }
+        let host = self.section(ofPage: section)
+        return visibleItems(.windows).contains { $0.sections.contains(host) }
     }
 
     /// Whether a BriefBar window or Settings is open, for the Dock icon.

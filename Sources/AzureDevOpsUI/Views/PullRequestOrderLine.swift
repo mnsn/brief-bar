@@ -5,8 +5,8 @@ import SwiftUI
 
 /// A pull request's mission in its details, under its session's line, while Pull Request Order is on: "Fix the payments
 /// bugs · 1st of 4 · ✎ Next to merge", with what you changed and who changed it since, and its Mission menu; "Not in a
-/// mission" when it's in none. The mission's name shows it By Mission. Put Yours Back once an order changed its place after
-/// you did, and what you changed last of it, with Undo.
+/// mission" when it's in none. The mission's name shows it By Mission, or, on My Work, its lane on the Board. Put Yours Back
+/// once an order changed its place after you did, and what you changed last of it, with Undo.
 struct PullRequestOrderLine: View {
     let item: PRSnapshot
 
@@ -22,6 +22,7 @@ private struct OrderLineContent: View {
     @ObservedObject var order: PullRequestOrder
 
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.isOnMyWork) private var isOnMyWork
 
     var body: some View {
         if order.isOn {
@@ -90,15 +91,20 @@ private struct OrderLineContent: View {
             let numbered = mission.steps.filter { $0.number != nil }.count
             let place = step?.number.map { "\(Self.ordinal($0)) of \(numbered)" }
             let rest = [place, step.flatMap { OrderText.capsule($0) }].compactMap { $0 }.joined(separator: " · ")
+            // On My Work, its lane on the Board, which is there: the Pull Requests page lists By Mission as you left it.
             let button = Button(title) {
-                settings.pullRequestOrder = .byMission
-                order.reveal(mission.key, kinds: PullRequestsByMission.kinds)
+                if isOnMyWork {
+                    order.revealOnBoard(mission.key)
+                } else {
+                    settings.pullRequestOrder = .byMission
+                    order.reveal(mission.key, kinds: PullRequestsByMission.kinds)
+                }
             }
             .buttonStyle(.plain)
             .font(size: 12.5, weight: .semibold)
             .lineLimit(1)
-            .help("Show its mission By Mission")
-            .accessibilityHint("Shows its mission By Mission")
+            .help(isOnMyWork ? "Show its mission's lane on the Board" : "Show its mission By Mission")
+            .accessibilityHint(isOnMyWork ? "Shows its mission's lane on the Board" : "Shows its mission By Mission")
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     button

@@ -57,4 +57,47 @@ import Testing
         // A window without an Overview has no Notifications page either.
         #expect(WindowPages(sections: [.copilotSessions], notifications: true).pages == [.copilotSessions])
     }
+
+    /// My Work goes right before Azure DevOps' Pull Requests while it shows, with a sidebar even in a window with no other
+    /// section, but no Overview there; once it's gone, the window shows another page.
+    @Test func aSectionsCompanionsComeRightBeforeIt() {
+        let companions: [SectionID: [SectionID]] = [.azureDevOpsPullRequests: [.azureDevOpsMyWork]]
+        let window = WindowPages(sections: [.teamsChats, .azureDevOpsPullRequests, .copilotSessions], companions: companions)
+        #expect(window.pages == [WindowPages.overview, .teamsChats, .azureDevOpsMyWork, .azureDevOpsPullRequests, .copilotSessions])
+        #expect(window.page(for: .azureDevOpsMyWork) == .azureDevOpsMyWork)
+        #expect(window.current(chosen: .azureDevOpsMyWork) == .azureDevOpsMyWork)
+        #expect(window.hasSeveralPages)
+
+        let alone = WindowPages(sections: [.azureDevOpsPullRequests], companions: companions)
+        #expect(alone.pages == [.azureDevOpsMyWork, .azureDevOpsPullRequests])
+        #expect(!alone.hasOverview)
+        #expect(alone.hasSeveralPages)
+        #expect(alone.current(chosen: nil) == .azureDevOpsMyWork)
+
+        // Without the section it goes with, it isn't there either.
+        #expect(WindowPages(sections: [.copilotSessions], companions: companions).pages == [.copilotSessions])
+        let off = WindowPages(sections: [.azureDevOpsPullRequests])
+        #expect(!off.hasSeveralPages)
+        #expect(off.current(chosen: .azureDevOpsMyWork) == .azureDevOpsPullRequests)
+        #expect(off.page(for: .azureDevOpsMyWork) == nil)
+    }
+
+    /// As My Work comes, the window stays at the page it showed, even one chosen before My Work last went; once My Work goes
+    /// while it shows, the window shows Pull Requests, for good, rather than its Overview until My Work comes back.
+    @Test func aWindowKeepsWhatItShowsAsACompanionComesAndGoes() {
+        let sections: [SectionID] = [.teamsChats, .azureDevOpsPullRequests]
+        let on = WindowPages(sections: sections, companions: [.azureDevOpsPullRequests: [.azureDevOpsMyWork]])
+        let off = WindowPages(sections: sections)
+        #expect(off.keepingShown(.azureDevOpsMyWork, from: on) == .azureDevOpsPullRequests)
+        #expect(on.keepingShown(.azureDevOpsMyWork, from: off) == WindowPages.overview)
+        #expect(on.keepingShown(.azureDevOpsPullRequests, from: off) == nil)
+        #expect(off.keepingShown(.teamsChats, from: on) == nil)
+        #expect(off.keepingShown(nil, from: on) == nil)
+
+        // A window with Pull Requests alone shows it, not My Work, which would come first.
+        let alone = WindowPages(sections: [.azureDevOpsPullRequests])
+        let aloneOn = WindowPages(sections: [.azureDevOpsPullRequests], companions: [.azureDevOpsPullRequests: [.azureDevOpsMyWork]])
+        #expect(aloneOn.keepingShown(nil, from: alone) == .azureDevOpsPullRequests)
+        #expect(alone.keepingShown(.azureDevOpsMyWork, from: aloneOn) == .azureDevOpsPullRequests)
+    }
 }

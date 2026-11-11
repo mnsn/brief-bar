@@ -397,6 +397,13 @@ final class CopilotTasksStore: ObservableObject {
         return entries.first { $0.workItem?.matches(reference) == true }
     }
 
+    /// The newest send of a work item that works on it now: not always the latest, as a newer one can end while an older
+    /// one goes on.
+    func working(on item: WorkItem) -> CopilotTaskEntry? {
+        let reference = item.copilotTask.reference
+        return entries.first { $0.workItem?.matches(reference) == true && $0.status.phase.isActive }
+    }
+
     /// The latest task on a pull request, for its row.
     func latest(forPullRequest key: PRKey) -> CopilotTaskEntry? {
         entries.first { $0.isOn(key) }

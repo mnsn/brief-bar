@@ -82,3 +82,37 @@ package struct PullRequestOrderSettingView: View {
             }
     }
 }
+
+/// My Work Page, on the Pull Requests page in Settings, first among Azure DevOps' own, as it shows only Azure DevOps' pull
+/// requests: off until you turn it on, what it does and reads; disabled while Pull Request Order is off, which it needs,
+/// saying so.
+package struct MyWorkPageSettingView: View {
+    @ObservedObject private var order: PullRequestOrder
+
+    package init(order: PullRequestOrder) {
+        self.order = order
+    }
+
+    nonisolated package static let title = "My Work Page (preview)"
+    package static let explanation = """
+        Moves Up Next and the Board from Azure DevOps' Pull Requests page in BriefBar's window to a page of their own, My \
+        Work, just before it; Pull Requests keeps List, Map and By Status. With + Sprint Tasks, at the top of My Work, the \
+        Board shows your sprint work too: what hasn't started in To start, a column before In progress, and what has, \
+        without a pull request, in In progress. Work items and their pull requests go together only through Show Links' \
+        links, which it needs. While My Work shows your sprint tasks, BriefBar reads your team's current sprint, as while \
+        its Sprint page is on screen, and the pull requests linked to its work items. A preview: it may still change.
+        """
+    package static let needsOrder = "It needs Pull Request Order, above: turn that on first."
+
+    package var body: some View {
+        Toggle(isOn: Binding(get: { order.myWorkPage }, set: { order.setMyWorkPage($0) })) {
+            Text(Self.title)
+            Text(Self.explanation)
+        }
+        .disabled(!order.isOn)
+        if !order.isOn {
+            Label(Self.needsOrder, systemImage: "info.circle")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
