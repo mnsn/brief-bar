@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.19.1 - 2026-11-11
+
+- **Hear back from the Copilot sessions you send work to.** With **Send Prompts to Copilot Sessions** on, a prompt
+  about a pull request's comments, builds or merge conflicts that you send with **Send to Session** or **Send to a
+  Fork** is followed by BriefBar's extension in that session, which tells BriefBar how its turn goes: waiting behind
+  another, what Copilot is doing, waiting for your answer or your plan's approval, and how it ended, with what Copilot
+  said last. The pull request's line shows it, however long the turn takes, and no longer loses track when you send
+  the session something else meanwhile. With Azure DevOps' **Notifications** on, one notification says when the session
+  waits for your answer and, in its place, when it's done, failed, or stopped by something else than you, such as the
+  session closing; none comes when you stop it. Clicking it opens the pull request at its comment, as a pull request's
+  notification does. A session still running the extension from before this update goes on as before, from its log. The
+  demo's Notifications page has a made-up one.
+- **Undo doesn't hide a line a session told meanwhile.** When Undo brings back a pull request a split moved, a line the
+  session's order put across the split while you had it elsewhere takes what the split moved back into the order's
+  mission, as it would have had you never moved it. Their rows say why, and **Put Yours Back** puts them back.
+- **A pull request's session and its worktree, one click away.** Beside **✨ Summarize**, at the top of a pull request's
+  details, **Open in Copilot** opens the Copilot session its work goes to, or **Continue in Terminal** goes on with a
+  task BriefBar runs with the Copilot CLI, as its line's **⌄** does. With Send Work to Copilot or Show Links on,
+  **Open in VS Code** opens the folder that session works in, such as its worktree, in the editor or terminal you opened
+  one in last, and **▾** lists the others on your Mac, such as Cursor, Rider, WebStorm, Xcode, Terminal or iTerm, and
+  copies its path; **Open in Finder** shows what's in it.
+- **Review a pull request in the whole window.** **Fill the Page**, beside the same buttons, makes a pull request's
+  details cover the list, its comments, files and builds as wide as reads well, as they go to other pull requests and
+  pages, until you close them or click **Show the List**, as a file's **⤡** does too.
+- **Copy Branch Name**, in the **⋯** of a pull request's details, to check it out.
+- **A split's line to a pull request that comes back takes it back.** When a session's order puts a pull request that
+  had been abandoned after one a split moved, and it's reactivated, the line now takes what the split moved back into
+  the order's mission, even if you changed the split since, such as with **Set as Next**, **Undo** or **Put Yours
+  Back**. Before, the line could stay cut, so the reactivated pull request read **Next to merge** while its order put
+  it after an open one.
+- **A fix sent to push and reply says whether it pushed.** A comment's **Fix** or **Fix All** with **Push and reply
+  once it's fixed** checked says **Fixed, pushed and replied in ‘Retry backoff’** only when git, in the checkout its
+  session works in, shows the session pushed a commit of its own by the time Copilot was done, and else **Fixed in
+  ‘Retry backoff’, but not pushed**, with what Copilot said, as when the tests still failed, its push was rejected or
+  someone else pushed first. BriefBar tells once, as Copilot is done, so a push since, from anywhere, doesn't change it,
+  and the session's other fixes leave the bar of what's ready only once it pushed. It doesn't push or reply when the
+  pull request was completed, abandoned or retargeted meanwhile. Like Push & Reply, it pushes all its session changed,
+  so other fixes there that you haven't pushed go too, without a reply, which the composer names as you send it; when
+  it changed nothing, it pushes nothing. **Try Again** sends a thread's own Fix again as it went, pushing and replying
+  or not as it did, until BriefBar quits; after that, or for a thread Fix All took on, it opens the thread's Fix where
+  that went, for you to write and send, with the box as you last left it.
+- **0.19.0's notes, corrected.** A Your review you set lasts until you change it, also when a session says the same
+  after it, and shows again once a session's In progress over it ends; what a session set counts only while the Copilot
+  app lists the session, so one you run in a terminal sets none. BriefBar remembers the pull request you choose next for
+  the Azure DevOps account you're signed in with (one sent to you in a chat, in memory only), until it moves on to
+  another stage, merges or closes, or leaves your lists, and stays away for half an hour while BriefBar runs with Pull
+  Request Order on; **Undo**, after you move its card, chooses it again unless you've since chosen another or let
+  BriefBar choose.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Send
+  Prompts to Copilot Sessions on, Azure DevOps reads what BriefBar's extension says of the turn of a prompt it sent to a
+  Copilot session, and, with Notifications on, notifies you when the session waits on you and when the turn ends. With
+  Show Links on, Azure DevOps reads the folder the Copilot session on a pull request works in, from its session state,
+  while the pull request's details show, to open it there, as it does with Send Work to Copilot on. Azure DevOps reads
+  whether a pull request is still active right before a Push & Reply, or a comment's Fix or Fix All with Push and reply
+  once it's fixed checked, goes; BriefBar keeps the name of such a fix's branch and the commit git fetched it at as it
+  went, and, once it's done, asks git in its session's clone whether it pushed a commit of its own, fetching the branch
+  again only when the clone's fetch settings don't name it, and keeps the answer.
+
 ## 0.19.0 - 2026-11-10
 
 - **Copilot sessions keep your pull requests' stages current.** With Pull Request Order and agents on, the Copilot
