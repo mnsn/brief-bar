@@ -723,8 +723,9 @@ extension CopilotTasksStore {
     /// conflicts' resolution, which Resolve Conflicts commits as it merges, though it stopped after; and what a Push & Reply,
     /// or a fix sent with Push and Reply on, that may not have pushed it, committed along (`SessionPushWork.mayHaveCommitted`),
     /// as it commits all the session changed before it pushes: what it took on, and what its session had taken on before
-    /// it, as far as BriefBar keeps that (`SessionPush.parts`). Not once a push from there since pushed it. Git there doesn't
-    /// tell BriefBar how far each got, so it's what may be committed, for a note to name rather than leave out.
+    /// it, as far as BriefBar keeps that (`SessionPush.parts`), but a question asked there, which changes nothing. Not once
+    /// a push from there since pushed it. Git there doesn't tell BriefBar how far each got, so it's what may be committed,
+    /// for a note to name rather than leave out.
     private func mayBeCommitted(
         _ part: PullRequestPart, in session: String, before: Date?, of key: PRKey, pushes: [SessionPushWork]
     ) -> Bool {
@@ -732,7 +733,8 @@ extension CopilotTasksStore {
         let pushes = pushes.filter { push in push.session == session && inTime(push.since) }
         func pushedSince(_ date: Date) -> Bool { pushes.contains { push in push.pushed && push.since > date } }
         let takenOn = attempts(on: part, of: key).compactMap { attempt -> (at: Date, work: CopilotWork)? in
-            // One still waiting for its turn changed nothing yet.
+            // A question changes nothing, and one still waiting for its turn changed nothing yet.
+            guard attempt.work.purpose != .explain else { return nil }
             if case .waiting = attempt.work.state { return nil }
             let at = attempt.work.takenAt ?? attempt.since
             return attempt.work.session == session && inTime(at) ? (at, attempt.work) : nil
@@ -1553,11 +1555,11 @@ extension CopilotTasksStore {
     /// Lets go of Copilot's work on something of a pull request, as its line's Clear does, as Dismiss does for an answer:
     /// what each task and prompt took on of it (`CopilotRun.taken`, `SentPrompt.parts`), so that the line goes and nothing
     /// older takes its place, and a fix of it is no longer ready to push; what each push in a task's session had taken on
-    /// of it, which a fix sent with Push and Reply on would name (`SessionPush.parts`); and what a send that couldn't start
-    /// keeps of it, or one getting ready carries from before, which it would launch with. What Copilot is still at stays; a
-    /// prompt copied for you to paste that takes on nothing else goes, and hands nothing off, and one that takes on more, or
-    /// a Push & Reply, which stays, no longer hands off a thread's comments, once you paste it
-    /// (`CommentHandOff.without(thread:)`). The demo's are let go in memory.
+    /// of it, which a fix sent with Push and Reply on would name (`SessionPush.parts`), as the task keeps it, and as a send
+    /// getting ready carries it; and what a send that couldn't start keeps of it, or one getting ready carries from before,
+    /// which it would launch with. What Copilot is still at stays; a prompt copied for you to paste that takes on nothing
+    /// else goes, and hands nothing off, and one that takes on more, or a Push & Reply, which stays, no longer hands off a
+    /// thread's comments, once you paste it (`CommentHandOff.without(thread:)`). The demo's are let go in memory.
     func clear(_ part: PullRequestPart, of key: PRKey) {
         guard isOn else { return }
         objectWillChange.send()
@@ -1568,6 +1570,7 @@ extension CopilotTasksStore {
         letGoPending { taken, entry in
             taken.part == part && entry.isOn(key) && (!entry.status.phase.isActive || taken.ended != nil)
         }
+        letGoPendingPushes(of: part, on: key)
         let active = Set(entries.filter { $0.status.phase.isActive }.map(\.id))
         let continuing = Dictionary(pending.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var runs = settings.copilotRuns
@@ -1581,13 +1584,7 @@ extension CopilotTasksStore {
                 isAtIt = active.contains(runs[index].id) && taken.contains { $0.part == part && $0.ended == nil }
             }
             guard !isAtIt else { continue }
-            if runs[index].pushes?.contains(where: { $0.parts?.contains(part) == true }) == true {
-                runs[index].pushes = runs[index].pushes?.map { push in
-                    var push = push
-                    push.parts?.removeAll { $0 == part }
-                    return push
-                }
-            }
+            runs[index].pushes = Self.pushes(runs[index].pushes, lettingGoOf: part)
             let kept = taken.filter { $0.part != part }
             guard kept.count != taken.count else { continue }
             if taken.contains(where: { $0.part == part && $0.ended == nil }) { runs[index].workLetGo = true }
@@ -1621,5 +1618,14 @@ extension CopilotTasksStore {
         }
         prompts.removeAll { emptied.contains($0.id) }
         if prompts != settings.copilotSentPrompts { settings.copilotSentPrompts = prompts }
+    }
+
+    /// `pushes` with what each had taken on (`SessionPush.parts`), but `part`, which Clear lets go of.
+    static func pushes(_ pushes: [SessionPush]?, lettingGoOf part: PullRequestPart) -> [SessionPush]? {
+        pushes?.map { push in
+            var push = push
+            push.parts?.removeAll { $0 == part }
+            return push
+        }
     }
 }

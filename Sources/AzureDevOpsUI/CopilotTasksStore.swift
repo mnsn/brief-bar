@@ -695,13 +695,15 @@ final class CopilotTasksStore: ObservableObject {
                     }
                 }
                 rekey(id, to: run.id)
-                // What it took on as it got ready, less what a pass ended meanwhile (`endWorkThatsOver`).
+                // What it took on as it got ready, less what a pass ended meanwhile (`endWorkThatsOver`), and the pushes it
+                // carries from before, less what Clear let go of meanwhile.
                 if let entry = pending.first(where: { $0.id == run.id }) {
                     run.taken = entry.taken
+                    run.pushes = entry.pushes
                 } else {
                     run.taken = kept
+                    run.pushes = pushes
                 }
-                run.pushes = pushes
                 if fixesFirst {
                     run.fixes = true
                 } else {
@@ -757,6 +759,15 @@ final class CopilotTasksStore: ObservableObject {
             let entry = pending[index]
             let kept = taken.filter { !letsGo($0, entry) }
             if kept.count != taken.count { pending[index].taken = kept }
+        }
+    }
+
+    /// Lets go of `part` of `key` in what each push that the sends getting ready on it, or that couldn't start, carry from
+    /// before had taken on (`SessionPush.parts`), as Clear does (`clear(_:of:)`). Each launches with what's left.
+    func letGoPendingPushes(of part: PullRequestPart, on key: PRKey) {
+        for index in pending.indices where pending[index].isOn(key) {
+            let pushes = Self.pushes(pending[index].pushes, lettingGoOf: part)
+            if pushes != pending[index].pushes { pending[index].pushes = pushes }
         }
     }
 

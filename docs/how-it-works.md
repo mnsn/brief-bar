@@ -3347,7 +3347,8 @@ before the fork was made, and so on for a fork of a fork, but not past one that 
 all it had (`CopilotTasksStore.lineage`, `CopilotTasksStore.forkOrigin`). Wherever it goes, it names what may be
 committed there and not pushed, which goes with the branch: the conflicts' resolution, which Resolve Conflicts commits
 as it merges, though it stopped after; and what a Push & Reply, or a fix sent to push and reply, that may not have
-pushed committed along, which is all the session had taken on by then, as a task keeps that with each push in its
+pushed committed along, which is all the session had taken on by then, but a question asked there, which changes
+nothing, as a task keeps that with each push in its
 session (`SessionPush.parts`), though a fix there took it on again since, unless a push from there pushed it since, or
 you cleared it (`CopilotTasksStore.mayBeCommitted`,
 `CopilotTasksStore.alsoPushes`, `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). It leaves out what
@@ -3621,7 +3622,8 @@ attempt before; and on a closed build's row it's there only for a failed build, 
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
 its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); and of what each push in a task's session had
-taken on of it, so a fix sent to push and reply doesn't name it (`SessionPush.parts`). What a task took on is left
+taken on of it, as the task keeps it, and as a send getting ready carries it to launch with, so a fix sent to push and
+reply doesn't name it (`SessionPush.parts`). What a task took on is left
 empty, which tells it from one kept
 before BriefBar recorded what tasks take on, and the task says what it took on itself was let go, when it was
 (`CopilotRun.workLetGo`). A prompt copied for you to paste that takes on more, or a Push & Reply, which

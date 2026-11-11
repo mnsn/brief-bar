@@ -3198,6 +3198,10 @@ import Testing
         let copied = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: true))
         settings.copilotSentPrompts = [copied, failed]
         #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == named)
+        // Nor a question asked there before it, which changes nothing.
+        let asked = try #require(SentPrompt(about(.explain, threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
+        settings.copilotSentPrompts = [asked, failed]
+        #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == named)
     }
 
     /// A fix in a fork of the pull request's session works on the side: the pull request's session stays the one it was, as
@@ -3333,7 +3337,9 @@ import Testing
             return Self.makeRun(id, action, startedAt: now)
         }
         let first = now.addingTimeInterval(-600)
-        let fixed = run(task, startedAt: first, ended: .finished, taken: [TakenPart(.thread(16), since: first)])
+        var fixed = run(task, startedAt: first, ended: .finished, taken: [TakenPart(.thread(16), since: first)])
+        // A push in its session that may have committed 16.
+        fixed.pushes = [SessionPush(since: first.addingTimeInterval(-60), ended: .failed, parts: [.thread(16)])]
         settings.copilotRuns = [fixed]
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 17", options: CopilotModel.standard,
                    repository: fixed.repository, continuing: fixed, parts: [.thread(17)])
@@ -3343,10 +3349,13 @@ import Testing
         #expect(store.work(on: .thread(16), of: key) == nil)
         #expect(store.work(on: .thread(17), of: key)?.state == .working(nil))
         #expect(settings.copilotRuns.first?.taken == [])
+        #expect(settings.copilotRuns.first?.pushes?.first?.parts == [])
+        #expect(store.pending.first { $0.id == task }?.pushes?.first?.parts == [])
         // It launches without what was let go.
         letItGo.yield()
         try await settle { !store.pending.contains { $0.id == task } }
         #expect(settings.copilotRuns.first?.taken?.map(\.part) == [.thread(17)])
+        #expect(settings.copilotRuns.first?.pushes?.first?.parts == [])
         #expect(store.work(on: .thread(16), of: key) == nil)
     }
 
