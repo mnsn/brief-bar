@@ -1430,6 +1430,17 @@ import Testing
         #expect(BoardFolds.load(from: defaults) == folds)
         #expect(folds.keeping(.simple) == folds)
         #expect(folds.keeping(BoardLayout.simple.splitting(ready)) == BoardFolds([.stage(.canMerge): .open]))
+
+        // Kept for each column the joins make on either page, whichever you hide: In progress and Your review on Pull
+        // Requests, which has no To start; Can merge and Waits while Merged, joined to them, is hidden.
+        let joins = BoardLayout(joins: [.toStart, .stage(.inProgress), .stage(.canMerge), .stage(.waits), .stage(.merged)])
+        let pullRequests = Self.shown(.stage(.inProgress), .stage(.yourReview))
+        let withMergedHidden = Self.shown(.stage(.canMerge), .stage(.waits))
+        #expect(!joins.shown(Self.allColumns).contains(pullRequests) && !joins.shown(Self.allColumns).contains(withMergedHidden))
+        let theirs = BoardFolds(shown: [pullRequests: .open, withMergedHidden: .folded])
+        #expect(theirs.keeping(joins.joining(ShownColumn(.stage(.teammateReview)), ShownColumn(.stage(.approved)))) == theirs)
+        let split = joins.splitting(Self.shown(.toStart, .stage(.inProgress), .stage(.yourReview)))
+        #expect(theirs.keeping(split) == BoardFolds(shown: [withMergedHidden: .folded]))
     }
 
     /// The user's window leaves the Board 664 points: a joined column takes one column's room, and folds as late as the

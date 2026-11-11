@@ -585,6 +585,30 @@ import Testing
         }
     }
 
+    /// Show Them asks for a card in a column you hid, a merged pull request's that names your work still to do: the column
+    /// shows for the moment, so that the card is drawn there and takes the keyboard. What you hid stays hidden.
+    @Test func aCardShowThemAsksForInAColumnYouHidShowsForTheMomentAndTakesTheKeyboard() async throws {
+        let order = try Self.finishedMission()
+        order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)]))
+        let merged = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        let task = ItemRef.workItem(organization: "contoso", id: 5181)
+        let work = [SprintWork(
+            ref: task, story: nil, progress: .inProgress, pullRequests: [LinkedPullRequest(ref: merged, state: .merged)],
+            copilotWorks: false
+        )]
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: Sprint(work: work, stories: [])) { window, _, drawn in
+            #expect(!drawn.isDrawn(merged))
+            order.revealedCard = merged
+            try await until("Merged to show for it") { drawn.isDrawn(merged) }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return details.shown == merged
+            }
+            #expect(order.boardLayout == BoardLayout(hidden: [.stage(.merged)]))
+        }
+    }
+
     /// The column a key moved a card to stays open while a card in it has the keyboard: click another card there, and it
     /// stays open for that one, rather than fold under it.
     @Test func aColumnAKeyOpenedStaysOpenForAnotherCardInItYouGoTo() async throws {
@@ -617,6 +641,41 @@ import Testing
                 return details.shown == Self.review
             }
             #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// A joined column a key opened stays open for a card in another of its columns that you go to: it's the same column.
+    @Test func aJoinedColumnAKeyOpenedStaysOpenForACardInAnotherOfItsColumnsYouGoTo() async throws {
+        let order = Self.withAReview()
+        let inReview = try #require(ShownColumn(parts: [.stage(.yourReview), .stage(.teammateReview)]))
+        order.setBoardLayout(BoardLayout(joins: [.stage(.yourReview)]))
+        order.setBoardFolds(BoardFolds(shown: [inReview: .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click to show its details") { details.shown == Self.ref }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ into In review, folded", order: order, drawn: drawn, in: window)
+            try await Self.pressUntil("⌘→ on to Teammate's review, in In review") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .teammateReview
+            }
+            try await until("the card drawn among Teammate's review's") {
+                drawn.columns[Self.ref] == .teammateReview && drawn.isDrawn(Self.review)
+            }
+            let review = try #require(drawn.frames[Self.review])
+            try await Self.pressUntil("a click on the review, in Your review, to show its details") {
+                Self.click(at: drawn.frames[Self.review] ?? review, in: host)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "In review folded under the card you went to")
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            #expect(order.boardFolds == BoardFolds(shown: [inReview: .folded]))
         }
     }
 

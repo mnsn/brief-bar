@@ -164,10 +164,12 @@ public struct BoardLayout: Equatable, Sendable {
         runs(columns.filter(hidden.contains))
     }
 
-    /// The joined columns it makes of every column the Board can have, on either page: those your folds of joined columns
-    /// still apply to.
-    public var joined: [ShownColumn] {
-        runs(BoardColumn.all).filter(\.isJoined)
+    /// The joined columns it can show, on either page, with your work's columns or without, whichever of Merged and
+    /// Completed you hide: those your folds of joined columns still apply to.
+    public var joined: Set<ShownColumn> {
+        let pages = [BoardColumn.all, BoardColumn.all.filter { $0.stage != nil }]
+        let hides: [Set<BoardColumn>] = [[], [.stage(.merged)], [.completed], Self.hideable]
+        return Set(pages.flatMap { page in hides.flatMap { hidden in runs(page.filter { !hidden.contains($0) }) } }.filter(\.isJoined))
     }
 
     /// Neighbors in a row, each joined to the one before it where you joined them.

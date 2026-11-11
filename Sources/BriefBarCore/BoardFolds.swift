@@ -74,7 +74,7 @@ public struct BoardFolds: Equatable, Sendable {
     /// Your choices for the columns a layout can show: each column's own, and a joined column's only while it joins those
     /// columns, so that one you split, or joined to another, starts as BriefBar decides should you join it again.
     public func keeping(_ layout: BoardLayout) -> BoardFolds {
-        let joined = Set(layout.joined)
+        let joined = layout.joined
         return BoardFolds(shown: choices.filter { !$0.key.isJoined || joined.contains($0.key) })
     }
 }

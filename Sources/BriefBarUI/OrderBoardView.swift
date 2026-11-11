@@ -380,6 +380,9 @@ package struct OrderBoardView: View {
     /// The folded columns Up Next's "2 more ›", or My Work's Show Them, opened, for the moment: until you fold them, or the
     /// board goes.
     @LocalState private var revealedOpen: Set<BoardColumn> = []
+    /// The hidden columns Show Them showed, for the card it shows in one, for the moment: until you hide one again, or the
+    /// board goes.
+    @LocalState private var unhiddenForNow: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
     @LocalState private var unfolded: Set<BoardLane.Kind> = []
     @LocalState private var width: CGFloat = 0
@@ -501,6 +504,10 @@ package struct OrderBoardView: View {
                 }
             }
         }
+        // A column Show Them showed for the moment is just shown once you show it.
+        .onChange(of: order.boardLayout.hidden) { _, hidden in
+            unhiddenForNow.formIntersection(hidden)
+        }
         // A strip the dragged card hovers springs open once it has stayed there a moment, and a joined column into its
         // columns.
         .task(id: springing) {
@@ -514,8 +521,9 @@ package struct OrderBoardView: View {
         // be drawn anew there, nor while the details cover the board. Another card in that column that takes it keeps it open.
         .task(id: KeyMoment(focused: focused, isEnabled: isEnabled, owed: refocus.spot, opened: keyOpened)) {
             guard let opened = keyOpened, focused != opened.spot else { return }
-            if let spot = focused, column(of: spot) == opened.column {
-                keyOpened = KeyOpened(column: opened.column, spot: spot)
+            // Another of a joined column's columns is that column too.
+            if let spot = focused, let column = column(of: spot), shownColumn(holding: opened.column).contains(column) {
+                keyOpened = KeyOpened(column: column, spot: spot)
                 return
             }
             if focused == nil {
@@ -537,10 +545,20 @@ package struct OrderBoardView: View {
     /// went to while a card there keeps the keyboard's focus, and those Up Next's "2 more ›" or My Work's Show Them opened.
     private var openForNow: Set<BoardColumn> {
         var open = sprung.union(revealedOpen)
-        if let opened = keyOpened, column(of: opened.spot) == opened.column {
-            open.insert(opened.column)
+        if let opened = keyOpened, let column = column(of: opened.spot), shownColumn(holding: opened.column).contains(column) {
+            open.insert(column)
         }
         return open
+    }
+
+    /// How you laid out the columns, with those Show Them showed for the moment.
+    private var shownLayout: BoardLayout {
+        unhiddenForNow.reduce(order.boardLayout) { $0.showing(ShownColumn($1)) }
+    }
+
+    /// The column as the board shows it that holds one of its columns: a joined one, unless a drag sprang it open.
+    private func shownColumn(holding column: BoardColumn) -> ShownColumn {
+        shownLayout.shown(board.columns, splitting: sprungJoins).first { $0.contains(column) } ?? ShownColumn(column)
     }
 
     /// The column a card is in on the board: a pull request's stage's, or Completed for one in it, whose stage stays Merged;
@@ -559,7 +577,7 @@ package struct OrderBoardView: View {
 
     /// The same, with these joined columns split into theirs for the moment, and these columns open for it.
     private func metrics(splitting split: Set<ShownColumn>, open: Set<BoardColumn>) -> BoardMetrics {
-        let layout = order.boardLayout
+        let layout = shownLayout
         let shown = layout.shown(board.columns, splitting: split)
         let hidden = layout.hiddenColumns(board.columns)
         let widths = BoardWidths(scale: textScale, available: width, endsWithHidden: !hidden.isEmpty)
@@ -662,10 +680,12 @@ package struct OrderBoardView: View {
         }
     }
 
-    /// Merged or Completed, or Done, hidden, as Hide in its menu does: into the tab at the titles' end.
+    /// Merged or Completed, or Done, hidden, as Hide in its menu does: into the tab at the titles' end; one Show Them showed
+    /// for the moment too.
     private func hide(_ column: ShownColumn) {
         withAnimation(.easeOut(duration: 0.15)) {
             endMoment(column)
+            unhiddenForNow.subtract(column.parts)
             order.setBoardLayout(order.boardLayout.hiding(column))
         }
     }
@@ -689,7 +709,7 @@ package struct OrderBoardView: View {
     }
 
     /// A card you drag stayed over a lane's column: a strip springs open, and a joined column into its columns, those that
-    /// take the card open, until the drag ends.
+    /// take the card open, with the one it's in, which stays under it, until the drag ends.
     private func spring(_ cell: BoardCell, moves: BoardMoves) {
         guard cell.column.isJoined else {
             sprung.insert(cell.column.first)
@@ -697,7 +717,8 @@ package struct OrderBoardView: View {
         }
         sprungJoins.insert(cell.column)
         guard let ref = drag?.ref, let lane = board.lanes.first(where: { $0.kind == cell.lane }) else { return }
-        for part in cell.column.parts where moving(ref, to: part, in: lane, moves: moves)?.isTaken == true {
+        for part in cell.column.parts {
+            guard let move = moving(ref, to: part, in: lane, moves: moves), move.isTaken || move == .stays else { continue }
             sprung.insert(part)
         }
     }
@@ -1326,7 +1347,7 @@ package struct OrderBoardView: View {
     private func cell(_ lane: BoardLane, column: ShownColumn, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let target = BoardCell(lane: lane.kind, column: column)
         let isFolded = metrics.isFolded(column)
-        let takes = dropping(on: column, in: lane, moves: moves)?.takes == true
+        let springs = springs(column, isFolded: isFolded, in: lane, moves: moves)
         return ZStack(alignment: .topLeading) {
             if isFolded {
                 stripCell(lane, column: column, metrics: metrics, moves: moves)
@@ -1340,14 +1361,25 @@ package struct OrderBoardView: View {
         } isTargeted: { isOver in
             if isOver {
                 hovered = target
-                // A strip that takes the card springs open once the card stays over it a moment; a joined column into its
-                // columns.
-                if takes, isFolded || column.isJoined { springing = target }
+                if springs { springing = target }
             } else {
                 if hovered == target { hovered = nil }
                 if springing == target { springing = nil }
             }
         }
+        // The column a drag starts over can be hovered before the board knows which card it drags: it springs once it does.
+        .onChange(of: springs) { _, springs in
+            if springs, hovered == target { springing = target }
+        }
+    }
+
+    /// Whether a lane's column springs open as the card you drag stays over it a moment: a strip, where the card would go
+    /// there; a joined column, folded or not, into its columns, where one of them would take the card, though it's in
+    /// another of them, so that it goes from one of a joined column's columns to another as between any two.
+    private func springs(_ column: ShownColumn, isFolded: Bool, in lane: BoardLane, moves: BoardMoves) -> Bool {
+        guard isDragging, let ref = drag?.ref else { return false }
+        guard column.isJoined else { return isFolded && moving(ref, to: column.first, in: lane, moves: moves)?.isTaken == true }
+        return column.parts.contains { moving(ref, to: $0, in: lane, moves: moves)?.isTaken == true }
     }
 
     /// What dropping the card you drag on a column of a lane would do, to the card as it is now: nil while you drag none.
@@ -1776,9 +1808,13 @@ package struct OrderBoardView: View {
     }
 
     /// A column opens for the moment where it would be folded but for its own moment, or where the board doesn't know its
-    /// width yet to tell: the joined column that holds it, which it returns, as one.
+    /// width yet to tell: the joined column that holds it, which it returns, as one; and where you hid it, it shows for the
+    /// moment, as Done where you hid that.
     @discardableResult
     private func openForTheMoment(_ column: BoardColumn) -> ShownColumn {
+        if let hidden = currentMetrics().hidden.first(where: { $0.contains(column) }) {
+            unhiddenForNow.formUnion(hidden.parts)
+        }
         let metrics = currentMetrics()
         let shown = metrics.shown(holding: column) ?? ShownColumn(column)
         let others = openForNow.subtracting(shown.parts)
