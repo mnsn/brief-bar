@@ -92,6 +92,39 @@ import Testing
         #expect(work[3].pullRequests.map(\.state) == [.merged, .abandoned, .open(author: nil), .unknown])
     }
 
+    /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and
+    /// window shares, shows one since: that pull request's card isn't marked, and while the details cover the Board, ⌘→ and
+    /// ⌘← don't move it. A pull request's card clicked last, its details show and the keys move it; with none, a work item's
+    /// show, as the Sprint page showed it.
+    @Test func theBoardsKeysMoveOnlyAPullRequestWhoseDetailsShow() throws {
+        let now = Date()
+        let record = try #require(DemoData.records(now: now).first { $0.role == .author })
+        let pullRequest = try #require(
+            PRClassifier.snapshot(for: record, seenCutoff: .distantPast, dismissedCutoff: .distantPast, now: now)
+        )
+        let task = WorkItem(
+            id: 5112, organization: "contoso", project: "Storefront", type: "Task", title: "Totals", state: "Active",
+            category: .inProgress
+        )
+        let details = PullRequestDetailsStore()
+        details.show(pullRequest)
+
+        let taskClicked = MyWorkDetails(workItem: task, showsWorkItem: true, pullRequest: details)
+        #expect(taskClicked.workItem == task)
+        #expect(taskClicked.pullRequest == nil)
+        #expect(taskClicked.pullRequestOnTop == nil)
+
+        let pullRequestClicked = MyWorkDetails(workItem: task, showsWorkItem: false, pullRequest: details)
+        #expect(pullRequestClicked.workItem == nil)
+        #expect(pullRequestClicked.pullRequest?.key == pullRequest.key)
+        #expect(pullRequestClicked.pullRequestOnTop == pullRequest.key.linkRef)
+
+        details.close()
+        let fromSprint = MyWorkDetails(workItem: task, showsWorkItem: false, pullRequest: details)
+        #expect(fromSprint.workItem == task)
+        #expect(fromSprint.pullRequestOnTop == nil)
+    }
+
     /// Once what waits on the main queue ran, as the source's sinks do.
     private func settled() async {
         await withCheckedContinuation { continuation in

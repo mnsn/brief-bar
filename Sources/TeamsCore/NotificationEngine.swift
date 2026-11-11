@@ -43,8 +43,9 @@ public struct EngineSnapshot: Sendable, Equatable {
 /// Notification Center keeps its database open, and FSEvents only reports a file's writes once it's
 /// closed, so commits are picked up by a kqueue watch on SQLite's write-ahead log (`db-wal`). FSEvents
 /// on the folder reports the log being created or replaced. Bursts are combined into one read after
-/// `reloadDelay`. A slow safety rescan covers anything the watches miss, and while BriefBar can't
-/// read the database, it checks for access on a timer.
+/// `reloadDelay`, and read once more a moment after the last (`scheduleReread`). A slow safety rescan
+/// covers anything the watches miss, and while BriefBar can't read the database, it checks for access
+/// on a timer.
 ///
 /// All mutable state is confined to `queue`; `onChange` is called on that queue.
 public final class NotificationEngine: @unchecked Sendable {
@@ -54,8 +55,10 @@ public final class NotificationEngine: @unchecked Sendable {
     private let queue: DispatchQueue
     private let onChange: ChangeHandler
     private let reloadDelay: TimeInterval
+    private let rereadDelay: TimeInterval
     private let safetyInterval: TimeInterval
     private let accessIntervals: (waiting: TimeInterval, idle: TimeInterval)
+    private let read: @Sendable (NotificationPaths) -> EngineSnapshot
 
     private var snapshot = EngineSnapshot()
     private var lastPublished: EngineSnapshot?
@@ -66,20 +69,30 @@ public final class NotificationEngine: @unchecked Sendable {
     private var accessTimerInterval: TimeInterval = 0
     private var waitingForAccess = false
     private var reloadScheduled = false
+    /// Counts the reads writes bring, so that only the last one's reread happens.
+    private var writeReads = 0
     private var isActive = false
 
+    /// - Parameters:
+    ///   - reloadDelay: how long after a write to the database to read it, so that a burst of writes is read once.
+    ///   - rereadDelay: how long after the last such read to read once more (`scheduleReread`).
+    ///   - read: reads the database; tests replace it.
     public init(
         paths: NotificationPaths = .default(),
         reloadDelay: TimeInterval = 0.3,
+        rereadDelay: TimeInterval = 1,
         safetyInterval: TimeInterval = 60,
         accessIntervals: (waiting: TimeInterval, idle: TimeInterval) = (2, 30),
+        read: @escaping @Sendable (NotificationPaths) -> EngineSnapshot = { NotificationEngine.loadOnce(paths: $0) },
         onChange: @escaping ChangeHandler
     ) {
         self.paths = paths
         self.queue = DispatchQueue(label: "BriefBar.Teams.NotificationEngine", qos: .utility)
         self.reloadDelay = reloadDelay
+        self.rereadDelay = rereadDelay
         self.safetyInterval = safetyInterval
         self.accessIntervals = accessIntervals
+        self.read = read
         self.onChange = onChange
     }
 
@@ -262,6 +275,22 @@ public final class NotificationEngine: @unchecked Sendable {
             guard self.isActive else { return }
             self.reload()
             self.publish()
+            self.scheduleReread()
+        }
+    }
+
+    /// Reads the database once more, `rereadDelay` after the last read a write brought. SQLite writes a commit to its
+    /// write-ahead log before it lets readers see it, and only the write is heard of, so a writer held up between the
+    /// two, as on a busy Mac, leaves that read without the commit. When nothing is written after it, as when the last
+    /// message of a while arrives, nothing else would read it before the safety rescan, a minute later.
+    private func scheduleReread() {
+        writeReads += 1
+        let readsSoFar = writeReads
+        queue.asyncAfter(deadline: .now() + rereadDelay) { [weak self] in
+            // A later write's read, made or to come, has its own.
+            guard let self, self.isActive, readsSoFar == self.writeReads, !self.reloadScheduled else { return }
+            self.reload()
+            self.publish()
         }
     }
 
@@ -273,7 +302,7 @@ public final class NotificationEngine: @unchecked Sendable {
 
     private func reload() {
         let hadAccess = snapshot.access == .granted
-        snapshot = Self.read(paths)
+        snapshot = self.read(paths)
         if !hadAccess, snapshot.access == .granted {
             // A stream started without access may never report anything: start over with access.
             stream?.stop()

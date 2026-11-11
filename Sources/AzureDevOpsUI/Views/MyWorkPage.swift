@@ -132,6 +132,37 @@ extension MyWorkPage {
     }
 }
 
+/// Whose details show beside My Work's Board, a work item's or a pull request's, of those the source's stores hold, which its
+/// other pages and windows show theirs in too: the work item's while you clicked one last here, or while no pull request's
+/// show; else the pull request's. The Board marks the card of whichever show; and while they cover the Board, its ⌘→ and ⌘←
+/// move only a pull request whose own details those are, never one the store holds behind a work item's details.
+struct MyWorkDetails {
+    /// The work item whose details show, rather than a pull request's.
+    let workItem: WorkItem?
+    /// The pull request whose details show, rather than a work item's.
+    let pullRequest: PRSnapshot?
+    /// The pull request whose own details show, with nothing over them, whose card the Board's keys move (`shownOnTop`).
+    let pullRequestOnTop: ItemRef?
+
+    /// - Parameter showsWorkItem: whether you clicked a work item's card last, rather than a pull request's.
+    @MainActor
+    init(workItem: WorkItem?, showsWorkItem: Bool, pullRequest details: PullRequestDetailsStore) {
+        if let workItem, showsWorkItem || details.selected == nil {
+            self.workItem = workItem
+            pullRequest = nil
+            pullRequestOnTop = nil
+        } else {
+            self.workItem = nil
+            pullRequest = details.selected
+            pullRequestOnTop = details.shownOnTop
+        }
+    }
+
+    var showsAny: Bool {
+        workItem != nil || pullRequest != nil
+    }
+}
+
 /// My Work's page, as Show Links links your sprint work to your pull requests.
 private struct MyWorkContent: View {
     @ObservedObject var links: Links
@@ -161,10 +192,9 @@ private struct MyWorkContent: View {
         shown == .sprintTasks && links.isOn
     }
 
-    /// The work item whose details show, rather than a pull request's.
-    private var shownWorkItem: WorkItem? {
-        guard let item = workItemDetails.selected, showsWorkItem || pullRequestDetails.selected == nil else { return nil }
-        return item
+    /// Whose details show, a work item's or a pull request's.
+    private var shownDetails: MyWorkDetails {
+        MyWorkDetails(workItem: workItemDetails.selected, showsWorkItem: showsWorkItem, pullRequest: pullRequestDetails)
     }
 
     var body: some View {
@@ -180,17 +210,17 @@ private struct MyWorkContent: View {
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
-            let workItem = shownWorkItem
+            let detailsShown = shownDetails
             DetailsSplit(
-                showsDetails: workItem != nil || pullRequestDetails.selected != nil,
-                preferredWidth: workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
+                showsDetails: detailsShown.showsAny,
+                preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
                 content
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
-                    if workItem != nil {
+                    if detailsShown.workItem != nil {
                         WorkItemDetailsPanel()
                     } else {
                         PullRequestDetailsPanel()
@@ -256,7 +286,7 @@ private struct MyWorkContent: View {
                     PullRequestsByMission(
                         view: .board, ordering: ordering, items: store.items, row: { _, _ in AnyView(EmptyView()) },
                         card: { item, card in boardCard(item, card, board: board) }, isSelected: isSelected, select: select,
-                        shownOnTop: pullRequestDetails.shownOnTop, rest: { _ in AnyView(EmptyView()) }, board: board,
+                        shownOnTop: shownDetails.pullRequestOnTop, rest: { _ in AnyView(EmptyView()) }, board: board,
                         showByStatus: {
                             settings.pullRequestOrder = .status
                             services.openWindow(.azureDevOpsPullRequests)
@@ -284,7 +314,7 @@ private struct MyWorkContent: View {
         BoardWorkContent(
             card: { task in sprintItem(task.ref).map { taskCard(task, item: $0) } },
             story: { ref in AnyView(storyHeader(ref)) },
-            isSelected: { ref in shownWorkItem?.linkRef == ref },
+            isSelected: { ref in shownDetails.workItem?.linkRef == ref },
             select: { ref in if let item = sprintItem(ref) { showDetails(of: item) } }
         )
     }
@@ -388,7 +418,7 @@ private struct MyWorkContent: View {
     }
 
     private func isSelected(_ item: PRSnapshot) -> Bool {
-        shownWorkItem == nil && pullRequestDetails.selected?.key == item.key
+        shownDetails.pullRequest?.key == item.key
     }
 
     @ViewBuilder

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import TeamsCore
 @testable import NotificationCenterDB
@@ -186,6 +187,40 @@ import BriefBarCore
         try await collector.wait("the removal") { $0.notifications?.count == 1 }
     }
 
+    @Test func readsOnceMoreForACommitItCouldntSeeYet() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let paths = paths(in: directory)
+        let db = try TestDatabase(at: paths.database)
+        defer { db.close() }
+        try db.add(Record.message(Chat.avery, title: "Avery Quinn", body: "First", at: t(0)), delivered: t(0))
+
+        let reads = HeldReads<EngineSnapshot>()
+        let collector = SnapshotCollector()
+        // No safety rescan within the test: only the engine's reads after a write can find it.
+        let engine = NotificationEngine(
+            paths: paths, reloadDelay: 0.05, rereadDelay: 0.1, safetyInterval: 3_600,
+            read: { paths in reads.read { NotificationEngine.loadOnce(paths: paths) } }, onChange: collector.add
+        )
+        engine.start()
+        defer { engine.stop() }
+        try await collector.wait("the first read") { $0.notifications?.count == 1 }
+
+        // A message arrives, but the read Notification Center's write brings doesn't find it, as when SQLite hasn't let
+        // readers see the commit yet.
+        reads.hold()
+        try db.add(Record.message(Chat.launchCrew, title: "Launch crew", body: "Jordan Lee: Go", at: t(1)), delivered: t(1))
+        try await reads.waitForAHeldRead()
+        // Nor does the read its next write brings, its last for a while, though readers can see the message by then,
+        // however busy the Mac: only a read after it can find the message.
+        reads.release()
+        try db.commitSomethingElse()
+        try await collector.wait("the new message") { $0.notifications?.count == 2 }
+
+        // Once more, not over and over.
+        try await reads.waitUntilTheyStop()
+    }
+
     @Test func waitsForTheDatabaseAndPicksItUp() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -254,13 +289,79 @@ import BriefBarCore
 
 private extension TestDatabase {
     /// Commits something the engine doesn't read, as Notification Center goes on doing, so that the engine reads the commit
-    /// before. SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads once,
-    /// `reloadDelay` after hearing of that write: a writer held up between the two, as on a busy runner, leaves that read
-    /// with nothing new, and with nothing else written, only the safety rescan, an hour here, reads again, as
-    /// SessionEngineTests found on CI on 2026-11-09. A commit is written only once the one before it can be read, so the
-    /// read this one brings finds that.
+    /// before. SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads
+    /// `reloadDelay` after hearing of that write and once more `rereadDelay` later: a writer held up in between for longer
+    /// than both, as on a busy runner, leaves them with nothing new, and with nothing else written, only the safety
+    /// rescan, an hour here, reads again, as SessionEngineTests found on CI on 2026-11-09, before the engines read once
+    /// more. A commit is written only once the one before it can be read, so the read this one brings finds that.
     func commitSomethingElse() throws {
         // A commit whatever the value: SQLite writes the database's first page each time.
         try exec("PRAGMA user_version = 1;")
+    }
+}
+
+/// Stands in for the engine's reads of the database, to hold them up as SQLite does between writing a commit to its
+/// write-ahead log, which is what the engine hears of, and letting readers see it: a held read finds what the last read
+/// before it did.
+private final class HeldReads<Value: Sendable>: Sendable {
+    private struct State {
+        var last: Value?
+        var holding = false
+        var releasing = false
+        var held = 0
+        var reads = 0
+    }
+
+    private let state = Mutex(State())
+
+    /// Holds every read from now on.
+    func hold() {
+        state.withLock { $0.holding = true }
+    }
+
+    /// Holds one more read, and none after it.
+    func release() {
+        state.withLock { $0.releasing = true }
+    }
+
+    func read(_ readForReal: () throws -> Value) rethrows -> Value {
+        let held: Value? = state.withLock { state in
+            state.reads += 1
+            guard state.holding, let last = state.last else { return nil }
+            state.held += 1
+            if state.releasing {
+                state.holding = false
+                state.releasing = false
+            }
+            return last
+        }
+        if let held { return held }
+        let value = try readForReal()
+        state.withLock { $0.last = value }
+        return value
+    }
+
+    func waitForAHeldRead() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        while state.withLock({ $0.held }) == 0 {
+            guard clock.now < deadline else { throw TestError("Timed out waiting for a held read") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Waits until no read was made for half a second, five times the `rereadDelay` the tests give: reads that go on one
+    /// after another never leave that long.
+    func waitUntilTheyStop() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        var reads = state.withLock { $0.reads }
+        while clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(500))
+            let now = state.withLock { $0.reads }
+            if now == reads { return }
+            reads = now
+        }
+        throw TestError("The reads hadn't stopped after \(waitLimit), at \(reads)")
     }
 }
