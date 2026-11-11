@@ -206,6 +206,7 @@ import Testing
 
         // The app keeps its database open, so this commit only reaches the write-ahead log.
         try db.exec("UPDATE sessions SET is_running = 0 WHERE id = 'live';")
+        try db.commitSomethingElse()
         try await collector.wait("the database update") { $0.records.first?.meta.isRunning == false }
 
         // The app restarting: closing its connection removes the log, and the next one starts a new log.
@@ -213,8 +214,10 @@ import Testing
         let reopened = try TestDatabase(at: paths.database, journalMode: "WAL")
         defer { reopened.close() }
         try reopened.exec("UPDATE workspaces SET name = 'Renamed' WHERE id = 'w-live';")
+        try reopened.commitSomethingElse()
         try await collector.wait("the reopened database") { $0.records.first?.meta.name == "Renamed" }
         try reopened.exec("UPDATE workspaces SET branch = 'next' WHERE id = 'w-live';")
+        try reopened.commitSomethingElse()
         try await collector.wait("a write to the new log") { $0.records.first?.meta.branch == "next" }
 
         // With nothing changing, nothing is published.
@@ -283,5 +286,18 @@ import Testing
             #expect(listed.map(\.id) == [yours])
             #expect(listed.first?.name == "Fix the cart")
         }
+    }
+}
+
+private extension TestDatabase {
+    /// Commits something the engine doesn't read, as the app goes on doing, so that the engine reads the commit before.
+    /// SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads once,
+    /// `metadataThrottle` after hearing of that write: a writer held up between the two, as on a busy runner, leaves
+    /// that read with nothing new, and with nothing else written, only the safety rescan, an hour here, reads again. On
+    /// CI on 2026-11-09 an update went unread for the four minutes the test waited. A commit is written only once the
+    /// one before it can be read, so the read this one brings finds that.
+    func commitSomethingElse() throws {
+        // A commit whatever the value: SQLite writes the database's first page each time.
+        try exec("PRAGMA user_version = 1;")
     }
 }
