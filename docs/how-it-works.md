@@ -1907,9 +1907,9 @@ With + Sprint Tasks or + All My Tasks, a line under the header counts your work 
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
 with + Sprint Tasks offering **Show Them**, + All My Tasks, with the Board at the first card of that work
 (`MyWorkFacts.card`): its own, lanes from the top, To start before In progress, else a pull request's that names one. Its
-column opens for the moment where it's folded, and its title flashes; the page scrolls to its lane, as to a mission's; and
-the card takes the keyboard's focus, for VoiceOver to read it (`PullRequestOrder.revealedCard`); or says "All your open
-tasks and bugs are in Sprint 42";
+column opens for the moment where it's folded, and its title flashes; a finished mission's lane it's in unfolds; the page
+scrolls to its lane, as to a mission's; and the card takes the keyboard's focus, for VoiceOver to read it
+(`PullRequestOrder.revealedCard`); or says "All your open tasks and bugs are in Sprint 42";
 "Looking for…" until the first read, and why when one fails, keeping what was read before. It shows under the sprint's
 problem too, as the Sprint page shows the cards read before under it. With no sprint going on, it says how many are open
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,

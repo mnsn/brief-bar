@@ -235,6 +235,35 @@ import Testing
         return order
     }
 
+    /// Pull Request Order, on, with a session's order of !4101, then !4102 after it, both merged: a finished mission, whose
+    /// lane folds; and your draft !4093, in no mission.
+    private static func withAFinishedMission() throws -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        var orders = DeclaredOrders()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        try orders.apply(OrderRequest(entries: [.init(link: link(4101)), .init(link: link(4102), after: ["4101"])]))
+        orders.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        let merged = [4101, 4102].map { ItemRef.pullRequest(organization: "contoso", number: $0) }
+        order.publish(
+            .azureDevOps,
+            pullRequests: (merged + [ref]).map { pullRequest in
+                OrderPullRequest(
+                    ref: pullRequest, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/\(pullRequest.shortOrderLabel)",
+                    targetBranch: "main", author: "robin", state: pullRequest == ref ? .draft : .merged,
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                )
+            },
+            stages: [
+                merged[0]: StageFacts(role: .author, state: .merged), merged[1]: StageFacts(role: .author, state: .merged),
+                ref: StageFacts(role: .author, state: .draft),
+            ],
+            account: "robin@contoso.com"
+        )
+        return order
+    }
+
     /// Shows the Board in a window while `body` runs, once its card is drawn.
     /// - Parameters:
     ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
@@ -473,6 +502,25 @@ import Testing
             #expect(drawn.shown == 0)
             #expect(order.revealedCard == nil)
             #expect(order.boardFolds == BoardFolds([.toStart: .folded]))
+        }
+    }
+
+    /// Show Them asks for a merged pull request's card that names your work, in a finished mission's lane, which folds: the
+    /// lane shows, so that the card is drawn and takes the keyboard.
+    @Test func aCardShowThemAsksForInAFinishedMissionsFoldedLaneShowsAndTakesTheKeyboard() async throws {
+        let order = try Self.withAFinishedMission()
+        let merged = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        #expect(order.missions.first { $0.contains(merged) }?.isFinished == true)
+        let details = Details()
+        try await Self.showing(order, details: details) { window, _, drawn in
+            #expect(!drawn.isDrawn(merged))
+            order.revealedCard = merged
+            try await until("its lane to show") { drawn.isDrawn(merged) }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return details.shown == merged
+            }
+            #expect(order.revealedCard == nil)
         }
     }
 

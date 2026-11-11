@@ -840,9 +840,9 @@ package struct OrderBoardView: View {
     }
 
     /// Takes the card My Work's Show Them asks for, the first of your work outside the sprint, its own or a pull request's
-    /// that names it, and shows it: its column opens for the moment where it would be folded, and its title flashes; the
-    /// page scrolls to its lane, as to a mission's; and the keyboard's focus goes to it, owed until it's drawn, for VoiceOver
-    /// to read it too.
+    /// that names it, and shows it: its column opens for the moment where it would be folded, and its title flashes; a
+    /// finished mission's lane it's in shows, as its folded line's chevron would show it; the page scrolls to its lane, as to
+    /// a mission's; and the keyboard's focus goes to it, owed until it's drawn, for VoiceOver to read it too.
     private func takeCardReveal(_ ref: ItemRef?, lanes: [BoardLane], with proxy: ScrollViewProxy) {
         guard let ref else { return }
         DispatchQueue.main.async {
@@ -850,6 +850,8 @@ package struct OrderBoardView: View {
         }
         let isIn = { (lane: BoardLane) in lane.tasks.contains { $0.ref == ref } || lane.columns.values.contains { $0.contains { $0.ref == ref } } }
         guard let lane = lanes.first(where: isIn) else { return }
+        // A merged pull request's card that names your work, in a finished mission's lane, which folds, isn't drawn.
+        if let key = lane.mission, missions.contains(where: { $0.key == key && $0.isFinished }) { unfolded.insert(key) }
         let spot = CardSpot(lane: lane.kind, ref: ref)
         if let column = column(of: spot) {
             openForTheMoment(column)
