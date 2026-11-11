@@ -61,9 +61,7 @@ package struct UpNextView: View {
                 if folded {
                     ForEach(upNext.slots) { slot in
                         HStack(spacing: 3) {
-                            Circle()
-                                .fill(slot.kind.stage.color)
-                                .frame(width: 7 * textScale, height: 7 * textScale)
+                            UpNextSlotMark(stage: slot.kind.stage)
                             Text("\(slot.count)")
                                 .monospacedDigit()
                         }
@@ -127,6 +125,28 @@ extension UpNextView {
     }
 }
 
+/// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot; for Approved next, its
+/// seal, as Approved's column title has it, so that its shape tells it from Merge next's beside it, as some see colors.
+private struct UpNextSlotMark: View {
+    let stage: PullRequestStage
+
+    @Environment(\.textScale) private var textScale
+
+    var body: some View {
+        if stage == .approved {
+            // `font(size:)` grows with the text size itself.
+            Image(systemName: PullRequestStage.approved.symbol)
+                .font(size: 9, weight: .bold)
+                .foregroundStyle(stage.color)
+                .frame(width: 7 * textScale, height: 7 * textScale)
+        } else {
+            Circle()
+                .fill(stage.color)
+                .frame(width: 7 * textScale, height: 7 * textScale)
+        }
+    }
+}
+
 /// One of Up Next's slots: its kind in its stage's color, whose ⌄ chooses its pull request, ✎ once you chose it, and how
 /// many it has; its pull request, why, and its mission; and "2 more ›", which shows the rest on the Board.
 private struct UpNextSlotView: View {
@@ -147,9 +167,7 @@ private struct UpNextSlotView: View {
         let mission = missionTitle
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
-                Circle()
-                    .fill(stage.color)
-                    .frame(width: 7 * textScale, height: 7 * textScale)
+                UpNextSlotMark(stage: stage)
                     .accessibilityHidden(true)
                 UpNextChooser(slot: slot, order: order)
                 if slot.isPicked {
@@ -300,8 +318,8 @@ private struct UpNextChooser: View {
     }
 }
 
-/// Up Next's slots in lines: as many to a line as fit at their narrowest, never more than there are, so that they always
-/// fill the line, as wide as it allows and as tall as the tallest of them on it.
+/// Up Next's slots in lines: as many to a line as fit at their narrowest, never more than there are, spread evenly over the
+/// lines that takes, so that they always fill the line, as wide as it allows and as tall as the tallest of them on it.
 package struct UpNextGrid: Layout {
     /// How narrow a slot can be.
     let minimum: CGFloat
@@ -312,12 +330,14 @@ package struct UpNextGrid: Layout {
         self.spacing = spacing
     }
 
-    /// How many slots go on a line this wide.
+    /// How many slots go on a line this wide: as many as fit, never more than there are, spread evenly over the lines that
+    /// takes, so that the last isn't left short: six that fit five to a line go three and three.
     package static func columns(count: Int, width: CGFloat, minimum: CGFloat, spacing: CGFloat) -> Int {
         guard count > 0 else { return 0 }
         guard width.isFinite, width > 0 else { return count }
-        let fit = Int(((width + spacing) / (minimum + spacing)).rounded(.down))
-        return min(count, max(1, fit))
+        let fit = min(count, max(1, Int(((width + spacing) / (minimum + spacing)).rounded(.down))))
+        let lines = (count + fit - 1) / fit
+        return (count + lines - 1) / lines
     }
 
     package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

@@ -52,4 +52,19 @@ import Testing
         #expect(size.width == CGFloat(4 * 176 + 3 * 10))
         #expect(size.height.isFinite && size.height > 0)
     }
+
+    /// Slots that wrap spread evenly over their lines, the last never left short: six that fit five to a line go three and
+    /// three, as do six that fit four; four that fit three go two and two; where all fit, they take one line.
+    @Test func slotsThatWrapSpreadEvenlyOverTheirLines() {
+        func columns(_ count: Int, fitting fit: Int) -> Int {
+            UpNextGrid.columns(count: count, width: CGFloat(fit * 176 + (fit - 1) * 10), minimum: 176, spacing: 10)
+        }
+        #expect(columns(6, fitting: 5) == 3)
+        #expect(columns(6, fitting: 4) == 3)
+        #expect(columns(6, fitting: 2) == 2)
+        #expect(columns(6, fitting: 6) == 6)
+        #expect(columns(4, fitting: 3) == 2)
+        #expect(columns(5, fitting: 4) == 3)
+        #expect(columns(3, fitting: 1) == 1)
+    }
 }

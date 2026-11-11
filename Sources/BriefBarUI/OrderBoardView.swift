@@ -522,7 +522,7 @@ package struct OrderBoardView: View {
     /// What a column holds, for its title's tooltip.
     static func help(_ stage: PullRequestStage) -> String {
         switch stage {
-        case .inProgress: "Its work isn't done: a draft, or a session still writes it before anyone else reviews it"
+        case .inProgress: "Its work isn't done: a draft, a session still writes it before anyone else reviews it, or it waits for the changes you asked for"
         case .yourReview: "You review it next"
         case .teammateReview: "Others review it next: yours that wait for reviewers, and those you finished reviewing"
         case .approved: "The reviewers Azure DevOps requires approved it, but it can't complete it yet: its card says why"
@@ -1108,7 +1108,7 @@ private struct BoardCardView: View {
     }
 
     var body: some View {
-        content.view
+        withBadgeLine
             .padding(.leading, 13 * textScale)
             .padding(.trailing, 9 * textScale)
             .padding(.vertical, 9 * textScale)
@@ -1122,14 +1122,10 @@ private struct BoardCardView: View {
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
-                if !nexts.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(nexts) { slot in
-                            badge(slot)
-                        }
-                    }
-                    .padding(7 * textScale)
-                    .allowsHitTesting(false)
+                if nexts.count == 1, let slot = nexts.first {
+                    badge(slot)
+                        .padding(7 * textScale)
+                        .allowsHitTesting(false)
                 }
             }
             .overlay {
@@ -1196,6 +1192,26 @@ private struct BoardCardView: View {
             // Its Mission menu's, as its row has them; but for one that waits, Set as Next to Merge is the Board's, above,
             // only where its lane's mission holds it.
             .missionActions(card.ref, context: content.mission, offersNext: card.stage != .waits)
+    }
+
+    /// Its content, under the line of its own that two badges take, Fix next and Next: in the corner, where one stays, they
+    /// would cover its number.
+    private var withBadgeLine: some View {
+        VStack(alignment: .leading, spacing: 4 * textScale) {
+            if nexts.count > 1 {
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    ForEach(nexts) { slot in
+                        badge(slot)
+                    }
+                }
+                // As far in as one in the corner.
+                .padding(.top, -2 * textScale)
+                .padding(.trailing, -2 * textScale)
+                .allowsHitTesting(false)
+            }
+            content.view
+        }
     }
 
     /// Next, or Fix next, in its slot's color, with ✎ where you chose it.
