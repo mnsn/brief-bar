@@ -544,12 +544,15 @@ pull request, has Copilot address that thread alone, as you say in **Tell Copilo
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
 push the branch (never with force), and reply on the thread and resolve it, as you. Like Push & Reply, it commits all the
-session changed, so other fixes there that you haven't pushed go too, without a reply, which the composer names as you
-send it; when it changed nothing for the thread, it doesn't commit or push, but replies why, and leaves the thread
-active. It goes as a Push & Reply
-goes, with the same checks, below, so it doesn't wait in a
-session of the Copilot app that's running a turn: BriefBar says to send it once that's done. The box stays as you last
-left it, for the next Fix or Fix All. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
+session changed, so other fixes there that you haven't pushed go too, without a reply, as does what an earlier fix sent
+to push and reply changed there and didn't push, which the composer names as you send it, as the Send to Copilot window
+does; when it changed nothing for the thread, it doesn't commit or push, but replies why, and leaves the thread active.
+It goes as a Push & Reply goes, with the same checks, below, so it doesn't wait in a session of the Copilot app that's
+running a turn: BriefBar says to send it once that's done. A new session, or a fork the Copilot CLI makes, that it
+starts is named for it, **Fix, Push & Reply: !4102 Add retry with backoff**. Once it's sent, it's Copilot's to finish:
+turning off **Send Work to Copilot**, or quitting BriefBar, doesn't stop it, and it still pushes and replies; **Stop**,
+below, does. The box stays as you last left it, for the next Fix or Fix All. A comment can suggest a change, which shows
+as **Suggested change**: **Apply ‹name›'s suggestion as written** has
 Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
 **▾** away: the session that worked on the thread, if one did, else the pull request's, first and chosen; for a fix, a
 fork of it, with its history, in a worktree of its own, while it stays as it is, which goes first while one of
@@ -565,10 +568,11 @@ explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Re
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
 couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
 push and reply**, then, once its turn is done, **Fixed, pushed and replied in ‘Retry backoff’** when the session pushed
-a commit of its own, as git tells in the checkout it works in; when it stopped before it pushed, as when the tests still
-failed, the pull request was retargeted, completed or abandoned meanwhile, or someone else pushed first, **Fixed in
-‘Retry backoff’, but not pushed**, with what Copilot said under it. BriefBar tells once, as the turn ends, so a push
-since, from anywhere, doesn't change it. One of BriefBar's own tasks, named for what it does, is called a task there,
+a commit of its own, as git tells in the checkout it works in; when it didn't, as when it changed nothing for the
+thread, or stopped before it pushed, as when the tests still failed, the pull request was retargeted, completed or
+abandoned meanwhile, or someone else pushed first, **Done in ‘Retry backoff’, but not pushed**, with what Copilot said
+under it. BriefBar tells once, as the turn ends, so a push since, from anywhere, doesn't change it, and its notification
+says the same. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. Sent with **Send to Session** or **Send to a Fork**, BriefBar's
 extension in the session tells BriefBar how its turn goes, and what Copilot said as it ended, so the line follows it
 however long that takes, and a notification says when the session waits for your answer and when it's done, failed, or
@@ -580,7 +584,10 @@ finished in twelve hours, such as one that waited overnight for your answer, or 
 before it said. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
-which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
+which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go
+just as it did, opens it there for you to check and send, saying why; once BriefBar restarted, or for a thread Fix All
+took on, whose words it doesn't keep, it opens Fix going there for you to write and send, with **Push and reply once
+it's fixed** as that fix had it, which stays as you last left it for the next fix; and **Clear**, which
 lets the line go. **Fix** waits while Copilot fixes the
 thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's

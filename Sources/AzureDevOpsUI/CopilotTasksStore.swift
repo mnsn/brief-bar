@@ -151,6 +151,9 @@ final class CopilotTasksStore: ObservableObject {
     /// Whether a pull request is still open in your lists (`CopilotSending.isOpen`): one completed or abandoned, or that
     /// left them, gets no push from the Send to Copilot window, as from a comment's composer. The source's.
     var pullRequestIsOpen: (PRKey) -> Bool = { _ in true }
+    /// What's still to fix of a pull request, as the list reads it (`PRRecord.partsToFix`): where the Send to Copilot window
+    /// looks for the fixes a comment's fix sent with Push and Reply on pushes along (`alsoPushes`). The source's.
+    var partsToFix: (PRKey) -> [PullRequestPart] = { _ in [] }
 
     /// Why nothing that pushes may go to a pull request from the Send to Copilot window: it isn't open in your lists anymore.
     /// Nil while it is, or for anything but a push.
@@ -182,6 +185,14 @@ final class CopilotTasksStore: ObservableObject {
 
     static func retargetedMessage(_ target: String) -> String {
         "The pull request merges into \(target) now, not the branch this prompt names, so nothing went. Close this window and open it again, for a prompt that names \(target)."
+    }
+
+    /// Why the Send to Copilot window sends nothing for `subject` now, as the list reads its pull request: for a Push &
+    /// Reply, the pull request was completed or abandoned (`closedProblem`), or merges into another branch than the
+    /// window's prompt names (`retargetProblem`). Nil while it may go, and for anything that doesn't push.
+    func windowProblem(_ subject: TaskSubject) -> String? {
+        guard case .pullRequest(let pullRequest, .pushAndReply) = subject else { return nil }
+        return closedProblem(pullRequest) ?? retargetProblem(pullRequest)
     }
 
     /// Reads the branch a pull request merges into from Azure DevOps, with one request: right before Git checks what a
@@ -650,7 +661,7 @@ final class CopilotTasksStore: ObservableObject {
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing,
-            forking: forking, targetNow: askTarget
+            forking: forking, targetNow: askTarget, fixing: fixesFirst
         )
         // Going on with a session, its next turn may end before the run is known to have started: the turns of the prompts
         // sent it before aren't followed until then (`pauseFollowing`).
@@ -1004,9 +1015,9 @@ final class CopilotTasksStore: ObservableObject {
             switch entry.action {
             case .review?: heading = "Copilot's review is ready"
             case .pushAndReply? where entry.fixesFirst:
-                // It says only that it fixed, as the line about the thread says whether it pushed: what Copilot said tells.
-                let fixing = entry.taken?.filter { $0.ended == nil && $0.part.thread != nil }.count
-                heading = fixing == 1 ? "Copilot finished fixing a comment" : "Copilot finished fixing the comments"
+                // Whether it pushed a commit of its own, as its row says, which git told before it ended: it may have changed
+                // nothing, or stopped short of its push. What Copilot said tells.
+                heading = entry.pushSeen ? "Copilot fixed, pushed and replied" : "Copilot is done, but didn't push"
             case .pushAndReply?: heading = entry.onlyPushes ? "Copilot pushed" : "Copilot pushed and replied"
             default: heading = "Copilot's changes are ready"
             }
@@ -1146,14 +1157,8 @@ final class CopilotTasksStore: ObservableObject {
         // In the session it went to, by its own name, a fork's included.
         var work = CopilotWork.from(prompt, about: part, turn: SessionTurn(report))
         work.forkedFrom = nil
-        var title = work.sentence(name: report.name, forkOf: nil)
-        // A fix sent to push and reply that's done: it says only that it fixed, as a task's notification does, as the line
-        // about the thread says whether it pushed. What Copilot said tells.
-        if report.state == .finished, work.purpose == .pushAndReply, work.fixes {
-            let place = CopilotWork.place(report.name, isFork: false, forkOf: nil)
-            let threads = prompt.parts.filter { $0.thread != nil }.count
-            title = "Copilot finished fixing \(threads == 1 ? "a comment" : "the comments") in \(place)"
-        }
+        // A fix sent to push and reply that's done says whether it pushed a commit of its own, as git told before it ended.
+        let title = work.sentence(name: report.name, forkOf: nil)
         let said = firstLine(report.said)
         let body: String
         var state = ItemState.done

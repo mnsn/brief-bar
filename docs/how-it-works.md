@@ -2883,7 +2883,8 @@ another, nothing goes, and BriefBar says to open the window again, for a prompt 
 has read, the list reads the pull request again then, rather than at its next refresh, so that the window, opened again,
 names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). Nor does one go once the list no longer
 has the pull request open, as a comment's composer doesn't: the window checks as you send it, and the list is asked
-again, as for a retarget, until the prompt is sent or copied (`CopilotTasksStore.closedProblem`). Nor does a
+again, as for a retarget, until the prompt is sent or copied (`CopilotTasksStore.closedProblem`,
+`CopilotTasksStore.windowProblem`). Nor does a
 Push & Reply go to one of the
 app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
 as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
@@ -3280,14 +3281,24 @@ changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pus
 the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
 thread alone and resolves it. Like Push & Reply, it commits all the session changed, so the session's other fixes that
 you haven't pushed go too, without a reply: the box's help says so, and the composer's note names those ready where it
-goes, as the bar at the foot of the details has them, less what it takes on itself, or what a fork of it has of them
-(`CopilotAsking.alsoPushes(_:in:forkedWithTheCLI:taking:)`). When it changed nothing for the thread, it doesn't commit or
-push, which would push those alone, but replies why, and leaves the thread active. It's sent as a Push &
-Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
-nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
-([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as its prompt quotes
-it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is read
-(`CopilotSending.Fix.record`). To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a fix, it doesn't
+goes, as the bar at the foot of the details has them, and what an earlier fix sent there to push and reply changed and
+didn't push, which isn't ready to push on its own (`CopilotTasksStore.unpushedFixes`), less what it takes on itself, or
+what a fork of it has of them: in a fork the Copilot CLI makes of a task, only what's committed, the conflicts'
+resolution of the ready ones and what the others committed before they stopped, if anything
+(`CopilotTasksStore.alsoPushes`, `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). The Send to
+Copilot window that Edit the Whole Prompt… opens says the same for where it sends it, among what the list has still to
+fix (`CopilotComposerView.alsoPushes`, `CopilotTasksStore.partsToFix`). When it changed nothing for the thread, it
+doesn't commit or push, which would push those alone, but replies why, and leaves the thread active. It's sent as a Push
+& Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
+nothing, and a new session, or a fork the CLI makes, that it starts is named for that, "Fix, Push & Reply: !4102 Add
+retry with backoff", as BriefBar calls its task, not "Push & Reply" (`CopilotLauncher.Request.fixing`,
+`CopilotCommand.sessionName(for:action:fixing:)`). It goes only as a Push & Reply goes, with the checks of what it would
+push and where ([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as
+its prompt quotes it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is
+read, in place or from the window (`CopilotSending.Fix.record`, `CopilotSending.windowSubject`). Once it's sent, it's
+Copilot's to finish, as every task is: turning off Send Work to Copilot, or quitting BriefBar, doesn't stop it, and it
+still pushes and replies; Stop does. To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a
+fix, it doesn't
 wait for one. Unlike Push & Reply, which ships what an earlier task changed, it goes wherever a fix goes, a fork too
 (`CopilotComposerView.mustContinue(_:fixes:)`): it commits what's in the checkout it works in, all the session changed
 before too, and, in a fork of one of the app's sessions, the session's changes that it hasn't committed, which the fork
@@ -3380,9 +3391,11 @@ said with it, a task with its run, and with what it took on as the session goes 
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,
 which takes its change along but replies on nothing of it; nor one from before it went, which the commit kept has.
-Otherwise it says "Fixed in ‘Retry backoff’, but not pushed" (`CopilotWork.pushSeen`), with what Copilot said under it;
-the session's other fixes stay ready; its task's row says "Fixed, but not pushed" (`CopilotTaskEntry.pushSeen`); and
-the notification as it ends says only that Copilot finished fixing, with what it said. Nor is one known to have pushed
+Otherwise it says "Done in ‘Retry backoff’, but not pushed" (`CopilotWork.pushSeen`), not that it fixed it, since it may
+have changed nothing, with what Copilot said under it; the session's other fixes stay ready; its task's row says "Done,
+but not pushed" (`CopilotTaskEntry.pushSeen`); and the notification as it ends, which comes once git has told, says
+which: a task's "Copilot fixed, pushed and replied" or "Copilot is done, but didn't push", with what Copilot said. Nor
+is one known to have pushed
 when git can't tell, as when its checkout is gone, or one kept from before BriefBar kept the commit. What git can't tell
 apart: a push from another checkout of the clone, which shares the branch's place there, from the session's own, so that
 a commit someone pushed from another worktree, which the session checked out as it was, committing nothing, looks like
@@ -3492,10 +3505,10 @@ back on, if the turn still waits (`CopilotTasksStore.withdrawPromptNotifications
 once says nothing. Once the turn ends, one says how, in that one's place: done, failed, or stopped because the session
 closed or autopilot reached the most it may spend, never when you stopped it, which takes back the one that said it
 waited on you. Its title is what the pull request's line says, by the session's name as the app shows it, a fork's own:
-"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but, for a comment's fix sent to
-push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a comment in ‘Retry
-backoff’", as a task's says, once git has told whether it pushed, which its line says, as above; then the pull request, "!4102 Add retry with backoff", as
-a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
+"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", and, for a comment's fix sent to
+push and reply that's done, once git has told whether it pushed, "Fixed, pushed and replied in ‘Retry backoff’" or "Done
+in ‘Retry backoff’, but not pushed", as above; then the pull request, "!4102 Add retry with backoff", as a task's says
+it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
 prompt took on, as other notifications about it do; one posted before the list read the pull request, as BriefBar
 starts, names it and the thread, and a click finds them as the list has them by then (`CopilotTasksStore.promptLink`).
 Its record keeps when BriefBar last said its turn waited on you, so that a restart doesn't say so again; an end BriefBar
@@ -3524,7 +3537,10 @@ or applied, still shows as it did; else its words come back all the same, going 
 you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which
 it doesn't apply in its place. When BriefBar can't find where it went now, or it can't go there, the composer says so,
 with the words, and waits for you to choose (`CopilotDrafts.retryGone`). Without those words, as once BriefBar
-restarted, it opens going there, with what you wrote in it, for you to send. What the composer it opens anew was sending
+restarted, or for a thread Fix All took on, it opens going there, with what you wrote in it, for you to send, and, for a
+comment's fix, with Push and Reply as that fix had it, which its line knows after a restart too, though Push and Reply
+for the next fix stays as you last left it (`CopilotDrafts.Retry.ships`, `CopilotAsking.restoreShips`). What the
+composer it opens anew was sending
 is called off, as closing it would (`CopilotDrafts.takeRetry`). Nothing of it comes back once BriefBar
 forgot the words, as Send Work to Copilot was turned off, or Azure DevOps stopped, even for a send that ends after; and
 what Try Again asked of a composer that didn't open for it goes as you open the composer yourself, or close it. On a

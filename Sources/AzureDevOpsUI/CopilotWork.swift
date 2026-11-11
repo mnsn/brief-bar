@@ -312,8 +312,8 @@ struct CopilotWork: Equatable {
     /// fork of ‘Retry backoff’", "Fixed in ‘Retry backoff’, not pushed", "Couldn't fix it in ‘Retry backoff’", "Pushed from
     /// ‘Retry backoff’, without a reply"; for a Push & Reply that fixes it first (`fixes`), "Copilot is fixing this in ‘Retry
     /// backoff’, to push and reply", then "Fixed, pushed and replied in ‘Retry backoff’" once its push is seen (`pushSeen`),
-    /// else "Fixed in ‘Retry backoff’, but not pushed". What Copilot said as it ended, such as why it couldn't, goes under
-    /// it (`said`).
+    /// else "Done in ‘Retry backoff’, but not pushed", as it may have changed nothing. What Copilot said as it ended, such as
+    /// why it couldn't, or why it changed nothing, goes under it (`said`).
     /// - Parameters:
     ///   - name: the session's name; nil when it isn't known.
     ///   - forkOf: for a fork, the name of the session it forked.
@@ -344,7 +344,7 @@ struct CopilotWork: Equatable {
         case (.explain, .done):
             return "Answered in \(place)"
         case (.pushAndReply, .done) where fixes:
-            return pushSeen ? "\(words.fixedAndPushed) in \(place)" : "\(words.fixed) in \(place), but not pushed"
+            return pushSeen ? "\(words.fixedAndPushed) in \(place)" : "Done in \(place), but not pushed"
         case (.pushAndReply, .done):
             return "\(words.pushed) from \(place)" + (part.thread != nil && !replies ? ", without a reply" : "")
         case (_, .failed):
@@ -657,9 +657,34 @@ extension CopilotTasksStore {
     /// its conflicts while it has them; and those a Push & Reply that failed or stopped didn't push. A question asked about
     /// one since, as its line says, doesn't push its fix.
     func readyFixes(of key: PRKey, among parts: [PullRequestPart]) -> [ReadyFixes] {
+        fixes(of: key, among: parts) { $0.waitsToBePushed }
+    }
+
+    /// The fixes of a pull request's threads that were to push and reply, and finished without pushing
+    /// (`CopilotWork.shipsUnpushed`), by the session they're in, the latest first, among `parts`: what they changed is still
+    /// there, for the next push from there to take along, though they aren't ready to push on their own (`readyFixes`).
+    func unpushedFixes(of key: PRKey, among parts: [PullRequestPart]) -> [ReadyFixes] {
+        fixes(of: key, among: parts) { $0.shipsUnpushed }
+    }
+
+    /// What a comment's fix sent with Push and Reply on pushes besides what it takes on, `taking`, in `session`, or a fork
+    /// of it, which you haven't pushed, for its composer's note and the Send to Copilot window's
+    /// (`CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`): the session's fixes ready to push, and those
+    /// that were to push and reply there and didn't, among `parts`, what's still to fix. Nil when that's nothing.
+    func alsoPushes(
+        _ key: PRKey, among parts: [PullRequestPart], in session: SessionChoice, forkedWithTheCLI: Bool, taking: [PullRequestPart]
+    ) -> String? {
+        let ready = readyFixes(of: key, among: parts).first { $0.session == session.id }?.parts ?? []
+        let unpushed = unpushedFixes(of: key, among: parts).first { $0.session == session.id }?.parts ?? []
+        let name = CopilotWork.quoted(PullRequestSession.name(of: session), isTask: session.run.map { $0.isAppSession != true } ?? false)
+        return CopilotAsking.alsoPushes(ready, unpushed: unpushed, in: name, forkedWithTheCLI: forkedWithTheCLI, taking: taking)
+    }
+
+    /// The fixes of `parts` whose latest work is `included`, by the session they're in, the latest first.
+    private func fixes(of key: PRKey, among parts: [PullRequestPart], where included: (CopilotWork) -> Bool) -> [ReadyFixes] {
         var groups: [String: ReadyFixes] = [:]
         for part in parts {
-            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply]), work.waitsToBePushed else { continue }
+            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply]), included(work) else { continue }
             var group = groups[work.session] ?? ReadyFixes(
                 session: work.session, forkedFrom: work.forkedFrom, isTask: work.isTask, parts: [], latest: work.since
             )
