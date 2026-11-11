@@ -97,20 +97,30 @@ import Testing
         }
     }
 
-    /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it.
+    /// Your sprint work, on My Work's Board with + Sprint Tasks: the sprint's stories, in its order, which have lanes.
+    private struct Sprint {
+        var work: [SprintWork]
+        var stories: [ItemRef]
+    }
+
+    /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it;
+    /// with your sprint work on it too, as My Work's, if given.
     private struct Board: View {
         @ObservedObject var order: PullRequestOrder
         @ObservedObject var details: Details
         @ObservedObject var late: Late
         let drawn: Drawn
         let waits: FocusWaits?
+        let sprint: Sprint?
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
             let covered = details.covers && details.shown != nil
+            let missions = MissionsBody.missions(order.missions, kinds: kinds)
+            let board = order.board(kinds: kinds)
             OrderBoardView(
-                board: order.board(kinds: kinds), missions: MissionsBody.missions(order.missions, kinds: kinds), order: order,
-                elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
+                board: sprint.map { board.withWork($0.work, missions: missions, stories: $0.stories) } ?? board, missions: missions,
+                order: order, elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
                 card: { [drawn, late] card in
                     guard card.stage != late.column else { return nil }
                     let label = "\(card.ref.shortOrderLabel) Totals"
@@ -128,8 +138,8 @@ import Testing
                     details.shown = ref
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
-                setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
+                setAsNext: nil, work: sprint.map { _ in work }, notOnBoard: 0, showByStatus: nil,
+                now: Date(timeIntervalSince1970: 1_792_000_000), focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
                 // On CI the main actor's turns can come seconds late, so a card can take the keyboard after the app's half
                 // second: a column a key opened folds back here only once a card in another column has the keyboard.
                 keyMomentWait: .seconds(3_600)
@@ -141,6 +151,22 @@ import Testing
                         .frame(width: 200)
                 }
             }
+        }
+
+        /// A work item's card, its number, and its story's lane's header, its story's.
+        private var work: BoardWorkContent {
+            BoardWorkContent(
+                card: { [drawn] task in
+                    let label = task.ref.shortOrderLabel
+                    let content = Text(label)
+                        .onAppear { drawn.views[task.ref, default: 0] += 1 }
+                        .onDisappear { drawn.views[task.ref, default: 0] -= 1 }
+                    return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
+                },
+                story: { ref in AnyView(Text(ref.shortOrderLabel)) },
+                isSelected: { [details] in details.shown == $0 },
+                select: { [details] in details.shown = $0 }
+            )
         }
     }
 
@@ -182,6 +208,32 @@ import Testing
                 )
             },
             stages: [ref: StageFacts(role: .author, state: .draft), review: StageFacts(role: .reviewer, asksYou: "Sam asked you")],
+            account: "robin@contoso.com"
+        )
+        return order
+    }
+
+    /// A pull request of yours that merged: on My Work with your sprint work, in Completed once it's out, its stage Merged.
+    private static let merged = ItemRef.pullRequest(organization: "contoso", number: 4085)
+
+    /// Pull Request Order, on, told of one pull request of yours, a draft, In progress, and of one of yours that merged.
+    private static func withAMergedPullRequest() -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        order.publish(
+            .azureDevOps,
+            pullRequests: [
+                OrderPullRequest(
+                    ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main",
+                    author: "robin", createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                ),
+                OrderPullRequest(
+                    ref: merged, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/badges", targetBranch: "main",
+                    author: "robin", state: .merged, createdAt: Date(timeIntervalSince1970: 1_790_000_000)
+                ),
+            ],
+            stages: [ref: StageFacts(role: .author, state: .draft), merged: StageFacts(role: .author, state: .merged)],
             account: "robin@contoso.com"
         )
         return order
@@ -247,15 +299,19 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
-    /// - Parameter waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as
-    ///   in the app.
+    /// - Parameters:
+    ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
+    ///     app.
+    ///   - sprint: your sprint work, on the Board as on My Work; nil for only the pull requests.
     private static func showing(
         _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
-        _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
+        sprint: Sprint? = nil, _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits))
+        let host = NSHostingView(
+            rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits, sprint: sprint)
+        )
         // Wide enough for every column, so that the Board doesn't scroll sideways: its scroller, which shows only while the
         // details don't cover the Board, would change its height as they close.
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: 500), styleMask: .borderless,
@@ -596,6 +652,35 @@ import Testing
                 return details.shown == Self.ref
             }
             try await until("Your review to fold back once the keyboard left it") { !drawn.isDrawn(Self.review) }
+        }
+    }
+
+    /// On My Work, with your sprint work on the Board, a pull request that's out is in Completed, its stage still Merged:
+    /// Return on Completed's strip, which Tab reaches as it does a card, opens the column for the moment on that pull
+    /// request, which has the keyboard and keeps it open.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func returnOnAFoldedCompletedStripOpensItOnItsPullRequest() async throws {
+        let order = Self.withAMergedPullRequest()
+        #expect(order.stage(of: Self.merged)?.stage == .merged)
+        order.setBoardFolds(BoardFolds([.completed: .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: Sprint(work: [], stories: [])) { window, _, drawn in
+            #expect(!drawn.isDrawn(Self.merged))
+            // Tab to the draft's card, then on to Completed's strip in its lane, the only other with a card.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on Completed's strip, which Tab went to, to open it") {
+                Self.press(.return, in: window)
+                return drawn.isDrawn(Self.merged)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on the merged pull request, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.merged
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.merged), "Completed folded under the pull request that has the keyboard")
+            #expect(order.boardFolds == BoardFolds([.completed: .folded]))
         }
     }
 

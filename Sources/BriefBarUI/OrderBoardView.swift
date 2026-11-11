@@ -465,9 +465,12 @@ package struct OrderBoardView: View {
         return open
     }
 
-    /// The column a card is in on the board: a pull request's stage's, or a work item's.
+    /// The column a card is in on the board: a pull request's stage's, or Completed for one in it, whose stage stays Merged;
+    /// or a work item's.
     private func column(of spot: CardSpot) -> BoardColumn? {
-        if let card = board.card(spot.ref, preferring: spot.lane) { return .stage(card.stage) }
+        if let card = board.card(spot.ref, preferring: spot.lane) {
+            return board.completed.contains(card.ref) ? .completed : .stage(card.stage)
+        }
         return board.lanes.lazy.flatMap(\.tasks).first { $0.ref == spot.ref }.map { BoardColumn($0.column) }
     }
 
