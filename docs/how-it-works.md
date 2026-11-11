@@ -3335,13 +3335,17 @@ changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pus
 the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
 thread alone and resolves it. Like Push & Reply, it commits all the session changed, so the session's other fixes that
 you haven't pushed go too, without a reply: the box's help says so, and the composer's note names those ready where it
-goes, as the bar at the foot of the details has them, and what an earlier fix sent there to push and reply changed and
-didn't push, which isn't ready to push on its own (`CopilotTasksStore.unpushedFixes`), less what it takes on itself, or
-what a fork of it has of them: in a fork the Copilot CLI makes of a task, only what's committed, the conflicts'
-resolution of the ready ones and what the others committed before they stopped, if anything
-(`CopilotTasksStore.alsoPushes`, `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). The Send to
-Copilot window that Edit the Whole Prompt… opens says the same for where it sends it, among what the list has still to
-fix (`CopilotComposerView.alsoPushes`, `CopilotTasksStore.partsToFix`). When it changed nothing for the thread, it
+goes, as the bar at the foot of the details has them, and what other fixes there changed and didn't push, which aren't
+ready to push on their own: one sent to push and reply that didn't, and one that failed or was stopped, if it changed
+anything first, until a later push takes it along (`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`). In a
+fork BriefBar made, it names those of the session it forked that were over by when the fork was made, as a push from the
+fork carries them (`CopilotTasksStore.forkOrigin`). It leaves out what it takes on itself, and, in a fork the Copilot
+CLI made, or makes, of a task, what isn't committed: of the ready ones, all but the conflicts' resolution, and of the
+others, what those that weren't to push and reply changed (`CopilotTasksStore.alsoPushes`,
+`CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). The Send to Copilot window that Edit the Whole
+Prompt… opens says the same for where it sends it, among what the list has still to fix, leaving out the threads whose
+entries its prompt still lists as you send it, which Send takes on (`CopilotComposerView.alsoPushes`,
+`CopilotTasksStore.partsToFix`, `CopilotComposerView.sentParts`). When it changed nothing for the thread, it
 doesn't commit or push, which would push those alone, but replies why, and leaves the thread active. It's sent as a Push
 & Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
 nothing, and a new session, or a fork the CLI makes, that it starts is named for that, "Fix, Push & Reply: !4102 Add

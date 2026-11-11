@@ -767,12 +767,14 @@ struct CopilotAsking {
     static let shipsOnceDone = "once its tests pass, it commits, pushes and replies, as you"
 
     /// What a fix sent with Push and Reply on pushes besides its own, without replying on it, for its note: it commits all
-    /// its session changed, so the fixes `ready` in the session, which you haven't pushed, and what the session changed for
-    /// fixes that were to push and reply and didn't, `unpushed`. In a fork the Copilot CLI makes of one of BriefBar's tasks,
-    /// which starts at the commit the task's checkout has, only what's committed: of the ready ones, the conflicts'
-    /// resolution, which Resolve Conflicts commits; of the others, what they committed before they stopped, if anything.
-    /// None of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, and what
-    /// Copilot changed there for 1 comment and didn't push, without replying on those comments." Nil when that's nothing.
+    /// its session changed, so the fixes `ready` in the session, which you haven't pushed, and what fixes there changed and
+    /// didn't push, `unpushed`: those that were to push and reply and didn't, and those that failed or were stopped, if they
+    /// changed anything first. In a fork the Copilot CLI makes of one of BriefBar's tasks, which starts at the commit the
+    /// task's checkout has, only what's committed: of the ready ones, the conflicts' resolution, which Resolve Conflicts
+    /// commits; of the others, what they committed before they stopped, if anything, which the caller leaves to those that
+    /// were to push and reply. None of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’, which you
+    /// haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments."
+    /// Nil when that's nothing.
     static func alsoPushes(
         _ ready: [PullRequestPart], unpushed: [PullRequestPart] = [], in name: String, forkedWithTheCLI: Bool, taking: [PullRequestPart]
     ) -> String? {
@@ -784,11 +786,23 @@ struct CopilotAsking {
         var what: [String] = []
         if !parts.isEmpty { what.append("\(ReadyFixesBar.listed(parts)) ready in \(name), which you haven't pushed") }
         if !unpushed.isEmpty {
-            let comments = unpushed.count == 1 ? "1 comment" : "\(unpushed.count) comments"
             let did = forkedWithTheCLI ? "committed" : "changed"
-            what.append("what Copilot \(did) \(parts.isEmpty ? "in \(name)" : "there") for \(comments) and didn't push")
+            let fixed = Self.fixed(unpushed)
+            let comma = fixed.contains(" and ") ? "," : ""
+            what.append("what Copilot \(did) \(parts.isEmpty ? "in \(name)" : "there") for \(fixed)\(comma) and didn't push")
         }
         return "It also pushes \(what.joined(separator: ", and "))\(reply)."
+    }
+
+    /// What fixes were for, in a sentence: "1 comment", "2 comments, a build and the conflicts".
+    static func fixed(_ parts: [PullRequestPart]) -> String {
+        let threads = parts.filter { $0.thread != nil }.count
+        let builds = parts.filter { $0.build != nil }.count
+        var what: [String] = []
+        if threads > 0 { what.append(threads == 1 ? "1 comment" : "\(threads) comments") }
+        if builds > 0 { what.append(builds == 1 ? "a build" : "\(builds) builds") }
+        if parts.contains(.conflicts) { what.append("the conflicts") }
+        return what.count > 1 ? what.dropLast().joined(separator: ", ") + " and " + what[what.count - 1] : what.first ?? "nothing"
     }
 
     /// The words a composer says what it does in.

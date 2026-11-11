@@ -8,8 +8,10 @@
   **Copilot is done, but didn't push**, a session's **Fixed, pushed and replied in ‘Retry backoff’** or **Done in ‘Retry
   backoff’, but not pushed**.
 - **What a fix that pushes takes along, named in full.** With **Push and reply once it's fixed** checked, the composer
-  also names what an earlier fix sent there to push and reply changed and didn't push, which goes too, without a reply,
-  and the Send to Copilot window that **Edit the Whole Prompt…** opens names what goes with it too.
+  also names what an earlier fix there changed and didn't push, which goes too, without a reply: one sent to push and
+  reply that didn't, or one that failed or was stopped. In a fork BriefBar made, it names what the fork has of the
+  session it forked too. The Send to Copilot window that **Edit the Whole Prompt…** opens names what goes with it as
+  well, leaving out only the comments its prompt still lists as you send it.
 - **Sessions named for fixing first.** A new session, or a fork the Copilot CLI makes, that a comment's fix sent to push
   and reply starts is named **Fix, Push & Reply: !4102 Add retry with backoff**, as BriefBar calls its task, rather than
   **Push & Reply: …**.

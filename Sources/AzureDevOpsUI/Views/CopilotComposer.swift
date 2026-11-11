@@ -837,7 +837,8 @@ struct CopilotComposerView: View {
     private var footnote: String {
         if let fallback { return Self.fallbackNote(fallback) }
         // With Push and Reply on: what else goes, which you haven't pushed.
-        let also = Self.alsoPushes(subject, fixes: fixes, to: target, delivery: delivery, taking: parts, store: store).map { " " + $0 } ?? ""
+        let also = Self.alsoPushes(subject, fixes: fixes, to: target, delivery: delivery, parts: parts, prompt: prompt, store: store)
+            .map { " " + $0 } ?? ""
         if !runsHere { return appFootnote + also }
         let place: String
         switch target?.kind {
@@ -868,15 +869,18 @@ struct CopilotComposerView: View {
     }
 
     /// For a comment's fix sent with Push and Reply on, what else it pushes where the window sends it, which you haven't
-    /// pushed, as the composer it came from says for where that sends it (`CopilotTasksStore.alsoPushes`): nil for anything
-    /// else, and in a new worktree.
+    /// pushed, as the composer it came from says for where that sends it (`CopilotTasksStore.alsoPushes`): what it doesn't
+    /// take on as you send it, of `parts`, which a thread whose entry you took out of the prompt it doesn't, as Send has it
+    /// (`sentParts`). Nil for anything else, and in a new worktree.
     static func alsoPushes(
-        _ subject: TaskSubject, fixes: Bool, to target: SessionChoice?, delivery: Delivery, taking parts: [PullRequestPart],
+        _ subject: TaskSubject, fixes: Bool, to target: SessionChoice?, delivery: Delivery, parts: [PullRequestPart], prompt: String,
         store: CopilotTasksStore
     ) -> String? {
         guard fixes, case .pullRequest(let pullRequest, .pushAndReply) = subject, let target else { return nil }
         let key = PRKey(pullRequest.organization, pullRequest.id)
-        return store.alsoPushes(key, among: store.partsToFix(key), in: target, forkedWithTheCLI: delivery == .cliFork, taking: parts)
+        return store.alsoPushes(
+            key, among: store.partsToFix(key), in: target, forkedWithTheCLI: delivery == .cliFork, taking: sentParts(parts, in: prompt)
+        )
     }
 
     /// What happens in the Copilot app, as things stand: BriefBar sends it, to the session or a fork of it, or copies it

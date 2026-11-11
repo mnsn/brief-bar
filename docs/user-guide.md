@@ -544,9 +544,11 @@ pull request, has Copilot address that thread alone, as you say in **Tell Copilo
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
 push the branch (never with force), and reply on the thread and resolve it, as you. Like Push & Reply, it commits all the
-session changed, so other fixes there that you haven't pushed go too, without a reply, as does what an earlier fix sent
-to push and reply changed there and didn't push, which the composer names as you send it, as the Send to Copilot window
-does; when it changed nothing for the thread, it doesn't commit or push, but replies why, and leaves the thread active.
+session changed, so other fixes there that you haven't pushed go too, without a reply, as does what an earlier fix there
+changed and didn't push, because it was sent to push and reply and didn't, or failed or was stopped, and, in a fork,
+what it has of the session it forked. The composer names those as you send it, as the Send to Copilot window does, and,
+for a fork, only when BriefBar made it; when it changed nothing for the thread, it doesn't commit or push, but replies
+why, and leaves the thread active.
 It goes as a Push & Reply goes, with the same checks, below, so it doesn't wait in a session of the Copilot app that's
 running a turn: BriefBar says to send it once that's done. A new session, or a fork the Copilot CLI makes, that it
 starts is named for it, **Fix, Push & Reply: !4102 Add retry with backoff**. Once it's sent, it's Copilot's to finish:
