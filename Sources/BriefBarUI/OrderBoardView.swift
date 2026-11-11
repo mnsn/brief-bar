@@ -792,7 +792,7 @@ package struct OrderBoardView: View {
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
             case .active(let point):
-                let hover = isDragging ? nil : Self.titleHover(at: point.x, metrics: metrics, scale: textScale)
+                let hover = isDragging ? nil : Self.titleHover(at: point.x, metrics: metrics, scale: textScale, current: titleHover)
                 if hover != titleHover { titleHover = hover }
             case .ended:
                 titleHover = nil
@@ -808,8 +808,13 @@ package struct OrderBoardView: View {
     }
 
     /// What the pointer is over among the titles: a gap between two columns that can join, with a few points of a title
-    /// beside it, where it has room, not of a strip; else a joined column's open title.
-    private static func titleHover(at x: CGFloat, metrics: BoardMetrics, scale: CGFloat) -> TitleHover? {
+    /// beside it, where it has room, not of a strip, or, once →|← shows there, the control, wider than the gap between two
+    /// strips; else a joined column's open title.
+    private static func titleHover(at x: CGFloat, metrics: BoardMetrics, scale: CGFloat, current: TitleHover?) -> TitleHover? {
+        if case .gap(let left, let right)? = current, metrics.shown.contains(left), metrics.shown.contains(right),
+           abs(x - (metrics.end(of: left) + metrics.gap(after: left) / 2)) <= 9 * scale {
+            return current
+        }
         for (left, right) in zip(metrics.shown, metrics.shown.dropFirst()) where BoardLayout.canJoin(left, right) {
             let end = metrics.end(of: left)
             let before = (metrics.isFolded(left) ? 1 : 7) * scale, after = (metrics.isFolded(right) ? 1 : 7) * scale
@@ -847,7 +852,8 @@ package struct OrderBoardView: View {
     @ViewBuilder
     private func columnTitle(_ column: ShownColumn, metrics: BoardMetrics) -> some View {
         let count = board.count(of: column)
-        let isFlashing = flashing.map(column.contains) == true
+        // A joined column's in the color of the one of its columns it shows.
+        let flash = flashing.flatMap { column.contains($0) ? $0.color : nil }
         if let why = metrics.folding.folded[column] {
             let needing = board.needingYou(in: column)
             Button {
@@ -860,7 +866,7 @@ package struct OrderBoardView: View {
                 .padding(.top, 4)
                 .padding(.bottom, 7)
                 .frame(width: metrics.width(column))
-                .background(titleBackground(column, isFlashing: isFlashing))
+                .background(titleBackground(flash))
                 .overlay(alignment: .bottom) { titleRule(column) }
                 .contentShape(Rectangle())
             }
@@ -890,13 +896,13 @@ package struct OrderBoardView: View {
                 .padding(.top, 4)
                 .padding(.bottom, 7)
                 .frame(width: metrics.width(column), alignment: .leading)
-                .background(titleBackground(column, isFlashing: isFlashing))
+                .background(titleBackground(flash))
                 .overlay(alignment: .bottom) { titleRule(column) }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(help(column) + (order.boardFolds[column] == .open ? "\nYou opened it. Click to fold it" : "\nClick to fold it")
-                + (column.isJoined ? ", or ←|→ over its marks to split it" : ""))
+                + (column.isJoined ? ", or ←|→ over its marks to split it" : "") + "\n→|← between two titles joins them")
             .contextMenu { columnMenu(column, isFolded: false, metrics: metrics) }
             .accessibilityLabel("\(column.spokenTitle), \(count)")
             .accessibilityAddTraits(.isHeader)
@@ -908,7 +914,8 @@ package struct OrderBoardView: View {
     /// An open column's title: its marks, its name and its count.
     /// - Parameter stacked: a joined column's marks one over the other, rather than side by side.
     private func titleLabel(_ column: ShownColumn, count: Int, stacked: Bool) -> some View {
-        HStack(spacing: 6 * textScale) {
+        // Its name on the titles' line, however tall its marks one over the other.
+        HStack(alignment: stacked ? .bottom : .center, spacing: 6 * textScale) {
             ColumnMarks(column: column, stacked: stacked)
             Text(column.title)
                 .font(size: 13, weight: .semibold)
@@ -923,9 +930,9 @@ package struct OrderBoardView: View {
     }
 
     /// Under a title, a flash in its color as Up Next's "2 more ›" shows it, or a card moves into it while it's folded.
-    private func titleBackground(_ column: ShownColumn, isFlashing: Bool) -> some View {
+    private func titleBackground(_ flash: Color?) -> some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(column.color.opacity(isFlashing ? 0.22 : 0))
+            .fill((flash ?? .clear).opacity(0.22))
     }
 
     /// The rule in its color under a title: a joined column's in each of its columns', one after the other.
@@ -1907,10 +1914,10 @@ private struct ColumnMarks: View {
         let count = CGFloat(column.parts.count)
         let spacing = (fitting == nil ? 2 : 1) * textScale
         if stacked {
-            // No taller than a strip's mark and count, over which the titles line up.
+            // No taller than a strip's mark and count, over which the titles line up: smaller past three.
             VStack(spacing: 1 * textScale) {
                 ForEach(column.parts, id: \.self) { part in
-                    ColumnMarker(column: part, size: (count > 2 ? 7 : 8) * textScale)
+                    ColumnMarker(column: part, size: min(count > 2 ? 7 : 8, (24 - (count - 1)) / count) * textScale)
                 }
             }
         } else {

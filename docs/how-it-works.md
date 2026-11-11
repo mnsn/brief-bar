@@ -1857,19 +1857,25 @@ into one column, and Merged and Completed hidden. It only maps the Board's colum
 a key still sets one stage, and Up Next, counts, notifications and what agents are told don't change. The flow's order
 is fixed: a column joins only the one beside it, kept as the gap between them (`order.boardJoins`, such as
 `yourReview+teammateReview`), and joins side by side make one column, which never spans a hidden one. Only Merged and
-Completed hide (`order.boardHidden`), as they hold only history, so nothing that needs you leaves the Board; hidden while
+Completed hide (`order.boardHidden`): what's merged but not out yet, as a pull request whose task is still open, and
+what's done, none of which needs you (`BoardCard.needsYou`), so nothing that needs you leaves the Board; hidden while
 joined, they come back as Done. A joined column is named for what it holds (`ShownColumn.title`): In review, Ready, Done,
 Teammate's review for it with Approved, whose cards wear Approved's seal there, or else both names, "Approved + Can
 merge". It folds as one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it
 holds only where each of its columns would; otherwise as late as the latest of them in that order, so In review only
 after every other, as Your review; and never while any of them holds your move. Your fold or open of it is kept by its
-key, `canMerge+waits` in `order.boardColumns`, until you split it; a column's own stays through joins. The tab of hidden
+key, `canMerge+waits` in `order.boardColumns`, for each column the joins make on either page, whichever of Merged and
+Completed you hide (`BoardLayout.joined`), until you split it; a column's own stays through joins. The tab of hidden
 columns, at the end of the titles, takes a strip's room (`BoardWidths.reserved`), so three columns still open at 946
 points. A joined column that a card you drag hovers for 0.6 seconds springs open into its columns until the drag ends,
-as a strip does; dropped on it before, the card stays where one of them holds it already, or goes to the only one that
-takes it, and where more than one would, the column says to hold it there until it opens. ⌘→ and ⌘← move a card a stage
-at a time, within a joined column too. Simple Columns joins Your review, Teammate's review and Approved; Can merge and
-Waits; and Merged and Completed. It and Reset Columns forget your folds too, as Let BriefBar Decide would for each.
+as a strip does, where one of them takes the card, though the card is in another, so that it goes from Waits to Can
+merge in Ready as between any two; those that take it open, with the one it's in. Dropped on it before, the card stays
+where one of them holds it already, or goes to the only one that takes it, and where more than one would, the column
+says to hold it there until it opens. ⌘→ and ⌘← move a card a stage at a time, within a joined column too, which stays
+open while a card in any of its columns has the keyboard. Show Them shows the hidden column that holds its card, Done
+where you hid that, for the moment: until you hide it again or the board goes. Simple Columns joins Your review,
+Teammate's review and Approved; Can merge and Waits; and Merged and Completed. It and Reset Columns forget your folds
+too, as Let BriefBar Decide would for each.
 
 #### My Work
 

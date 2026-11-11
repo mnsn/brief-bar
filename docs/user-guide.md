@@ -438,8 +438,10 @@ Its **←|→**, over its title's marks, or **Split** in the title's menu, split
 shows them again. The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In
 review**, with Approved, **Ready** and **Done**, or four on Pull Requests; and **Reset Columns**, each column back as it
 came. Both let BriefBar decide which fold again. While you drag a card, a joined column springs open into its stages as
-you hold the card over it, as a strip does, so that you drop it on one stage; ⌘→ and ⌘← still move a card a stage at a
-time. Joining and hiding change no stage, count or Up Next slot, and BriefBar remembers them, for both pages.
+you hold the card over it, as a strip does, so that you drop it on one stage, the column the card is in too, so that it
+can go from **Waits** to **Can merge** in **Ready**; ⌘→ and ⌘← still move a card a stage at a time. **Show Them** shows a
+hidden column for the moment where its card is in one. Joining and hiding change no stage, count or Up Next slot, and
+BriefBar remembers them, for both pages.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
