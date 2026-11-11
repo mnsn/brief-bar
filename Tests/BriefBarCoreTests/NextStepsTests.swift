@@ -1071,6 +1071,112 @@ import Testing
         #expect(defaults.object(forKey: UpNext.foldedKey) == nil)
     }
 
+    // MARK: Folding columns
+
+    /// The Board's columns on My Work with + Sprint Tasks, from left to right.
+    static let allColumns: [BoardColumn] = [.toStart] + PullRequestStage.columns.map(BoardColumn.stage)
+
+    /// Which columns fold, and why, on a page this wide at 100%.
+    static func folded(
+        _ counts: [BoardColumn: Int], yourMove: Set<BoardColumn> = [], choices: BoardFolds = BoardFolds(), open: Set<BoardColumn> = [],
+        width: Double, columns: [BoardColumn] = allColumns
+    ) -> [BoardColumn: BoardFolding.Why] {
+        BoardFolding.make(
+            columns: columns, count: { counts[$0] ?? 0 }, yourMove: { yourMove.contains($0) }, choices: choices, open: open,
+            widths: BoardWidths(scale: 1, available: width)
+        ).folded
+    }
+
+    @Test func aColumnFoldsAsYouChoseElseOnceItHasNoCards() {
+        let columns = PullRequestStage.columns.map(BoardColumn.stage)
+        let counts: [BoardColumn: Int] = [.stage(.inProgress): 2, .stage(.yourReview): 1, .stage(.teammateReview): 1, .stage(.merged): 1]
+        #expect(Self.folded(counts, width: 2_000, columns: columns) == [.stage(.canMerge): .empty, .stage(.waits): .empty])
+        // One you folded stays folded, and one you opened open, cards or none.
+        let choices = BoardFolds([.stage(.teammateReview): .folded, .stage(.canMerge): .open])
+        #expect(Self.folded(counts, choices: choices, width: 2_000, columns: columns)
+            == [.stage(.teammateReview): .yours, .stage(.waits): .empty])
+        // Open for the moment, as a dragged card springs it open, whatever else says.
+        #expect(Self.folded(counts, choices: choices, open: [.stage(.teammateReview), .stage(.waits)], width: 2_000, columns: columns)
+            .isEmpty)
+    }
+
+    /// The user's window, 946 points wide, leaves the Board 664: its sidebar takes 240 and the page's margins 42.
+    @Test func tooNarrowFoldsMergedWaitsAndToStartThenWhereYouWaitTheFurthestFromDoneNeverWhereItsYourMove() {
+        let counts = Dictionary(uniqueKeysWithValues: Self.allColumns.map { ($0, 1) })
+        let yourMove: Set<BoardColumn> = [.stage(.yourReview), .stage(.canMerge)]
+        let least: [BoardColumn: BoardFolding.Why] = [.stage(.merged): .narrow, .stage(.waits): .narrow, .toStart: .narrow]
+        // Only as many as it takes.
+        #expect(Self.folded(counts, yourMove: yourMove, width: 900) == least)
+        // Then those where you wait, Teammate's review first: In progress, your reviews and what you can complete stay open.
+        let waiting = least.merging([.stage(.teammateReview): .narrow]) { $1 }
+        #expect(Self.folded(counts, yourMove: yourMove, width: 664) == waiting)
+        // Narrower, the Board scrolls rather than fold where it's your move, or In progress.
+        #expect(Self.folded(counts, yourMove: yourMove, width: 400) == waiting)
+        // What completes by itself folds once Teammate's review has.
+        #expect(Self.folded(counts, yourMove: [.stage(.yourReview)], width: 400) == waiting.merging([.stage(.canMerge): .narrow]) { $1 })
+        // A column you opened yourself, or one open for the moment, stays open: the next folds instead.
+        let opened = BoardFolds([.stage(.merged): .open])
+        #expect(Self.folded(counts, yourMove: yourMove, choices: opened, open: [.toStart], width: 664)
+            == [.stage(.waits): .narrow, .stage(.teammateReview): .narrow])
+    }
+
+    @Test func threeOpenColumnsFitTheUsersWindowAndShareTheRoomTheStripsLeave() {
+        let open: Set<BoardColumn> = [.stage(.inProgress), .stage(.yourReview), .stage(.teammateReview)]
+        let folded = Set(Self.allColumns).subtracting(open)
+        let window = BoardWidths(scale: 1, available: 664)
+        #expect(window.fits(Self.allColumns, folded: folded))
+        #expect(!window.fits(Self.allColumns, folded: folded.subtracting([.stage(.canMerge)])))
+        // Strips of 20 points, with 5 beside each, 10 between open columns.
+        let strips = Double(folded.count) * (20 + 5) + 2 * 10
+        #expect(window.open(Self.allColumns, folded: folded) == (664 - strips) / 3)
+        // Never narrower than 172, which grows with the text, as a strip does a little.
+        #expect(BoardWidths(scale: 1, available: 300).open(Self.allColumns, folded: folded) == 172)
+        #expect(BoardWidths(scale: 1.5, available: 0).open(Self.allColumns, folded: folded) == 258)
+        #expect(BoardWidths(scale: 1.5, available: 0).strip == 24)
+    }
+
+    @Test func whatNeedsYouMarksAStripAndOnlyYourMoveKeepsAColumnOpen() {
+        let review = Self.card(.yourReview, .asked("Priya asked you"))
+        let complete = Self.card(.canMerge, .ready(autoComplete: false))
+        let completesItself = Self.card(.canMerge, .ready(autoComplete: true))
+        let failing = Self.card(.inProgress, .failing("Build failed"))
+        let reviewer = Self.card(.teammateReview, .findReviewer)
+        let merged = Self.card(.merged, .merged)
+        #expect([review, complete].allSatisfy { $0.isYourMove && $0.needsYou })
+        #expect(failing.needsYou && !failing.isYourMove)
+        #expect([completesItself, reviewer, merged].allSatisfy { !$0.needsYou && !$0.isYourMove })
+
+        // Each once, whatever lanes show it.
+        let first = Self.mission([Self.step(4101), Self.step(4102)])
+        let second = Self.mission([Self.step(4102), Self.step(4103)])
+        let board = Self.board([
+            4101: Self.reading(.inProgress, .failing("Build failed")), 4102: Self.reading(.inProgress, .changesWanted("Priya wants changes")),
+            4103: Self.reading(.inProgress, .draft), 4104: Self.reading(.yourReview, .asked("Sam asked you")),
+        ], missions: [first, second])
+        #expect(board.needingYou(in: .stage(.inProgress)) == 2)
+        #expect(board.lanes.map { $0.needingYou(in: .stage(.inProgress)).count } == [2, 1, 0])
+        #expect(board.hasYourMove(in: .stage(.yourReview)) && !board.hasYourMove(in: .stage(.inProgress)))
+    }
+
+    @Test func itRemembersTheColumnsYouFoldedOrOpenedAndAClickBackForgetsIt() {
+        let defaults = MemorySettings()
+        #expect(BoardFolds.load(from: defaults) == BoardFolds())
+        let folds = BoardFolds([.stage(.teammateReview): .folded, .toStart: .open])
+        folds.save(to: defaults)
+        #expect(defaults.object(forKey: "order.boardColumns") as? [String: String] == ["teammateReview": "folded", "toStart": "open"])
+        #expect(BoardFolds.load(from: defaults) == folds)
+        defaults.set(["approvedLater": "folded", "merged": "half", "waits": "open"], forKey: BoardFolds.defaultsKey)
+        #expect(BoardFolds.load(from: defaults) == BoardFolds([.stage(.waits): .open]))
+        BoardFolds().save(to: defaults)
+        #expect(defaults.object(forKey: BoardFolds.defaultsKey) == nil)
+
+        // A click that does what BriefBar would do by itself forgets your choice, rather than keep its opposite.
+        #expect(folds.choosing(.folded, for: .stage(.merged), byItself: false)[.stage(.merged)] == .folded)
+        #expect(folds.choosing(.open, for: .stage(.teammateReview), byItself: false)[.stage(.teammateReview)] == nil)
+        #expect(folds.choosing(.folded, for: .toStart, byItself: true)[.toStart] == nil)
+        #expect(folds.choosing(.open, for: .stage(.waits), byItself: true)[.stage(.waits)] == .open)
+    }
+
     @Test func theBoardIsAzureDevOpsPagesAndGitHubsShowsListWhereYouChoseIt() {
         let azure = OrderView.offered(for: [.pullRequest])
         let github = OrderView.offered(for: [.gitHubPullRequest])

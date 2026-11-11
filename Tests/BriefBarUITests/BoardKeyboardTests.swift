@@ -389,6 +389,21 @@ import Testing
         }
     }
 
+    /// ⌘→ moves a card into a column you folded, stage by stage as ever: the column opens while the card keeps the keyboard,
+    /// so that it's drawn there and the next key moves it on, and what you chose stays.
+    @Test func aKeyMovesACardIntoAColumnYouFoldedWhichOpensWhileTheCardKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ into Your review, folded", order: order, drawn: drawn, in: window)
+            #expect(drawn.columns[Self.ref] == .yourReview)
+            try await Self.move(.rightArrow, to: .teammateReview, "⌘→ to move it on from there", order: order, drawn: drawn, in: window)
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
     /// Tab, as the window takes it, goes to the next view in its key view loop: with the Mac's keyboard navigation off, only
     /// what a click focuses, as a field, which a card is. With it on, every control is, so the card may not come first.
     @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))

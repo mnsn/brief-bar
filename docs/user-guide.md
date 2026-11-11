@@ -370,8 +370,8 @@ the same list, gives the slot back to BriefBar's order, meanwhile too. Click one
 rest on the Board. Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
-review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**, which shows only its count until you
-click it; and a lane for each mission, its header naming your next steps in it, such as **Review !4093** or
+review**, **Teammate's review**, **Can merge**, **Waits** and **Merged**; and a lane for each mission, its header
+naming your next steps in it, such as **Review !4093** or
 **Find a reviewer: !4079**, then a lane for the pull requests in no mission. **Lanes: None** puts every card in
 one. Up Next's pull request wears **Next** in its column, **✎ Next** where you chose it: right-click a card and choose
 **Make Next** to choose it for its slot. Each column puts the mission you focus on first, but In
@@ -388,10 +388,24 @@ over the details or a file's page; the card has the keyboard again once they clo
 take it light up, and those that don't say why: only Azure DevOps decides that a pull request can merge or merged, its
 order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review** takes it off
 your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in another sort
-shows its mission's lane, and a lane for each mission again if they were None. Narrow, or with bigger text, the Board
-scrolls sideways; a line under it counts the pull requests in your lists that aren't on it, such as others' you
-approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
-shows List where you chose the Board.
+shows its mission's lane, and a lane for each mission again if they were None. A line under the Board counts the pull
+requests in your lists that aren't on it, such as others' you approved, and **Show By Status** lists them. GitHub's
+page, whose pull requests have no stages, offers List and Map, and shows List where you chose the Board.
+
+Click a column's title to fold it to a narrow strip, and click the strip to open it again: BriefBar remembers which you
+folded or opened, and folding changes no stage. A strip shows its column's mark and count, and in each lane its name and
+how many of the lane's cards it holds; a count is in a pill where something there needs you: a review waiting on you, a
+pull request you can complete, or a problem Fix next would show you, such as a failed build. A column with no cards
+folds by itself, and opens once a card arrives, unless you folded it. Where the window is too narrow for every open
+column, as with bigger text, BriefBar folds those you need least: **Merged**, **Waits** and **To start** first, then
+those where you wait on others, the furthest from done first, as **Teammate's review**; never **In progress**, a column
+where it's your move, as **Your review** while a review waits on you or **Can merge** while you can complete one, or one
+you opened yourself. Only past that does the Board scroll sideways. Right-click a title or a strip for why it's folded,
+**Fold** or **Open**, and, once you chose, **Let BriefBar Decide**. While you drag a card, a strip that takes it springs
+open as you hold the card over it a moment, as Finder's folders do; once you drop it, each column folds as it would
+have, so one you folded keeps the card in its strip, counted, and its title flashes. **⌘→** and **⌘←** move a card into
+a folded column too, which opens while the card has the keyboard, so the next key moves it on, and VoiceOver says where
+it went. **2 more ›** in Up Next opens its column for the moment.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
@@ -411,7 +425,8 @@ start. A work item's card goes in its story's mission's lane; for a story in the
 your board, in a lane of the story's own; otherwise with the pull requests in no mission. Click it, or press **Return**
 or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its menu. It moves by
 itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘← say so instead.
-On My Work, **2 more ›** scrolls the Board to its column, a pull request's mission in its details shows its lane, and
+On My Work, **2 more ›** scrolls the Board to its column, opened if it's folded, a pull request's mission in its details
+shows its lane, and
 **Show By Status** shows Pull Requests by status. To start and work items' cards are only on the Board: stages, Up
 Next's slots, groups, counts and what agents are told stay as they were. While My Work shows + Sprint Tasks, BriefBar
 reads your sprint, as it does for the Sprint page.

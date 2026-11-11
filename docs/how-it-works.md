@@ -1764,9 +1764,27 @@ the Board, as it shows the mission in List and on the Map; with Lanes: None, whi
 a lane for each mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first
 too, just under the column titles, which stay at the page's top over the cards while it shows the board: offset as it
 scrolls (`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while
-scrolled down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are
-kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
-`order.boardLanes` and `order.upNextFolded`.
+scrolled down the board, as when the details open beside it.
+
+A column folds to a strip as you click its title, and opens as you click the strip (`BoardFolding`). What you chose is
+kept by column (`BoardFolds`), To start or a stage, folded or open; a click that does what BriefBar would do by itself
+then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no cards folds,
+and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip 20, 10
+between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar folds,
+until they fit: Merged, Waits and To start, whatever they hold; then the others from the left, the furthest from done
+first, but never In progress, one where it's your move (`BoardCard.isYourMove`: a card in Your review, or one in Can
+merge that's ready and doesn't complete by itself), nor one you chose. What still doesn't fit scrolls, and open columns
+share the room the strips leave. So the 664 points the Board has in a 946-point window take three open columns and the
+rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill bordered in its column's color where one
+of its cards needs you (`BoardCard.needsYou`: your move, or a problem Fix next ranks, `fixRank`, but none in Merged), and
+the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. Some columns open for
+the moment, unsaved: one a card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's
+spring-loaded folders do; the one a key moved a card to, while that card keeps the keyboard's focus there, until another
+card has it, or none has for half a second while the board can take it; and one Up Next's **2 more ›** shows, until you
+fold it or the board goes. A move into a column that stays folded, as a drop on its strip, flashes its title. Folding
+changes no stage, count or Up Next slot. The Board, its lanes, the columns you folded or opened, and whether Up Next is
+folded are kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving
+that, `order.boardLanes`, `order.boardColumns` and `order.upNextFolded`.
 
 #### My Work
 
@@ -1777,7 +1795,8 @@ section (`AzureDevOpsSource.companionPages`), so it's in each window that has th
 the setting does, the window going to Pull Requests if it showed My Work. Its segment counts nothing, so nothing counts
 twice. `AppModel.section(ofPage:)` takes it to its section, for `openWindow` and `hasPage`. Pull Requests then offers
 List and Map (`PullRequestOrder.views(for:)`), showing List where you chose the Board without saving that, as GitHub's
-page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, the Board's **Show By Status**
+page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, opened for the moment where it's
+folded, the Board's **Show By Status**
 opens Pull Requests by status, and a pull request's mission in its details shows its lane
 (`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
 no lanes.

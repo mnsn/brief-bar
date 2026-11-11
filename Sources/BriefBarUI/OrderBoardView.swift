@@ -5,11 +5,13 @@ import SwiftUI
 // By Mission's Board, on Azure DevOps' Pull Requests page: a column for each stage, as a kanban board has them, a lane for
 // each mission, and a card for each pull request on your board. Drag a card to another column of its lane to change its
 // stage, or click it and press ⌘→ or ⌘←; the columns that take it light up as you drag, and those that don't say why as you
-// hover them. Its column titles stay at the top as the page scrolls, and the board scrolls sideways when the window is too
-// narrow for its columns, which grow with the text. Scrolling redraws only what follows it: the column titles and the lanes'
-// headers. On My Work, with + Sprint Tasks, your sprint work has cards of its own (`PullRequestBoard.withWork`): in To start,
-// a column before In progress, until it's started, then in In progress, after the pull requests. They don't move: their work
-// does, in Azure DevOps.
+// hover them. Its column titles stay at the top as the page scrolls. A click on a column's title folds it to a thin strip,
+// with its count, in a pill where something in it needs you, and a click on the strip opens it; BriefBar folds the rest
+// itself (`BoardFolding`): a column with no cards, and where the window is too narrow for the open columns, which grow with
+// the text, the least needed. Only then does the board scroll sideways. Scrolling redraws only what follows it: the column
+// titles and the lanes' headers. On My Work, with + Sprint Tasks, your sprint work has cards of its own
+// (`PullRequestBoard.withWork`): in To start, a column before In progress, until it's started, then in In progress, after
+// the pull requests. They don't move: their work does, in Azure DevOps.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -78,6 +80,14 @@ extension BoardColumn {
         }
     }
 
+    /// Its color for words, as its stage's is (`PullRequestStage.textColor`); To start's is Waits' gray.
+    var textColor: Color {
+        switch self {
+        case .toStart: PullRequestStage.waits.textColor
+        case .stage(let stage): stage.textColor
+        }
+    }
+
     /// The column a work item's card is in.
     init(_ column: BoardTask.Column) {
         switch column {
@@ -117,46 +127,52 @@ private struct BoardNotice: Equatable {
     var isRefusal = true
 }
 
-/// How wide the Board's columns are: as wide as the page allows, never narrower than their text needs, Merged narrow while
-/// it's folded; all of it from the columns it shows.
+/// The column a card you moved with a key went to, while it keeps the keyboard's focus: open for the moment, folded or not,
+/// so that the next key moves it on from there.
+private struct KeyOpened: Equatable {
+    var column: BoardColumn
+    var spot: CardSpot
+}
+
+/// How wide the Board's columns are (`BoardWidths`): an open one as wide as the page allows, never narrower than its cards
+/// need, and a folded one a strip; all of it from the columns it shows, and those that show folded.
 private struct BoardMetrics {
-    let scale: CGFloat
-    /// The page's width.
-    let available: CGFloat
+    let widths: BoardWidths
     /// The columns it shows, from left to right.
     let columns: [BoardColumn]
-    let showsMerged: Bool
+    let folding: BoardFolding
+    private let folded: Set<BoardColumn>
+    /// An open column's width.
+    let open: CGFloat
 
-    var gap: CGFloat { 10 * scale }
-    var minimum: CGFloat { 172 * scale }
-    var folded: CGFloat { 132 * scale }
-
-    private func isFolded(_ column: BoardColumn) -> Bool {
-        column == .stage(.merged) && !showsMerged
+    init(widths: BoardWidths, columns: [BoardColumn], folding: BoardFolding) {
+        self.widths = widths
+        self.columns = columns
+        self.folding = folding
+        folded = Set(folding.folded.keys)
+        open = widths.open(columns, folded: folded)
     }
 
-    /// The room the gaps between the columns take.
-    private var gaps: CGFloat {
-        gap * CGFloat(max(0, columns.count - 1))
-    }
-
-    var column: CGFloat {
-        let foldedCount = CGFloat(columns.filter(isFolded).count)
-        let room = available - gaps - folded * foldedCount
-        return max(minimum, room / max(1, CGFloat(columns.count) - foldedCount))
+    func isFolded(_ column: BoardColumn) -> Bool {
+        folded.contains(column)
     }
 
     func width(_ column: BoardColumn) -> CGFloat {
-        isFolded(column) ? folded : self.column
+        isFolded(column) ? widths.strip : open
+    }
+
+    /// The room after a column, before the next: less beside a strip.
+    func gap(after column: BoardColumn) -> CGFloat {
+        widths.gap(after: column, in: columns, folded: folded)
     }
 
     var content: CGFloat {
-        columns.reduce(gaps) { $0 + width($1) }
+        columns.reduce(0) { $0 + width($1) + gap(after: $1) }
     }
 
     /// What shows of the board at once.
     var visible: CGFloat {
-        available > 0 ? min(available, content) : content
+        widths.available > 0 ? min(widths.available, content) : content
     }
 }
 
@@ -264,11 +280,18 @@ package struct OrderBoardView: View {
     /// A card is being dragged now: the columns that take it light up.
     @LocalState private var isDragging = false
     @LocalState private var hovered: BoardCell?
+    /// The strip a card you drag hovers, which springs open if it stays there, as Finder's folders do.
+    @LocalState private var springing: BoardCell?
+    /// The folded columns a drag sprang open, until it ends.
+    @LocalState private var sprung: Set<BoardColumn> = []
+    /// The column a card you moved with a key went to, open while it keeps the keyboard's focus.
+    @LocalState private var keyOpened: KeyOpened?
+    /// The folded columns Up Next's "2 more ›" opened, for the moment: until you fold them, or the board goes.
+    @LocalState private var revealedOpen: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
-    @LocalState private var showsMerged = false
     @LocalState private var unfolded: Set<MissionKey> = []
     @LocalState private var width: CGFloat = 0
-    @LocalState private var flashing: PullRequestStage?
+    @LocalState private var flashing: BoardColumn?
     @LocalState private var scroll = BoardScroll()
     /// The column titles stay at the page's top, over the cards that scroll under them.
     @LocalState private var pin = BoardPin()
@@ -319,7 +342,7 @@ package struct OrderBoardView: View {
     }
 
     package var body: some View {
-        let metrics = BoardMetrics(scale: textScale, available: width, columns: board.columns, showsMerged: showsMerged)
+        let metrics = currentMetrics()
         let lanes = board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions)
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
@@ -372,6 +395,108 @@ package struct OrderBoardView: View {
                 }
             }
         }
+        // Once the drag ends, the columns it sprang open fold back, as they were.
+        .onChange(of: isDragging) { _, dragging in
+            guard !dragging else { return }
+            springing = nil
+            if !sprung.isEmpty {
+                withAnimation(.easeOut(duration: 0.15)) { sprung = [] }
+            }
+        }
+        // A strip the dragged card hovers springs open once it has stayed there a moment.
+        .task(id: springing) {
+            guard let cell = springing else { return }
+            try? await Task.sleep(for: Self.springDelay)
+            guard !Task.isCancelled, springing == cell, isDragging else { return }
+            _ = withAnimation(.easeOut(duration: 0.15)) { sprung.insert(cell.column) }
+        }
+        // The column a key moved a card to folds back once the card's lost the keyboard's focus a moment, as you click
+        // elsewhere, but not while the card's drawn anew there, nor while the details cover the board.
+        .task(id: focused) {
+            guard let opened = keyOpened, focused != opened.spot else { return }
+            if focused == nil {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, focused == nil, isEnabled, refocus.spot != opened.spot else { return }
+            }
+            if keyOpened == opened {
+                withAnimation(.easeOut(duration: 0.15)) { keyOpened = nil }
+            }
+        }
+    }
+
+    /// How long a dragged card hovers a strip before it springs open.
+    static let springDelay: Duration = .milliseconds(600)
+
+    // MARK: Folding
+
+    /// The columns open for the moment, whatever else says: those a drag sprang open, the one a card you moved with a key
+    /// went to while it keeps the keyboard's focus there, and those Up Next's "2 more ›" opened.
+    private var openForNow: Set<BoardColumn> {
+        var open = sprung.union(revealedOpen)
+        if let opened = keyOpened, let card = board.card(opened.spot.ref, preferring: opened.spot.lane),
+           BoardColumn.stage(card.stage) == opened.column {
+            open.insert(opened.column)
+        }
+        return open
+    }
+
+    /// Which columns show folded, and how wide each is, as the board is now.
+    private func currentMetrics() -> BoardMetrics {
+        let widths = BoardWidths(scale: textScale, available: width)
+        return BoardMetrics(widths: widths, columns: board.columns, folding: folding(widths, open: openForNow, choices: order.boardFolds))
+    }
+
+    private func folding(_ widths: BoardWidths, open: Set<BoardColumn>, choices: BoardFolds) -> BoardFolding {
+        BoardFolding.make(
+            columns: board.columns, count: board.count(of:), yourMove: board.hasYourMove(in:), choices: choices, open: open,
+            widths: widths
+        )
+    }
+
+    /// Whether BriefBar would fold a column by itself, as the board is now: without your choice for it, or its being open
+    /// for the moment.
+    private func foldsByItself(_ column: BoardColumn, widths: BoardWidths) -> Bool {
+        var choices = order.boardFolds
+        choices[column] = nil
+        return folding(widths, open: openForNow.subtracting([column]), choices: choices).isFolded(column)
+    }
+
+    /// No longer open for the moment.
+    private func endMoment(_ column: BoardColumn) {
+        sprung.remove(column)
+        revealedOpen.remove(column)
+        if keyOpened?.column == column { keyOpened = nil }
+    }
+
+    /// Folds a column, as a click on its title does: one open for the moment folds back, where it was folded; else
+    /// remembered, unless BriefBar would fold it by itself now, when it forgets that you opened it.
+    private func fold(_ column: BoardColumn, metrics: BoardMetrics) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            let wasOpenForNow = openForNow.contains(column)
+            endMoment(column)
+            if wasOpenForNow, currentMetrics().isFolded(column) { return }
+            let byItself = foldsByItself(column, widths: metrics.widths)
+            order.setBoardFolds(order.boardFolds.choosing(.folded, for: column, byItself: byItself))
+        }
+    }
+
+    /// Opens a column, as a click on its strip does: remembered, unless BriefBar would open it by itself now, when it
+    /// forgets that you folded it.
+    private func open(_ column: BoardColumn, metrics: BoardMetrics) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            let byItself = foldsByItself(column, widths: metrics.widths)
+            order.setBoardFolds(order.boardFolds.choosing(.open, for: column, byItself: byItself))
+        }
+    }
+
+    /// Let BriefBar Decide: forgets what you chose for a column.
+    private func letBriefBarDecide(_ column: BoardColumn) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            endMoment(column)
+            var choices = order.boardFolds
+            choices[column] = nil
+            order.setBoardFolds(choices)
+        }
     }
 
     /// The column titles over the lanes, with where each mission's lane starts. The titles stay at the page's top while it
@@ -423,9 +548,10 @@ package struct OrderBoardView: View {
     // MARK: Columns
 
     private func columnTitles(_ metrics: BoardMetrics) -> some View {
-        FollowsScroll(scroll: scroll, direction: -1, content: HStack(alignment: .bottom, spacing: metrics.gap) {
+        FollowsScroll(scroll: scroll, direction: -1, content: HStack(alignment: .bottom, spacing: 0) {
             ForEach(board.columns, id: \.self) { column in
-                columnTitle(column, width: metrics.width(column))
+                columnTitle(column, metrics: metrics)
+                    .padding(.trailing, metrics.gap(after: column))
             }
         })
         // As wide as the page, whatever the columns need: they scroll sideways under it.
@@ -437,68 +563,121 @@ package struct OrderBoardView: View {
         .accessibilityLabel(board.showsWork ? "Columns" : "Stages")
     }
 
+    /// A column's title, which folds it, or its strip's, which opens it; either's menu has both, and Let BriefBar Decide
+    /// once you chose.
     @ViewBuilder
-    private func columnTitle(_ column: BoardColumn, width: CGFloat) -> some View {
+    private func columnTitle(_ column: BoardColumn, metrics: BoardMetrics) -> some View {
         let count = board.count(of: column)
-        let label = HStack(spacing: 6 * textScale) {
-            if column == .toStart {
-                // Not started, as the Sprint page's To Do says it.
-                Image(systemName: "circle.dashed")
-                    .font(size: 9 * textScale, weight: .heavy)
-                    .foregroundStyle(column.color)
-                    .frame(width: 8 * textScale, height: 8 * textScale)
-            } else {
-                Circle()
-                    .fill(column.color)
-                    .frame(width: 8 * textScale, height: 8 * textScale)
-            }
-            Text(column.title)
-                .font(size: 13, weight: .semibold)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 2)
-            Text("\(count)")
-                .font(size: 12.5, weight: .medium)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            if column == .stage(.merged) {
-                Image(systemName: "chevron.right")
-                    .font(size: 9, weight: .bold)
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(showsMerged ? 90 : 0))
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 4)
-        .padding(.bottom, 7)
-        .frame(width: width, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(column.color.opacity(column.stage != nil && flashing == column.stage ? 0.22 : 0))
-        )
-        .overlay(alignment: .bottom) {
-            Capsule()
-                .fill(column.color)
-                .frame(height: 3 * textScale)
-        }
-        .contentShape(Rectangle())
-        if column == .stage(.merged) {
+        let isFlashing = flashing == column
+        if let why = metrics.folding.folded[column] {
+            let needing = board.needingYou(in: column)
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { showsMerged.toggle() }
+                open(column, metrics: metrics)
             } label: {
-                label
+                VStack(spacing: 3 * textScale) {
+                    ColumnMarker(column: column)
+                    StripCount(count: count, column: column, needsYou: needing > 0)
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 7)
+                .frame(width: metrics.width(column))
+                .background(titleBackground(column, isFlashing: isFlashing))
+                .overlay(alignment: .bottom) { titleRule(column) }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(showsMerged ? "Fold Merged to its count" : "Show what merged: Done lists it for a day")
-            .accessibilityLabel("Merged, \(count)")
-            .accessibilityHint(showsMerged ? "Folds it" : "Shows its cards")
+            .help(Self.stripHelp(title: column.title, count: count, needing: needing, why: why) + "\nClick to open it")
+            .contextMenu { columnMenu(column, isFolded: true, metrics: metrics) }
+            .accessibilityLabel(Self.stripWords(title: column.stage?.title ?? column.title, count: count, needing: needing))
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint("Opens it")
+            .accessibilityActions { columnActions(column) }
         } else {
-            label
-                .help(help(column))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(column.stage?.title ?? column.title), \(count)")
-                .accessibilityAddTraits(.isHeader)
+            Button {
+                fold(column, metrics: metrics)
+            } label: {
+                HStack(spacing: 6 * textScale) {
+                    ColumnMarker(column: column)
+                    Text(column.title)
+                        .font(size: 13, weight: .semibold)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 2)
+                    Text("\(count)")
+                        .font(size: 12.5, weight: .medium)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                .padding(.bottom, 7)
+                .frame(width: metrics.width(column), alignment: .leading)
+                .background(titleBackground(column, isFlashing: isFlashing))
+                .overlay(alignment: .bottom) { titleRule(column) }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(help(column) + (order.boardFolds[column] == .open ? "\nYou opened it. Click to fold it" : "\nClick to fold it"))
+            .contextMenu { columnMenu(column, isFolded: false, metrics: metrics) }
+            .accessibilityLabel("\(column.stage?.title ?? column.title), \(count)")
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint("Folds it")
+            .accessibilityActions { columnActions(column) }
         }
+    }
+
+    /// Under a title, a flash in its color as Up Next's "2 more ›" shows it, or a card moves into it while it's folded.
+    private func titleBackground(_ column: BoardColumn, isFlashing: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(column.color.opacity(isFlashing ? 0.22 : 0))
+    }
+
+    /// The rule in its color under a title.
+    private func titleRule(_ column: BoardColumn) -> some View {
+        Capsule()
+            .fill(column.color)
+            .frame(height: 3 * textScale)
+    }
+
+    /// A column's menu, on its title or strip: Fold or Open, then Let BriefBar Decide once you chose, with why it's folded
+    /// or open first.
+    @ViewBuilder
+    private func columnMenu(_ column: BoardColumn, isFolded: Bool, metrics: BoardMetrics) -> some View {
+        if let why = metrics.folding.folded[column] {
+            Text(BoardText.folded(why))
+        } else if order.boardFolds[column] == .open {
+            Text(BoardText.openedByYou)
+        }
+        if isFolded {
+            Button("Open") { open(column, metrics: metrics) }
+        } else {
+            Button("Fold") { fold(column, metrics: metrics) }
+        }
+        if order.boardFolds[column] != nil {
+            Divider()
+            Button("Let BriefBar Decide") { letBriefBarDecide(column) }
+        }
+    }
+
+    /// VoiceOver's actions on a column's title or strip, besides opening or folding it.
+    @ViewBuilder
+    private func columnActions(_ column: BoardColumn) -> some View {
+        if order.boardFolds[column] != nil {
+            Button("Let BriefBar Decide") { letBriefBarDecide(column) }
+        }
+    }
+
+    /// What a folded column's strip says to VoiceOver: "Teammate's review, folded, 3, 1 needs you".
+    static func stripWords(title: String, count: Int, needing: Int, here: Bool = false) -> String {
+        var parts = ["\(title), folded", here ? (count == 0 ? "none here" : "\(count) here") : "\(count)"]
+        if needing > 0 { parts.append(needing == 1 ? "1 needs you" : "\(needing) need you") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// A folded column's tooltip: its title, its count, how many need you, and why it's folded.
+    static func stripHelp(title: String, count: Int, needing: Int, why: BoardFolding.Why) -> String {
+        let needs = needing == 0 ? "" : needing == 1 ? ", 1 needs you" : ", \(needing) need you"
+        return "\(title): \(count)\(needs)\n\(BoardText.folded(why))"
     }
 
     /// What a column holds, for its title's tooltip: In progress also your sprint work that has started, while the board
@@ -534,11 +713,12 @@ package struct OrderBoardView: View {
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
                     // Where Up Next's "2 more ›" scrolls to.
-                    HStack(spacing: metrics.gap) {
+                    HStack(spacing: 0) {
                         ForEach(board.columns, id: \.self) { column in
                             Color.clear
                                 .frame(width: metrics.width(column), height: 0)
                                 .id(ColumnAnchor(column: column))
+                                .padding(.trailing, metrics.gap(after: column))
                         }
                     }
                     VStack(alignment: .leading, spacing: 18) {
@@ -630,9 +810,12 @@ package struct OrderBoardView: View {
             }
             // A lane kept only for the Undo line of a pull request that left the board has no columns to show.
             if !isFolded, !(lane.isEmpty && lane.mission == nil) {
-                HStack(alignment: .top, spacing: metrics.gap) {
+                HStack(alignment: .top, spacing: 0) {
                     ForEach(board.columns, id: \.self) { column in
-                        cell(lane, column: column, width: metrics.width(column), moves: moves)
+                        cell(lane, column: column, metrics: metrics, moves: moves)
+                            .padding(.trailing, metrics.gap(after: column))
+                            // Why a strip doesn't take the card you drag shows over its neighbors.
+                            .zIndex(hovered == BoardCell(lane: lane.kind, column: column) ? 1 : 0)
                     }
                 }
                 // Its columns are as tall as its tallest, so that each is as big a place to drop a card.
@@ -734,26 +917,36 @@ package struct OrderBoardView: View {
 
     // MARK: Cells
 
-    private func cell(_ lane: BoardLane, column: BoardColumn, width: CGFloat, moves: BoardMoves) -> some View {
+    /// A column of a lane: its cards, or its strip while it's folded.
+    @ViewBuilder
+    private func cell(_ lane: BoardLane, column: BoardColumn, metrics: BoardMetrics, moves: BoardMoves) -> some View {
+        if metrics.isFolded(column) {
+            stripCell(lane, column: column, metrics: metrics, moves: moves)
+        } else {
+            openCell(lane, column: column, width: metrics.width(column), moves: moves)
+        }
+    }
+
+    /// What dropping the card you drag on a column of a lane would do, to the card as it is now: nil while you drag none.
+    private func dropping(on column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> BoardMove? {
+        isDragging ? drag.flatMap { moving($0.ref, to: column, in: lane, moves: moves) } : nil
+    }
+
+    private func openCell(_ lane: BoardLane, column: BoardColumn, width: CGFloat, moves: BoardMoves) -> some View {
         let cards = column.stage.map(lane.cards(in:)) ?? []
         // Your sprint work's own cards, after the pull requests'.
         let tasks = lane.tasks.filter { BoardColumn($0.column) == column }
         let target = BoardCell(lane: lane.kind, column: column)
-        // What dropping the dragged card here would do, to the card as it is now.
-        let move = isDragging ? drag.flatMap { moving($0.ref, to: column, in: lane, moves: moves) } : nil
+        let move = dropping(on: column, in: lane, moves: moves)
         let takes = move?.isTaken == true
         let isHovered = hovered == target
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
         return VStack(alignment: .leading, spacing: 8 * textScale) {
-            if column == .stage(.merged), !showsMerged {
-                foldedMerged(cards)
-            } else {
-                ForEach(cards) { card in
-                    cardView(card, in: lane, moves: moves)
-                }
-                ForEach(tasks) { task in
-                    taskView(task, in: lane)
-                }
+            ForEach(cards) { card in
+                cardView(card, in: lane, moves: moves)
+            }
+            ForEach(tasks) { task in
+                taskView(task, in: lane)
             }
         }
         // Those that don't take the card dim while you drag it.
@@ -765,17 +958,7 @@ package struct OrderBoardView: View {
         .overlay(alignment: .top) {
             // Why it can't go there, as you hover.
             if isHovered, let refusal {
-                Text(refusal)
-                    .font(size: 11, weight: .medium)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color(nsColor: .windowBackgroundColor))
-                            .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-                    )
+                refusalBubble(refusal)
                     .padding(6)
             }
         }
@@ -790,38 +973,96 @@ package struct OrderBoardView: View {
         }
     }
 
-    private func cellBackground(_ column: BoardColumn, takes: Bool, isHovered: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    /// A folded column's strip in a lane: how many cards it has there, in a pill where one needs you, and its name, cut
+    /// short where the lane is shorter. A click opens the column. A card you drag drops on it as on the open column, and
+    /// springs it open once it stays a moment, where it would go there.
+    private func stripCell(_ lane: BoardLane, column: BoardColumn, metrics: BoardMetrics, moves: BoardMoves) -> some View {
+        let count = lane.count(of: column)
+        let needing = lane.needingYou(in: column).count
+        let target = BoardCell(lane: lane.kind, column: column)
+        let move = dropping(on: column, in: lane, moves: moves)
+        let takes = move?.isTaken == true
+        let isHovered = hovered == target
+        let refusal: String? = if case .refused(let why)? = move { why } else { nil }
+        let index = board.columns.firstIndex(of: column) ?? 0
+        // Why it can't go there opens toward the board's middle.
+        let toTheRight = index < board.columns.count / 2
+        return VStack(spacing: 6 * textScale) {
+            if count > 0 {
+                StripCount(count: count, column: column, needsYou: needing > 0)
+            }
+            Sideways {
+                Text(column.title)
+                    .font(size: 11, weight: .medium)
+                    .foregroundStyle(count > 0 ? .secondary : .tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .rotationEffect(.degrees(90))
+            }
+        }
+        .padding(.vertical, 8 * textScale)
+        .opacity(isDragging && refusal != nil ? 0.4 : 1)
+        .frame(width: metrics.width(column))
+        .frame(minHeight: 70 * textScale, maxHeight: .infinity, alignment: .top)
+        .background(cellBackground(column, takes: takes, isHovered: isHovered, cornerRadius: 7))
+        .overlay(alignment: toTheRight ? .topLeading : .topTrailing) {
+            if isHovered, let refusal {
+                refusalBubble(refusal)
+                    .frame(width: 200 * textScale, alignment: .leading)
+                    .offset(y: 6)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { open(column, metrics: metrics) }
+        .dropDestination(for: String.self) { items, _ in
+            drop(items, on: column, in: lane, moves: moves)
+        } isTargeted: { isOver in
+            if isOver {
+                hovered = target
+                if takes { springing = target }
+            } else {
+                if hovered == target { hovered = nil }
+                if springing == target { springing = nil }
+            }
+        }
+        .help(stripCellHelp(lane, column: column, count: count, needing: needing, why: metrics.folding.folded[column]))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.stripWords(title: column.stage?.title ?? column.title, count: count, needing: needing, here: true))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens it")
+        .accessibilityAction { open(column, metrics: metrics) }
+    }
+
+    /// A lane's strip's tooltip: what's in it there, by number and title, and why it's folded.
+    private func stripCellHelp(_ lane: BoardLane, column: BoardColumn, count: Int, needing: Int, why: BoardFolding.Why?) -> String {
+        var lines = [Self.stripHelp(title: column.title, count: count, needing: needing, why: why ?? .yours)]
+        if let stage = column.stage {
+            lines += lane.cards(in: stage).map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
+        }
+        lines += lane.tasks.filter { BoardColumn($0.column) == column }.compactMap { work?.card($0)?.label }
+        return (lines + ["Click to open it"]).joined(separator: "\n")
+    }
+
+    /// Why a column can't take the card you drag, as you hover it.
+    private func refusalBubble(_ refusal: String) -> some View {
+        Text(refusal)
+            .font(size: 11, weight: .medium)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+            )
+    }
+
+    private func cellBackground(_ column: BoardColumn, takes: Bool, isHovered: Bool, cornerRadius: CGFloat = 12) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return shape
             .fill(column.color.opacity(takes ? (isHovered ? 0.24 : 0.14) : 0.06))
             .overlay(shape.strokeBorder(column.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
-    }
-
-    /// Merged, folded: how many merged in the lane, which a click shows.
-    @ViewBuilder
-    private func foldedMerged(_ cards: [BoardCard]) -> some View {
-        if !cards.isEmpty {
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { showsMerged = true }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(PullRequestStage.merged.color)
-                    Text("\(cards.count) merged")
-                        .lineLimit(1)
-                }
-                .font(size: 11.5, weight: .medium)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 2)
-            .padding(.vertical, 4)
-            .help(cards.map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
-                .joined(separator: "\n") + "\nClick to show them")
-            .accessibilityLabel("\(cards.count) merged")
-            .accessibilityHint("Shows them")
-        }
     }
 
     @ViewBuilder
@@ -967,6 +1208,8 @@ package struct OrderBoardView: View {
     }
 
     private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane.Kind, keepsFocus: Bool) -> Bool {
+        // How the columns fold once a drag's springs end, for where the card goes.
+        let folded = folding(BoardWidths(scale: textScale, available: width), open: openForNow.subtracting(sprung), choices: order.boardFolds)
         switch move {
         case .setStage(let stage):
             notice = nil
@@ -989,6 +1232,11 @@ package struct OrderBoardView: View {
             return false
         }
         if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref), leaving: card.stage) }
+        // Into a folded column, without the keyboard's focus to open it: its title flashes, and its strip counts it.
+        if let stage = order.stage(of: card.ref)?.stage, stage != card.stage, folded.isFolded(.stage(stage)),
+           keyOpened?.spot.ref != card.ref {
+            flash(.stage(stage))
+        }
         return true
     }
 
@@ -1004,13 +1252,18 @@ package struct OrderBoardView: View {
 
     /// The card keeps the keyboard's focus as a move takes it to another column: drawn anew there, it takes the focus back
     /// as it appears, however long the board takes to draw it, unless another card, or a field you type in, has it by then.
-    /// One the move leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the
-    /// board has nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten
-    /// seconds, as in a lane you fold, it isn't owed it later.
+    /// That column opens while it keeps it, folded or not, so that the next key moves it on (`keyOpened`). One the move
+    /// leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the board has
+    /// nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten seconds, as in
+    /// a lane you fold, it isn't owed it later.
     private func keepFocus(on spot: CardSpot, leaving column: PullRequestStage) {
-        guard Self.owesFocus(after: order.stage(of: spot.ref), leaving: column) else {
+        let reading = order.stage(of: spot.ref)
+        guard Self.owesFocus(after: reading, leaving: column) else {
             refocus.took(spot)
             return
+        }
+        if let stage = reading?.stage {
+            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: .stage(stage), spot: spot) }
         }
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
@@ -1031,15 +1284,24 @@ package struct OrderBoardView: View {
         return reading.isOnBoard && reading.stage != column
     }
 
+    /// Up Next's "2 more ›": the page scrolls the board to that column, opened for the moment where it's folded, and its title
+    /// flashes.
     private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
         guard let stage else { return }
+        let column = BoardColumn.stage(stage)
+        if currentMetrics().isFolded(column) { revealedOpen.insert(column) }
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(column: .stage(stage)), anchor: .leading) }
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(column: column), anchor: .leading) }
             order.revealedColumn = nil
-            flashing = stage
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                if flashing == stage { flashing = nil }
-            }
+            flash(column)
+        }
+    }
+
+    /// A column's title flashes in its color, for a moment.
+    private func flash(_ column: BoardColumn) {
+        flashing = column
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            if flashing == column { flashing = nil }
         }
     }
 
@@ -1060,6 +1322,78 @@ package struct OrderBoardView: View {
             .font(size: 12)
             .padding(.horizontal, 4)
         }
+    }
+}
+
+// MARK: - A column's marks
+
+/// A column's mark, by its title and on its strip: To start's dashed ring, as the Sprint page's To Do has it, else a dot in
+/// its stage's color; a shape as well as a color, for those who can't tell the colors apart.
+private struct ColumnMarker: View {
+    let column: BoardColumn
+    @Environment(\.textScale) private var textScale
+
+    var body: some View {
+        Group {
+            if column == .toStart {
+                // Not started, as the Sprint page's To Do says it.
+                Image(systemName: "circle.dashed")
+                    .font(size: 9, weight: .heavy)
+                    .foregroundStyle(column.color)
+            } else {
+                Circle()
+                    .fill(column.color)
+            }
+        }
+        .frame(width: 8 * textScale, height: 8 * textScale)
+        .accessibilityHidden(true)
+    }
+}
+
+/// How many cards a folded column has, on its strip: in a pill in its color where one of them needs you, a shape as well
+/// as a color.
+private struct StripCount: View {
+    let count: Int
+    let column: BoardColumn
+    let needsYou: Bool
+    @Environment(\.textScale) private var textScale
+
+    var body: some View {
+        Text(String(count))
+            .font(size: 10.5, weight: needsYou ? .bold : .medium)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .foregroundStyle(needsYou ? column.textColor : .secondary)
+            .padding(.horizontal, needsYou ? 3 * textScale : 0)
+            .padding(.vertical, needsYou ? 1 * textScale : 0)
+            .background {
+                if needsYou {
+                    Capsule()
+                        .fill(column.color.opacity(0.2))
+                        .overlay(Capsule().strokeBorder(column.color.opacity(0.85), lineWidth: 1))
+                }
+            }
+    }
+}
+
+/// What it holds, turned a quarter to the right to read from top to bottom, as a folded column's name on its strip: as long
+/// as it is, but only as long as it's given room for, cut short there, so that it never makes a lane taller.
+private struct Sideways: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let size = content.sizeThatFits(.unspecified)
+        return CGSize(width: size.height, height: min(size.width, proposal.height ?? 0))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let thickness = content.sizeThatFits(.unspecified).height
+        // Laid out across, as long as the room is tall, then turned about its middle.
+        content.place(
+            at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+            proposal: ProposedViewSize(width: bounds.height, height: thickness)
+        )
     }
 }
 
