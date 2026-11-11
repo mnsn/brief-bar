@@ -41,7 +41,7 @@ import Testing
         #expect(text.contains("""
             - Teammate's review (4):
               - !4079 “Rename the order status enum” in payments-api: Not approved yet · merge conflicts
-              - !3990 “Remove the legacy coupon API” in payments-api: Not approved yet · build expired
+              - !3990 “Remove the legacy coupon API” in payments-api: Not approved yet · build expired (You set it 1d ago)
               - !4105 “Prototype one-click checkout” in shop-web: Nobody's asked to review it yet (You set it 2h ago)
               - !4099 “Log slow database queries” in infra: 0 of 2 approvals
             - Approved (1):

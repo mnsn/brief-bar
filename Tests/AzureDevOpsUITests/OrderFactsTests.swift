@@ -536,7 +536,8 @@ import Testing
 
     /// The demo's pull requests each have the stage the mockup shows for its kind: what a session asks, a review asked or
     /// sent in Teams, a teammate's review with the reviewer it requires, what failed, what waits for its order, your
-    /// changes, and the one-click checkout's prototype you set for a teammate's review two hours ago, with nobody asked.
+    /// changes, and the one-click checkout's prototype you set for a teammate's review two hours ago, with nobody asked,
+    /// and the legacy coupon API's removal, which you set there a day ago, after its session finished.
     @Test func theDemosPullRequestsEachHaveTheirStage() async throws {
         let store = await Self.demoStore()
         let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true, now: { store.now })
@@ -569,6 +570,21 @@ import Testing
         let prototype = try #require(order.stage(of: DemoPullRequestOrder.oneClickCheckout))
         #expect(prototype.stage == .teammateReview && prototype.why == .findReviewer)
         #expect(prototype.mark?.at == store.now.addingTimeInterval(-2 * 3_600))
+
+        // The legacy coupon API's removal waits for Priya, with its build expired, after you reviewed what its session
+        // wrote: the Copilot demo's session, which finished before, doesn't bring it back to your review.
+        let session = ItemRef.session("4c8e2a6f-9d1b-4f37-a5c0-8e2d6b4f1a18")!
+        order.publish(
+            .copilot, sessions: [OrderSession(ref: session, pullRequests: [DemoPullRequestOrder.legacyCoupons])],
+            items: [LinkedItem(
+                ref: session, label: "Remove the legacy coupon API", title: "Remove the legacy coupon API", symbol: "bolt.fill",
+                color: .blue, state: nil, date: store.now.addingTimeInterval(-(25 * 3_600 + 20 * 60))
+            )],
+            sessionActivities: [session: .finished]
+        )
+        let coupons = try #require(order.stage(of: DemoPullRequestOrder.legacyCoupons))
+        #expect(stage(3990) == "Teammate's review: Not approved yet · build expired")
+        #expect(coupons.mark?.at == store.now.addingTimeInterval(-25 * 3_600) && coupons.isSetByYou)
     }
 
     // MARK: From Copilot's review
