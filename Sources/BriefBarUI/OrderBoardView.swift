@@ -650,8 +650,8 @@ package struct OrderBoardView: View {
 
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
-        // A finished mission's lane folds, but not while it holds your work's cards, which it would hide.
-        let isFolded = mission.map { $0.isFinished && lane.tasks.isEmpty && !unfolded.contains($0.key) } ?? false
+        // A finished mission's lane folds, but not while it holds cards of your work that's still to do, which it would hide.
+        let isFolded = mission.map { $0.isFinished && !lane.hasWorkToDo && !unfolded.contains($0.key) } ?? false
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
@@ -693,7 +693,7 @@ package struct OrderBoardView: View {
                             .padding(.leading, 4)
                     }
                     if mission.isFinished {
-                        foldedLine(mission, isFolded: isFolded, canFold: lane.tasks.isEmpty)
+                        foldedLine(mission, isFolded: isFolded, canFold: !lane.hasWorkToDo)
                     }
                     MissionNextStepsLine(lane: lane, order: order, select: select)
                         .padding(.leading, 4)
@@ -727,7 +727,8 @@ package struct OrderBoardView: View {
     }
 
     /// A finished mission's lane folds to its header, as List's merged line does.
-    /// - Parameter canFold: false for a lane with your work's cards, which doesn't fold: the line only says it's finished.
+    /// - Parameter canFold: false for a lane with cards of your work that's still to do, which doesn't fold: the line only
+    ///   says it's finished.
     @ViewBuilder
     private func foldedLine(_ mission: OrderMission, isFolded: Bool, canFold: Bool) -> some View {
         let label = HStack(spacing: 5) {

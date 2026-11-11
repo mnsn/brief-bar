@@ -189,6 +189,13 @@ extension BoardLane {
         }
     }
 
+    /// Whether it has cards of your work that's still to do, in To start or In progress, which keep a finished mission's lane
+    /// from folding, as it would hide them. Resolved and done work, in Merged and Completed, folds with it, as a merged pull
+    /// request's card does.
+    public var hasWorkToDo: Bool {
+        tasks.contains { $0.column == .toStart || $0.column == .inProgress }
+    }
+
     /// The story whose lane it is, for one of a story without a mission.
     public var story: ItemRef? {
         if case .story(let ref) = kind { return ref }

@@ -422,9 +422,10 @@ a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task sti
 read**. An abandoned pull request counts as none, and the card says so, as in **New · !4118 abandoned**. Of several, one
 on your board wins, then one that's active, merged, can't be read, then abandoned. A pull request of yours that merged
 stays in Merged until it's out and your work on it is done, its card saying what it waits for: **Production waits for
-approval** or **1 pipeline running**, while BriefBar follows its pipelines after the merge, or **Task
-5112 still open**. Then it's in Completed, as one with none of your work on it is once it's out. Completed keeps your
-sprint's done work all sprint, so its count is what you finished, and a pull request's card for as long as Done lists it.
+approval** or **1 pipeline running**, while BriefBar follows its pipelines after the merge, or **Task 5112 still open**.
+Then it's in Completed, as one with none of your work on it is once it's out. Completed keeps your sprint's done work
+all sprint, and a pull request's card for as long as Done lists it; done work whose pull request is still in Merged is
+on that card. Each column counts its cards: a pull request's once, with the work items it names.
 Merged and Completed fold to their counts until you click their titles. BriefBar puts work items with their pull requests
 only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers to turn it on until it is; and
 it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that work stays in To start. A work

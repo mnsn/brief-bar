@@ -1211,6 +1211,8 @@ import Testing
         #expect(labels(board.lanes[0], .toStart) == ["5104"])
         #expect(board.lanes[0].tasks(in: .inProgress).isEmpty)
         #expect(labels(board.lanes[0], .merged) == ["5106"])
+        // Its work to start keeps a finished mission's lane from folding, as it would hide it.
+        #expect(board.lanes[0].hasWorkToDo)
         #expect(labels(board.lanes[1], .inProgress) == ["5201", "5202"])
         #expect(board.lanes[1].story == Self.task(5002))
         #expect(labels(board.lanes[2], .toStart) == ["5301", "5401", "5002"])
@@ -1332,6 +1334,8 @@ import Testing
         #expect(board.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5506", "5507"])
         #expect(board.lanes[0].tasks(in: .completed).map(\.ref.shortOrderLabel) == ["5506"])
         #expect(board.lanes[0].tasks(in: .merged).map(\.ref.shortOrderLabel) == ["5507"])
+        // Its pull requests merged, and its work is resolved or done: nothing in it keeps the finished mission's lane open.
+        #expect(!board.lanes[0].hasWorkToDo)
         #expect(labels(board.lanes[1], .stage(.merged)) == ["!4304"])
         #expect(labels(board.lanes[1], .completed) == ["!4303"])
         #expect(labels(board.lanes[1], .stage(.yourReview)) == ["!4305"])
