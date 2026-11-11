@@ -39,9 +39,13 @@ import Testing
               - !4102 “Add retry with backoff to the payments client” in payments-api: ‘Retry backoff’ says it's ready (set 1d ago)
             """))
         #expect(text.contains("""
-            - Teammate's review (2):
+            - Teammate's review (4):
+              - !4079 “Rename the order status enum” in payments-api: Not approved yet · merge conflicts
+              - !3990 “Remove the legacy coupon API” in payments-api: Not approved yet · build expired (You set it 1d ago)
               - !4105 “Prototype one-click checkout” in shop-web: Nobody's asked to review it yet (You set it 2h ago)
               - !4099 “Log slow database queries” in infra: 0 of 2 approvals
+            - Approved (1):
+              - !4088 “Show delivery estimates on the product page” in shop-web: Maria approved it · Copilot is writing it · build failed
             - Can merge (1):
               - !4093 “Add dark mode to the account page” in shop-web: Completing automatically
             - Waits (1):
@@ -231,8 +235,8 @@ import Testing
         let now = Date(timeIntervalSince1970: 1_792_000_000)
         func ref(_ number: Int) -> ItemRef { .pullRequest(organization: "contoso", number: number) }
         let facts: [ItemRef: StageFacts] = [
-            ref(4131): StageFacts(role: .author, failure: "Build failed", since: now - 7_200),
-            ref(4133): StageFacts(role: .author, changesWanted: "Priya wants changes", since: now - 9_000),
+            ref(4131): StageFacts(role: .author, state: .draft, failure: "Build failed", since: now - 7_200),
+            ref(4133): StageFacts(role: .author, state: .draft, changesWanted: "Priya wants changes", since: now - 9_000),
             ref(4099): StageFacts(role: .author, waitingFor: "Waiting on Priya", since: now),
         ]
         func kept(_ picks: UpNextPicks, for account: String = "Robin@contoso.com") -> UpNextPicks.Kept {

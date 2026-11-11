@@ -30,7 +30,7 @@ import Testing
     @Test func aSecondReasonWrapsRatherThanBeingCutOff() {
         let writing = StageWhy.working(StageSession(ref: Self.session, activity: .working, since: Self.now, name: "Copilot"))
         let alone = StageReading(stage: .inProgress, why: writing)
-        let failing = StageReading(stage: .inProgress, why: writing, alsoFailing: "Merge conflicts")
+        let failing = StageReading(stage: .inProgress, why: writing, flags: [.failing("Merge conflicts")])
         #expect(height(failing, width: 140) > height(alone, width: 140) + 4)
         #expect(abs(height(failing, width: 2_000) - height(alone, width: 2_000)) < 0.5)
     }

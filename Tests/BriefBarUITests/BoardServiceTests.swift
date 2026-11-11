@@ -200,12 +200,15 @@ import Testing
         #expect(!order.isYours(Self.ref(4088)))
         #expect(!order.isYours(Self.ref(4999)))
 
-        // A drop that sets a stage is yours to undo; nothing on the board changed a stage by itself.
+        // A drop that sets a stage is yours to undo; nothing on the board changed a stage by itself. What needs you shows
+        // in Fix next and in its column's slot both.
         #expect(order.lastStageChange == nil)
-        #expect(order.setStage(.teammateReview, of: Self.ref(4131)) == .done)
-        #expect(order.board(kinds: [.pullRequest]).upNext.slots.first?.kind == .yourReview)
+        #expect(order.setStage(.inProgress, of: Self.ref(4079)) == .done)
+        #expect(order.board(kinds: [.pullRequest]).upNext.slots.map(\.card.ref)
+            == [Self.ref(4131), Self.ref(4088), Self.ref(4131), Self.ref(4120)])
         order.undo()
-        #expect(order.board(kinds: [.pullRequest]).upNext.slots.first?.card.ref == Self.ref(4131))
+        #expect(order.board(kinds: [.pullRequest]).upNext.slots.map(\.card.ref)
+            == [Self.ref(4131), Self.ref(4088), Self.ref(4079), Self.ref(4120)])
     }
 
     @Test func withPullRequestOrderOffTheresNothingNext() {
@@ -218,7 +221,8 @@ import Testing
 
     // MARK: The one you choose
 
-    /// Three to fix: two failed builds and changes Priya wants, which BriefBar's order puts last.
+    /// Three to fix: two failed builds and changes Priya wants, which BriefBar's order puts last; all three in Teammate's
+    /// review, where BriefBar's order has the oldest first: !4133, !4131, then !4132.
     private static let fixes: [Int: StageFacts] = [
         4131: StageFacts(role: .author, failure: "Build failed", since: Date(timeIntervalSince1970: 1_791_000_000)),
         4132: StageFacts(role: .author, failure: "Merge conflicts", since: Date(timeIntervalSince1970: 1_791_100_000)),
@@ -227,6 +231,10 @@ import Testing
 
     private static func fixNext(_ order: PullRequestOrder) -> UpNext.Slot? {
         order.board(kinds: kinds).upNext.slots.first { $0.kind == .fix }
+    }
+
+    private static func teammateNext(_ order: PullRequestOrder) -> UpNext.Slot? {
+        order.board(kinds: kinds).upNext.slots.first { $0.kind == .teammateReview }
     }
 
     /// The one you choose is Fix next's, ahead of BriefBar's order, kept in the preferences by reference, with the account,
@@ -244,9 +252,10 @@ import Testing
         let slot = try #require(Self.fixNext(order))
         #expect(slot.card.ref == Self.ref(4133))
         #expect(slot.isPicked)
-        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order) == "Priya wants changes, Not in a mission, you chose it")
-        #expect(UpNextView.choice(slot.card, order: order) == "!4133 — Priya wants changes")
-        #expect(order.board(kinds: Self.kinds).picked == [.inProgress: Self.ref(4133)])
+        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order)
+            == "Priya wants changes, in Teammate's review, Not in a mission, you chose it")
+        #expect(UpNextView.choice(slot.card, in: .fix, order: order) == "!4133 — Priya wants changes · in Teammate's review")
+        #expect(order.board(kinds: Self.kinds).picked == [.fix: Self.ref(4133)])
         #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
         #expect(order.keepsStages)
         #expect(!order.pickNext(Self.ref(4999), in: .fix))
@@ -260,7 +269,7 @@ import Testing
         #expect(again.picks == UpNextPicks([.fix: Self.ref(4133)]))
         #expect(Self.fixNext(again)?.card.ref == Self.ref(4133))
 
-        // Priya's changes are made: it moves on to Teammate's review, and BriefBar's order chooses while it's away.
+        // Priya's changes are made: it waits for her in Teammate's review, and BriefBar's order chooses while it's away.
         var fixed = Self.fixes
         fixed[4133] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
         Self.tell(again, fixed)
@@ -359,54 +368,55 @@ import Testing
         var now = Date(timeIntervalSince1970: 1_792_000_000)
         let order = Self.service(defaults, now: { now })
         Self.tell(order, Self.fixes)
-        #expect(order.pickNext(Self.ref(4133), in: .fix))
-        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
-        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(order.pickNext(Self.ref(4132), in: .teammateReview))
+        #expect(order.setStage(.inProgress, of: Self.ref(4132)) == .done)
+        #expect(Self.teammateNext(order)?.card.ref == Self.ref(4133))
         now += UpNextPicks.awayFor
         order.timePassed()
         #expect(order.picks.isEmpty)
 
         #expect(order.undo())
-        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
-        #expect(Self.fixNext(order)?.card.ref == Self.ref(4133))
-        #expect(Self.fixNext(order)?.isPicked == true)
-        #expect(Self.kept(defaults) == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(order.stage(of: Self.ref(4132))?.stage == .teammateReview)
+        #expect(Self.teammateNext(order)?.card.ref == Self.ref(4132))
+        #expect(Self.teammateNext(order)?.isPicked == true)
+        #expect(Self.kept(defaults) == UpNextPicks([.teammateReview: Self.ref(4132)]))
 
         // Undone half an hour later, before BriefBar looked again.
-        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
+        #expect(order.setStage(.inProgress, of: Self.ref(4132)) == .done)
         now += UpNextPicks.awayFor
         #expect(order.undo())
-        #expect(Self.fixNext(order)?.isPicked == true)
-        #expect(order.picks == UpNextPicks([.fix: Self.ref(4133)]))
+        #expect(Self.teammateNext(order)?.isPicked == true)
+        #expect(order.picks == UpNextPicks([.teammateReview: Self.ref(4132)]))
 
-        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
-        #expect(order.pickNext(Self.ref(4132), in: .fix))
+        #expect(order.setStage(.inProgress, of: Self.ref(4132)) == .done)
+        #expect(order.pickNext(Self.ref(4131), in: .teammateReview))
         #expect(order.undo())
-        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
-        #expect(order.picks == UpNextPicks([.fix: Self.ref(4132)]))
-        #expect(Self.fixNext(order)?.card.ref == Self.ref(4132))
+        #expect(order.stage(of: Self.ref(4132))?.stage == .teammateReview)
+        #expect(order.picks == UpNextPicks([.teammateReview: Self.ref(4131)]))
+        #expect(Self.teammateNext(order)?.card.ref == Self.ref(4131))
 
         // You let BriefBar choose since: Undo puts the stage back, but chooses nothing.
-        #expect(order.pickNext(Self.ref(4133), in: .fix))
-        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
-        order.letBriefBarChoose(.fix)
+        #expect(order.pickNext(Self.ref(4132), in: .teammateReview))
+        #expect(order.setStage(.inProgress, of: Self.ref(4132)) == .done)
+        order.letBriefBarChoose(.teammateReview)
         #expect(order.undo())
-        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.stage(of: Self.ref(4132))?.stage == .teammateReview)
         #expect(order.picks.isEmpty)
-        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(Self.teammateNext(order)?.card.ref == Self.ref(4133))
 
-        // Nor once the one you chose since moved on, and its choice went.
-        #expect(order.pickNext(Self.ref(4133), in: .fix))
-        #expect(order.setStage(.teammateReview, of: Self.ref(4133)) == .done)
-        #expect(order.pickNext(Self.ref(4132), in: .fix))
-        var resolved = Self.fixes
-        resolved[4132] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
-        Self.tell(order, resolved)
+        // Nor once the one you chose since moved on, and its choice went: Priya approved it.
+        #expect(order.pickNext(Self.ref(4132), in: .teammateReview))
+        #expect(order.setStage(.inProgress, of: Self.ref(4132)) == .done)
+        #expect(order.pickNext(Self.ref(4131), in: .teammateReview))
+        var approved = Self.fixes
+        approved[4131] = StageFacts(role: .author, failure: "Build failed", isApproved: true, approvedBy: "Priya")
+        Self.tell(order, approved)
+        #expect(order.stage(of: Self.ref(4131))?.stage == .approved)
         now += UpNextPicks.awayFor
         order.timePassed()
         #expect(order.picks.isEmpty)
         #expect(order.undo())
-        #expect(order.stage(of: Self.ref(4133))?.stage == .inProgress)
+        #expect(order.stage(of: Self.ref(4132))?.stage == .teammateReview)
         #expect(order.picks.isEmpty)
         #expect(Self.kept(defaults).isEmpty)
     }
@@ -424,7 +434,7 @@ import Testing
         #expect(picked.isPicked && UpNextView.offersLetBriefBarChoose(picked, order: order))
 
         var running = Self.fixes
-        running[4132] = StageFacts(role: .author, leftAfterReviews: "Build running")
+        running[4132] = StageFacts(role: .author)
         Self.tell(order, running)
         let waiting = try #require(Self.fixNext(order))
         #expect(waiting.card.ref == Self.ref(4131) && !waiting.isPicked)
@@ -440,8 +450,8 @@ import Testing
         #expect(Self.fixNext(order)?.isPicked == false)
     }
 
-    /// Fix next's choice waits while its build runs again, in progress without needing you, and comes first once it fails
-    /// again. It waits too until Azure DevOps' lists are read, and while Pull Request Order is off, unused.
+    /// Fix next's choice waits while its build runs again, not needing you, and comes first once it fails again. It waits
+    /// too until Azure DevOps' lists are read, and while Pull Request Order is off, unused.
     @Test func aChoiceWaitsWhileItsPullRequestCantSayWhereItIs() {
         let defaults = MemoryDefaults()
         let order = Self.service(defaults)
@@ -449,9 +459,9 @@ import Testing
         #expect(order.pickNext(Self.ref(4132), in: .fix))
 
         var running = Self.fixes
-        running[4132] = StageFacts(role: .author, leftAfterReviews: "Build running")
+        running[4132] = StageFacts(role: .author)
         Self.tell(order, running)
-        #expect(order.stage(of: Self.ref(4132))?.stage == .inProgress)
+        #expect(order.stage(of: Self.ref(4132))?.stage == .teammateReview)
         #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
         #expect(Self.fixNext(order)?.isPicked == false)
         Self.tell(order, Self.fixes)
@@ -1077,9 +1087,9 @@ import Testing
     @Test func onlyYoursGoesToTeammatesReviewAndSomeoneElsesSaysWhose() throws {
         let order = Self.service(MemoryDefaults())
         Self.tell(order, [
-            4093: StageFacts(role: .author, failure: "Build failed"),
+            4093: StageFacts(role: .author, state: .draft),
             4088: StageFacts(role: .reviewer, asksYou: "Priya asked you", author: "Priya"),
-        ])
+        ], states: [4093: .draft])
         let moves = Self.moves(order)
         let yours = try #require(moves.card(Self.ref(4093), in: .notInAMission))
         let priyas = try #require(moves.card(Self.ref(4088), in: .notInAMission))
@@ -1096,11 +1106,11 @@ import Testing
     }
 
     /// ⌘→ and ⌘← move a card to the next or previous stage you can set, as it is now; from Waits, ⌘← is Can merge, which
-    /// refuses until you can change missions yourself.
+    /// refuses until you can change missions yourself; from Teammate's review, ⌘→ is Approved, which Azure DevOps decides.
     @Test func theKeysMoveTheCardAsItIsNow() throws {
         let order = Self.service(try Self.defaults(orders: [[4101, 4102]]))
-        Self.tell(order, [4093: StageFacts(role: .author, failure: "Build failed"), 4101: StageFacts(role: .author),
-                          4102: StageFacts(role: .author, isReady: true, othersVoted: true)])
+        Self.tell(order, [4093: StageFacts(role: .author, state: .draft), 4101: StageFacts(role: .author),
+                          4102: StageFacts(role: .author, isReady: true, othersVoted: true)], states: [4093: .draft])
         let lane = try #require(order.missions.first?.key)
         let moves = Self.moves(order)
         #expect(moves.key(Self.ref(4093), in: .notInAMission, forward: true)?.move == .setStage(.yourReview))
@@ -1113,6 +1123,9 @@ import Testing
         // Once moved, the next key moves it on from where it is now.
         StageCommand.perform(.move(.yourReview), on: Self.ref(4093), order: order, undo: .lane)
         #expect(Self.moves(order).key(Self.ref(4093), in: .notInAMission, forward: true)?.move == .setStage(.teammateReview))
+        StageCommand.perform(.move(.teammateReview), on: Self.ref(4093), order: order, undo: .lane)
+        #expect(Self.moves(order).key(Self.ref(4093), in: .notInAMission, forward: true)?.move
+            == .refused("Azure DevOps decides when it's approved: once the reviewers it requires approve"))
     }
 
     /// Why a key couldn't move a pull request while its details covered the Board, which they say under its stage: only for

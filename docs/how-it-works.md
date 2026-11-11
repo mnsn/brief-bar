@@ -1537,37 +1537,75 @@ flow, which a row's colored label shows, in the window, the menu bar's list and 
 track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
 sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
 it; a task you went on with in the Copilot app does what the app says since, unless the app can't tell how it ended),
-what you and sessions set, and its order. The first rule that applies decides:
+what you and sessions set, its order, and, for yours, how far it got (below). The first rule that applies decides:
 
 | When | Stage | Says |
 |---|---|---|
 | BriefBar saw it merge | Merged | **Merged** |
-| Yours: a session writes it, or waits for you, since what you set | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
 | Someone else's: Copilot's pre-review runs, since what you set | Your review | **Copilot is pre-reviewing it** |
 | You or a session set one, the latest of them, and it still holds | What was set | **Find a reviewer**, **Waiting on Sam**, **You set it 2h ago**, **‘Cart’ says it's ready** |
 | Someone else's: you're asked, someone sent it to you, or new commits came since your vote | Your review | **Sam asked you**, **Priya sent it in Teams**, **New commits by Sam** |
 | Someone else's: you want changes | In progress | **Waiting for Sam's changes** |
-| Yours: a required item failed, or someone wants changes | In progress | **Build failed**, **Merge conflicts**, **Sam wants changes** |
-| Yours: a session that worked on it finished, and nobody else voted | Your review | **‘Cart’ finished** |
-| Yours: a draft | In progress | **Draft** |
+| Yours: a draft, but one a session finished writing that nobody else approved, which is yours to review | In progress | **Draft** |
 | Yours: ready to complete, and its order lets it | Can merge | **Complete it** |
 | Yours: ready to complete, after one BriefBar hasn't seen merge | Waits for another PR | **After !4102** |
 | Yours: ready to complete, still targeting the branch of one that merged, or its order needs checking, or another order puts what it waits for after it | Waits for another PR | **!4101 merged: retarget it to main**, **Check the order**, **‘Payments’ puts !4102 after it: check the order**, naming that order's mission as its header does, at once as you or Apple Intelligence rename it (agents get **Another order**) |
-| Yours: reviewed, with something else left | In progress | What's Left's first item |
+| Yours: the reviewers it requires approved it, but it isn't ready to complete | Approved | What's Left's first item but what fails or changes someone wants, **Build running**; else who approved it, **Maria approved it** |
+| Yours: not approved, once it got to Teammate's review or further: it lost its approval | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
+| Yours: a session writes it, or waits for you, and it got nowhere yet, nobody else having voted on it | In progress | **‘Cart’ is writing it**, **‘Cart’ asks you** |
+| Yours: a session that worked on it finished, or it got to your review before, and nobody else approved it | Your review | **‘Cart’ finished**, **Waiting for your review** |
 | Yours: otherwise | Teammate's review | Who it waits for, as What's Left says it, or **Find a reviewer** |
 
-On yours, where a session or a stage you set decides its stage while a required item failed, its words say the failure
-too, after their reason, **‘Cart’ asks you · build failed**, wherever they show: its row, its tooltip and its details,
-Up Next, and its mission's next step or what the mission waits for; VoiceOver hears it after a pause. Someone else's
-pull request that asks nothing of you has no stage. Beside Can merge and Waits, whose words say where its order puts
-it, a row or a card shows its order capsule only where a change of yours speaks of it (`OrderRowContext.isSaid(by:)`):
-✎ **Next to merge** for one you set as next, or, for one an order went against yours, its capsule, which says so in
-its tooltip and to VoiceOver, with Put Yours Back in its menu. You can set In progress, Your review or Teammate's
-review; Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
-pull request moves on (`StageRules.stands`): In progress until new commits come, or a session writing it finishes (a
-review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours, until the votes others cast change
-(a digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's,
-until your own vote changes or new commits come; Your review until you change it; merging or closing ends any.
+Approved means what Azure DevOps counts: its approvals, the reviewers it requires and its other reviewer policies, all
+done, as What's Left reads them (`PullRequestOrderFacts.isApproved`), and never while a reviewer it requires hasn't
+approved, as one who wants changes or rejected it, which What's Left says only as changes someone wants; one that
+requires nobody's review, as where its reviewer policy doesn't apply, isn't approved until someone approves it. While
+what BriefBar read of its policies isn't current, as after a push or a vote until it reads them again, or where its
+project doesn't let you read them, as What's Left's approval then stands for one vote, only the votes tell: not approved
+while a reviewer it requires hasn't approved, or nobody has; else it stays where it got, Approved or Can merge too, so
+one whose policies you can't read gets to Approved no more than to Can merge.
+
+On yours, what goes on with it besides why it's in its stage never moves it: a session that asks you or writes it, a
+required item that failed or expired, conflicts or a merge Azure DevOps couldn't make, and changes someone wants, each
+where why doesn't say it already; the session that set its In progress writes it too, whether or not BriefBar sees it on
+it otherwise, which **‘Cart’ is on it** says, so that Fix next doesn't offer it while that session may be fixing it.
+They're its flags (`StageFlag`): after its reason, **Maria approved it · build failed**, **‘Cart’ finished · ‘Cart’ asks
+you**, wherever its words show: its row, its tooltip and its details, Up Next, and what its mission waits for, VoiceOver
+hearing each after a pause; and marks on its card, **✕ Build failed**, **✋ Sam wants changes**. Fix next has what they
+say needs you, from every column (below). Someone else's pull request that asks nothing of you has no stage.
+
+**How far yours got.** BriefBar never moves one of yours back on its own, but where it loses what its stage stands for:
+its approval, as when a push resets the votes or Azure DevOps requires another reviewer, back to Teammate's review from
+Approved, Can merge or Waits; and Azure DevOps' readiness while it's still approved, as when its build fails or expires,
+back to Approved from Can merge or Waits. Your review, once a session finished writing it, gives way once someone else
+approves it; one someone only wants changes on stays there, marked. So BriefBar keeps how far each of your open pull
+requests got, as it works it out itself, whatever was set (`StageRules.worked`, `StagesReached`, `order.reached`): Your
+review, Teammate's review, Approved, or Can merge, for Waits too; nothing for In progress. A stage you or a session set
+moves it either way, and once that ends, BriefBar goes on from the stage that was set
+(`StageRules.reached(kept:ended:)`): Your review or Teammate's review, or, after In progress, from what Azure DevOps
+shows alone, as it was sent back. Azure DevOps can list a new pull request before the Copilot app says which session
+opened it: until BriefBar knows of a session writing it, at work or done, or a stage you or a session set on it ends,
+and for ten minutes at most, one it first kept in Teammate's review is that session's, where the session was at work,
+or done, by then: In progress while it writes it, Your review once it finished (`StagesReached.firstSight`). It's kept
+in the preferences for each account you sign in with, each as its pull request's reference, its stage, when it got
+there, as its stage said then, such as when the session that wrote it finished, so that one a session writes again
+keeps how long it waited for your review, or, where BriefBar first kept it, when it did, whether that's where BriefBar
+first kept it,
+and when a list last had it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no
+list has had it for 30 days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and
+its stage comes from what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none. `--mcp` only reads
+it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused, and
+Forget Stages… is there for it then: while it's on, what it keeps comes back at once, or goes after 30 days on its own.
+
+Beside Can merge and Waits, whose words say where its order puts it, a row or a card shows its order capsule only where
+a change of yours speaks of it (`OrderRowContext.isSaid(by:)`): ✎ **Next to merge** for one you set as next, or, for one
+an order went against yours, its capsule, which says so in its tooltip and to VoiceOver, with Put Yours Back in its
+menu. You can set In progress, Your review or Teammate's review; Approved, Can merge, Waits and Merged come only from
+what Azure DevOps and the order show. What you set holds until the pull request moves on (`StageRules.stands`): In
+progress until new commits come, or a session writing it finishes (a review, such as Copilot's pre-review, ends
+nothing); Teammate's review, on yours, until the votes others cast change (a digest of the votes, never who cast them),
+so asking someone else to review it keeps it, and, on someone else's, until your own vote changes or new commits come;
+Your review until you change it; merging or closing ends any.
 **Finished My Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure
 DevOps, or something new needs you there. Sessions never put someone else's pull request in progress, whether they work
 on it or set its stage. BriefBar never
@@ -1585,8 +1623,8 @@ as that session finishes, whether or not BriefBar sees it on the pull request ot
 that you haven't opened in the Copilot app (`activitiesSince`); working on afterwards, at something else, it doesn't put
 the pull request in progress. A Your review a session set ends as the votes change after it was set, as Teammate's
 review does, unlike one you set, which stands until you change it: the session said its work was ready for you, as
-**‘Cart’ finished** does, which gives way once someone else votes, so one a teammate approved moves on to Can merge or
-Waits. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
+**‘Cart’ finished** does, which gives way once someone else approves it, so one a teammate approved moves on to Approved,
+Can merge or Waits, and one someone only wants changes on stays in Your review, marked. It keeps the votes as the session read them as it set it, after its push, so a reset of the votes that push
 caused ends nothing. One that follows a Your review you set before the session read the pull request, with nothing set
 since but sessions' In progress and such Your reviews, keeps no votes, and lasts as yours does, while yours is there
 (`OrderKeeper.setStages`, `StageMark.follows`): it shows at once, as the session's, also
@@ -1616,7 +1654,7 @@ yours goes, and BriefBar takes away from what each session keeps what it set bef
 reviews, or all of it once the pull request merged or closed, listed or not (`SessionStages.end`), so an older one
 never comes back, also once
 an archived session is listed again; **Let BriefBar Decide** takes away, with yours, what sessions set before it, and
-the Your reviews that followed it, listed or not. Can merge, Waits and Merged come only from what BriefBar sees,
+the Your reviews that followed it, listed or not. Approved, Can merge, Waits and Merged come only from what BriefBar sees,
 whatever a session says.
 
 What you set is kept in the preferences (`StageMarks`, `order.stages`), for each account you sign in with, as one entry
@@ -1650,15 +1688,22 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first in its column's order, which wears **Next** on the Board. The pull request you chose for a
-slot comes first in its column (below); then the mission you focus on comes first in each stage, but in In progress, what
-needs you comes before it, so that Fix next is always its column's first:
+request is always the first in its column's order, which wears **Next** on the Board. Fix next has what needs you from
+every column (`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks
+you, then a build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, the
+oldest first; but none while a session writes it, which may be fixing just that. Its pull request wears **Fix next**
+wherever it is, and stays in its column's slot too, as one in Your review is still your next review, whatever its
+build. A mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
+(`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
+(`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
+focus on comes first in each stage, but in In progress, what needs you comes before it:
 
 | Stage | Which comes first |
 |---|---|
 | In progress | What needs you, Fix next's, the mission you focus on first among it: a session that asks you, then a build that failed, then changes someone wants, the oldest first; then the rest, the mission you focus on first, as By Mission lists them |
 | Your review | The mission you focus on; then the one that has waited longest, one that others build on as long as the longest waiting of those that wait for it, directly or through others, in any mission, as none of them can merge before it; of those that waited as long, the one more build on |
 | Teammate's review | The mission you focus on; then Find a reviewer, then the earliest in its mission's merge order |
+| Approved | The mission you focus on; then the earliest in its mission's merge order, then the oldest |
 | Can merge | The mission you focus on; then next to merge, then any time, then those with no order; the oldest first, then as By Mission lists them |
 | Waits | The mission you focus on; then the one closest to merging: one merge away when what it waits for can merge, one more for each that waits itself |
 | Merged | The mission you focus on; then the latest first |
@@ -1677,9 +1722,10 @@ each with why it's there, the one it shows checked; a Board card's menu has **Ma
 actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
 one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
 (`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
-needs you, so that what needs you still comes first;
-the slot shows it with ✎, and its card wears **✎ Next**. It stands while its pull request is on your board in that stage
-(`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
+needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is, in its
+mission's next steps too;
+the slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on
+your board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
 it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull
 requests and Done only yours, or once you're taken off it: the lists Azure DevOps has read of its organization since
 BriefBar started, as the account signed in now (`PRStore.listedOrganizations`), don't have it. Once it's been away for
@@ -1696,9 +1742,8 @@ organization's lists since BriefBar started, while the latest refresh read nothi
 neither away nor back, and waits; an organization whose lists can't be read again keeps what they had. So does one
 BriefBar reads by its link, sent to you in a chat or watched, as its organization's lists don't have one you're not on,
 while BriefBar doesn't list it and Azure DevOps hasn't said it's closed or gone, as before its link's turn, or after a
-read that failed, tried again an hour later (`PRStore.unreadLinks`). In progress
-without needing you, as while its build runs again or a session writes it, Fix next's waits too, and comes first again
-once it needs you. Undo of a stage you changed chooses its pull request
+read that failed, tried again an hour later (`PRStore.unreadLinks`). While a session writes it, Fix next's waits
+too, and comes first again once it needs you. Undo of a stage you changed chooses its pull request
 again where you'd chosen it, gone by then or not, but not for a slot you've decided for since, choosing another or with
 Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let BriefBar Choose**, in the slot's menu, forgets
 it at once, whether the slot shows it then or waits for it to come back; so does unchecking Make Next on its card while
@@ -1739,8 +1784,8 @@ name (`StageReading.readTheSame`), and the details' once the Board shows again. 
 Undo is beside it, in the details' order line. Like the monitor, a card takes ⌘ alone: ⇧⌘→ is another shortcut.
 `BoardRules` decides what a move does: In progress, Your review and Teammate's review are set as you set them
 from a stage's menu; someone else's pull request can't go to Teammate's review, there, in its menus or in VoiceOver's
-actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Can merge, Waits and Merged
-come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
+actions, as it asks its own reviewers, and Finished My Review takes it off your board instead; Approved, Can merge, Waits
+and Merged come only from what BriefBar sees, so a card goes there only from Waits onto Can merge, which is Set as Next to Merge
 in its lane's mission, only where that mission's order holds it, as its stage says (`StageOrder.holders(of:in:)`): in
 another's lane, set as next there, it would still wait, so the lane says where it waits, "It waits in ‘Payments’: set
 it as next there"; with Lanes: None, a card that waits is the mission's that holds it, and keeps its place among those
@@ -1775,7 +1820,8 @@ then forgets your choice rather than keep it, as **Let BriefBar Decide** does. O
 and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip 20, 10
 between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar folds,
 until they fit: Merged, Waits and To start, whatever they hold; then those where you wait, the one that needs least from
-you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress and Teammate's review, then any other from the left;
+you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and Approved, one step from done,
+last, then any other from the left;
 never one where it's your move (`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and
 doesn't complete by itself; one in In progress that's your draft or that you set there, a session busy on it since
 reading as working instead; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`),
@@ -1783,7 +1829,7 @@ nor one you chose. What still doesn't fit scrolls, and open columns share the ro
 the Board has in a 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too.
 A strip's count is in a pill bordered in its column's color where one of its cards needs you (`BoardCard.needsYou`: a
 review waiting on you, one you can complete, or a problem Fix next ranks, `fixRank`, but none in Merged), which only
-marks it, and the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. With
+marks it, and the strip wears its column's mark, To start's dashed ring, Approved's seal or a dot: a shape as well as a color. With
 every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
 card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
 column of a lane being one drop destination, folded or open, so that the one under the card stays as it springs open;

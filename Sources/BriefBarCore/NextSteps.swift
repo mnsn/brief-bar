@@ -51,22 +51,37 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
 }
 
 extension StageReading {
-    /// In progress, and it needs you, with no session on it: a session that asks you something, then a build or check that
-    /// failed, then changes someone wants. Nil for the rest, such as a session writing it or a draft.
+    /// It needs you, whatever its column, as why it's there or its flags say: a session that asks you something, then a
+    /// build or check that failed, or its merge, then changes someone wants; but nothing while a session writes it, which
+    /// may be fixing just that. Nil for the rest, such as a draft, or one that merged.
     public var fixRank: Int? {
-        guard stage == .inProgress else { return nil }
+        guard stage != .merged else { return nil }
+        var asks = false, writing = false, failing = false, changes = false
         switch why {
-        case .asksYou: return 0
-        case .failing: return 1
-        case .changesWanted: return 2
-        default: return nil
+        case .asksYou: asks = true
+        case .working: writing = true
+        case .failing: failing = true
+        case .changesWanted: changes = true
+        default: break
         }
+        for flag in flags {
+            switch flag {
+            case .asksYou: asks = true
+            case .working: writing = true
+            case .failing: failing = true
+            case .changesWanted: changes = true
+            }
+        }
+        if asks { return 0 }
+        if writing { return nil }
+        if failing { return 1 }
+        return changes ? 2 : nil
     }
 }
 
 extension PullRequestStage {
     /// The Board's columns, from left to right.
-    public static let columns: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .canMerge, .waits, .merged]
+    public static let columns: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .approved, .canMerge, .waits, .merged]
 
     /// Its column's title on the Board: "Waits", short for Waits for another PR.
     public var columnTitle: String {
@@ -78,15 +93,15 @@ extension PullRequestStage {
 
 /// Which comes first in a stage: on the Board, in Up Next and in a mission's next steps. The pull request you chose for Up
 /// Next's slot in its column, while the slot has it (`UpNextPicks`); then BriefBar's own order: the mission you focus on
-/// first, in every stage but In progress, where what needs you comes before it, so that Fix next is always its column's
-/// first card; then, in each:
-/// - **In progress:** what needs you first, as Fix next has it, the mission you focus on first among it: a session that
-///   asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you focus on
-///   first, as By Mission lists them.
+/// first, in every stage but In progress, where what needs you comes before it; then, in each:
+/// - **In progress:** what needs you first, as Fix next has it (`fixOrder`), the mission you focus on first among it: a
+///   session that asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you
+///   focus on first, as By Mission lists them.
 /// - **Your review:** the one that has waited longest; one that others build on as long as the longest waiting of those
 ///   that wait for it, by their orders or what they're stacked on, in any lane, as none of them can merge before it; of
 ///   those that waited as long, the one more build on.
 /// - **Teammate's review:** Find a reviewer first, as that's yours to do; then the earliest in its mission's merge order.
+/// - **Approved:** the earliest in its mission's merge order, then the oldest.
 /// - **Can merge:** next to merge first, then any time, then those with no order; the oldest first, then as By Mission
 ///   lists them.
 /// - **Waits:** the one closest to merging: what it waits for can merge.
@@ -109,6 +124,24 @@ public enum BoardOrder {
         return sorted
     }
 
+    /// What needs you, from every column, as Fix next has it: the one you chose for it first, while it needs you; then the
+    /// mission you focus on, then a session that asks you, then what failed, then changes someone wants, the oldest first.
+    public static func fixOrder(_ cards: [BoardCard], first picked: ItemRef? = nil) -> [BoardCard] {
+        var sorted = cards.filter { $0.reading.fixRank != nil }.sorted(by: isFixedFirst)
+        if let picked, let index = sorted.firstIndex(where: { $0.ref == picked }) {
+            sorted.insert(sorted.remove(at: index), at: 0)
+        }
+        return sorted
+    }
+
+    /// Of two that need you, the one to fix first.
+    static func isFixedFirst(_ lhs: BoardCard, _ rhs: BoardCard) -> Bool {
+        if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
+        let left = lhs.reading.fixRank ?? .max, right = rhs.reading.fixRank ?? .max
+        if left != right { return left < right }
+        return isOlder(lhs, rhs)
+    }
+
     /// These cards in BriefBar's own order, whatever you chose.
     static func briefBarsOrder(_ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading]) -> [BoardCard] {
         switch stage {
@@ -116,11 +149,8 @@ public enum BoardOrder {
             return cards.sorted { lhs, rhs in
                 let left = lhs.reading.fixRank, right = rhs.reading.fixRank
                 if (left == nil) != (right == nil) { return left != nil }
+                if left != nil { return isFixedFirst(lhs, rhs) }
                 if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
-                if let left, let right {
-                    if left != right { return left < right }
-                    return isOlder(lhs, rhs)
-                }
                 return isEarlierInMissions(lhs, rhs) ?? isOlder(lhs, rhs)
             }
         case .yourReview:
@@ -140,6 +170,11 @@ public enum BoardOrder {
                 if left != right { return left }
                 if let earlier = isEarlierInOrder(lhs, rhs) { return earlier }
                 return isEarlierInMissions(lhs, rhs) ?? isOlder(lhs, rhs)
+            }
+        case .approved:
+            return cards.sorted { lhs, rhs in
+                if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
+                return isEarlierInOrder(lhs, rhs) ?? isOlder(lhs, rhs)
             }
         case .canMerge:
             return cards.sorted { lhs, rhs in
@@ -257,10 +292,11 @@ public enum BoardOrder {
 
 /// One of Up Next's slots: a kind of next, each in its stage's color.
 public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
-    /// In progress, and it needs you: what Fix next shows.
+    /// What needs you, in any column: what Fix next shows, in In progress's color.
     case fix
     case yourReview
     case teammateReview
+    case approved
     case canMerge
     case waits
 
@@ -271,17 +307,20 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
         case .fix: "Fix next"
         case .yourReview: "Your next review"
         case .teammateReview: "Next for a teammate"
+        case .approved: "Approved next"
         case .canMerge: "Merge next"
         case .waits: "Waits next"
         }
     }
 
-    /// The stage it's from: its column on the Board, and its color.
+    /// The stage it's from: its column on the Board, and its color. Fix next's is In progress's, though it has what needs
+    /// you from every column.
     public var stage: PullRequestStage {
         switch self {
         case .fix: .inProgress
         case .yourReview: .yourReview
         case .teammateReview: .teammateReview
+        case .approved: .approved
         case .canMerge: .canMerge
         case .waits: .waits
         }
@@ -290,36 +329,40 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
     /// What it shows, for its tooltip.
     public var help: String {
         switch self {
-        case .fix: "What needs you to fix or answer: a session that asks you, then a build that failed, then changes someone wants"
+        case .fix:
+            "What needs you to fix or answer, in any column: a session that asks you, then a build that failed, then changes someone wants"
         case .yourReview: "The review that has waited longest; in a mission, the earlier one first, as later ones build on it"
         case .teammateReview: "A pull request of yours that needs a reviewer first; then the earliest in its mission"
+        case .approved: "Approved, but Azure DevOps can't complete it yet, as it says why: the earliest in its mission first"
         case .canMerge: "What Azure DevOps says is ready to complete: next to merge first, then any time"
         case .waits: "Ready to complete, but its order puts it after another: the one closest to merging"
         }
     }
 
-    /// Whether a card of its stage is in it: every one, but Fix next's, which has only what needs you.
+    /// Whether a card is in it: every one of its stage's, but Fix next's, which has what needs you, in any column.
     func takes(_ card: BoardCard) -> Bool {
         has(card.reading)
     }
 
-    /// Whether a pull request is in it, as its stage reads now: what you can choose for it. In its stage, on your board,
-    /// and for Fix next, needing you.
+    /// Whether a pull request is in it, as its stage reads now: what you can choose for it. On your board, in its stage,
+    /// but for Fix next, needing you, whatever its stage.
     public func has(_ reading: StageReading?) -> Bool {
         guard let reading, keeps(reading) else { return false }
         return self != .fix || reading.fixRank != nil
     }
 
     /// Whether the pull request you chose for it still stands there, as its stage reads now: on your board, in its stage.
-    /// Fix next's waits while it's in progress without needing you, as while a session writes it or a build runs, and
-    /// comes first again once it needs you.
+    /// Fix next's, in any stage but Merged, while it needs you, and waits while a session writes it, which may be fixing
+    /// just that: it comes first again once it needs you.
     public func keeps(_ reading: StageReading?) -> Bool {
-        guard let reading else { return false }
-        return reading.isOnBoard && reading.stage == stage
+        guard let reading, reading.isOnBoard else { return false }
+        guard self == .fix else { return reading.stage == stage }
+        return reading.fixRank != nil || (reading.stage != .merged && reading.writer != nil)
     }
 
-    /// The slot a card is in, which Make Next chooses it for: its column's, but In progress's only while it needs you; nil
-    /// for one in none, such as a draft, or one that merged.
+    /// The slot a card is in by its column, which Make Next chooses it for: its column's, but In progress's, Fix next, only
+    /// while it needs you; nil for one in none, such as a draft, or one that merged. One that needs you in another column
+    /// is in Fix next too, which Up Next's ⌄ chooses it for.
     public static func of(_ card: BoardCard) -> UpNextSlot? {
         allCases.first { $0.stage == card.stage && $0.takes(card) }
     }
@@ -690,14 +733,17 @@ public struct MissionNextStep: Equatable, Sendable, Identifiable {
     }
 
     /// The step one of a mission's cards is, when it's yours: nil for one that waits on others, or that completes by itself.
+    /// What a session asks you first, wherever its card is; then its column's own step, as a review in Your review, which
+    /// you do whatever its build; then what needs fixing, as Fix next has it.
     public static func of(_ card: BoardCard) -> MissionNextStep? {
+        let rank = card.reading.fixRank
         let kind: Kind
         switch (card.stage, card.reading.why) {
-        case (.inProgress, .asksYou): kind = .answer
-        case (.inProgress, .failing), (.inProgress, .changesWanted): kind = .fix
+        case _ where rank == 0: kind = .answer
         case (.yourReview, _): kind = .review
         case (.teammateReview, .findReviewer): kind = .findReviewer
         case (.canMerge, .ready(autoComplete: false)): kind = .complete
+        case _ where rank != nil: kind = .fix
         default: return nil
         }
         return MissionNextStep(kind: kind, ref: card.ref)
@@ -747,11 +793,15 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var columns: [PullRequestStage: [BoardCard]]
     /// Its work items' own cards, on My Work with + Sprint Tasks (`PullRequestBoard.withWork`), in the sprint's order.
     public var tasks: [BoardTask]
+    /// The pull request you chose for Fix next, which comes first of what it has to fix, while it needs you, whatever its
+    /// column.
+    public var fixFirst: ItemRef?
 
-    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = []) {
+    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
         self.columns = columns
         self.tasks = tasks
+        self.fixFirst = fixFirst
     }
 
     public var id: Kind { kind }
@@ -773,10 +823,20 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var isEmpty: Bool { columns.values.allSatisfy(\.isEmpty) && tasks.isEmpty }
 
     /// Its next steps that are yours, in the order Up Next takes them: what a session asks you, what to fix, reviews, finding
-    /// a reviewer, completing; in each, as its column has them, the one you chose for Up Next's slot first.
+    /// a reviewer, completing. What asks you and what to fix as Fix next has them, from every column, the one you chose for
+    /// it first; the rest as their column has them, the one you chose for Up Next's slot first.
     public var nextSteps: [MissionNextStep] {
-        cards.compactMap(MissionNextStep.of).enumerated().sorted { lhs, rhs in
-            if lhs.element.kind != rhs.element.kind { return lhs.element.kind < rhs.element.kind }
+        let cards = cards
+        let fixOrder = Dictionary(
+            BoardOrder.fixOrder(cards, first: fixFirst).enumerated().map { ($0.element.ref, $0.offset) }, uniquingKeysWith: min
+        )
+        return cards.compactMap(MissionNextStep.of).enumerated().sorted { lhs, rhs in
+            let kind = lhs.element.kind
+            if kind != rhs.element.kind { return kind < rhs.element.kind }
+            if kind == .answer || kind == .fix, let left = fixOrder[lhs.element.ref], let right = fixOrder[rhs.element.ref],
+               left != right {
+                return left < right
+            }
             return lhs.offset < rhs.offset
         }.map(\.element)
     }
@@ -801,10 +861,11 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var lanes: [BoardLane]
     /// How many pull requests each column has, each once, whatever lanes show it.
     public var counts: [PullRequestStage: Int]
-    /// The pull request that wears Next in each column: Up Next's, the first in its column's order, across the lanes.
-    public var next: [PullRequestStage: ItemRef]
-    /// Of those, the ones you chose for Up Next's slots (`UpNextPicks`), which wear Next as yours.
-    public var picked: [PullRequestStage: ItemRef]
+    /// Up Next's pull request in each slot, which wears Next on the Board: the first in its column's order, across the
+    /// lanes; and Fix next's, the first of what needs you, wherever it is, which wears Fix next.
+    public var next: [UpNextSlot: ItemRef]
+    /// Of those, the ones you chose for Up Next's slots (`UpNextPicks`), which wear theirs as yours.
+    public var picked: [UpNextSlot: ItemRef]
     public var upNext: UpNext
     /// Each pull request on the board, once.
     public var refs: Set<ItemRef>
@@ -820,8 +881,8 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var workOfPullRequests: [ItemRef: [ItemRef]] = [:]
 
     public init(
-        lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [PullRequestStage: ItemRef] = [:],
-        picked: [PullRequestStage: ItemRef] = [:], upNext: UpNext = UpNext(), refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [],
+        lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],
+        picked: [UpNextSlot: ItemRef] = [:], upNext: UpNext = UpNext(), refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [],
         mode: BoardLanes = .missions
     ) {
         self.lanes = lanes
@@ -882,8 +943,8 @@ public struct PullRequestBoard: Equatable, Sendable {
         let all = Array(first.values) + outside
 
         var counts: [PullRequestStage: Int] = [:]
-        var next: [PullRequestStage: ItemRef] = [:]
-        var picked: [PullRequestStage: ItemRef] = [:]
+        var next: [UpNextSlot: ItemRef] = [:]
+        var picked: [UpNextSlot: ItemRef] = [:]
         var slots: [UpNext.Slot] = []
         let sorted = columns(all, stages: stages, picks: picks)
         for stage in PullRequestStage.columns {
@@ -891,25 +952,30 @@ public struct PullRequestBoard: Equatable, Sendable {
             if !cards.isEmpty { counts[stage] = cards.count }
         }
         for kind in UpNextSlot.allCases {
-            let taken = (sorted[kind.stage] ?? []).filter(kind.takes)
+            // Fix next has what needs you from every column; the others, their column's cards.
+            let taken = kind == .fix ? BoardOrder.fixOrder(all, first: picks[.fix]) : (sorted[kind.stage] ?? []).filter(kind.takes)
             guard let card = taken.first else { continue }
             let isPicked = picks[kind] == card.ref
             slots.append(UpNext.Slot(kind: kind, card: card, cards: taken, isPicked: isPicked))
-            next[kind.stage] = card.ref
-            if isPicked { picked[kind.stage] = card.ref }
+            next[kind] = card.ref
+            if isPicked { picked[kind] = card.ref }
         }
 
         var boardLanes: [BoardLane] = []
         switch lanes {
         case .missions:
             for (mission, cards) in zip(shown, laneCards) {
-                boardLanes.append(BoardLane(kind: .mission(mission.key), columns: columns(cards, stages: stages, picks: picks)))
+                boardLanes.append(BoardLane(
+                    kind: .mission(mission.key), columns: columns(cards, stages: stages, picks: picks), fixFirst: picked[.fix]
+                ))
             }
             if !outside.isEmpty {
-                boardLanes.append(BoardLane(kind: .notInAMission, columns: columns(outside, stages: stages, picks: picks)))
+                boardLanes.append(BoardLane(
+                    kind: .notInAMission, columns: columns(outside, stages: stages, picks: picks), fixFirst: picked[.fix]
+                ))
             }
         case .none:
-            if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted)) }
+            if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted, fixFirst: picked[.fix])) }
         }
         return PullRequestBoard(
             lanes: boardLanes, counts: counts, next: next, picked: picked, upNext: UpNext(slots: slots), refs: Set(onBoard.keys),
@@ -1077,9 +1143,9 @@ public enum BoardMove: Equatable, Sendable {
     }
 }
 
-/// What the Board lets you do with a card. You can set the three stages that are yours to set; Can merge, Waits and Merged
-/// come only from what BriefBar sees, so a card goes there only by Set as Next to Merge, from Waits, in a mission whose order
-/// holds it. Someone else's pull request asks its own reviewers: Finished My Review takes it off your board instead. A card
+/// What the Board lets you do with a card. You can set the three stages that are yours to set; Approved, Can merge, Waits
+/// and Merged come only from what BriefBar sees, so a card goes there only by Set as Next to Merge, from Waits, in a mission
+/// whose order holds it. Someone else's pull request asks its own reviewers: Finished My Review takes it off your board instead. A card
 /// moves between columns in its own lane: another mission is Move to Mission's, in its menu.
 public enum BoardRules {
     /// What dropping a card on a column does.
@@ -1105,6 +1171,8 @@ public enum BoardRules {
             return .setStage(stage)
         case .teammateReview:
             return isYours ? .setStage(stage) : .refused(BoardText.someoneElses(author))
+        case .approved:
+            return .refused(BoardText.azureDevOpsApproves)
         case .canMerge:
             guard card.stage == .waits else { return .refused(BoardText.azureDevOpsDecides) }
             if let why = missions.lazy.compactMap({ $0.whyNotNext(card.ref) }).first { return .refused(why) }
@@ -1173,6 +1241,7 @@ public enum BoardText {
 
     static let hasMerged = "It merged: nothing changes its stage now"
     static let azureDevOpsDecides = "Azure DevOps decides when it can merge: once it says it's ready to complete"
+    static let azureDevOpsApproves = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
     static let mergesInAzureDevOps = "It merges in Azure DevOps: complete it there"
 
     static func otherLane(missionChanges: Bool) -> String {

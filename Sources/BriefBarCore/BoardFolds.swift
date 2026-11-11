@@ -263,11 +263,14 @@ public struct BoardFolding: Equatable, Sendable {
     static let foldsFirst: [BoardColumn] = [.stage(.merged), .stage(.waits), .toStart]
 
     /// Then, where it isn't your move, the columns where you wait, the one that needs least from you first: Can merge,
-    /// where what's there completes by itself; In progress, where none of it is yours alone; Teammate's review.
-    static let thenWhereYouWait: [BoardColumn] = [.stage(.canMerge), .stage(.inProgress), .stage(.teammateReview)]
+    /// where what's there completes by itself; In progress, where none of it is yours alone; Teammate's review; Approved,
+    /// one step from done, last.
+    static let thenWhereYouWait: [BoardColumn] = [
+        .stage(.canMerge), .stage(.inProgress), .stage(.teammateReview), .stage(.approved),
+    ]
 
     /// The order BriefBar folds columns in where the Board is too narrow: those it folds first, then those where you wait,
-    /// then any other, from the left, as Approved, last. Your review, whose every card is your move, never folds for room.
+    /// then any other, from the left. Your review, whose every card is your move, never folds for room.
     static func foldOrder(_ columns: [BoardColumn]) -> [BoardColumn] {
         let listed = foldsFirst + thenWhereYouWait
         return listed.filter(columns.contains) + columns.filter { !listed.contains($0) }

@@ -93,7 +93,7 @@ import Testing
                     author: "robin", createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number))
                 )
             },
-            stages: Dictionary(uniqueKeysWithValues: numbers.map { (ref($0), StageFacts(role: .author, failure: "Build failed")) }),
+            stages: Dictionary(uniqueKeysWithValues: numbers.map { (ref($0), StageFacts(role: .author, state: .draft)) }),
             account: "robin@contoso.com"
         )
         order.setView(.board)

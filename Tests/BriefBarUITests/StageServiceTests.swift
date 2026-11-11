@@ -195,6 +195,107 @@ private final class Clock {
         #expect(StageMarks.load(from: defaults).isEmpty)
     }
 
+    /// How far each of your pull requests got is kept for its account, from Your review on, so that BriefBar never moves one
+    /// back on its own: approved, it stays in Approved as its build fails, marked, and so once BriefBar starts again, before
+    /// it reads its details; it goes back to your teammates only as it loses its approval, as when a push resets the votes.
+    /// Merged, or with Forget Stages…, it's forgotten.
+    @Test func howFarYoursGotIsKeptAndOnlyLosingItsApprovalMovesItBack() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        func reached(_ number: Int) -> PullRequestStage? {
+            StagesReached.load(from: defaults).reach(of: Self.ref(number), for: Self.account, at: clock.now)?.stage
+        }
+        let approved = StageFacts(role: .author, isApproved: true, approvedBy: "Maria", othersVoted: true, votes: "10")
+        Self.tell(order, [4093: approved])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .approved)
+        #expect(Self.why(order, 4093) == "Maria approved it")
+        #expect(reached(4093) == .approved)
+
+        var failing = approved
+        failing.failure = "Build failed"
+        Self.tell(order, [4093: failing])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .approved)
+        #expect(Self.why(order, 4093) == "Maria approved it · build failed")
+        let again = Self.service(defaults, clock: clock)
+        var unread = failing
+        unread.isApproved = nil
+        Self.tell(again, [4093: unread])
+        #expect(again.stage(of: Self.ref(4093))?.stage == .approved)
+
+        // A push reset its votes.
+        Self.tell(again, [4093: StageFacts(role: .author, failure: "Build failed", waitingFor: "Waiting on Maria")])
+        #expect(again.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(again, 4093) == "Waiting on Maria · build failed")
+        #expect(reached(4093) == .teammateReview)
+
+        Self.tell(again, [4093: StageFacts(role: .author, state: .merged)], states: [4093: .merged])
+        #expect(StagesReached.load(from: defaults).isEmpty)
+
+        Self.tell(again, [4094: approved])
+        #expect(reached(4094) == .approved)
+        // Forget Stages… forgets it; how far one Azure DevOps lists now got forms again at once, from what it says.
+        Self.tell(again, [4095: approved])
+        #expect(reached(4094) == .approved)
+        again.forgetStages()
+        #expect(reached(4094) == nil)
+        #expect(reached(4095) == .approved)
+    }
+
+    /// Once a stage you set ends, BriefBar goes on from there, not from how far it had got before: one you finished
+    /// reviewing that a teammate then wants changes on stays with your teammates, marked, rather than go back to your
+    /// review as the session that wrote it had it.
+    @Test func onceAStageYouSetEndsItGoesOnFromThere() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Maria")])
+        Self.tellSession(order, on: [4093], state: .running, since: clock.now)
+        clock.advance(seconds: 600)
+        Self.tellSession(order, on: [4093], state: .done, since: clock.now)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+
+        #expect(order.finishedReview(Self.ref(4093)) == .done)
+        Self.tell(order, [4093: StageFacts(
+            role: .author, changesWanted: "Maria wants changes", waitingFor: "Waiting on Maria", othersVoted: true, votes: "-5"
+        )])
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(order, 4093) == "Waiting on Maria · Maria wants changes")
+    }
+
+    /// Azure DevOps can list a pull request before the Copilot app tells which session opened it: told within minutes, it's
+    /// that session's, as if BriefBar had known it first. Told later, or where BriefBar knew of the session as it first kept
+    /// the pull request, it's no such thing: one that loses its approval stays with your teammates.
+    @Test func whereBriefBarFirstSawOneIsItsSessionsOnlyBeforeItKnewOfThemAndForMinutes() {
+        let clock = Clock()
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Maria")
+        let raced = Self.service(Self.defaults(), clock: clock)
+        Self.tell(raced, [4093: waiting])
+        #expect(raced.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        clock.advance(seconds: 60)
+        Self.tellSession(raced, on: [4093], state: .running, since: clock.now - 120)
+        #expect(raced.stage(of: Self.ref(4093))?.stage == .inProgress)
+        #expect(Self.why(raced, 4093) == "‘Cart’ is writing it")
+
+        let late = Self.service(Self.defaults(), clock: clock)
+        Self.tell(late, [4093: waiting])
+        clock.advance(seconds: 660)
+        Self.tellSession(late, on: [4093], state: .done, since: clock.now - 900)
+        #expect(late.stage(of: Self.ref(4093))?.stage == .teammateReview)
+
+        let known = Self.service(Self.defaults(), clock: clock)
+        Self.tellSession(known, on: [4093], state: .done, since: clock.now - 3_600)
+        Self.tell(known, [4093: StageFacts(
+            role: .author, isApproved: false, approvedBy: "Maria", waitingFor: "1 of 2 approvals", othersVoted: true, votes: "10"
+        )])
+        #expect(known.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        // A push reset the votes, minutes later.
+        clock.advance(seconds: 120)
+        Self.tell(known, [4093: waiting])
+        #expect(known.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(known, 4093) == "Waiting on Maria")
+    }
+
     @Test func aSessionAtWorkThenDoneMovesItAsTheCopilotAppTellsIt() {
         let clock = Clock()
         let order = Self.service(Self.defaults(), clock: clock)
@@ -208,12 +309,13 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
         #expect(Self.why(order, 4093) == "‘Cart’ finished")
 
-        // Your Finished My Review stands over it, until the session works on it again.
+        // Your Finished My Review stands over it; the session at work on it again only marks it.
         order.finishedReview(Self.ref(4093))
         #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
         clock.advance(seconds: 60)
         Self.tellSession(order, on: [4093], state: .needsYou, since: clock.now)
-        #expect(Self.why(order, 4093) == "‘Cart’ asks you")
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(order, 4093) == "Find a reviewer · ‘Cart’ asks you")
     }
 
     /// VoiceOver hears a failed build after the session that decides its stage, after a pause: in its row, its pill and
@@ -278,7 +380,8 @@ private final class Clock {
     }
 
     /// A task BriefBar sent that you went on with in the Copilot app does what the app says since: at work again after
-    /// it finished, it's in progress again. A pre-review stays a review, so someone else's stays yours to review.
+    /// it finished, it's writing it, in Your review still, where it got. A pre-review stays a review, so someone else's
+    /// stays yours to review.
     @Test func aTaskYouWentOnWithInTheCopilotAppDoesWhatTheAppSays() {
         let clock = Clock()
         let order = Self.service(Self.defaults(), clock: clock)
@@ -288,8 +391,8 @@ private final class Clock {
 
         clock.advance(seconds: 300)
         Self.tellSession(order, on: [4093], state: .running, since: clock.now, activity: .working)
-        #expect(order.stage(of: Self.ref(4093))?.stage == .inProgress)
-        #expect(Self.why(order, 4093) == "Copilot is writing it")
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(Self.why(order, 4093) == "Waiting for your review · Copilot is writing it")
 
         let review = StageSession(ref: Self.cart, activity: .finished, since: clock.now, name: "Copilot", isReview: true)
         Self.tell(order, [4110: StageFacts(role: .reviewer, asksYou: "Jordan asked you", sessions: [review])])
@@ -556,6 +659,93 @@ private final class Clock {
     }
 
     // MARK: From Copilot's review
+
+    /// A draft keeps nothing of how far it got, even one in Your review as the session that wrote it finished: once it's a
+    /// draft again, what was kept goes; published, where it goes starts again from what Azure DevOps and Copilot say.
+    @Test func aDraftKeepsNothingOfHowFarItGot() {
+        let clock = Clock()
+        let defaults = Self.defaults()
+        let order = Self.service(defaults, clock: clock)
+        func reached() -> PullRequestStage? {
+            StagesReached.load(from: defaults).reach(of: Self.ref(4093), for: Self.account, at: clock.now)?.stage
+        }
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: nil, since: clock.now, activity: .finished)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(reached() == .teammateReview)
+
+        Self.tell(order, [4093: StageFacts(role: .author, state: .draft)], states: [4093: .draft])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(reached() == nil)
+
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(reached() == .yourReview)
+    }
+
+    /// Where BriefBar first saw one stops being that once a stage set on it ends, as that moved it: a session the Copilot
+    /// app tells of next, done before BriefBar first saw it, doesn't take it from your teammates back to your review.
+    @Test func aStageSetThatEndedMovedItFromWhereBriefBarFirstSawIt() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        let first = clock.now
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Maria")])
+        #expect(order.setStage(.yourReview, of: Self.ref(4093)) == .done)
+        #expect(order.finishedReview(Self.ref(4093)) == .done)
+        clock.advance(seconds: 60)
+        Self.tell(order, [4093: StageFacts(
+            role: .author, changesWanted: "Maria wants changes", waitingFor: "Waiting on Maria", othersVoted: true, votes: "-5"
+        )])
+        #expect(order.stage(of: Self.ref(4093))?.mark == nil)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .done, since: first - 120)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(order, 4093) == "Waiting on Maria · Maria wants changes")
+    }
+
+    /// Your review's time is when it got there, as its stage said then, not when BriefBar noted it: one whose session
+    /// finished long before BriefBar heard of it keeps how long it has waited for your review once that session writes
+    /// it again, and so its place in Your review's order.
+    @Test func yourReviewWaitsFromWhenItGotThereNotFromWhenBriefBarNotedIt() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        let finished = clock.now - 7_200
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Maria")])
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .done, since: finished)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.since == finished)
+
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .running, since: clock.now)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(Self.why(order, 4093) == "Waiting for your review · ‘Cart’ is writing it")
+        #expect(order.stage(of: Self.ref(4093))?.since == finished)
+    }
+
+    /// Forget Stages… is there for how far yours got while Pull Request Order is off, when nothing else forgets it: while
+    /// it's on, BriefBar keeps that again at once, or forgets it on its own after 30 days.
+    @Test func forgetStagesIsThereForHowFarYoursGotWhileOrderIsOff() {
+        let defaults = Self.defaults()
+        let order = Self.service(defaults)
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) != nil)
+        #expect(!order.keepsStages)
+
+        order.setOn(false)
+        #expect(order.keepsStages)
+        order.forgetStages()
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) == nil)
+        #expect(!order.keepsStages)
+
+        order.setOn(true)
+        Self.tell(order, [4093: StageFacts(role: .author)])
+        #expect(defaults.object(forKey: StagesReached.defaultsKey) != nil)
+        #expect(!order.keepsStages)
+    }
 
     /// A session that ended, then went idle, counts as finished only when its source says its last turn finished: one that
     /// was interrupted or failed, or whose end BriefBar can't tell, says nothing of its pull request, and ends no In progress

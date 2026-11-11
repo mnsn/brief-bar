@@ -261,15 +261,23 @@ final class PullRequestOrderFacts {
                 ?? (pr.hasConflicts ? "Merge conflicts" : pr.mergeProblem?.headline)
             facts.changesWanted = left.first { $0.kind == .changesRequested }?.label ?? Self.changesWanted(by: others)
             facts.isReady = readiness?.isReady ?? (item?.group == .ready)
-            // Its reviews: approvals, the reviewers it requires, and any other reviewer policy, by its name. With none of
-            // them, nobody's review holds it up, and what's left is its own work.
+            // Its reviews: approvals, the reviewers it requires, and any other reviewer policy, by its name. Without a
+            // reviewer policy, What's Left wants someone's approval; with one that doesn't apply, nobody's review holds it up.
             let reviewerPolicies = Set((record.details?.checks ?? []).filter { $0.kind == .reviewers }.map(\.name))
             let reviews = left.filter { item in
                 item.kind == .approvals || item.kind == .requiredReviewers
                     || (item.kind == .policy && reviewerPolicies.contains(item.label))
             }
-            if !facts.isReady, facts.changesWanted == nil, reviews.allSatisfy(\.isDone) {
-                facts.leftAfterReviews = readiness?.left.first { $0.isRequired }?.label
+            // Where BriefBar could read its policies, as they are now; else the votes alone, as What's Left's approval then
+            // stands for one vote, whatever its policies want.
+            let policiesRead = readiness?.isCurrent == true && record.details?.checksKnown == true
+            facts.isApproved = Self.isApproved(pr, reviews: reviews, isCurrent: policiesRead)
+            facts.approvedBy = Self.approvers(others.filter { !$0.isGroup && $0.vote.isApproval })
+            // What's left once it's approved, but what its flags say: what fails, and changes someone wants.
+            if facts.isApproved == true, !facts.isReady {
+                facts.leftAfterReviews = readiness?.left.first {
+                    $0.isRequired && $0.state != .failing && $0.kind != .changesRequested
+                }?.label
             }
             // Someone, or a team, asked to review it besides you: who it waits for, as What's Left says it, the required
             // reviewers it names first.
@@ -296,6 +304,30 @@ final class PullRequestOrderFacts {
             if item?.group == .needsYou { facts.asksYou = sentInChat }
         }
         return facts
+    }
+
+    /// Whether the reviewers one of yours requires approved it, as What's Left says it: its approvals, the reviewers it
+    /// requires and its other reviewer policies, all done. Never while a reviewer it requires hasn't approved, as one who
+    /// wants changes, or rejected it, which What's Left says only as changes someone wants. One that requires nobody's
+    /// review, as where its reviewer policy doesn't apply, isn't approved until someone approves it, which What's Left
+    /// then counts. While what was read of its policies isn't current, after a push or a vote, or where BriefBar can't read
+    /// them, only what its reviewers' votes tell: not approved while nobody approved it; else nil, as BriefBar can't tell.
+    /// - Parameters:
+    ///   - reviews: What's Left's items for its reviews, as last read.
+    ///   - isCurrent: BriefBar read its policies, as it is now.
+    static func isApproved(_ pr: PullRequest, reviews: [PRReadiness.Item], isCurrent: Bool) -> Bool? {
+        if pr.reviewers.contains(where: { !$0.isGroup && $0.isRequired && !$0.vote.isApproval }) { return false }
+        if isCurrent { return !reviews.isEmpty && reviews.allSatisfy(\.isDone) }
+        return pr.reviewers.contains(where: \.vote.isApproval) ? nil : false
+    }
+
+    /// "Maria", "Maria and Priya", "Maria, Priya and Sam"; past three, "and 2 more": who approved it, by their first names;
+    /// nil for nobody.
+    static func approvers(_ reviewers: [Reviewer]) -> String? {
+        let names = reviewers.map(\.person.firstName)
+        guard let last = names.last else { return nil }
+        if names.count > 3 { return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" }
+        return names.count == 1 ? last : names.dropLast().joined(separator: ", ") + " and " + last
     }
 
     /// Your own vote on someone else's pull request, as a set Teammate's review keeps it (`StageFacts.votes`): "10" once you
