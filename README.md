@@ -81,13 +81,13 @@ Turn on **Pull Request Order** in **Settings › Pull Requests**, and each Azure
 color: **In progress**, **Your review**, **Teammate's review**, **Approved**, **Can merge**, **Waits for another PR** or
 **Merged**. BriefBar works it out from Azure DevOps and your Copilot sessions, and with agents on, the sessions working
 on your pull requests update it as they go. A failed build, or changes someone wants, marks a pull request where it is:
-BriefBar moves one back only once it loses its approval. Click a stage to change it, or **Finished My Review** to pass
-a pull request on to your teammates.
+BriefBar moves one back itself only when it loses its approval, or Azure DevOps can no longer complete it. Click a
+stage to change it, or **Finished My Review** to pass a pull request on to your teammates.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-pull-requests-board-window-dark.jpg">
-    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review, the next for a teammate and the next that waits, then the Board, with a column for each stage and a lane for each mission, naming your next steps in it">
+    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review, the next for a teammate, the next approved, the next to merge and the next that waits, then the Board, with a column for each stage and a lane for each mission, naming your next steps in it">
   </picture>
 </p>
 
