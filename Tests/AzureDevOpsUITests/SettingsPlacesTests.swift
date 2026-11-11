@@ -32,11 +32,12 @@ import Testing
         #expect(AzureDevOpsSettings.Place.ownPage.settings == [.notifications, .summaries, .refresh, .organizations, .copilot])
     }
 
-    /// The page lists each of them once, under Azure DevOps only, after Pull Request Order, which works with GitHub's too.
+    /// The page lists each of them once, under Azure DevOps only, after Pull Request Order, which works with GitHub's too: My
+    /// Work Page first, which works only with Azure DevOps' pull requests.
     @Test func thePullRequestsPageListsEachOnceWithWhereItWorks() {
         let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), summarizer: .withoutModel)
         #expect(source.pullRequestSettings == [
-            "Show To Review in the Menu Bar", "Follow Pipelines After You Merge", "Open Pull Requests in BriefBar",
+            "My Work Page (preview)", "Show To Review in the Menu Bar", "Follow Pipelines After You Merge", "Open Pull Requests in BriefBar",
             "Pull Requests Sent in Chats", "Keep Done For", "Idle After No Activity For", "Watched Pull Requests",
             "Make Changes in Azure DevOps",
         ])
@@ -46,7 +47,7 @@ import Testing
         let names = groups.flatMap(\.settings)
         #expect(Set(names).count == names.count)
         // Whatever it's called on the page, as the menus call it.
-        #expect(names.dropFirst() == ArraySlice(aboutPullRequests.map(\.title)))
+        #expect(names.dropFirst(2) == ArraySlice(aboutPullRequests.map(\.title)))
         // And they show while it's off, as well as on.
         #expect(source.pullRequestSettingsView(state: .off) != nil)
         #expect(source.pullRequestSettingsView(state: .needsReview) != nil)

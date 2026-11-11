@@ -149,6 +149,38 @@ import Testing
         #expect(Self.service(defaults).lanes == .missions)
     }
 
+    /// My Work Page, off until you turn it on, takes the Board from Azure DevOps' Pull Requests page while Pull Request Order
+    /// is on too: that page offers List and Map, and a capsule there never changes the Board's lanes; a mission's name in
+    /// My Work's details does, for its lane.
+    @Test func myWorkPageTakesTheBoardFromThePullRequestsPage() {
+        let defaults = MemoryDefaults()
+        defaults.set(false, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false)
+        #expect(!order.myWorkPage)
+        order.setMyWorkPage(true)
+        #expect(defaults.bool(forKey: "order.myWorkPage"))
+        #expect(!order.showsMyWork)
+        #expect(order.views(for: Self.kinds) == [.list, .map, .board])
+        order.setOn(true)
+        #expect(order.showsMyWork)
+        #expect(order.views(for: Self.kinds) == [.list, .map])
+        #expect(order.views(for: [.gitHubPullRequest]) == [.list, .map])
+
+        let key = MissionKey.chain(Self.ref(4101))
+        order.setView(.board)
+        order.setLanes(.none)
+        order.reveal(key, kinds: Self.kinds)
+        #expect(order.revealed == key && order.lanes == .none)
+        order.revealOnBoard(key)
+        #expect(order.lanes == .missions)
+
+        let again = Self.service(defaults)
+        #expect(again.showsMyWork)
+        again.setMyWorkPage(false)
+        #expect(!again.showsMyWork)
+        #expect(again.views(for: Self.kinds) == [.list, .map, .board])
+    }
+
     @Test func theBoardAndUpNextFollowWhatAzureDevOpsTellsAndOnlyYoursCanGoToATeammate() {
         let order = Self.service(MemoryDefaults())
         Self.tell(order, [

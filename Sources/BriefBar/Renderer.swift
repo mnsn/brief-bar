@@ -286,6 +286,24 @@ enum Renderer {
                     write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
                 }
             }
+            // With My Work Page on, for a moment: My Work in the window, right before Pull Requests, which then has no Board.
+            if windowSections.contains(.azureDevOpsPullRequests), model.services.pullRequestOrder.isOn {
+                let order = model.services.pullRequestOrder
+                let wasOn = order.myWorkPage
+                order.setMyWorkPage(true)
+                let content = WindowContent(id: "render-my-work", model: model)
+                content.update(sections: windowSections)
+                for page in [SectionID.azureDevOpsMyWork, .azureDevOpsPullRequests] where content.pages.contains(page) {
+                    content.select(page, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 1_180, height: 760)
+                    write(Snapshot.render(view, appearance: appearance), "window-my-work-page-\(page.rawValue)-\(suffix)")
+                }
+                order.setMyWorkPage(wasOn)
+            }
             // A pull request's and a session's summary under its row, on their pages, with Up Next folded so that the rows
             // come first.
             if !rowSummaries.isEmpty {

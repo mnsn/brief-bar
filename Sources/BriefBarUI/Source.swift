@@ -189,6 +189,11 @@ package protocol BriefBarSource: AnyObject {
     var description: SourceDescription { get }
     /// Its menu-bar sections, in their default order.
     var sections: [SectionInfo] { get }
+    /// Pages of its own that a window shows with one of its sections, right before that section's page, by the section
+    /// they go with: such as Azure DevOps' My Work, before its Pull Requests, while My Work Page is on. They aren't
+    /// sections: no menu bar, widget or Overview shows them, and Settings › Windows doesn't list them. None by default;
+    /// `segmentsChanged` fires when they change.
+    func companionPages() -> [SectionID: [SectionInfo]]
 
     /// Starts reading: at launch while the source is on, and when you turn it on.
     func start()
@@ -264,6 +269,7 @@ package protocol BriefBarSource: AnyObject {
 }
 
 extension BriefBarSource {
+    package func companionPages() -> [SectionID: [SectionInfo]] { [:] }
     package func didTurnOn() {}
     package func statusView() -> AnyView? { nil }
     package func pullRequestSettingsView(state: SourceState) -> AnyView? { nil }
@@ -299,8 +305,9 @@ extension BriefBarSource {
     package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat { size == .compact ? 280 : 320 }
     package func widgetMenu(for section: SectionID) -> AnyView { AnyView(EmptyView()) }
 
+    /// A section's, or a page's that goes with one (`companionPages`).
     package func info(for section: SectionID) -> SectionInfo? {
-        sections.first { $0.id == section }
+        sections.first { $0.id == section } ?? companionPages().values.joined().first { $0.id == section }
     }
 }
 

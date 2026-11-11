@@ -255,7 +255,9 @@ their settings and positions (`WidgetMigration`).
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
 each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
 ([below](#the-overview)), and the first of them has the [Notifications page](#the-notifications-page)
-after it, while that's on and lists something. A section's page is its list, filling the window (`PanelStyle.page`), the
+after it, while that's on and lists something. A source can give a section companion pages, which aren't sections: they
+show only in windows, right before it, wherever it shows, with ⌘ numbers but no count, as [My Work](#my-work) does
+(`BriefBarSource.companionPages`, `WindowPages.companions`). A section's page is its list, filling the window (`PanelStyle.page`), the
 whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
 Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
 of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
@@ -1766,6 +1768,49 @@ scrolled down the board, as when the details open beside it. The Board, its lane
 kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
 `order.boardLanes` and `order.upNextFolded`.
 
+#### My Work
+
+**My Work Page (preview)**, off by default (`order.myWorkPage`), takes Up Next and the Board from Azure DevOps' Pull
+Requests page while Pull Request Order is on too (`PullRequestOrder.showsMyWork`). My Work isn't a section, which would
+be in the menu bar, the widgets and Settings › Windows too: it's a companion page of Azure DevOps' Pull Requests
+section (`AzureDevOpsSource.companionPages`), so it's in each window that has that page, right before it, and goes as
+the setting does, the window going to Pull Requests if it showed My Work. Its segment counts nothing, so nothing counts
+twice. `AppModel.section(ofPage:)` takes it to its section, for `openWindow` and `hasPage`. Pull Requests then offers
+List and Map (`PullRequestOrder.views(for:)`), showing List where you chose the Board without saving that, as GitHub's
+page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, the Board's **Show By Status**
+opens Pull Requests by status, and a pull request's mission in its details shows its lane
+(`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
+no lanes.
+
+**Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, and **+ Sprint Tasks**, your sprint work on it
+too: `SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done. `MyWorkFacts.work` takes,
+for each, its story, whether it has started, the pull requests [Show Links](#links) links it to, and whether a task you
+sent to Copilot works on it now. A linked pull request is what your lists have of it, else what Show Links read of it
+(`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged; abandoned; or, unread or gone,
+can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is read; Azure DevOps' links
+from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only Azure DevOps' own), so
+that work stays in To start. Work items and pull requests go together only through those links, never by their states:
+with Show Links off, + Sprint Tasks shows none of your sprint work, and offers to turn it on.
+
+`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
+agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
+names it, resolved too (`workOfPullRequests`). One without, a `BoardTask`, goes in **To start**, a column before In
+progress (`BoardColumn.toStart`), while it hasn't started and no Copilot task works on it; else in In progress, after
+its pull requests: with a pull request that isn't on the board, the first of an open one, one that merged, one that
+can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task still open"; with a Copilot task; or
+started, "Active · no pull request yet". An abandoned pull request counts as none, its card saying so. A resolved one
+without a pull request on the board has no card yet. Its card goes in its story's mission's lane; else, for a story in
+the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the missions'; else in that of those in no
+mission; with Lanes: None, in the one lane. The columns, their widths and their counts come from one list
+(`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
+and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
+card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
+
+While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
+screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to
+its work items, as Show Links reads them for the Sprint page. Each window shows it as a viewer of its own
+(`myWork.window.<id>`), apart from the Sprint page in the same window. Nothing else is read for it.
+
 ### A pull request's details
 
 A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower
@@ -2679,7 +2724,8 @@ the database instead, which needs no access. How the access survives rebuilds an
 
 The Sprint and Pipelines sections read Azure DevOps only while something shows them on screen: a
 window's page while the window is open, not minimized and not hidden behind other windows; a widget
-that isn't covered by windows; a menu-bar item that shows them, or its list. Each of those tells the
+that isn't covered by windows; a menu-bar item that shows them, or its list. [My Work](#my-work) shows
+the sprint too, while it shows + Sprint Tasks with Show Links on. Each of those tells the
 source when it starts and stops showing a section (`sectionVisibilityChanged`). Then they refresh as
 often as the pull requests (the **Refresh** setting), and right away when they come on screen with data
 more than half a refresh old. A refresh under way when they go off screen stops before its next request.

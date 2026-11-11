@@ -57,4 +57,28 @@ import Testing
         // A window without an Overview has no Notifications page either.
         #expect(WindowPages(sections: [.copilotSessions], notifications: true).pages == [.copilotSessions])
     }
+
+    /// My Work goes right before Azure DevOps' Pull Requests while it shows, with a sidebar even in a window with no other
+    /// section, but no Overview there; once it's gone, the window shows another page.
+    @Test func aSectionsCompanionsComeRightBeforeIt() {
+        let companions: [SectionID: [SectionID]] = [.azureDevOpsPullRequests: [.azureDevOpsMyWork]]
+        let window = WindowPages(sections: [.teamsChats, .azureDevOpsPullRequests, .copilotSessions], companions: companions)
+        #expect(window.pages == [WindowPages.overview, .teamsChats, .azureDevOpsMyWork, .azureDevOpsPullRequests, .copilotSessions])
+        #expect(window.page(for: .azureDevOpsMyWork) == .azureDevOpsMyWork)
+        #expect(window.current(chosen: .azureDevOpsMyWork) == .azureDevOpsMyWork)
+        #expect(window.hasSeveralPages)
+
+        let alone = WindowPages(sections: [.azureDevOpsPullRequests], companions: companions)
+        #expect(alone.pages == [.azureDevOpsMyWork, .azureDevOpsPullRequests])
+        #expect(!alone.hasOverview)
+        #expect(alone.hasSeveralPages)
+        #expect(alone.current(chosen: nil) == .azureDevOpsMyWork)
+
+        // Without the section it goes with, it isn't there either.
+        #expect(WindowPages(sections: [.copilotSessions], companions: companions).pages == [.copilotSessions])
+        let off = WindowPages(sections: [.azureDevOpsPullRequests])
+        #expect(!off.hasSeveralPages)
+        #expect(off.current(chosen: .azureDevOpsMyWork) == .azureDevOpsPullRequests)
+        #expect(off.page(for: .azureDevOpsMyWork) == nil)
+    }
 }

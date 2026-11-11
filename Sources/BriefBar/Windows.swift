@@ -18,6 +18,11 @@ final class WindowHost: NSObject, NSWindowDelegate {
         self.model = model
         content = WindowContent(id: id, model: model)
         super.init()
+        // A page that goes with a section came or went, such as My Work: the window's title and smallest size follow.
+        content.pagesChanged = { [weak self] in
+            guard let self, let window = self.window else { return }
+            self.configure(window)
+        }
     }
 
     var isOpen: Bool {
@@ -61,7 +66,7 @@ final class WindowHost: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let size = content.sections.count > 1 ? CGSize(width: 980, height: 700) : CGSize(width: 560, height: 700)
+        let size = content.hasSeveralPages ? CGSize(width: 980, height: 700) : CGSize(width: 560, height: 700)
         // A title bar of its own, as Settings has, so the window's buttons don't sit on the sidebar.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
@@ -91,7 +96,7 @@ final class WindowHost: NSObject, NSWindowDelegate {
 
     private func configure(_ window: NSWindow) {
         window.title = content.title
-        window.minSize = content.sections.count > 1 ? NSSize(width: 720, height: 480) : NSSize(width: 380, height: 420)
+        window.minSize = content.hasSeveralPages ? NSSize(width: 720, height: 480) : NSSize(width: 380, height: 420)
     }
 
     nonisolated func windowWillClose(_ notification: Notification) {
@@ -139,6 +144,10 @@ final class WindowContent: ObservableObject {
     /// The sections the window shows on screen, and as what: a page, or the Overview's list by state. Empty while it's
     /// closed, minimized or hidden behind other windows.
     private var visible: [SectionID: SectionViewer.Kind] = [:]
+    /// Its pages as they were last, to tell when a page that goes with a section comes or goes.
+    private var lastPages: [SectionID] = []
+    /// A page that goes with a section came or went, for the window's title and size.
+    var pagesChanged: (() -> Void)?
 
     /// Each window's page, as you last left it, by the window's ID.
     private static let pagesKey = "windowPages"
@@ -157,13 +166,23 @@ final class WindowContent: ObservableObject {
     }
 
     private var windowPages: WindowPages {
-        WindowPages(sections: sections, notifications: hasNotifications)
+        WindowPages(sections: sections, notifications: hasNotifications, companions: model.companions(of: sections))
     }
 
     /// Its pages: the Overview first, when it has several sections, then the Notifications page, while it has it, then a
-    /// page for each.
+    /// page for each, after the pages that go with it, such as My Work.
     var pages: [SectionID] {
         windowPages.pages
+    }
+
+    /// Its sections' pages, and those that go with them, as the sidebar lists them under their sources.
+    var sectionPages: [SectionID] {
+        pages.filter { $0 != Self.overview && $0 != Self.notifications }
+    }
+
+    /// Whether it has a sidebar, for several pages.
+    var hasSeveralPages: Bool {
+        windowPages.hasSeveralPages
     }
 
     /// The page that shows: the one you chose, or the first.
@@ -176,6 +195,8 @@ final class WindowContent: ObservableObject {
         guard sections.count == 1, let section = sections.first, let source = model.source(for: section) else {
             return AppIdentity.name
         }
+        // With a page that goes with it, such as My Work, the source's name.
+        guard pages.count == 1 else { return source.name }
         let title = source.info(for: section)?.title ?? source.name
         return source.sections.count > 1 || title != source.name ? "\(source.name): \(title)" : source.name
     }
@@ -184,15 +205,28 @@ final class WindowContent: ObservableObject {
         self.sections = sections
         overviewList.update(sections: sections.count > 1 ? sections : [])
         updateNotifications()
-        // The sidebar's counts follow the menu bar's.
+        // The sidebar's counts follow the menu bar's, and so do the pages that go with a section, such as My Work.
         cancellables.removeAll()
         var seen = Set<SourceID>()
         for source in sections.compactMap(model.source(for:)) where seen.insert(source.id).inserted {
             source.segmentsChanged
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] in MainActor.assumeIsolated { self?.objectWillChange.send() } }
+                .sink { [weak self] in MainActor.assumeIsolated { self?.segmentsChanged() } }
                 .store(in: &cancellables)
         }
+        lastPages = pages
+        pagesChanged?()
+    }
+
+    /// What a section shows in the menu bar may have changed, and with it the pages that go with it: once one goes while it
+    /// shows, the window shows another, and its source hears it no longer shows.
+    private func segmentsChanged() {
+        objectWillChange.send()
+        let pages = self.pages
+        guard pages != lastPages else { return }
+        lastPages = pages
+        pagesChanged?()
+        updateVisible()
     }
 
     /// Shows `section`'s page, or for nil, the Overview, which a window opens on, and tells their sources, which may
@@ -254,7 +288,9 @@ final class WindowContent: ObservableObject {
         let before = visible
         visible = shown
         for (section, kind) in before where shown[section] != kind {
-            model.source(for: section)?.sectionVisibilityChanged(section, isShowing: false, by: SectionViewer(kind, id: id))
+            // A page that went with a section, such as My Work once its setting is off, is still its source's to hide.
+            let source = model.source(for: section) ?? section.source.flatMap { model.source($0) }
+            source?.sectionVisibilityChanged(section, isShowing: false, by: SectionViewer(kind, id: id))
         }
         for (section, kind) in shown where before[section] != kind {
             model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: SectionViewer(kind, id: id))
@@ -272,7 +308,7 @@ struct WindowView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if content.sections.count > 1 {
+            if content.hasSeveralPages {
                 WindowSidebar(content: content)
                     .frame(width: Self.sidebarWidth)
                     .floatingPanel(cornerRadius: 18)
@@ -342,9 +378,10 @@ struct WindowSidebar: View {
                             content.select(WindowContent.notifications)
                         }
                     }
-                    ForEach(Array(content.sections.enumerated()), id: \.element) { index, section in
+                    let pages = content.sectionPages
+                    ForEach(Array(pages.enumerated()), id: \.element) { index, section in
                         if let source = model.source(for: section), let info = source.info(for: section) {
-                            if index == 0 || model.source(for: content.sections[index - 1])?.id != source.id {
+                            if index == 0 || model.source(for: pages[index - 1])?.id != source.id {
                                 Text(source.name)
                                     .font(size: 11, weight: .semibold)
                                     .foregroundStyle(.secondary)

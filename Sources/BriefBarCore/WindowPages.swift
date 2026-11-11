@@ -1,7 +1,8 @@
 import Foundation
 
 /// A window's pages: an Overview first, when it shows several sections, then the Notifications page, while it has one,
-/// then a page for each section.
+/// then a page for each section, each after the pages that go with it, such as Azure DevOps' My Work before its Pull
+/// Requests while My Work Page is on.
 public struct WindowPages: Equatable, Sendable {
     /// The Overview's page: everything on the window's other pages by state, with the brief.
     public static let overview = SectionID(rawValue: "briefbar.overview")
@@ -12,15 +13,26 @@ public struct WindowPages: Equatable, Sendable {
     public var sections: [SectionID]
     /// Whether it shows the Notifications page, after its Overview: a window without an Overview doesn't.
     public var showsNotifications: Bool
+    /// The pages that go with a section, right before its own, by section: pages of its source's that aren't sections, so
+    /// never in the menu bar, a widget or the Overview.
+    public var companions: [SectionID: [SectionID]]
 
-    public init(sections: [SectionID], notifications: Bool = false) {
+    public init(sections: [SectionID], notifications: Bool = false, companions: [SectionID: [SectionID]] = [:]) {
         self.sections = sections
         showsNotifications = notifications
+        self.companions = companions
     }
 
     public var pages: [SectionID] {
-        guard sections.count > 1 else { return sections }
-        return [Self.overview] + (showsNotifications ? [Self.notifications] : []) + sections
+        let own = sections.flatMap { (companions[$0] ?? []) + [$0] }
+        guard sections.count > 1 else { return own }
+        return [Self.overview] + (showsNotifications ? [Self.notifications] : []) + own
+    }
+
+    /// Whether it has several pages, for a sidebar to switch between them: a window with one section has its companions'
+    /// pages too, but no Overview.
+    public var hasSeveralPages: Bool {
+        pages.count > 1
     }
 
     public var hasOverview: Bool {
