@@ -3339,14 +3339,17 @@ goes, and what other fixes there changed and didn't push, which aren't ready to 
 reply that didn't, and one that failed or was stopped, if it changed anything first, until a later push takes it along
 (`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`), and what one still under way there changed by then, as a
 fork of a session under way copies it. It goes by the latest fix of each there, as what one changed there stays there
-though another session took it on since, which the bar at the foot of the details then has it in, and leaves out what's
-pushed. In a fork BriefBar made, it also names what the fork has of the session it forked: what was taken on there
+though another session took it on since, which the bar at the foot of the details then has it in, but not one still
+waiting for its turn, queued or copied for you to paste, which changed nothing yet, nor a push still waiting to take it
+along, which pushed nothing yet; and it leaves out what's pushed. In a fork BriefBar made, it also names what the fork
+has of the session it forked: what was taken on there
 before the fork was made, and so on for a fork of a fork, but not past one that pushed after it was made, which pushed
 all it had (`CopilotTasksStore.lineage`, `CopilotTasksStore.forkOrigin`). Wherever it goes, it names what may be
 committed there and not pushed, which goes with the branch: the conflicts' resolution, which Resolve Conflicts commits
 as it merges, though it stopped after; and what a Push & Reply, or a fix sent to push and reply, that may not have
 pushed committed along, which is all the session had taken on by then, as a task keeps that with each push in its
-session (`SessionPush.parts`), unless a push from there pushed it since (`CopilotTasksStore.mayBeCommitted`,
+session (`SessionPush.parts`), though a fix there took it on again since, unless a push from there pushed it since, or
+you cleared it (`CopilotTasksStore.mayBeCommitted`,
 `CopilotTasksStore.alsoPushes`, `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). It leaves out what
 it takes on itself, and, in a fork the Copilot CLI made, or makes, of a task, which starts at the commit the task's
 checkout had, all but that. Git doesn't tell BriefBar what each fix committed, so the note names what may go rather
@@ -3617,7 +3620,9 @@ build's row while it was closed, Try Again waits for the run to be read again, r
 attempt before; and on a closed build's row it's there only for a failed build, which opens to its Fix.
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
-its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); a task's is left empty, which tells it from one kept
+its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); and of what each push in a task's session had
+taken on of it, so a fix sent to push and reply doesn't name it (`SessionPush.parts`). What a task took on is left
+empty, which tells it from one kept
 before BriefBar recorded what tasks take on, and the task says what it took on itself was let go, when it was
 (`CopilotRun.workLetGo`). A prompt copied for you to paste that takes on more, or a Push & Reply, which
 stays, no longer takes the thread's comments off Needs You once you paste it, and they hold back how far the others leave

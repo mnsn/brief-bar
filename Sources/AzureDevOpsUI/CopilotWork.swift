@@ -576,6 +576,19 @@ extension CopilotTasksStore {
         on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>? = nil,
         where include: ((CopilotWork) -> Bool)? = nil
     ) -> CopilotWork? {
+        guard let work = latestAttempt(on: part, of: key, for: purposes, where: include) else { return nil }
+        if work.waitsToBePushed || work.shipsUnpushed, purposes?.contains(.pushAndReply) != false,
+           let push = pushCarrying(work, of: key) {
+            return push
+        }
+        return work
+    }
+
+    /// The latest work on something of a pull request, of those `purposes` and `include` take, as it went itself, before a
+    /// push that took it along (`work(on:of:for:where:)`).
+    private func latestAttempt(
+        on part: PullRequestPart, of key: PRKey, for purposes: Set<CopilotWork.Purpose>?, where include: ((CopilotWork) -> Bool)?
+    ) -> CopilotWork? {
         guard isOn, mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) else { return nil }
         var latest: (since: Date, work: CopilotWork)?
         for (since, work) in attempts(on: part, of: key) {
@@ -583,12 +596,7 @@ extension CopilotTasksStore {
             if let include, !include(work) { continue }
             if latest.map({ since > $0.since }) ?? true { latest = (since, work) }
         }
-        guard let work = latest?.work else { return nil }
-        if work.waitsToBePushed || work.shipsUnpushed, purposes?.contains(.pushAndReply) != false,
-           let push = pushCarrying(work, of: key) {
-            return push
-        }
-        return work
+        return latest?.work
     }
 
     /// Each work that took on something of a pull request, with when it did, which orders them: a task's, as the session's
@@ -724,12 +732,13 @@ extension CopilotTasksStore {
         let pushes = pushes.filter { push in push.session == session && inTime(push.since) }
         func pushedSince(_ date: Date) -> Bool { pushes.contains { push in push.pushed && push.since > date } }
         let takenOn = attempts(on: part, of: key).compactMap { attempt -> (at: Date, work: CopilotWork)? in
+            // One still waiting for its turn changed nothing yet.
+            if case .waiting = attempt.work.state { return nil }
             let at = attempt.work.takenAt ?? attempt.since
             return attempt.work.session == session && inTime(at) ? (at, attempt.work) : nil
         }
         let merged = takenOn.contains { attempt in
-            if case .waiting = attempt.work.state { return false }
-            return part == .conflicts && attempt.work.purpose == .fix && !pushedSince(attempt.at)
+            part == .conflicts && attempt.work.purpose == .fix && !pushedSince(attempt.at)
         }
         return merged || pushes.contains { push in
             push.mayHaveCommitted && !pushedSince(push.since)
@@ -802,26 +811,40 @@ extension CopilotTasksStore {
     /// under way there changed by now, as a fork of a session under way copies it. Those of the session, and of those it
     /// has the changes of (`lineage`), by the latest fix of each among theirs, as what one changed in a session stays
     /// there, though another took it on since, and the bar at the foot of the details has it there instead; not one that's
-    /// pushed. Wherever it goes, what may be committed there and not pushed (`mayBeCommitted`), which is all that goes where
+    /// pushed, and not one still waiting for its turn, or for you to paste it, which changed nothing yet, nor a line you
+    /// cleared. Wherever it goes, what may be committed there and not pushed (`mayBeCommitted`), which is all that goes where
     /// only what's committed does, as in a fork the Copilot CLI made, or makes, of one of BriefBar's tasks: of the ready
     /// ones, only the conflicts' resolution for sure. It names what may go rather than leave it out, since git doesn't tell
     /// BriefBar what each fix committed. Nil when that's nothing.
     func alsoPushes(
         _ key: PRKey, among parts: [PullRequestPart], in session: SessionChoice, forkedWithTheCLI: Bool, taking: [PullRequestPart]
     ) -> String? {
+        guard isOn else { return nil }
         // How each went doesn't depend on what it's about.
         let pushes = sessionPushes(of: key, about: .conflicts)
         let lineage = lineage(of: session.id, key: key, pushes: pushes)
-        /// Taken on in a session whose changes it has, before the next was forked from that one.
+        /// Taken on in a session whose changes it has, before the next was forked from that one; not one still waiting for
+        /// its turn, which changed nothing yet.
         func there(_ work: CopilotWork) -> Bool {
-            lineage.contains { hop in hop.session == work.session && (hop.before.map { (work.takenAt ?? work.since) < $0 } ?? true) }
+            if case .waiting = work.state { return false }
+            return lineage.contains { hop in
+                hop.session == work.session && (hop.before.map { (work.takenAt ?? work.since) < $0 } ?? true)
+            }
         }
         var ready: [PullRequestPart] = []
         var unpushed: [PullRequestPart] = []
-        for part in parts {
-            guard let work = work(on: part, of: key, for: [.fix, .pushAndReply], where: there), !Self.pushed(work) else { continue }
+        for part in parts where mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) {
+            // The latest fix of it there, if one's left of those taken on there: one another took on since may be all that's
+            // kept of it, and what one there committed may be all that's left of it there (`mayBeCommitted`). Past a push
+            // that takes it along (`pushCarrying`), unless that one's still waiting for its turn, which pushed nothing yet.
+            let work = latestAttempt(on: part, of: key, for: [.fix, .pushAndReply], where: there).map { work in
+                guard work.waitsToBePushed || work.shipsUnpushed, let push = pushCarrying(work, of: key) else { return work }
+                if case .waiting = push.state { return work }
+                return push
+            }
+            if let work, Self.pushed(work) { continue }
             // What's changed there goes as it is, done or not, as a fork of a session under way copies it.
-            if let hop = lineage.first(where: { $0.session == work.session }), !forkedWithTheCLI, !hop.committedOnly {
+            if let work, let hop = lineage.first(where: { $0.session == work.session }), !forkedWithTheCLI, !hop.committedOnly {
                 if work.waitsToBePushed {
                     ready.append(part)
                     continue
@@ -834,7 +857,7 @@ extension CopilotTasksStore {
             // What's committed goes wherever it is: alone, where only that does.
             guard lineage.contains(where: { hop in mayBeCommitted(part, in: hop.session, before: hop.before, of: key, pushes: pushes) })
             else { continue }
-            if part == .conflicts, work.waitsToBePushed { ready.append(part) } else { unpushed.append(part) }
+            if part == .conflicts, work?.waitsToBePushed == true { ready.append(part) } else { unpushed.append(part) }
         }
         let name = CopilotWork.quoted(PullRequestSession.name(of: session), isTask: session.run.map { $0.isAppSession != true } ?? false)
         return CopilotAsking.alsoPushes(ready, unpushed: unpushed, in: name, forkedWithTheCLI: forkedWithTheCLI, taking: taking)
@@ -1529,11 +1552,12 @@ extension CopilotTasksStore {
 
     /// Lets go of Copilot's work on something of a pull request, as its line's Clear does, as Dismiss does for an answer:
     /// what each task and prompt took on of it (`CopilotRun.taken`, `SentPrompt.parts`), so that the line goes and nothing
-    /// older takes its place, and a fix of it is no longer ready to push; and what a send that couldn't start keeps of it,
-    /// or one getting ready carries from before, which it would launch with. What Copilot is still at stays; a prompt copied
-    /// for you to paste that takes on nothing else goes, and hands nothing off, and one that takes on more, or a Push &
-    /// Reply, which stays, no longer hands off a thread's comments, once you paste it (`CommentHandOff.without(thread:)`).
-    /// The demo's are let go in memory.
+    /// older takes its place, and a fix of it is no longer ready to push; what each push in a task's session had taken on
+    /// of it, which a fix sent with Push and Reply on would name (`SessionPush.parts`); and what a send that couldn't start
+    /// keeps of it, or one getting ready carries from before, which it would launch with. What Copilot is still at stays; a
+    /// prompt copied for you to paste that takes on nothing else goes, and hands nothing off, and one that takes on more, or
+    /// a Push & Reply, which stays, no longer hands off a thread's comments, once you paste it
+    /// (`CommentHandOff.without(thread:)`). The demo's are let go in memory.
     func clear(_ part: PullRequestPart, of key: PRKey) {
         guard isOn else { return }
         objectWillChange.send()
@@ -1548,7 +1572,7 @@ extension CopilotTasksStore {
         let continuing = Dictionary(pending.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var runs = settings.copilotRuns
         for index in runs.indices where runs[index].onPullRequest?.matches(organization: key.organization, id: key.number) == true {
-            guard let taken = runs[index].taken else { continue }
+            let taken = runs[index].taken ?? []
             // What it's at now stays: what a send that goes on with it is getting ready for, else, while it runs, its own.
             let isAtIt: Bool
             if let next = continuing[runs[index].id], next.status.phase.isActive {
@@ -1557,6 +1581,13 @@ extension CopilotTasksStore {
                 isAtIt = active.contains(runs[index].id) && taken.contains { $0.part == part && $0.ended == nil }
             }
             guard !isAtIt else { continue }
+            if runs[index].pushes?.contains(where: { $0.parts?.contains(part) == true }) == true {
+                runs[index].pushes = runs[index].pushes?.map { push in
+                    var push = push
+                    push.parts?.removeAll { $0 == part }
+                    return push
+                }
+            }
             let kept = taken.filter { $0.part != part }
             guard kept.count != taken.count else { continue }
             if taken.contains(where: { $0.part == part && $0.ended == nil }) { runs[index].workLetGo = true }

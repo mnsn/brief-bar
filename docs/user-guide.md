@@ -548,7 +548,9 @@ session changed, so other fixes there that you haven't pushed go too, without a 
 another session since, as does what an earlier fix there changed and didn't push, because it was sent to push and reply
 and didn't, failed or was stopped, or, in a fork of a busy session, is still under way, and, in a fork, what it has of
 the session it forked, and, for a fork of a fork, of each before it. The composer names those as you send it, as the
-Send to Copilot window does, and, for a fork, only when BriefBar made it; when it changed nothing for the thread, it
+Send to Copilot window does, but not a fix whose line you cleared, and, for a fork, only when BriefBar made it; a fix
+still waiting for its turn there, or copied for you to paste, changed nothing yet, so it names what the one before it
+changed. When it changed nothing for the thread, it
 doesn't commit or push, but replies why, and leaves the thread active.
 It goes as a Push & Reply goes, with the same checks, below, so it doesn't wait in a session of the Copilot app that's
 running a turn: BriefBar says to send it once that's done. A new session, or a fork the Copilot CLI makes, that it

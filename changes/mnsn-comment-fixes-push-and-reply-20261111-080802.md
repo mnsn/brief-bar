@@ -11,11 +11,12 @@
   also names what an earlier fix there changed and didn't push, which goes too, without a reply: one sent to push and
   reply that didn't, or one that failed or was stopped, though you had it fixed again in another session since, and, in
   a fork of a busy session, what the fix under way there changed by then. In a fork BriefBar made, it names what the
-  fork has of the session it forked too, and, in a fork of a fork, of each before it. In a fork the Copilot CLI makes of
-  a task, which starts at what the task committed, it names what may be committed there: the conflicts' resolution,
-  though **Resolve Conflicts** stopped after merging, and what a push that didn't go through may have committed, earlier
-  fixes too, though one was taken on again since. The Send to Copilot window that **Edit the Whole Prompt…** opens names
-  what goes with it as well, leaving out only the comments its prompt still lists as you send it.
+  fork has of the session it forked too, and, in a fork of a fork, of each before it. A fix still waiting for its turn,
+  or copied for you to paste, changed nothing yet, so it names what the one before it changed. In a fork the Copilot
+  CLI makes of a task, which starts at what the task committed, it names what may be committed there: the conflicts'
+  resolution, though **Resolve Conflicts** stopped after merging, and what a push that didn't go through may have
+  committed, earlier fixes too, though one was taken on again since. The Send to Copilot window that **Edit the Whole
+  Prompt…** opens names what goes with it as well, leaving out only the comments its prompt still lists as you send it.
 - **Sessions named for fixing first.** A new session, or a fork the Copilot CLI makes, that a comment's fix sent to push
   and reply starts is named **Fix, Push & Reply: !4102 Add retry with backoff**, as BriefBar calls its task, rather than
   **Push & Reply: …**.
