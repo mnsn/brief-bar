@@ -125,7 +125,7 @@ import Testing
         let order = Self.service(defaults)
         order.revealColumn(.yourReview)
         #expect(order.view == .board)
-        #expect(order.revealedColumn == .stage(.yourReview))
+        #expect(order.revealedColumn == .yourReview)
         #expect(defaults.string(forKey: OrderView.defaultsKey) == "board")
     }
 

@@ -109,10 +109,15 @@ private struct ColumnAnchor: Hashable {
     var column: BoardColumn
 }
 
-/// Where a mission's lane starts, for the page to scroll to: an identity of its own for its spacer, so that only the anchor
-/// at the lane's top has the mission's key.
+/// Where a lane starts, for the page to scroll to: a mission's, as By Mission shows it, or that of the card My Work's Show
+/// Them shows. An identity of its own for its spacer, so that only the anchor at the lane's top has its `LaneTop`.
 private struct LaneAnchor: Hashable {
-    var mission: MissionKey
+    var lane: BoardLane.Kind
+}
+
+/// The top of a lane, which the page scrolls to.
+private struct LaneTop: Hashable {
+    var lane: BoardLane.Kind
 }
 
 /// Why a card couldn't move, under its lane until your next move.
@@ -321,10 +326,11 @@ package struct OrderBoardView: View {
     @LocalState private var scroll = BoardScroll()
     /// The column titles stay at the page's top, over the cards that scroll under them.
     @LocalState private var pin = BoardPin()
-    /// Where each mission's lane starts, for By Mission to show it, as a row's capsule asks.
-    @LocalState private var laneTops: [MissionKey: CGFloat] = [:]
-    /// The mission a row's capsule asked to show, for a moment, while the board settles.
-    @LocalState private var revealing: MissionKey?
+    /// Where each lane starts, for the page to show it: a mission's, as a row's capsule asks, or the lane of the card My
+    /// Work's Show Them shows.
+    @LocalState private var laneTops: [BoardLane.Kind: CGFloat] = [:]
+    /// The lane the page shows, for a moment, while the board settles.
+    @LocalState private var revealing: BoardLane.Kind?
     /// Each time the page shows it, for when to stop.
     @LocalState private var revealCount = 0
     @FocusState private var focused: CardSpot?
@@ -568,9 +574,13 @@ package struct OrderBoardView: View {
                 let height = geometry.size.height
                 return BoardPlace(top: min(max(-1, geometry.bounds(of: .scrollView)?.minY ?? -1), height), height: height)
             } action: { pin.place = $0 }
-            .overlay(alignment: .topLeading) { missionAnchors(lanes, proxy: proxy) }
-            .onAppear { takeReveal(order.revealed, with: proxy) }
+            .overlay(alignment: .topLeading) { laneAnchors(lanes, proxy: proxy) }
+            .onAppear {
+                takeReveal(order.revealed, with: proxy)
+                takeCardReveal(order.revealedCard, lanes: lanes, with: proxy)
+            }
             .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
+            .onChange(of: order.revealedCard) { _, ref in takeCardReveal(ref, lanes: lanes, with: proxy) }
         }
     }
 
@@ -767,7 +777,7 @@ package struct OrderBoardView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Where Up Next's "2 more ›", or My Work's Show Them, scrolls to.
+                    // Where Up Next's "2 more ›" scrolls to.
                     HStack(spacing: 0) {
                         ForEach(board.columns, id: \.self) { column in
                             Color.clear
@@ -781,7 +791,7 @@ package struct OrderBoardView: View {
                             laneView(lane, metrics: metrics, moves: moves)
                                 // Changes as lanes grow or shrink, never as the board scrolls.
                                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.lanesSpace)).minY } action: { top in
-                                    if let key = lane.mission { laneTops[key] = top }
+                                    laneTops[lane.kind] = top
                                 }
                         }
                     }
@@ -793,25 +803,25 @@ package struct OrderBoardView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(metrics.content > metrics.visible + 1 ? .automatic : .hidden)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scroll.x = x }
-            .onChange(of: order.revealedColumn) { _, column in reveal(column, with: proxy) }
+            .onChange(of: order.revealedColumn) { _, stage in reveal(stage, with: proxy) }
             .onAppear { reveal(order.revealedColumn, with: proxy) }
         }
     }
 
-    /// Where each mission's lane starts, as By Mission shows a mission a row's capsule asks for: from the board's top, where
-    /// its column titles start, so that with the anchor at the page's top, as far above the lane as they're tall, the
-    /// titles that stay there are just over the lane, its first too. Outside the board's sideways scroll, so that it
+    /// Where each lane starts, as By Mission shows a mission a row's capsule asks for, or Show Them a card: from the board's
+    /// top, where its column titles start, so that with the anchor at the page's top, as far above the lane as they're tall,
+    /// the titles that stay there are just over the lane, its first too. Outside the board's sideways scroll, so that it
     /// scrolls the page. The page scrolls to the one it shows once that anchor is laid out where its lane starts, and again
     /// as it moves while the board settles.
-    private func missionAnchors(_ lanes: [BoardLane], proxy: ScrollViewProxy) -> some View {
+    private func laneAnchors(_ lanes: [BoardLane], proxy: ScrollViewProxy) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(lanes.compactMap(\.mission).map(LaneAnchor.init), id: \.self) { anchor in
+            ForEach(lanes.map { LaneAnchor(lane: $0.kind) }, id: \.self) { anchor in
                 VStack(spacing: 0) {
-                    Color.clear.frame(width: 1, height: max(0, laneTops[anchor.mission] ?? 0))
-                    Color.clear.frame(width: 1, height: 1).id(anchor.mission)
+                    Color.clear.frame(width: 1, height: max(0, laneTops[anchor.lane] ?? 0))
+                    Color.clear.frame(width: 1, height: 1).id(LaneTop(lane: anchor.lane))
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
-                    if revealing == anchor.mission { revealMission(with: proxy) }
+                    if revealing == anchor.lane { revealLane(with: proxy) }
                 }
             }
         }
@@ -823,29 +833,59 @@ package struct OrderBoardView: View {
     /// laid out yet, as when the Board just showed a lane for each mission for it.
     private func takeReveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
         guard let key else { return }
-        revealing = key
-        endReveal(of: key, after: .seconds(5))
-        revealMission(with: proxy)
+        showLane(.mission(key), with: proxy)
         DispatchQueue.main.async {
             if order.revealed == key { order.revealed = nil }
         }
     }
 
-    /// The page scrolls to the lane of the mission it shows, once the lane is laid out, and again as the board settles, until
-    /// it has kept still for a second. Without animation, as the page has just changed from By Status to By Mission under it.
-    private func revealMission(with proxy: ScrollViewProxy) {
-        guard let key = revealing, laneTops[key] != nil else { return }
-        endReveal(of: key, after: .seconds(1))
-        DispatchQueue.main.async { proxy.scrollTo(key, anchor: .top) }
+    /// Takes the card My Work's Show Them asks for, the first of your work outside the sprint, its own or a pull request's
+    /// that names it, and shows it: its column opens for the moment where it would be folded, and its title flashes; the
+    /// page scrolls to its lane, as to a mission's; and the keyboard's focus goes to it, owed until it's drawn, for VoiceOver
+    /// to read it too.
+    private func takeCardReveal(_ ref: ItemRef?, lanes: [BoardLane], with proxy: ScrollViewProxy) {
+        guard let ref else { return }
+        DispatchQueue.main.async {
+            if order.revealedCard == ref { order.revealedCard = nil }
+        }
+        let isIn = { (lane: BoardLane) in lane.tasks.contains { $0.ref == ref } || lane.columns.values.contains { $0.contains { $0.ref == ref } } }
+        guard let lane = lanes.first(where: isIn) else { return }
+        let spot = CardSpot(lane: lane.kind, ref: ref)
+        if let column = column(of: spot) {
+            openForTheMoment(column)
+            flash(column)
+        }
+        oweFocus(to: spot)
+        // An owed card takes the focus as it appears: one drawn already takes it now.
+        DispatchQueue.main.async {
+            if isEnabled, !keys.isEditingText { focused = spot }
+        }
+        showLane(lane.kind, with: proxy)
     }
 
-    /// Stops showing that mission after a while, unless the page shows it again meanwhile.
-    private func endReveal(of key: MissionKey, after delay: Duration) {
+    /// Shows a lane: within a few seconds, for one that isn't laid out yet.
+    private func showLane(_ lane: BoardLane.Kind, with proxy: ScrollViewProxy) {
+        revealing = lane
+        endReveal(of: lane, after: .seconds(5))
+        revealLane(with: proxy)
+    }
+
+    /// The page scrolls to the lane it shows, once the lane is laid out, and again as the board settles, until it has kept
+    /// still for a second. Without animation, as the page has just changed from By Status to By Mission under it, or to + All
+    /// My Tasks.
+    private func revealLane(with proxy: ScrollViewProxy) {
+        guard let lane = revealing, laneTops[lane] != nil else { return }
+        endReveal(of: lane, after: .seconds(1))
+        DispatchQueue.main.async { proxy.scrollTo(LaneTop(lane: lane), anchor: .top) }
+    }
+
+    /// Stops showing that lane after a while, unless the page shows it again meanwhile.
+    private func endReveal(of lane: BoardLane.Kind, after delay: Duration) {
         revealCount += 1
         let count = revealCount
         Task { @MainActor in
             try? await Task.sleep(for: delay)
-            if revealCount == count, revealing == key { revealing = nil }
+            if revealCount == count, revealing == lane { revealing = nil }
         }
     }
 
@@ -1376,18 +1416,25 @@ package struct OrderBoardView: View {
         return reading.isOnBoard && reading.stage != column
     }
 
-    /// Up Next's "2 more ›", or My Work's Show Them: the page scrolls the board to that column, opened for the moment where it
-    /// would be folded but for its own moment, or where the board doesn't know its width yet to tell, and its title flashes.
-    private func reveal(_ column: BoardColumn?, with proxy: ScrollViewProxy) {
-        guard let column else { return }
-        let widths = BoardWidths(scale: textScale, available: width)
-        if width <= 0 || folding(widths, open: openForNow.subtracting([column]), choices: order.boardFolds).isFolded(column) {
-            revealedOpen.insert(column)
-        }
+    /// Up Next's "2 more ›": the page scrolls the board to that column, opened for the moment where it would be folded but for
+    /// its own moment, or where the board doesn't know its width yet to tell, and its title flashes.
+    private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
+        guard let stage else { return }
+        let column = BoardColumn.stage(stage)
+        openForTheMoment(column)
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(column: column), anchor: .leading) }
             order.revealedColumn = nil
             flash(column)
+        }
+    }
+
+    /// A column opens for the moment where it would be folded but for its own moment, or where the board doesn't know its
+    /// width yet to tell.
+    private func openForTheMoment(_ column: BoardColumn) {
+        let widths = BoardWidths(scale: textScale, available: width)
+        if width <= 0 || folding(widths, open: openForNow.subtracting([column]), choices: order.boardFolds).isFolded(column) {
+            revealedOpen.insert(column)
         }
     }
 

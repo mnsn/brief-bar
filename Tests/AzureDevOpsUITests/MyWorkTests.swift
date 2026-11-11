@@ -167,27 +167,29 @@ import Testing
         #expect(MyWorkFacts.work(sprint: sprint, outside: []).map(\.ref) == [1, 2, 3, 4].map(ref))
     }
 
-    /// Show Them takes the Board to the first column with a card of your work outside the sprint: To start while any of it
-    /// hasn't started, else In progress, whatever the sprint's work there; none where a pull request's card names each.
-    @Test func showThemTakesTheBoardToTheFirstColumnWithYourWorkOutsideTheSprint() {
+    /// Show Them takes the Board to the first card of its own of your work outside the sprint, lanes from the top, To start
+    /// before In progress, whatever the sprint's work there; else to the first pull request's card that names one.
+    @Test func showThemTakesTheBoardToTheFirstCardOfYourWorkOutsideTheSprint() {
         func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
         let onBoard = ItemRef.pullRequest(organization: "contoso", number: 4113)
-        func work(_ id: Int, _ progress: SprintWork.Progress, linked: [ItemRef] = []) -> SprintWork {
+        func work(_ id: Int, _ progress: SprintWork.Progress, story: Int? = nil, linked: [ItemRef] = []) -> SprintWork {
             SprintWork(
-                ref: ref(id), story: nil, progress: progress,
+                ref: ref(id), story: story.map(ref), progress: progress,
                 pullRequests: linked.map { LinkedPullRequest(ref: $0, state: .open(author: nil)) }, copilotWorks: false
             )
         }
         let pullRequests = PullRequestBoard.make(
             stages: [onBoard: StageReading(stage: .inProgress, why: .draft)], missions: [], kinds: PullRequestsByMission.kinds
         )
-        func column(sprint: [SprintWork], outside: [SprintWork]) -> BoardColumn? {
-            MyWorkFacts.column(of: Set(outside.map(\.ref)), on: pullRequests.withWork(sprint + outside, missions: [], stories: []))
+        func card(sprint: [SprintWork], outside: [SprintWork]) -> ItemRef? {
+            let board = pullRequests.withWork(sprint + outside, missions: [], stories: [ref(100)])
+            return MyWorkFacts.card(of: Set(outside.map(\.ref)), on: board)
         }
-        #expect(column(sprint: [work(1, .inProgress)], outside: [work(10, .inProgress), work(11, .toDo)]) == .toStart)
-        #expect(column(sprint: [work(1, .toDo)], outside: [work(10, .inProgress)]) == .stage(.inProgress))
-        #expect(column(sprint: [work(1, .toDo)], outside: [work(10, .toDo, linked: [onBoard])]) == nil)
-        #expect(column(sprint: [work(1, .toDo)], outside: []) == nil)
+        // Story 100's lane comes before Not in a mission: its In progress before a later lane's To start.
+        #expect(card(sprint: [work(1, .toDo, story: 100)], outside: [work(11, .toDo), work(10, .inProgress, story: 100)]) == ref(10))
+        #expect(card(sprint: [], outside: [work(10, .inProgress), work(11, .toDo)]) == ref(11))
+        #expect(card(sprint: [work(1, .toDo)], outside: [work(12, .toDo, linked: [onBoard])]) == onBoard)
+        #expect(card(sprint: [work(1, .toDo)], outside: []) == nil)
     }
 
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and

@@ -28,6 +28,8 @@ import Testing
         /// How many of each card's are drawn: two for a moment as it moves.
         var views: [ItemRef: Int] = [:]
         var shown = 0
+        /// How often a work item's card was asked to show its details.
+        var shownWork = 0
 
         func draw(_ ref: ItemRef, in column: PullRequestStage, at frame: CGRect) {
             self.frame = frame
@@ -95,19 +97,23 @@ import Testing
         }
     }
 
-    /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it.
+    /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it; with
+    /// work items, as My Work draws them.
     private struct Board: View {
         @ObservedObject var order: PullRequestOrder
         @ObservedObject var details: Details
         @ObservedObject var late: Late
         let drawn: Drawn
         let waits: FocusWaits?
+        let work: [SprintWork]
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
             let covered = details.covers && details.shown != nil
+            let board = order.board(kinds: kinds)
             OrderBoardView(
-                board: order.board(kinds: kinds), missions: MissionsBody.missions(order.missions, kinds: kinds), order: order,
+                board: work.isEmpty ? board : board.withWork(work, missions: [], stories: []),
+                missions: MissionsBody.missions(order.missions, kinds: kinds), order: order,
                 elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
                 card: { [drawn, late] card in
                     guard card.stage != late.column else { return nil }
@@ -126,7 +132,8 @@ import Testing
                     details.shown = ref
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
-                setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
+                setAsNext: nil, work: work.isEmpty ? nil : workContent, notOnBoard: 0, showByStatus: nil,
+                now: Date(timeIntervalSince1970: 1_792_000_000),
                 focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
                 // On CI the main actor's turns can come seconds late, so a card can take the keyboard after the app's half
                 // second: a column a key opened folds back here only once a card in another column has the keyboard.
@@ -139,6 +146,20 @@ import Testing
                         .frame(width: 200)
                 }
             }
+        }
+
+        /// Each work item's card, which shows its details as My Work's do.
+        private var workContent: BoardWorkContent {
+            BoardWorkContent(
+                card: { [drawn] task in
+                    let label = "Task \(task.ref.shortOrderLabel)"
+                    let content = Text(label)
+                        .onAppear { drawn.views[task.ref, default: 0] += 1 }
+                        .onDisappear { drawn.views[task.ref, default: 0] -= 1 }
+                    return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
+                },
+                story: { _ in AnyView(EmptyView()) }, isSelected: { _ in false }, select: { [drawn] _ in drawn.shownWork += 1 }
+            )
         }
     }
 
@@ -215,15 +236,17 @@ import Testing
     }
 
     /// Shows the Board in a window while `body` runs, once its card is drawn.
-    /// - Parameter waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as
-    ///   in the app.
+    /// - Parameters:
+    ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
+    ///     app.
+    ///   - work: work items on it too, as on My Work.
     private static func showing(
-        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
+        _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil, work: [SprintWork] = [],
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits))
+        let host = NSHostingView(rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits, work: work))
         // Wide enough for every column, so that the Board doesn't scroll sideways: its scroller, which shows only while the
         // details don't cover the Board, would change its height as they close.
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: 500), styleMask: .borderless,
@@ -429,6 +452,27 @@ import Testing
             #expect(drawn.columns[Self.ref] == .yourReview)
             try await Self.move(.rightArrow, to: .teammateReview, "⌘→ to move it on from there", order: order, drawn: drawn, in: window)
             #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// My Work's Show Them asks the Board for a work item's card in a column you folded: the column opens for the moment, and
+    /// the card takes the keyboard, for Return to show its details and VoiceOver to read it. What you chose stays.
+    @Test func aCardShowThemAsksForTakesTheKeyboardWithItsFoldedColumnOpenForTheMoment() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.toStart: .folded]))
+        let task = ItemRef.workItem(organization: "contoso", id: 5052)
+        let work = [SprintWork(ref: task, story: nil, progress: .toDo, pullRequests: [], copilotWorks: false)]
+        try await Self.showing(order, work: work) { window, _, drawn in
+            #expect(!drawn.isDrawn(task))
+            order.revealedCard = task
+            try await until("To start to open for it") { drawn.isDrawn(task) }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return drawn.shownWork == 1
+            }
+            #expect(drawn.shown == 0)
+            #expect(order.revealedCard == nil)
+            #expect(order.boardFolds == BoardFolds([.toStart: .folded]))
         }
     }
 
