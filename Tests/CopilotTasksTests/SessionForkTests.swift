@@ -552,11 +552,16 @@ import Testing
         retargeted.targetBranch = "release/x"
 
         let request = CopilotLauncher.Request(
-            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.quick,
-            repository: repository.checkout, worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout)
+            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Fix the comment, then push and reply", options: CopilotModel.quick,
+            repository: repository.checkout, worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout),
+            fixing: true
         )
         await #expect(throws: LaunchError.foreignMerge(target: "release/x")) { try await launcher(fixture).launch(request) { _ in } }
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
+        // The fork was named for what it does, as BriefBar calls its task: a comment's fix sent to push and reply.
+        #expect(fixture.parameters(of: "sessions.fork") as? [String: String] == [
+            "sessionId": FakeCopilot.session, "name": "Fix, Push & Reply: !4071 Fix the checkout total",
+        ])
         #expect(!FileManager.default.fileExists(atPath: repository.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-fork").path))
         #expect(!FileManager.default.fileExists(atPath: fixture.arguments.path))
         #expect(FileManager.default.fileExists(atPath: checkout.appendingPathComponent("main.txt").path))

@@ -122,6 +122,24 @@ import Testing
         #expect(name.hasSuffix("…"))
     }
 
+    /// A pull request's session is named for what it does, as BriefBar calls its task: "Fix, Push & Reply" for a Push & Reply
+    /// that fixes what it takes on first, as a comment's fix sent with Push and Reply on, which starts a session, or forks one.
+    @Test func namesAPullRequestsSessionForWhatItDoes() throws {
+        let pullRequest = TaskPullRequest(
+            organization: "contoso", project: "Storefront", repository: "checkout", id: 4071, title: "Fix the checkout total",
+            url: try #require(URL(string: "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071")),
+            sourceBranch: "users/robin/fix-total", targetBranch: "main"
+        )
+        #expect(CopilotCommand.sessionName(for: pullRequest, action: .fixComments) == "Fix Comments: !4071 Fix the checkout total")
+        #expect(CopilotCommand.sessionName(for: pullRequest, action: .pushAndReply) == "Push & Reply: !4071 Fix the checkout total")
+        #expect(CopilotCommand.sessionName(for: pullRequest, action: .pushAndReply, fixing: true) == "Fix, Push & Reply: !4071 Fix the checkout total")
+        #expect(CopilotCommand.sessionName(for: .pullRequest(pullRequest, .pushAndReply), fixing: true).hasPrefix("Fix, Push & Reply: "))
+        // Only a Push & Reply fixes first.
+        #expect(CopilotCommand.sessionName(for: pullRequest, action: .fixComments, fixing: true) == "Fix Comments: !4071 Fix the checkout total")
+        #expect(PullRequestAction.pushAndReply.title(fixing: true) == PullRequestAction.fixPushAndReplyTitle)
+        #expect(PullRequestAction.pushAndReply.title(fixing: false) == "Push & Reply")
+    }
+
     @Test func resumesInTerminalWithEveryPathQuoted() {
         let script = CopilotCommand.resumeScript(
             copilot: URL(fileURLWithPath: "/opt/homebrew/bin/copilot"), sessionId: "abc",

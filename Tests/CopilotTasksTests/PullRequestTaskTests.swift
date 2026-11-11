@@ -283,7 +283,8 @@ import Testing
             reads = answers
             return CopilotLauncher.Request(
                 subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Fix the comment, then push and reply",
-                options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil, targetNow: { try answers.next() }
+                options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil, targetNow: { try answers.next() },
+                fixing: true
             )
         }
         await #expect(throws: LaunchError.retargeted("release/x")) { try await launcher.launch(request(["release/x"]), id: id) { _ in } }
@@ -325,6 +326,9 @@ import Testing
         #expect(arguments.contains("Fix the comment, then push and reply"))
         // It commits and pushes: the CLI denies it nothing.
         #expect(!arguments.contains("--deny-tool"))
+        // Named for what it does, as BriefBar calls its task: it fixes the comment first.
+        let name = try #require(arguments.firstIndex(of: "--name").map { arguments[$0 + 1] })
+        #expect(name == "Fix, Push & Reply: !4071 Fix the checkout total")
     }
 
     /// A pull request's prompt has no placeholders, but quotes what others wrote, such as a change suggested in a comment,

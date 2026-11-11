@@ -108,11 +108,15 @@ public struct SessionPush: Sendable, Codable, Equatable, Hashable {
     /// For one that fixed what it took on first, whether it pushed a commit of its own, as its run kept once it finished
     /// (`CopilotRun.pushed`). Nil otherwise, when that wasn't known, and for what BriefBar kept before it had this.
     public var pushed: Bool?
+    /// What its session had taken on as it went, its own and what earlier tasks there took on, which it commits along, as it
+    /// commits all the session changed before it pushes (`CopilotRun.taken`). Nil for what BriefBar kept before it had this.
+    public var parts: [PullRequestPart]?
 
-    public init(since: Date, ended: RunPhase, fixes: Bool? = nil, pushed: Bool? = nil) {
+    public init(since: Date, ended: RunPhase, fixes: Bool? = nil, pushed: Bool? = nil, parts: [PullRequestPart]? = nil) {
         self.since = since
         self.ended = ended
         self.fixes = fixes
         self.pushed = pushed
+        self.parts = parts
     }
 }

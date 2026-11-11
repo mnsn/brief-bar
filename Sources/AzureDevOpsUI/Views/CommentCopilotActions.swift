@@ -222,12 +222,29 @@ struct ThreadCopilotActions: View {
     }
 
     /// Try Again, from its line's menu: Fix's composer, anew, with the words the fix that failed or stopped went with, which
-    /// sends them again, where that fix went, as it opens, if it can go.
+    /// sends them again, where that fix went, as it opens, if it can go; without them, with Push and Reply as that fix had
+    /// it, which its line knows.
     private func tryAgain(_ work: CopilotWork) {
         open(.fix)
-        let words = copilot.retryWords(for: work, of: item.key)
-        drafts.retry(CopilotComposing(part: part, ask: .fix), words: words, to: names.retryDestination(of: work))
+        Self.retry(work, about: part, of: item.key, names: names, copilot: copilot, in: drafts)
         tries += 1
+    }
+
+    /// What Try Again asks of the Fix composer it opens anew (`CopilotDrafts.retry`): the fix that failed or stopped, with
+    /// its words while BriefBar keeps them, with Push and Reply as that fix had it, and where it went.
+    static func retry(
+        _ work: CopilotWork, about part: PullRequestPart, of key: PRKey, names: CopilotSessionNames, copilot: CopilotTasksStore,
+        in drafts: CopilotDrafts
+    ) {
+        drafts.retry(
+            CopilotComposing(part: part, ask: .fix), words: copilot.retryWords(for: work, of: key), ships: shipped(work),
+            to: names.retryDestination(of: work)
+        )
+    }
+
+    /// Whether a fix that Try Again tries again was to push and reply once it's fixed (`CopilotWork.fixes`).
+    static func shipped(_ work: CopilotWork) -> Bool {
+        work.purpose == .pushAndReply && work.fixes
     }
 
     /// Closes its composer, unless another opened meanwhile, and gives the keyboard's focus back to its button.
@@ -497,7 +514,8 @@ struct CommentComposer: View {
         return CopilotAsking(
             ask: ask, part: thread.map { .thread($0.id) }, action: .fixComments,
             title: ask == .fixAll ? fixAllTitle : nil, sendTitle: ask == .fixAll ? fixAllTitle : nil, prepare: prepare,
-            restore: { words in composer.restore(words, suggestion: suggestion) }, ships: ships, shipsNow: { composer.ships },
+            restore: { words in composer.restore(words, suggestion: suggestion) }, restoreShips: { composer.restoreShips($0) },
+            ships: ships, shipsNow: { composer.ships },
             fix: { how, answer, ships in
                 guard let record else {
                     return CopilotSending.Fix(prompts: ("", ""), action: .fixComments, parts: [], handOff: nil)
@@ -575,6 +593,12 @@ struct CommentComposer: View {
         shipsChoice = words.ships
         guard words.suggestion == nil || words.suggestion == suggestion else { return Self.suggestionGone }
         return nil
+    }
+
+    /// Try Again without the words of the fix it tries again, as once BriefBar restarted, or on a thread Fix All took on:
+    /// pushes and replies as that fix was to, without changing what Push and Reply is for the next fix.
+    private func restoreShips(_ ships: Bool) {
+        shipsChoice = ships
     }
 
     /// What Try Again's composer says when the suggestion the fix it tries again applied isn't the thread's latest now.

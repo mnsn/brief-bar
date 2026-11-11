@@ -369,6 +369,9 @@ final class CopilotDrafts {
         /// The words that fix went with, with the answer it quoted and what else it chose, once BriefBar knows them
         /// (`CopilotTasksStore.retryWords(for:of:)`).
         var words: CopilotTasksStore.FixWords?
+        /// For a comment's fix, whether it was to push and reply once it's fixed, as its line knows, without its words too
+        /// (`CopilotWork.fixes`); nil for what has no Push and Reply.
+        var ships: Bool? = nil
     }
 
     /// What a composer that Try Again opened does as it opens (`plan`).
@@ -381,6 +384,9 @@ final class CopilotDrafts {
         var problem: String?
         /// It sends at once.
         var sends: Bool
+        /// Without the words, whether Push and Reply is on, as it was for the fix it tries again (`Retry.ships`): nil to
+        /// leave it, as words put it back themselves (`CopilotAsking.restore`).
+        var ships: Bool? = nil
 
         /// Its words; nil to leave what's there.
         var text: String? { words?.text }
@@ -408,11 +414,15 @@ final class CopilotDrafts {
     }
 
     /// Readies a composer for Try Again: the words the fix it tries again went with, and where that went, for the composer
-    /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, it opens
-    /// going there, with what you wrote in it, for you to send. Whoever opens it should open it anew, as one already open
-    /// would only take it once it opens again (`CopilotComposerID`).
-    func retry(_ composer: CopilotComposing, words: CopilotTasksStore.FixWords?, to destination: CopilotDestination?, at: Date = Date()) {
-        retries[composer] = Retry(at: at, destination: destination, words: words)
+    /// to send them there as it opens (`CopilotPartComposer`). Without those words, as once BriefBar restarted, or on a
+    /// thread Fix All took on, it opens going there, with what you wrote in it, and a comment's Push and Reply as that fix
+    /// had it, `ships`, for you to send. Whoever opens it should open it anew, as one already open would only take it once
+    /// it opens again (`CopilotComposerID`).
+    func retry(
+        _ composer: CopilotComposing, words: CopilotTasksStore.FixWords?, ships: Bool? = nil, to destination: CopilotDestination?,
+        at: Date = Date()
+    ) {
+        retries[composer] = Retry(at: at, destination: destination, words: words, ships: ships)
     }
 
     /// What a composer that Try Again opened does as it opens: it goes where the fix it tries again went, with the same
@@ -421,8 +431,9 @@ final class CopilotDrafts {
     /// once only a moment after Try Again (`retryWait`), and only while what that fix quoted, or applied, shows as it did:
     /// else it waits, with them, saying why, for you to check them, as when it opened a while after Try Again, as a build
     /// that took a while to read; and when where it went isn't there, saying so. Without the words, as once BriefBar
-    /// restarted, it only goes there, for you to send. Nil, nothing of it coming back, once BriefBar forgot those words,
-    /// as when Send Work to Copilot was turned off meanwhile, or another fix of it went.
+    /// restarted, it only goes there, with Push and Reply as that fix had it, for you to send. Nil, nothing of it coming
+    /// back, once BriefBar forgot those words, as when Send Work to Copilot was turned off meanwhile, or another fix of it
+    /// went.
     /// - Parameters:
     ///   - kept: the words BriefBar keeps now for what it's about (`CopilotTasksStore.fixWords`).
     ///   - answer: what a session answered about it with Explain, as it shows now.
@@ -438,10 +449,12 @@ final class CopilotDrafts {
             let restored = restore(words)
             unlike = words.answer != nil && words.answer != answer ? retryAnswerGone : restored
         }
+        // Words put back whether it pushed and replied themselves (`restore`).
+        let ships = retry.words == nil ? retry.ships : nil
         guard let destination = retry.destination, isAvailable(destination) else {
-            return RetryPlan(words: retry.words, destination: nil, problem: retryGone, sends: false)
+            return RetryPlan(words: retry.words, destination: nil, problem: retryGone, sends: false, ships: ships)
         }
-        guard retry.words != nil else { return RetryPlan(words: nil, destination: destination, problem: nil, sends: false) }
+        guard retry.words != nil else { return RetryPlan(words: nil, destination: destination, problem: nil, sends: false, ships: ships) }
         let problem = unlike ?? (now.timeIntervalSince(retry.at) < retryWait ? nil : retryLate)
         return RetryPlan(words: retry.words, destination: destination, problem: problem, sends: problem == nil)
     }
@@ -726,6 +739,10 @@ struct CopilotAsking {
     /// the change suggested in its thread as written: nil once it can go as that fix did, else why not, which its composer
     /// says, for you to check it before it goes (`CopilotPartComposer`). Nil for one that chooses nothing else.
     var restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)?
+    /// Puts back whether a fix that Try Again tries again without its words, as once BriefBar restarted, was to push and
+    /// reply, as its line knows (`CopilotDrafts.RetryPlan.ships`), without changing Push and Reply for the next fix. Nil for
+    /// one without Push and Reply.
+    var restoreShips: (@MainActor (_ ships: Bool) -> Void)?
     /// A fix of comments goes with Push and Reply on: it commits, pushes and replies once it's done, which its note says.
     var ships = false
     /// Push and Reply as it is now, which may have changed since this was made, as when Try Again put back what the fix it
@@ -750,16 +767,43 @@ struct CopilotAsking {
     static let shipsOnceDone = "once its tests pass, it commits, pushes and replies, as you"
 
     /// What a fix sent with Push and Reply on pushes besides its own, without replying on it, for its note: it commits all
-    /// its session changed, so the fixes `ready` in the session, which you haven't pushed; in a fork the Copilot CLI makes of
-    /// one of BriefBar's tasks, which starts at the commit the task's checkout has, only the conflicts' resolution, which
-    /// Resolve Conflicts commits; none of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’, which you
-    /// haven't pushed, without replying on that comment." Nil when that's nothing.
-    static func alsoPushes(_ ready: [PullRequestPart], in name: String, forkedWithTheCLI: Bool, taking: [PullRequestPart]) -> String? {
+    /// its session changed, so the fixes `ready` in the session, which you haven't pushed, and what fixes there changed and
+    /// didn't push, `unpushed`: those that were to push and reply and didn't, and those that failed or were stopped, if they
+    /// changed anything first. In a fork the Copilot CLI makes of one of BriefBar's tasks, which starts at the commit the
+    /// task's checkout has, only what's committed: of the ready ones, the conflicts' resolution, which Resolve Conflicts
+    /// commits; of the others, what was committed and not pushed, if anything, which the caller works out, and which may be
+    /// fixes that are ready, that one that was to push and reply committed along before it stopped
+    /// (`CopilotTasksStore.alsoPushes`). None of what it takes on itself. "It also pushes 1 fix ready in ‘Retry backoff’,
+    /// which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those
+    /// comments." Nil when that's nothing.
+    static func alsoPushes(
+        _ ready: [PullRequestPart], unpushed: [PullRequestPart] = [], in name: String, forkedWithTheCLI: Bool, taking: [PullRequestPart]
+    ) -> String? {
         let parts = ready.filter { !taking.contains($0) && (!forkedWithTheCLI || $0 == .conflicts) }
-        guard !parts.isEmpty else { return nil }
-        let threads = parts.filter { $0.thread != nil }.count
+        let unpushed = unpushed.filter { !taking.contains($0) && !parts.contains($0) }
+        guard !parts.isEmpty || !unpushed.isEmpty else { return nil }
+        let threads = (parts + unpushed).filter { $0.thread != nil }.count
         let reply = threads == 0 ? "" : threads == 1 ? ", without replying on that comment" : ", without replying on those comments"
-        return "It also pushes \(ReadyFixesBar.listed(parts)) ready in \(name), which you haven't pushed\(reply)."
+        var what: [String] = []
+        if !parts.isEmpty { what.append("\(ReadyFixesBar.listed(parts)) ready in \(name), which you haven't pushed") }
+        if !unpushed.isEmpty {
+            let did = forkedWithTheCLI ? "committed" : "changed"
+            let fixed = Self.fixed(unpushed)
+            let comma = fixed.contains(" and ") ? "," : ""
+            what.append("what Copilot \(did) \(parts.isEmpty ? "in \(name)" : "there") for \(fixed)\(comma) and didn't push")
+        }
+        return "It also pushes \(what.joined(separator: ", and "))\(reply)."
+    }
+
+    /// What fixes were for, in a sentence: "1 comment", "2 comments, a build and the conflicts".
+    static func fixed(_ parts: [PullRequestPart]) -> String {
+        let threads = parts.filter { $0.thread != nil }.count
+        let builds = parts.filter { $0.build != nil }.count
+        var what: [String] = []
+        if threads > 0 { what.append(threads == 1 ? "1 comment" : "\(threads) comments") }
+        if builds > 0 { what.append(builds == 1 ? "a build" : "\(builds) builds") }
+        if parts.contains(.conflicts) { what.append("the conflicts") }
+        return what.count > 1 ? what.dropLast().joined(separator: ", ") + " and " + what[what.count - 1] : what.first ?? "nothing"
     }
 
     /// The words a composer says what it does in.
@@ -793,8 +837,8 @@ struct CopilotAsking {
         ask: CopilotAsk, part: PullRequestPart?, action: PullRequestAction, title: String? = nil, sendTitle: String? = nil,
         prepare: (@MainActor () async -> Void)? = nil, run: Int? = nil, attempt: Date? = nil, row: String? = nil,
         head: (@MainActor () -> PullRequestFilesStore.Head?)? = nil, answeredAbout: PullRequestFilesStore.Head? = nil,
-        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil, ships: Bool = false,
-        shipsNow: (@MainActor () -> Bool)? = nil,
+        restore: (@MainActor (_ words: CopilotTasksStore.FixWords) -> String?)? = nil,
+        restoreShips: (@MainActor (_ ships: Bool) -> Void)? = nil, ships: Bool = false, shipsNow: (@MainActor () -> Bool)? = nil,
         fix: @escaping @MainActor (_ how: String, _ answer: CopilotAnswer?, _ ships: Bool) -> CopilotSending.Fix,
         question: @escaping @MainActor (_ asked: String, _ earlier: CopilotAnswer?) -> String
     ) {
@@ -811,6 +855,7 @@ struct CopilotAsking {
         self.head = head
         self.answeredAbout = answeredAbout
         self.restore = restore
+        self.restoreShips = restoreShips
         self.ships = ships
         self.shipsNow = shipsNow
         self.fix = fix
@@ -960,6 +1005,7 @@ struct CopilotPartComposer<Options: View>: View {
         ) else { return }
         if let words = plan.text { text = words }
         if let includes = plan.includesAnswer { includesAnswer = includes }
+        if let ships = plan.ships { asking.restoreShips?(ships) }
         if let destination = plan.destination {
             retryLead = destination.sessionID
             chosen = destination
@@ -1106,9 +1152,9 @@ struct CopilotPartComposer<Options: View>: View {
         return PullRequestSession.delivery(for: choice, cliProblem: nil, reach: nil, canOpenInApp: copilot.canOpenInApp)
     }
 
-    /// With Push and Reply on, what else a fix pushes where it goes, which you haven't pushed
-    /// (`CopilotAsking.alsoPushes(_:in:forkedWithTheCLI:taking:)`): the fixes ready in the session, as the bar at the foot of
-    /// the details has them, or what a fork of it has of them; none in a new session.
+    /// With Push and Reply on, what else a fix pushes where it goes, which you haven't pushed (`CopilotTasksStore.alsoPushes`):
+    /// the session's fixes, ready or not pushed, as the bar at the foot of the details has the ready ones, or what a fork of
+    /// it has of them; none in a new session.
     private func alsoPushes(_ target: CopilotDestination?, choice: SessionChoice?) -> String? {
         guard asking.ships, let record, let choice else { return nil }
         let forkedWithTheCLI: Bool
@@ -1117,10 +1163,8 @@ struct CopilotPartComposer<Options: View>: View {
         case .fork?: forkedWithTheCLI = CopilotDestinations.forksWithTheCLI(choice)
         case .newSession?, nil: return nil
         }
-        let ready = copilot.readyFixes(of: item.key, among: record.partsToFix).first { $0.session == choice.id }?.parts ?? []
         let taking = asking.part.map { [$0] } ?? PullRequestTasks.parts(.fixComments, for: record)
-        let name = CopilotWork.quoted(PullRequestSession.name(of: choice), isTask: Self.isTask(choice))
-        return CopilotAsking.alsoPushes(ready, in: name, forkedWithTheCLI: forkedWithTheCLI, taking: taking)
+        return copilot.alsoPushes(item.key, among: record.partsToFix, in: choice, forkedWithTheCLI: forkedWithTheCLI, taking: taking)
     }
 
     private func canSend(_ target: CopilotDestination?, choice: SessionChoice?) -> Bool {

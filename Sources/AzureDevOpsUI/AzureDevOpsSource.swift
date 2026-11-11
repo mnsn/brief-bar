@@ -393,6 +393,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.revealAtWhatItsAbout(key) ?? false }
         copilot.currentTarget = { [weak store] key in store?.record(for: key)?.pullRequest.targetBranch }
         copilot.pullRequestIsOpen = { [weak store] key in store.map { CopilotSending.isOpen(key, in: $0) } ?? false }
+        copilot.partsToFix = { [weak store] key in store?.record(for: key)?.partsToFix ?? [] }
         copilot.readTarget = { [weak store] key in
             guard let store else { throw CopilotTasksStore.TargetUnread() }
             return try await store.readTarget(of: key)

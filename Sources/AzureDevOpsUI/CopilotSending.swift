@@ -308,12 +308,18 @@ struct CopilotSending {
         if case .fork? = destination { forking = true }
         let record = fix.record ?? self.record
         CopilotComposer.shared.show(
-            subject: .pullRequest(PullRequestTasks.task(for: record), fix.action), prompt: fix.prompts.worktree,
+            subject: windowSubject(fix), prompt: fix.prompts.worktree,
             sessionPrompt: fix.prompts.session, createdAt: record.pullRequest.createdAt, options: copilot.settings.copilotOptions,
             continuing: copilot.continuable(forPullRequest: item.key), handOff: fix.handOff,
             session: destination == .newSession ? .newSession : choice.map { .session($0, forking: forking) },
             parts: fix.parts, fixes: fix.fixes, store: copilot
         )
+    }
+
+    /// What the Send to Copilot window sends a fix for: the pull request as its prompts quote it, though this sender read
+    /// it again since, which BriefBar checks a push against as the window sends it (`CopilotTasksStore.windowProblem`).
+    func windowSubject(_ fix: Fix) -> TaskSubject {
+        .pullRequest(PullRequestTasks.task(for: fix.record ?? record), fix.action)
     }
 
     /// Whether the pull request is still open in your lists: one that left them, or was completed or abandoned, gets
