@@ -1847,9 +1847,29 @@ springs end: one that stays folded, with the card in it, as one you folded, coun
 flashes (`PullRequestBoard.foldsOnceMoved`: the board before the drop with each of its pull requests at its stage
 once moved, so the column the card left no longer counts it, Set as Next to Merge's wait for the one you set counts,
 and a session at work on it leaves it not your move there). Folding changes no stage, count or Up Next slot. The
-Board, its lanes, the columns you folded or opened, and whether Up Next is folded are kept as choices only:
+Board, its lanes, the columns you folded, opened, joined or hid, and whether Up Next is folded are kept as choices only:
 `order.view`, which GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes`,
-`order.boardColumns` and `order.upNextFolded`.
+`order.boardColumns`, `order.boardJoins`, `order.boardHidden` and `order.upNextFolded`.
+
+You lay the columns out from their titles, without Settings, the same on both pages (`BoardLayout`): neighbors joined
+into one column, and Merged and Completed hidden. It only maps the Board's columns (`BoardColumn`) to those it shows
+(`ShownColumn`), so it can't disagree with the stages: a joined column's cards keep their own stage and color, a drop or
+a key still sets one stage, and Up Next, counts, notifications and what agents are told don't change. The flow's order
+is fixed: a column joins only the one beside it, kept as the gap between them (`order.boardJoins`, such as
+`yourReview+teammateReview`), and joins side by side make one column, which never spans a hidden one. Only Merged and
+Completed hide (`order.boardHidden`), as they hold only history, so nothing that needs you leaves the Board; hidden while
+joined, they come back as Done. A joined column is named for what it holds (`ShownColumn.title`): In review, Ready, Done,
+Teammate's review for it with Approved, whose cards wear Approved's seal there, or else both names, "Approved + Can
+merge". It folds as one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it
+holds only where each of its columns would; otherwise as late as the latest of them in that order, so In review only
+after every other, as Your review; and never while any of them holds your move. Your fold or open of it is kept by its
+key, `canMerge+waits` in `order.boardColumns`, until you split it; a column's own stays through joins. The tab of hidden
+columns, at the end of the titles, takes a strip's room (`BoardWidths.reserved`), so three columns still open at 946
+points. A joined column that a card you drag hovers for 0.6 seconds springs open into its columns until the drag ends,
+as a strip does; dropped on it before, the card stays where one of them holds it already, or goes to the only one that
+takes it, and where more than one would, the column says to hold it there until it opens. ⌘→ and ⌘← move a card a stage
+at a time, within a joined column too. Simple Columns joins Your review, Teammate's review and Approved; Can merge and
+Waits; and Merged and Completed. It and Reset Columns forget your folds too, as Let BriefBar Decide would for each.
 
 #### My Work
 
