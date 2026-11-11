@@ -87,7 +87,13 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// as it ended, which that branch didn't have as the fix went, had come to it by then by a push from the clone,
     /// fetching the branch again first when the clone's fetch settings don't name it, to tell whether it pushed a
     /// commit of its own, kept with it too.
-    nonisolated package static let descriptionVersion = 27
+    /// 28: in a Push & Reply, or a comment's Fix or Fix All with Push and reply once it's fixed checked, that BriefBar
+    /// runs itself, each shell command Copilot is about to run, which the Copilot CLI gives BriefBar to check, keeping
+    /// nothing of it; and, for a push in the form its prompt names, that branch and the pull request's, fetched with
+    /// git into the task's worktree, with which commits a merge in what it would push brings in, and whether git's
+    /// configuration there would push tags or submodules' commits with it; then the pull request, with one request, for
+    /// the branch it merges into and whether it's still active.
+    nonisolated package static let descriptionVersion = 28
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
