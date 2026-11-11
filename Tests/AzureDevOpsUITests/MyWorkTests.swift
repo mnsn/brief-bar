@@ -141,12 +141,30 @@ import Testing
         #expect(work.first { $0.ref == workItem(4870) }?.progress == .toDo)
     }
 
-    /// The line under the header counts tasks and bugs apart, in the singular for one, and says when there may be more.
+    /// The line under the header counts tasks and bugs apart, in the singular for one, and says when there may be more; with
+    /// no sprint going on, how many are open.
     @Test func theLineCountsYourTasksAndBugsOutsideTheSprint() {
         #expect(MyWorkText.outside(tasks: 5, bugs: 1, sprint: "Sprint 42", partial: false) == "5 tasks and 1 bug of yours aren't in Sprint 42.")
         #expect(MyWorkText.outside(tasks: 1, bugs: 0, sprint: "Sprint 42", partial: false) == "1 task of yours isn't in Sprint 42.")
         #expect(MyWorkText.outside(tasks: 0, bugs: 2, sprint: "Sprint 42", partial: true) == "At least 2 bugs of yours aren't in Sprint 42.")
         #expect(MyWorkText.outside(tasks: 0, bugs: 0, sprint: "Sprint 42", partial: false) == "All your open tasks and bugs are in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 5, bugs: 1, sprint: nil, partial: false) == "5 tasks and 1 bug of yours are open.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 1, sprint: nil, partial: false) == "1 bug of yours is open.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 0, sprint: nil, partial: false) == "You have no open tasks or bugs.")
+    }
+
+    /// A story or bug of yours in the sprint with no tasks there is a card of its own, but for once tasks of yours under it
+    /// outside the sprint show: they're its work then, in its lane. A task in the sprint stays, and a bug outside it, its own
+    /// story, takes no card from one.
+    @Test func aStoryInTheSprintIsNoCardOnceItsTasksOutsideItShow() {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        func work(_ id: Int, story: Int?) -> SprintWork {
+            SprintWork(ref: ref(id), story: story.map(ref), progress: .toDo, pullRequests: [], copilotWorks: false)
+        }
+        let sprint = [work(1, story: 1), work(2, story: 2), work(3, story: 9), work(4, story: 4)]
+        let outside = [work(10, story: 1), work(11, story: 11), work(12, story: 3)]
+        #expect(MyWorkFacts.work(sprint: sprint, outside: outside).map(\.ref) == [2, 3, 4, 10, 11, 12].map(ref))
+        #expect(MyWorkFacts.work(sprint: sprint, outside: []).map(\.ref) == [1, 2, 3, 4].map(ref))
     }
 
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and

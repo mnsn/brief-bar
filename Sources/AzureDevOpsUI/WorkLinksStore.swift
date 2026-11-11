@@ -349,9 +349,7 @@ final class WorkLinksStore {
             items.append(Self.item(pullRequest))
         }
         let rows = sprint.board?.rows ?? []
-        let told = sprintItems
-        let toldKeys = Set(told.map(\.key))
-        for workItem in told + read.workItems.values.filter({ !toldKeys.contains($0.key) }) {
+        for workItem in sprintItems + read.workItems.values {
             // A story's or a bug's tasks, in the sprint.
             let tasks = rows.first { $0.parent?.key == workItem.key }?.tasks.count ?? 0
             items.append(Self.item(workItem, tasks: tasks))

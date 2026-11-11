@@ -416,7 +416,8 @@ as yours and not done; and **+ All My Tasks**, which adds your open tasks and bu
 project: from older sprints, later ones, iterations outside your team's sprints, or none. BriefBar remembers which.
 Under the header, with either, a line counts yours outside the sprint, such as **5 tasks and 1 bug of yours aren't in
 Sprint 42**, so that one left behind in an older sprint doesn't go unnoticed, and **Show Them** shows them; or it says
-**All your open tasks and bugs are in Sprint 42**. What hasn't started, with no pull request linked to it and no
+**All your open tasks and bugs are in Sprint 42**. With no sprint going on, for a team you chose on the Sprint page, it
+says how many are open instead. What hasn't started, with no pull request linked to it and no
 task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
 request, or has Copilot working on it, has a card of its own in In progress; and a pull request's card names the work
 items of yours it's for, such as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull
@@ -429,7 +430,8 @@ until it is; and it doesn't read Azure DevOps' links from a work item to a GitHu
 start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull requests aren't on
 your board, in a lane of the story's own; otherwise with the pull requests in no mission. With + All My Tasks, those
 outside the sprint come after the sprint's, each card saying where it is: its sprint, such as **Sprint 38**, or **No
-sprint**. Stories, features and epics assigned to you outside the sprint aren't shown. Click it, or press **Return**
+sprint**. Stories, features and epics assigned to you outside the sprint aren't shown; a story of yours in the sprint
+whose tasks of yours are outside it has no card of its own then: those tasks are its work. Click it, or press **Return**
 or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its menu. It moves by
 itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘← say so instead.
 On My Work, **2 more ›** scrolls the Board to its column, a pull request's mission in its details shows its lane, and

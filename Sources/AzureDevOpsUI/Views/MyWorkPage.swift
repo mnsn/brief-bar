@@ -83,6 +83,14 @@ enum MyWorkFacts {
         }
     }
 
+    /// Your sprint work, then your work outside the sprint, for + All My Tasks: but for a story or bug of yours in the sprint
+    /// with no tasks there, a card of its own, when tasks of yours under it are outside the sprint. As on the Sprint page,
+    /// where a story with tasks is no card, the tasks are the work, and it's their lane's.
+    static func work(sprint: [SprintWork], outside: [SprintWork]) -> [SprintWork] {
+        let storiesOfTasks = Set(outside.compactMap { $0.story == $0.ref ? nil : $0.story })
+        return sprint.filter { $0.story != $0.ref || !storiesOfTasks.contains($0.ref) } + outside
+    }
+
     /// One of your work items, for its story.
     private static func work(
         _ item: WorkItem, story: ItemRef?, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?,
@@ -326,7 +334,7 @@ private struct MyWorkContent: View {
         let outsideWork = outside.map {
             MyWorkFacts.work(outside: $0, linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
         } ?? []
-        return sprintWork + outsideWork
+        return MyWorkFacts.work(sprint: sprintWork, outside: outsideWork)
     }
 
     private var content: some View {
@@ -434,33 +442,51 @@ private struct MyWorkContent: View {
 
     /// What + Sprint Tasks and + All My Tasks need, or what's in the way: Show Links, which puts work items with their pull
     /// requests; and the sprint, while it's read, when it can't be, above the cards read before, as on the Sprint page, or
-    /// when there's none. Then how many of your tasks and bugs aren't in the sprint.
+    /// when there's none. Then how many of your tasks and bugs aren't in the sprint: under the sprint's problem too, and with
+    /// no sprint going on, once they've been looked for, as they are for a team you chose.
     @ViewBuilder
     private var workLines: some View {
         if !links.isOn {
             SprintTasksNeedShowLinks(links: links)
-        } else if let problem = sprint.problem {
-            ProblemView(problem: problem) { store.signIn(for: problem) }
-        } else if let board = sprint.board {
-            OutsideSprintLine(outside: outside, sprint: board.sprint.name, showsThem: shown == .allTasks) {
-                settings.myWorkShows = .allTasks
-            }
         } else {
-            HStack(spacing: 8) {
-                if sprint.isRefreshing || !sprint.hasLoaded {
-                    ProgressView().controlSize(.small)
-                    Text("Reading your sprint…")
-                } else {
-                    Image(systemName: "calendar.badge.exclamationmark")
-                    Text(sprint.teams.isEmpty
-                        ? "No sprint to show: you're not on a team in the organizations BriefBar watches."
-                        : "No sprint to show: this team has none with today's date. Choose another on the Sprint page.")
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                if let problem = sprint.problem {
+                    ProblemView(problem: problem) { store.signIn(for: problem) }
+                } else if sprint.board == nil {
+                    noSprintLine
+                }
+                if let board = sprint.board {
+                    outsideLine(sprint: board.sprint.name)
+                } else if let outside, outside.readAt != nil || outside.problem != nil {
+                    outsideLine(sprint: nil)
                 }
             }
-            .font(size: 12)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 4)
+        }
+    }
+
+    /// While the sprint is read, or when there's none.
+    private var noSprintLine: some View {
+        HStack(spacing: 8) {
+            if sprint.isRefreshing || !sprint.hasLoaded {
+                ProgressView().controlSize(.small)
+                Text("Reading your sprint…")
+            } else {
+                Image(systemName: "calendar.badge.exclamationmark")
+                Text(sprint.teams.isEmpty
+                    ? "No sprint to show: you're not on a team in the organizations BriefBar watches."
+                    : "No sprint to show: this team has none with today's date. Choose another on the Sprint page.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(size: 12)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
+    }
+
+    /// How many of your tasks and bugs aren't in the sprint, or are open with none going on.
+    private func outsideLine(sprint name: String?) -> some View {
+        OutsideSprintLine(outside: outside, sprint: name, showsThem: shown == .allTasks) {
+            settings.myWorkShows = .allTasks
         }
     }
 
@@ -545,11 +571,12 @@ private struct SprintTasksNeedShowLinks: View {
 
 /// How many of your open tasks and bugs aren't in the sprint, under My Work's header with + Sprint Tasks or + All My Tasks, so
 /// that one left in an older sprint, or in none, is noticed: with + Sprint Tasks, Show Them shows them, with + All My Tasks,
-/// whose cards say where each is. While they're read for the first time, it says so; when they can't be, why.
+/// whose cards say where each is. With no sprint going on, how many are open. While they're read for the first time, it says
+/// so; when they can't be, why.
 private struct OutsideSprintLine: View {
     let outside: OutsideWork?
-    /// The sprint's name.
-    let sprint: String
+    /// The sprint's name; nil with none going on.
+    let sprint: String?
     /// + All My Tasks shows them on the Board.
     let showsThem: Bool
     /// Shows them: + All My Tasks.
@@ -580,7 +607,7 @@ private struct OutsideSprintLine: View {
                 }
             } else {
                 ProgressView().controlSize(.small)
-                Text("Looking for your tasks and bugs outside \(sprint)…")
+                Text(MyWorkText.lookingOutside(sprint: sprint))
                     .foregroundStyle(.secondary)
             }
         }
@@ -596,25 +623,35 @@ enum MyWorkText {
         + "open tasks and bugs outside the sprint too, each saying where it is. They need Show Links."
 
     /// How many of your open tasks and bugs aren't in the sprint, by their types: "5 tasks and 1 bug of yours aren't in Sprint
-    /// 42.", "1 task of yours isn't in Sprint 42.", "All your open tasks and bugs are in Sprint 42."; "At least" before a
+    /// 42.", "1 task of yours isn't in Sprint 42.", "All your open tasks and bugs are in Sprint 42."; with no sprint going on
+    /// (nil), how many are open: "5 tasks and 1 bug of yours are open.", "You have no open tasks or bugs."; "At least" before a
     /// count when Azure DevOps listed only some of what's assigned to you.
-    static func outside(tasks: Int, bugs: Int, sprint: String, partial: Bool) -> String {
+    static func outside(tasks: Int, bugs: Int, sprint: String?, partial: Bool) -> String {
         guard tasks + bugs > 0 else {
-            return partial
-                ? "None of the work items Azure DevOps listed as yours is outside \(sprint): it lists 500 at most."
-                : "All your open tasks and bugs are in \(sprint)."
+            if partial {
+                let found = sprint.map { "is outside \($0)" } ?? "is an open task or bug"
+                return "None of the work items Azure DevOps listed as yours \(found): it lists 500 at most."
+            }
+            return sprint.map { "All your open tasks and bugs are in \($0)." } ?? "You have no open tasks or bugs."
         }
         let counts = [(tasks, "task", "tasks"), (bugs, "bug", "bugs")].filter { $0.0 > 0 }.map { count, one, many in
             "\(count) \(count == 1 ? one : many)"
         }
-        let verb = tasks + bugs == 1 ? "isn't" : "aren't"
-        return "\(partial ? "At least " : "")\(counts.joined(separator: " and ")) of yours \(verb) in \(sprint)."
+        let one = tasks + bugs == 1
+        let verb = if let sprint { "\(one ? "isn't" : "aren't") in \(sprint)" } else { one ? "is open" : "are open" }
+        return "\(partial ? "At least " : "")\(counts.joined(separator: " and ")) of yours \(verb)."
+    }
+
+    /// While your work outside the sprint is read for the first time: "Looking for your tasks and bugs outside Sprint 42…".
+    static func lookingOutside(sprint: String?) -> String {
+        sprint.map { "Looking for your tasks and bugs outside \($0)…" } ?? "Looking for your open tasks and bugs…"
     }
 
     /// Why your work outside the sprint couldn't be read: "Couldn't look for your tasks and bugs outside Sprint 42. Azure
     /// DevOps answered with HTTP 500."
-    static func outsideProblem(_ problem: String, sprint: String) -> String {
-        "Couldn't look for your tasks and bugs outside \(sprint). \(problem)"
+    static func outsideProblem(_ problem: String, sprint: String?) -> String {
+        let what = sprint.map { "your tasks and bugs outside \($0)" } ?? "your open tasks and bugs"
+        return "Couldn't look for \(what). \(problem)"
     }
 }
 

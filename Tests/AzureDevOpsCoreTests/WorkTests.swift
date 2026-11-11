@@ -970,6 +970,69 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         fails.set(false)
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().outside?.problem == nil)
+
+        // Azure DevOps asking to slow down ends the refresh, as for the sprint.
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in .status(429, headers: ["Retry-After": "120"]) }
+        await engine.refreshNow()
+        guard case .throttled? = await engine.currentSnapshot().problem else {
+            Issue.record("Expected to be throttled")
+            return
+        }
+        #expect(await engine.nextDelay() > 60)
+    }
+
+    /// Someone else signed in, or another team, forgets the last one's work outside the sprint: none of it shows, even when
+    /// theirs can't be read.
+    @Test func forgetsYourWorkOutsideTheSprintForAnotherAccountOrTeam() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+            WorkFixture.workItem(1), WorkFixture.workItem(10, assignee: People.me, iteration: "Shop\\Sprint 5"),
+        ])
+        let fails = Locked(false)
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in fails.value ? .status(500) : .json(["results": [["id": 10]]]) }
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/robin")
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.map(\.id) == [10])
+
+        fails.set(true)
+        await tokens.signIn(as: "tenant/sam")
+        server.on("/\(Fixture.org)/_apis/connectionData", json: ["authenticatedUser": ["id": People.sam.id.uppercased()]])
+        await engine.refreshNow()
+        let failed = try #require(await engine.currentSnapshot().outside)
+        #expect(failed.items.isEmpty)
+        #expect(failed.problem != nil)
+
+        fails.set(false)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.map(\.id) == [10])
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.otherTeam))
+        #expect(await engine.currentSnapshot().outside == nil)
+    }
+
+    /// Wanted again soon after it was read, your work outside the sprint waits for the next refresh.
+    @Test func readsYourWorkOutsideTheSprintAgainOnlyWhenItsDue() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1)])
+        server.on("/_apis/work/predefinedqueries/AssignedToMe", json: ["results": []])
+        let published = Collected<SprintSnapshot>()
+        let engine = engine(server, interval: 3_600, published: published)
+        await engine.start()
+        defer { Task { await engine.stop() } }
+        await engine.setReadsOutside(true)
+        await engine.setActive(true)
+        try await published.wait("your work outside the sprint") { $0.outside?.readAt != nil && !$0.isRefreshing }
+        let count = server.requests.count
+        await engine.setReadsOutside(false)
+        await engine.setReadsOutside(true)
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(server.requests.count == count)
     }
 
     @Test func backsOffWhenAzureDevOpsCantBeRead() async {

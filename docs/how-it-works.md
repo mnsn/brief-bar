@@ -1860,7 +1860,9 @@ the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the mis
 mission; with Lanes: None, in the one lane. Your work outside the sprint comes after the sprint's in each column, even
 with no sprint going on, and its card says where it is (`OutsideWork.place`): its iteration's name, such as "Sprint 38",
 or "No sprint" at the project's root; one in the sprint's own iteration that its board doesn't have, under another team's
-area, says nothing. The columns, their widths and their counts come from one list
+area, says nothing. A task of yours outside the sprint goes in its story's lane, as the sprint's do; a story or bug of
+yours in the sprint with no tasks there, a card of its own with + Sprint Tasks, is then no card, as on the Sprint page a
+story with tasks isn't: they're its work (`MyWorkFacts.work(sprint:outside:)`). The columns, their widths and their counts come from one list
 (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
 and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
 card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
@@ -1868,7 +1870,10 @@ card dropped on To start, are refused, saying why (`BoardText.workStays`, `toSta
 With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
 with + Sprint Tasks offering **Show Them**, + All My Tasks; or says "All your open tasks and bugs are in Sprint 42";
-"Looking for…" until the first read, and why when one fails, keeping what was read before.
+"Looking for…" until the first read, and why when one fails, keeping what was read before. It shows under the sprint's
+problem too, as the Sprint page shows the cards read before under it. With no sprint going on, it says how many are open
+instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,
+BriefBar finds no team for you to read them in.
 
 While a window shows My Work with + Sprint Tasks or + All My Tasks and Show Links on, the sprint is read as while its
 Sprint page is on screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull
