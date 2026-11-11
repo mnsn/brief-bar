@@ -177,7 +177,8 @@ public struct Git: Sendable {
     /// committed nothing, or only fetched and checked out what others pushed, or its push was rejected, or it stopped before
     /// it, or partway through a rebase, a merge, a cherry-pick or a revert, as when one on what others pushed conflicts,
     /// which leaves it at their commit (`stoppedPartway(_:now:at:)`). Nil when git can't tell, as when the folder isn't a
-    /// checkout any more, or its logs don't reach back to then, or whether it was partway through one then.
+    /// checkout any more, or its logs don't reach back to then, or go back in time past it (`isOrdered(_:around:)`), or
+    /// whether it was partway through one then.
     public func pushedItsOwn(in folder: URL, branch: String, since start: String, at end: Date? = nil) async -> Bool? {
         guard Self.isBranchName(branch), Self.isCommit(start),
               let tracked = await tracksPushes(to: branch, in: folder), let now = await partway(folder)
@@ -202,6 +203,7 @@ public struct Git: Sendable {
         if tracked {
             // How origin/<branch> came to have it by then, as git's log of where it was says: without it, git can't tell.
             guard let moves = await moves(of: tracking, in: folder) else { return nil }
+            if let second, !Self.isOrdered(moves, around: second) { return nil }
             let then = moves.filter { $0.second <= second ?? .max }
             guard !then.isEmpty else { return nil }
             var first: Move?
@@ -228,12 +230,24 @@ public struct Git: Sendable {
 
     /// Where a ref was at a time in `second`, by how it moved, the latest first (`moves(of:in:)`): where it was as the
     /// second before ended, when nothing it moved to in `second` differs. Nil when its log doesn't reach back to before
-    /// then, or it moved in that second, which its log can't order against a time in it.
+    /// then, or it moved in that second, which its log can't order against a time in it, or its log goes back in time past
+    /// it (`isOrdered(_:around:)`).
     static func commit(at second: Int, of moves: [Move]) -> String? {
-        guard let before = moves.first(where: { $0.second < second }),
+        guard isOrdered(moves, around: second), let before = moves.first(where: { $0.second < second }),
               moves.allSatisfy({ $0.second != second || $0.commit == before.commit })
         else { return nil }
         return before.commit
+    }
+
+    /// Whether a ref's moves, the latest first (`moves(of:in:)`), are those git logged after `second`, then those in it,
+    /// then those before it: whether its log can place a time in `second` among them. git logs each move at the time
+    /// `GIT_COMMITTER_DATE` says, or else at the clock's, so a log can go back in time: as a clock set back has it, or a
+    /// rebase with `--committer-date-is-author-date`, which logs each of its steps at its commit's author's time. Once it
+    /// goes back from `second`, or a later one, to before it, or from a later one to it, git can't tell which of its moves
+    /// came before a time in it.
+    static func isOrdered(_ moves: [Move], around second: Int) -> Bool {
+        let sides = moves.map { $0.second < second ? 0 : $0.second == second ? 1 : 2 }
+        return zip(sides, sides.dropFirst()).allSatisfy { $0 >= $1 }
     }
 
     /// Whether a folder's checkout was partway through a rebase, a merge, a cherry-pick or a revert as a turn there ended, at
@@ -253,27 +267,29 @@ public struct Git: Sendable {
     /// moved since, and git can't tell otherwise; nor when HEAD's first move since may have ended one, as calling it off,
     /// which git logs as a reset on a branch, or committing a merge or a cherry-pick does. git logs none of a rebase ended
     /// with `--quit`, or by skipping what it stopped at, nor a merge or a cherry-pick called off on a detached HEAD, which
-    /// leaves it where it was. Nil when git can't tell, as when a rebase it logged starting or ending in that second.
+    /// leaves it where it was. git may log a rebase's steps, or its end, at an earlier time than its start
+    /// (`isOrdered(_:around:)`): it was partway between the earliest and the latest of them. Nil when git can't tell, as
+    /// when a rebase it logged starting or ending in that second, or HEAD's log goes back in time past it.
     static func stoppedPartway(_ moves: [Move], now: Partway, at second: Int) -> Bool? {
-        guard !moves.isEmpty else { return nil }
+        guard !moves.isEmpty, isOrdered(moves, around: second) else { return nil }
         var spans: [ClosedRange<Int>] = []
-        var open: (start: Int, last: Int)?
+        var open: ClosedRange<Int>?
         for move in moves.reversed() {
             switch rebaseStep(move.subject) {
             case .start?:
-                if let open { spans.append(open.start...open.last) }
-                open = (move.second, move.second)
+                if let open { spans.append(open) }
+                open = move.second...move.second
             case .end?:
-                spans.append((open?.start ?? .min)...move.second)
+                spans.append(open.map { span($0, move.second) } ?? Int.min...move.second)
                 open = nil
             case .step?:
-                open?.last = move.second
+                open = open.map { span($0, move.second) }
             case nil:
                 break
             }
         }
         if let open {
-            spans.append(open.start...(now == .rebase ? .max : open.last))
+            spans.append(now == .rebase ? open.lowerBound...Int.max : open)
         } else if now == .rebase {
             // Going on, but git didn't log its start.
             return nil
@@ -289,6 +305,11 @@ public struct Git: Sendable {
             return nil
         }
         return unsure ? nil : false
+    }
+
+    /// The seconds a rebase spans, from the earliest of its moves git logged to the latest, with one more.
+    private static func span(_ seconds: ClosedRange<Int>, _ second: Int) -> ClosedRange<Int> {
+        min(seconds.lowerBound, second)...max(seconds.upperBound, second)
     }
 
     /// What a move of HEAD was of a rebase.
