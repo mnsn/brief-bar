@@ -525,7 +525,7 @@ public enum StageFlag: Equatable, Sendable {
 /// How far one of your pull requests got, as BriefBar keeps it (`StagesReached`), and since when.
 public struct StageReach: Equatable, Sendable {
     public var stage: PullRequestStage
-    /// When it got there, as BriefBar saw it.
+    /// When it got there, as its stage said then; where BriefBar first saw it (`isFirst`), when it did.
     public var since: Date?
     /// It's where BriefBar first saw it, minutes ago at most (`StagesReached.firstSight`), before it knew of a session
     /// writing it, and nothing moved it since: a session already at work on it then, or done, may be the one that opened

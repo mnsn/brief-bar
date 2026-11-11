@@ -706,6 +706,26 @@ private final class Clock {
         #expect(Self.why(order, 4093) == "Waiting on Maria · Maria wants changes")
     }
 
+    /// Your review's time is when it got there, as its stage said then, not when BriefBar noted it: one whose session
+    /// finished long before BriefBar heard of it keeps how long it has waited for your review once that session writes
+    /// it again, and so its place in Your review's order.
+    @Test func yourReviewWaitsFromWhenItGotThereNotFromWhenBriefBarNotedIt() {
+        let clock = Clock()
+        let order = Self.service(Self.defaults(), clock: clock)
+        let finished = clock.now - 7_200
+        Self.tell(order, [4093: StageFacts(role: .author, waitingFor: "Waiting on Maria")])
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .done, since: finished)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.since == finished)
+
+        clock.advance(seconds: 60)
+        Self.tellSession(order, on: [4093], state: .running, since: clock.now)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(Self.why(order, 4093) == "Waiting for your review · ‘Cart’ is writing it")
+        #expect(order.stage(of: Self.ref(4093))?.since == finished)
+    }
+
     /// Forget Stages… is there for how far yours got while Pull Request Order is off, when nothing else forgets it: while
     /// it's on, BriefBar keeps that again at once, or forgets it on its own after 30 days.
     @Test func forgetStagesIsThereForHowFarYoursGotWhileOrderIsOff() {

@@ -1942,7 +1942,8 @@ package final class PullRequestOrder: ObservableObject {
                 // known session would: it isn't where BriefBar first saw it any more.
                 let knowsSessions = sessions.contains { !$0.isReview && $0.activity != .stopped }
                 if reached.set(
-                    StageRules.reached(worked), of: ref, for: yours, at: now(), knowsSessions: knowsSessions || counted.ended != nil
+                    StageRules.reached(worked), of: ref, for: yours, at: now(), since: worked.since,
+                    knowsSessions: knowsSessions || counted.ended != nil
                 ) {
                     reachedChanged = true
                 }

@@ -1585,7 +1585,9 @@ opened it: until BriefBar knows of a session writing it, at work or done, or a s
 and for ten minutes at most, one it first kept in Teammate's review is that session's, where the session was at work,
 or done, by then: In progress while it writes it, Your review once it finished (`StagesReached.firstSight`). It's kept
 in the preferences for each account you sign in with, each as its pull request's reference, its stage, when it got
-there, whether that's where BriefBar first kept it,
+there, as its stage said then, such as when the session that wrote it finished, so that one a session writes again
+keeps how long it waited for your review, or, where BriefBar first kept it, when it did, whether that's where BriefBar
+first kept it,
 and when a list last had it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no
 list has had it for 30 days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and
 its stage comes from what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none. `--mcp` only reads

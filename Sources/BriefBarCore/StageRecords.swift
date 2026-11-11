@@ -202,7 +202,8 @@ public struct StagesReached: Equatable, Sendable {
 
     public struct Entry: Equatable, Sendable {
         public var stage: PullRequestStage
-        /// When it got there, as BriefBar saw it (`StageReach.since`).
+        /// When it got there, as its stage said then; where BriefBar first kept it (`isFirst`), when it did, which
+        /// `firstSight` counts from (`StageReach.since`).
         public var since: Date
         /// It's where BriefBar first kept it, before it knew of a session writing it, and nothing moved it since
         /// (`StageReach.isFirst`).
@@ -253,13 +254,18 @@ public struct StagesReached: Equatable, Sendable {
     /// Keeps how far a pull request got now, in place of what it kept, or forgets it, for nil or a stage it doesn't keep:
     /// true when that changed what's kept. A new one isn't kept once the account keeps the most.
     /// - Parameters:
-    ///   - now: when it got there, for a stage it didn't keep, and when a list last had it.
+    ///   - now: when a list last had it; and when it got there, for one kept where BriefBar first saw it, or where
+    ///     `since` doesn't say.
+    ///   - since: when it got there, for a stage it didn't keep, as its stage says, such as when the session that wrote
+    ///     it finished, which BriefBar may hear of later: so one a session writes again keeps how long it waited for
+    ///     your review.
     ///   - knowsSessions: BriefBar knows of a session writing it, at work or done, not one whose end it can't tell, or
     ///     something moved it, as a stage set on it that ended: where it keeps it first isn't where it first saw it before it
     ///     knew of them, and where it kept it before stops being that.
     @discardableResult
     public mutating func set(
-        _ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date, knowsSessions: Bool = false
+        _ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date, since: Date? = nil,
+        knowsSessions: Bool = false
     ) -> Bool {
         let account = account.lowercased()
         var entries = accounts[account] ?? [:]
@@ -279,7 +285,8 @@ public struct StagesReached: Equatable, Sendable {
         } else if entries.count >= Self.mostPerAccount {
             return false
         }
-        entries[ref] = Entry(stage: stage, since: now, isFirst: isNew && !knowsSessions, listedAt: now)
+        let isFirst = isNew && !knowsSessions
+        entries[ref] = Entry(stage: stage, since: isFirst ? now : since ?? now, isFirst: isFirst, listedAt: now)
         accounts[account] = entries
         return true
     }
