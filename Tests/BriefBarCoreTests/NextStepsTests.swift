@@ -1280,23 +1280,51 @@ import Testing
             .hasYourMove(in: .stage(.inProgress)))
     }
 
+    /// Whether a column shows folded on a page 664 points wide at 100%, once a move took the board's pull requests from these
+    /// stages to those.
+    static func foldsOnceMoved(_ column: PullRequestStage, from before: [Int: StageReading], to moved: [Int: StageReading]) -> Bool {
+        board(before).foldsOnceMoved(
+            to: .stage(column), stages: refs(before.merging(moved) { $1 }), choices: BoardFolds(), open: [],
+            widths: BoardWidths(scale: 1, available: 664)
+        )
+    }
+
     /// A card you drop where its column shows folded once it's in it, its title flashes: as the Board was before the drop,
-    /// with the card as its reading has it once there.
+    /// with each pull request where its stage is once moved.
     @Test func aCardMovedInKeepsItsColumnOpenOnlyWhereItsYourMoveThere() {
         let session = StageSession(ref: Self.cart, activity: .working, since: t(20))
-        let board = Self.board([
-            4091: Self.reading(.teammateReview, .findReviewer), 4101: Self.reading(.inProgress, .working(session)),
-            4104: Self.reading(.yourReview, .asked("Sam asked you")), 4105: Self.reading(.approved, .approvedBy("Maria")),
-        ])
-        let card = Self.card(.teammateReview, .findReviewer)
-        let widths = BoardWidths(scale: 1, available: 664)
+        let before = [
+            4091: Self.reading(.teammateReview, .findReviewer), 4102: Self.reading(.teammateReview, .findReviewer),
+            4101: Self.reading(.inProgress, .working(session)), 4104: Self.reading(.yourReview, .asked("Sam asked you")),
+            4105: Self.reading(.approved, .approvedBy("Maria")),
+        ]
         let setByYou = Self.reading(.inProgress, .set, mark: StageMark(stage: .inProgress, at: t(30)))
         var atWork = setByYou
         atWork.flags = [.working(session)]
         // Set in progress by you, it's your move there: In progress stays open, and Teammate's review folds instead.
-        #expect(!board.foldsOnceMoved(card, as: setByYou, choices: BoardFolds(), open: [], widths: widths))
+        #expect(!Self.foldsOnceMoved(.inProgress, from: before, to: [4091: setByYou]))
         // Not while a session writes it: there you wait, so In progress folds for room.
-        #expect(board.foldsOnceMoved(card, as: atWork, choices: BoardFolds(), open: [], widths: widths))
+        #expect(Self.foldsOnceMoved(.inProgress, from: before, to: [4091: atWork]))
+    }
+
+    /// Each card counts where the move leaves it: no longer in the column it left, and wherever the move took others too.
+    @Test func aDroppedCardsColumnFoldsAsTheBoardIsOnceEveryCardMoved() {
+        let review = [
+            4101: Self.reading(.inProgress, .draft), 4104: Self.reading(.yourReview, .awaitsYourReview),
+            4105: Self.reading(.teammateReview, .findReviewer), 4106: Self.reading(.approved, .approvedBy("Maria")),
+        ]
+        // Your review's only one, set to Teammate's review: Your review, empty, folds, and Teammate's review has the room.
+        #expect(!Self.foldsOnceMoved(.teammateReview, from: review, to: [4104: Self.reading(.teammateReview, .findReviewer)]))
+        // One that completes by itself, set as next to merge: the one you complete yourself waits for it now, so Can merge,
+        // no longer your move, folds for room.
+        let next = review.merging([
+            4107: Self.reading(.canMerge, .ready(autoComplete: false)),
+            4108: Self.reading(.waits, .waitsFor([Self.pr(4107)], words: "After !4107")),
+        ]) { $1 }
+        #expect(Self.foldsOnceMoved(.canMerge, from: next, to: [
+            4108: Self.reading(.canMerge, .ready(autoComplete: true)),
+            4107: Self.reading(.waits, .waitsFor([Self.pr(4108)], words: "After !4108")),
+        ]))
     }
 
     @Test func itRemembersTheColumnsYouFoldedOrOpenedAndAClickBackForgetsIt() {
