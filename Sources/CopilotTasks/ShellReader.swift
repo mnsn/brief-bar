@@ -4,10 +4,10 @@ import Foundation
 /// in it, at any depth, in substitutions, subshells and here-documents' expansions too, in one list, each with its words,
 /// as the shell passes them, and what it reads from a here-document or a here-string. It reads quotes, single, double and
 /// ANSI-C (`$'…'`, which `QuotedText.commandWord` writes a branch's name in when it has a character nobody sees),
-/// backslashes, comments, `;`, `&&`, `||`, `|`, `&`, parentheses, redirections, `$(…)`, backticks, `<(…)` and
-/// here-documents, but expands nothing: a word with a variable, a substitution, a pattern (`*`, `?`, or `[` with a `]`
-/// after it), braces that expand (with a `,` or `..` in them) or `~` in it isn't literal (`PushCommand.Word.isLiteral`);
-/// `[`, `[[` and `{}` on their own are.
+/// backslashes, comments, `;`, `&&`, `||`, `|`, `&`, parentheses, a `case` pattern's too, redirections, `$(…)`,
+/// backticks, `<(…)` and here-documents, but expands nothing: a word with a variable, a substitution, a pattern (`*`,
+/// `?`, or `[` with a `]` after it), braces that expand (with a `,` or `..` in them) or `~` in it isn't literal
+/// (`PushCommand.Word.isLiteral`); `[`, `[[` and `{}` on their own are.
 struct ShellReader {
     struct Command {
         var words: [PushCommand.Word] = []
@@ -46,13 +46,14 @@ struct ShellReader {
         self.depth = depth
     }
 
-    /// The simple commands in `text`, at `depth` in another script, and whether it could read all of it: not with a quote,
-    /// a substitution or braces that don't close, or scripts nested deeper than `deepest`. What it read before then is
-    /// there all the same.
-    static func read(_ text: String, depth: Int = 0) -> (commands: [Command], isReadable: Bool) {
+    /// The simple commands in `text`, at `depth` in another script, and whether it could read all of it: not with a
+    /// quote, a substitution or braces that don't close, or scripts nested deeper than `deepest` (`isTooDeep`), which a
+    /// shell runs all the same. What it read before then is there all the same.
+    static func read(_ text: String, depth: Int = 0) -> (commands: [Command], isReadable: Bool, isTooDeep: Bool) {
         var reader = ShellReader(bytes: Array(text.utf8), depth: depth)
         let read = depth <= deepest && reader.script(closedByParenthesis: false)
-        return (reader.commands.filter { !$0.words.isEmpty || !$0.input.isEmpty }, read && !reader.failed)
+        let isTooDeep = depth > deepest || reader.failed
+        return (reader.commands.filter { !$0.words.isEmpty || !$0.input.isEmpty }, read && !reader.failed, isTooDeep)
     }
 
     // MARK: Scripts
@@ -101,14 +102,18 @@ struct ShellReader {
                 current = begin()
             case .closeParenthesis:
                 index += 1
-                if parentheses == 0 {
-                    // The end of the substitution it's in: not one whose here-document's body hasn't come yet, nor in a
-                    // `case`, where it may end a pattern, as in `$(case $x in y) git push;; esac)`, which BriefBar doesn't
-                    // read. Anywhere else, a parenthesis that closes nothing, which a shell refuses.
-                    return closedByParenthesis && heredocs.isEmpty && cases == 0
+                if parentheses == 0, cases > 0 {
+                    // The end of a `case`'s pattern, as in `case $x in y) git push;; esac`: its commands come next. In
+                    // a substitution too, as bash 4 and later read it (bash 3.2 refuses it).
+                    current = begin()
+                } else if parentheses == 0 {
+                    // The end of the substitution it's in: not one whose here-document's body hasn't come yet. Anywhere
+                    // else, a parenthesis that closes nothing, which a shell refuses.
+                    return closedByParenthesis && heredocs.isEmpty
+                } else {
+                    parentheses -= 1
+                    current = begin()
                 }
-                parentheses -= 1
-                current = begin()
             case .hash:
                 // A comment, to the end of its line.
                 while index < bytes.count, bytes[index] != .newline { index += 1 }
@@ -175,6 +180,7 @@ struct ShellReader {
         var reader = ShellReader(bytes: script, depth: depth + nesting + 1)
         let read = reader.script(closedByParenthesis: false)
         commands += reader.commands
+        if reader.failed { failed = true }
         return read && !reader.failed
     }
 
@@ -258,6 +264,7 @@ struct ShellReader {
             return nil
         }
         var reader = ShellReader(bytes: body, depth: depth + nesting + 1)
+        defer { if reader.failed { failed = true } }
         var value: [UInt8] = []
         var literal = true
         while reader.index < reader.bytes.count {

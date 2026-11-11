@@ -77,6 +77,25 @@ public struct PushCommand: Sendable, Equatable {
     private static let runStrings: Set<String> = ["parallel", "flock", "watch", "sudo", "doas", "script"]
     /// What those may run that BriefBar reads: git, its ways to push, shells and `eval`.
     private static let runners: Set<String> = shells.union(["git", "git-push", "git-send-pack", "eval"])
+    /// Those of them that run the shell's own commands too, as `builtin source /dev/stdin` does, not only programs.
+    private static let runBuiltins: Set<String> = ["builtin", "command", "time", "coproc"]
+    /// The shell's own commands, besides `eval`, that run a script they're given, which those may run too.
+    private static let scriptBuiltins: Set<String> = ["source", ".", "trap"]
+    /// Variables a command git runs comes from, as `-c core.editor` gives it: an editor, a pager, ssh, a password's.
+    private static let commandVariables: Set<String> = [
+        "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "EDITOR", "VISUAL", "GIT_PAGER", "PAGER", "GIT_SSH_COMMAND", "GIT_SSH",
+        "GIT_ASKPASS", "SSH_ASKPASS", "GIT_EXTERNAL_DIFF", "GIT_PROXY_COMMAND",
+    ]
+    /// Options of git's commands that take a command to run, by the command they're for: `git rebase --exec`'s, after
+    /// each commit, `git difftool --extcmd`'s, for each file, and `git filter-branch`'s filters, at each commit.
+    private static let commandOptions: [String: [String]] = [
+        "rebase": ["-x", "--exec"],
+        "difftool": ["-x", "--extcmd"],
+        "filter-branch": [
+            "--setup", "--env-filter", "--tree-filter", "--index-filter", "--parent-filter", "--msg-filter",
+            "--commit-filter", "--tag-name-filter",
+        ],
+    ]
     /// Programs that only print, test or look up what they're given, and run none of it (not `man`, whose `-P` does).
     private static let runNothing: Set<String> = [
         "echo", "printf", ":", "true", "false", "test", "[", "cd", "pushd", "popd", "which", "type", "whereis", "whence",
@@ -100,17 +119,23 @@ public struct PushCommand: Sendable, Equatable {
     /// `says`: the script it's in says `push`.
     private mutating func read(_ script: String, depth: Int, says: Bool, wrapped: Bool) {
         var says = says || script.contains("push")
+        // Scripts nested deeper than BriefBar reads, which a shell runs all the same: what's in them isn't known,
+        // whatever it says, as with `git pu''sh` after them.
         guard depth <= ShellReader.deepest else {
-            if says { isUnreadable = true }
+            isUnreadable = true
             return
         }
         let before = pushes.count
-        let (read, isReadable) = ShellReader.read(script, depth: depth)
+        let (read, isReadable, isTooDeep) = ShellReader.read(script, depth: depth)
         // What its words say once read, too: `$'pu\x73h'` is `push`.
         says = says || read.contains { command in (command.words + command.input).contains { $0.value.contains("push") } }
-        if !isReadable, says { isUnreadable = true }
-        // git's settings from the environment, which may name an alias or turn on autocorrect, set anywhere in it.
-        if read.contains(where: { $0.words.contains(where: Self.setsGitConfiguration) }) { isUnreadable = true }
+        if !isReadable, says || isTooDeep { isUnreadable = true }
+        // git's settings from the environment, which may name an alias or turn on autocorrect, set anywhere in it; and
+        // a command git runs from the environment, such as an editor, that says push.
+        let setsCommands = read.contains { command in
+            command.words.contains { Self.setsGitConfiguration($0) || Self.setsCommandThatPushes($0) }
+        }
+        if setsCommands { isUnreadable = true }
         commands += read.count
         for command in read {
             var words = command.words[...]
@@ -132,10 +157,18 @@ public struct PushCommand: Sendable, Equatable {
         }
     }
 
-    /// `GIT_CONFIG_COUNT=…`, `GIT_CONFIG_KEY_<n>=…`, `GIT_CONFIG_VALUE_<n>=…` or `GIT_CONFIG_PARAMETERS=…`: git's settings,
-    /// from the environment, as `-c` gives them.
+    /// `GIT_CONFIG_COUNT=…`, `GIT_CONFIG_KEY_<n>=…`, `GIT_CONFIG_VALUE_<n>=…` or `GIT_CONFIG_PARAMETERS=…`, or `+=`:
+    /// git's settings, from the environment, as `-c` gives them.
     private static func setsGitConfiguration(_ word: Word) -> Bool {
-        word.value.range(of: #"^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+|PARAMETERS)="#, options: .regularExpression) != nil
+        word.value.range(of: #"^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+|PARAMETERS)\+?="#, options: .regularExpression) != nil
+    }
+
+    /// `GIT_EDITOR=…` or another of `commandVariables` set to a command that says push, like `-c core.editor=…`.
+    private static func setsCommandThatPushes(_ word: Word) -> Bool {
+        guard let equals = word.value.firstIndex(of: "=") else { return false }
+        var name = word.value[..<equals]
+        if name.hasSuffix("+") { name = name.dropLast() }
+        return commandVariables.contains(String(name)) && word.value[equals...].contains("push")
     }
 
     /// What a command runs, by its first word. `filled`: the words that program fills in from its input, in place of
@@ -156,10 +189,13 @@ public struct PushCommand: Sendable, Equatable {
         case "eval":
             evaluate(Array(words.dropFirst()), plain: plain, depth: depth, says: says)
         case "trap":
-            // `trap '<script>' EXIT`: its script runs later, as `eval` would run it.
+            // `trap '<script>' EXIT`: its script runs later, as `eval` would run it. After `--`, it's the script
+            // whatever it starts with, as in `trap -- '-x || git push' DEBUG`; before, a word that starts with `-` is
+            // an option.
             var script = words.dropFirst()
-            if script.first?.value == "--" { script = script.dropFirst() }
-            guard let action = script.first, !action.value.hasPrefix("-") || !action.isLiteral else { return }
+            let ended = script.first?.value == "--"
+            if ended { script = script.dropFirst() }
+            guard let action = script.first, ended || !action.value.hasPrefix("-") || !action.isLiteral else { return }
             evaluate([action], plain: plain, depth: depth, says: says)
         case "source", ".":
             // A script, read in this shell: from its input, by /dev/stdin; a file, BriefBar doesn't read.
@@ -181,8 +217,13 @@ public struct PushCommand: Sendable, Equatable {
                 return
             }
             let fills: Set<String>? = Self.fillers.contains(name) ? Self.placeholders(words) : filled
-            // Each word it may run, as `exec -a git bash -c '…'` runs bash, under the name git.
-            let starts = words.indices.dropFirst().filter { words[$0].isLiteral && Self.runners.contains(Self.programName(words[$0].value)) }
+            // Each word it may run, as `exec -a git bash -c '…'` runs bash, under the name git; and, for one that runs
+            // the shell's own commands too, those that run a script, as `builtin source /dev/stdin <<< '…'` does.
+            let starts = words.indices.dropFirst().filter { index in
+                let word = words[index]
+                return word.isLiteral && (Self.runners.contains(Self.programName(word.value))
+                    || (Self.runBuiltins.contains(name) && Self.scriptBuiltins.contains(word.value)))
+            }
             for start in starts {
                 run(Array(words[start...]), input: input, plain: false, depth: depth, says: says, filled: fills)
             }
@@ -239,10 +280,11 @@ public struct PushCommand: Sendable, Equatable {
         return names
     }
 
-    /// A word a program that fills in words, `filled`, may put something else in place of.
+    /// A word a program that fills in words, `filled`, may put something else in place of, or in: one with any of them
+    /// in it, as `xargs -I X` puts what it reads in place of X wherever it is, `sh -c 'git X'` too, or with a brace.
     private static func isPlaceholder(_ word: Word, _ filled: Set<String>?) -> Bool {
         guard let filled else { return false }
-        return !word.isLiteral || filled.contains(word.value) || word.value.contains("{")
+        return !word.isLiteral || word.value.contains("{") || filled.contains { !$0.isEmpty && word.value.contains($0) }
     }
 
     /// git, past its own options: a push, with them and what follows it; or a command of git's that runs one it's given,
@@ -317,14 +359,10 @@ public struct PushCommand: Sendable, Equatable {
             guard at.first == Word(value: "foreach") else { return }
             at = at.dropFirst().drop { $0.isLiteral && ["--recursive", "-q", "--quiet", "--"].contains($0.value) }
             evaluate(Array(at), plain: false, depth: depth, says: says)
-        case "rebase":
-            // `git rebase --exec '<command>'`, which runs it after each commit.
-            for (index, word) in rest.enumerated() {
-                if (word.value == "-x" || word.value == "--exec"), index + 1 < rest.count {
-                    evaluate([rest[index + 1]], plain: false, depth: depth, says: says)
-                } else if word.value.hasPrefix("--exec=") {
-                    evaluate([Word(value: String(word.value.dropFirst("--exec=".count)), isLiteral: word.isLiteral)], plain: false, depth: depth, says: says)
-                }
+        case let subcommand where Self.commandOptions[subcommand] != nil:
+            // `git rebase --exec '<command>'` and others of git's that run the command an option gives.
+            for script in Self.values(of: Self.commandOptions[subcommand] ?? [], in: rest) {
+                evaluate([script], plain: false, depth: depth, says: says)
             }
         case "bisect" where rest.first == Word(value: "run"):
             // `git bisect run <command>`, which runs it at each commit it tries.
@@ -353,6 +391,42 @@ public struct PushCommand: Sendable, Equatable {
     /// A setting's name, `<section>.<name>` or `<section>.<subsection>.<name>`, as `push.default` or `remote.origin.push`.
     private static func isSettingName(_ word: String) -> Bool {
         word.range(of: #"^[A-Za-z][A-Za-z0-9-]*(\.\S+)?\.[A-Za-z][A-Za-z0-9-]*$"#, options: .regularExpression) != nil
+    }
+
+    /// The values `words` give `options`, those of a command of git's that take one, as git reads them: `-x <value>`,
+    /// `-x<value>`, or after other short options, as `-qx <value>`; `--exec <value>` or `--exec=<value>`, and the long
+    /// ones shortened, as git takes them, `--ex=<value>`. Up to `--`, after which nothing is an option.
+    private static func values(of options: [String], in words: [Word]) -> [Word] {
+        var values: [Word] = []
+        var index = 0
+        while index < words.count {
+            let word = words[index]
+            index += 1
+            let text = word.value
+            if text == "--" { break }
+            var attached: Substring?
+            if text.hasPrefix("--") {
+                let name = text.prefix { $0 != "=" }
+                guard name.count > 3, options.contains(where: { $0.hasPrefix("--") && $0.hasPrefix(name) }) else {
+                    continue
+                }
+                if let equals = text.firstIndex(of: "=") { attached = text[text.index(after: equals)...] }
+            } else if text.hasPrefix("-"), text.count > 1 {
+                let letters = text.dropFirst()
+                guard let letter = letters.firstIndex(where: { options.contains("-\($0)") }) else { continue }
+                let rest = letters[letters.index(after: letter)...]
+                if !rest.isEmpty { attached = rest }
+            } else {
+                continue
+            }
+            if let attached {
+                values.append(Word(value: String(attached), isLiteral: word.isLiteral))
+            } else if index < words.count {
+                values.append(words[index])
+                index += 1
+            }
+        }
+        return values
     }
 
     /// A shell: the script its `-c` runs, or, with `-s`, or no script file, or /dev/stdin for one, the one it reads from a

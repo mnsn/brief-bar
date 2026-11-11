@@ -2934,13 +2934,15 @@ documented hooks, which the CLI runs before each shell command (`bash`), with th
 hook runs BriefBar itself, `BriefBar --push-guard <pull request> --worktree=<folder> --source-branch=<branch>
 --target-branch=<branch>`, each value in the word of its option, so no branch's name is read as another option
 (`PushGuardCLI`, `PushGuard`). A command that pushes nothing runs at once, without git or Azure DevOps; BriefBar reads
-it as a shell would, its quotes, `$(…)`, `sh -c`, `sh -s`, `eval`, `trap`, here-documents, the programs that run others,
-such as `env` and `xargs`, or a string of theirs, such as `parallel` and `flock -c`, and git's commands that run one,
-`submodule foreach`, `rebase --exec` and `bisect run`, included, with program names as macOS finds them, whatever their
-case (`GIT` runs git), and NULs and carriage returns as bash takes them, and takes what it can't read for a push when it
-says push, or when it sets git's aliases, autocorrect or includes, which can run another command than the one it names,
-with `-c`, `GIT_CONFIG_*` or `git config`, as a `case` in a substitution, or words `xargs` fills in, or a program it
-doesn't know that names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar
+it as a shell would, its quotes, `$(…)`, `case` arms, `sh -c`, `sh -s`, `eval`, `trap`, here-documents, the programs
+that run others, such as `env` and `xargs`, or a string of theirs, such as `parallel` and `flock -c`, or the shell's own
+commands through `builtin`, and git's commands that run one, `submodule foreach`, `rebase --exec`, `difftool --extcmd`,
+`filter-branch`'s filters and `bisect run`, with their options as git takes them, included, with program names as macOS
+finds them, whatever their case (`GIT` runs git), and NULs and carriage returns as bash takes them, and takes what it
+can't read for a push when it says push, or when it sets git's aliases, autocorrect or includes, which can run another
+command than the one it names, with `-c`, `GIT_CONFIG_*` or `git config`, or nests scripts deeper than it reads, or a
+command git runs from the environment, such as `GIT_EDITOR`'s, that says push, or words `xargs` fills in, or a program
+it doesn't know that names git or a shell (`PushCommand`, `ShellReader`). A dry run runs too, unless an option BriefBar
 doesn't know, such as `--no-dry-run`, may undo it. What a variable, an alias, a script file or another language's code
 would push is out of its reach, and so is where a shell went in an earlier command. A command longer than it reads, a
 mebibyte, doesn't run. A push runs only in the form the prompt names, `git push origin <commit>:refs/heads/<branch>`,

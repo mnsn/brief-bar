@@ -427,21 +427,25 @@ import Testing
             "env -S 'git push origin x'",
             "nohup \"$GIT\" push",
             String(repeating: "$(", count: 12) + "git push" + String(repeating: ")", count: 12),
-            // A `case` pattern's `)` in a substitution, which bash 4 and later read as the pattern's end, not the
-            // substitution's.
-            "echo \"$(case yes in yes) git push --force origin main;; esac)\"",
-            "echo \"$(if case $x in\ny) git push -d origin main;; esac; then :; fi)\"",
+            // Scripts nested deeper than it reads, whatever they say, as a shell runs what comes after them.
+            "echo " + String(repeating: "$(", count: 10) + "true" + String(repeating: ")", count: 10) + "; git pu''sh --force origin main",
             // An alias set right there, whatever the case of its name, or from the environment; and push in a string
             // whose escapes say it.
             "git -c ALIAS.p=push p --force origin main",
             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.p GIT_CONFIG_VALUE_0=push git p -f origin main",
             "export GIT_CONFIG_PARAMETERS=\"'alias.p=push'\"; git p -f origin main",
+            "GIT_CONFIG_PARAMETERS+=\"'alias.p=push'\" git p -f origin main",
             "env -S $'git pu\\x73h --force origin main'",
             "git -c core.sshCommand='git push --force origin main; ssh' fetch",
+            // A command git runs from the environment that says push.
+            "GIT_EDITOR='git push --force origin main; true' git commit --allow-empty",
+            "GIT_SSH_COMMAND=\"git push -d origin main; ssh\" git fetch git@example.com:shop.git",
             // Or in git's configuration, for the commands after it.
             "git config alias.p push && git p --force origin main",
             "git config --global --add Alias.pf 'push --force'",
             "git config core.pager 'git push --force origin main; less' && git log",
+            // Words `xargs -I` fills in, anywhere in them.
+            "echo push | xargs -I X sh -c 'git X --force origin main'",
         ]
         for command in unreadable {
             #expect(PushCommand(command).isUnreadable, "\(command)")
@@ -449,6 +453,7 @@ import Testing
         // That doesn't say push.
         for command in [
             "echo 'unbalanced", "$EDITOR notes.md", "git $(echo status)", "echo hi | sh", "echo \"$(case $x in y) echo hi;; esac)\"",
+            "GIT_PAGER=cat git log --grep=push -1",
         ] {
             let read = PushCommand(command)
             #expect(!read.isUnreadable && read.pushes.isEmpty, "\(command)")
@@ -468,7 +473,12 @@ import Testing
             let read = PushCommand(command)
             #expect(!read.isUnreadable && read.pushes.isEmpty, "\(command)")
         }
-        // A pattern in parentheses, and a `case` that ended, read as they are.
+        // A `case`'s arms, after their patterns' parentheses, as bash reads them, in a substitution too, as bash 4 and
+        // later do; a pattern in parentheses; and a `case` that ended.
+        #expect(forms("case x in x) git pu''sh --force origin main;; esac") == [.unsafe(.force)])
+        #expect(forms("case $1 in\n  a|b) echo;;\n  c) git push -d origin main ;;\nesac") == [.unsafe(.delete)])
+        #expect(forms("echo \"$(case yes in yes) git push --force origin main;; esac)\"") == [.unsafe(.force)])
+        #expect(forms("echo \"$(if case $x in\ny) git push -d origin main;; esac; then :; fi)\"") == [.unsafe(.delete)])
         #expect(forms("echo \"$(case yes in (yes) git push --force origin main;; esac)\"") == [.unsafe(.force)])
         #expect(forms("echo \"$(case $x in (y) echo;; esac; git push -d origin main)\"") == [.unsafe(.delete)])
         #expect(!PushCommand("echo \"$(case \"case\" in (y) echo case;; esac)\" && git push origin \(refspec)").isUnreadable)
@@ -498,8 +508,9 @@ import Testing
     }
 
     /// The pushes in a command another program, or a command of git's, runs: in a string it runs through a shell, as
-    /// `parallel`, `flock -c` and `watch` do; `git submodule foreach`'s, `git rebase --exec`'s and `git bisect run`'s; and
-    /// `git subtree push`, after the options that come before it.
+    /// `parallel`, `flock -c` and `watch` do; `git submodule foreach`'s, `git rebase --exec`'s, `git difftool --extcmd`'s,
+    /// `git filter-branch`'s filters and `git bisect run`'s; the shell's own `source`, `.` and `trap`, through `builtin`,
+    /// `command` and `time` too; and `git subtree push`, after the options that come before it.
     @Test func findsThePushesInWhatOthersRun() {
         let cases: [(String, [PushCommand.Push.Form])] = [
             ("parallel 'git push --force origin {}' ::: main", [.unsafe(.force)]),
@@ -509,6 +520,20 @@ import Testing
             ("git submodule --quiet foreach --recursive git push -d origin main", [.unsafe(.delete)]),
             ("git rebase -x 'git push --force origin main' HEAD~2", [.unsafe(.force)]),
             ("git rebase --exec='git push -d origin main' origin/main", [.unsafe(.delete)]),
+            // Its option as git takes it too: attached, after other short options, or shortened.
+            ("git rebase -x'git push --force origin main' HEAD~1", [.unsafe(.force)]),
+            ("git rebase -qx 'git push -d origin main' HEAD~1", [.unsafe(.delete)]),
+            ("git rebase --ex='git push --force origin main' HEAD~1", [.unsafe(.force)]),
+            ("git rebase --exe 'git push --force origin main' HEAD~1", [.unsafe(.force)]),
+            ("git difftool -x 'git push --force origin main' HEAD~1", [.unsafe(.force)]),
+            ("git difftool --extcmd='git push -d origin main' HEAD~1", [.unsafe(.delete)]),
+            ("git filter-branch --tree-filter 'git push --force origin main' HEAD", [.unsafe(.force)]),
+            // The shell's own commands that run a script, through those that run them.
+            ("builtin source /dev/stdin <<< 'git push --force origin main'", [.unsafe(.force)]),
+            ("command . /dev/stdin <<< 'git push -d origin main'", [.unsafe(.delete)]),
+            ("time source /dev/stdin <<< 'git push --force origin main'", [.unsafe(.force)]),
+            ("builtin trap 'git push --force origin main' EXIT", [.unsafe(.force)]),
+            ("trap -- '-missing || git push --force origin main' DEBUG; true", [.unsafe(.force)]),
             ("git bisect run git push --force origin main", [.unsafe(.force)]),
             ("git subtree --prefix=docs push origin gh-pages", [.other]),
             ("git subtree -P docs push origin \(refspec)", [.other]),
@@ -520,6 +545,7 @@ import Testing
         for command in [
             "git rebase -x 'swift test' origin/main", "git submodule foreach git status", "git bisect run swift test",
             "find . -name '*.swift' -exec grep -l \"git push\" {} +", "git subtree split --prefix=docs",
+            "git rebase --empty=drop -X ours origin/main", "git difftool --tool=opendiff HEAD~1", "trap -p", "builtin cd /tmp",
         ] {
             let read = PushCommand(command)
             #expect(read.pushes.isEmpty && !read.isUnreadable, "\(command)")
