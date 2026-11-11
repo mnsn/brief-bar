@@ -404,8 +404,8 @@ you opened yourself. Only past that does the Board scroll sideways. Right-click 
 **Fold** or **Open**, and, once you chose, **Let BriefBar Decide**. While you drag a card, a strip that takes it springs
 open as you hold the card over it a moment, as Finder's folders do; once you drop it, each column folds as it would
 have, so one you folded keeps the card in its strip, counted, and its title flashes. **⌘→** and **⌘←** move a card into
-a folded column too, which opens while the card has the keyboard, so the next key moves it on, and VoiceOver says where
-it went. **2 more ›** in Up Next opens its column for the moment.
+a folded column too, even while its details cover the Board, and the column opens while a card in it has the keyboard,
+so the next key moves the card on; VoiceOver says where it went. **2 more ›** in Up Next opens its column for the moment.
 
 **My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
 Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,

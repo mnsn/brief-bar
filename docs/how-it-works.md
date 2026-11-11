@@ -1779,12 +1779,15 @@ rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill 
 of its cards needs you (`BoardCard.needsYou`: your move, or a problem Fix next ranks, `fixRank`, but none in Merged), and
 the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. Some columns open for
 the moment, unsaved: one a card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's
-spring-loaded folders do; the one a key moved a card to, while that card keeps the keyboard's focus there, until another
-card has it, or none has for half a second while the board can take it; and one Up Next's **2 more ›** shows, until you
-fold it or the board goes. A move into a column that stays folded, as a drop on its strip, flashes its title. Folding
-changes no stage, count or Up Next slot. The Board, its lanes, the columns you folded or opened, and whether Up Next is
-folded are kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving
-that, `order.boardLanes`, `order.boardColumns` and `order.upNextFolded`.
+spring-loaded folders do; the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, while a
+card in it has the keyboard's focus, until a card in another column has it, or none has for half a second while the
+board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be folded otherwise, or
+before the board knows its width, until you fold it or the board goes. A click that folds or opens a column while
+another is open for the moment is kept, unless BriefBar would do the same once that moment ends. A drop leaves each
+column as it folds once the drag's springs end: one that stays folded, with the card in it, as one you folded, counts it
+in its strip, and its title flashes. Folding changes no stage, count or Up Next slot. The Board, its lanes, the columns
+you folded or opened, and whether Up Next is folded are kept as choices only: `order.view`, which GitHub's page reads as
+List where it's the Board, without saving that, `order.boardLanes`, `order.boardColumns` and `order.upNextFolded`.
 
 #### My Work
 

@@ -127,11 +127,20 @@ private struct BoardNotice: Equatable {
     var isRefusal = true
 }
 
-/// The column a card you moved with a key went to, while it keeps the keyboard's focus: open for the moment, folded or not,
-/// so that the next key moves it on from there.
+/// The column a card you moved with a key went to, while it keeps the keyboard's focus, or another card in that column has
+/// it since: open for the moment, folded or not, so that the next key moves it on from there.
 private struct KeyOpened: Equatable {
     var column: BoardColumn
     var spot: CardSpot
+}
+
+/// What decides how long the column a key moved a card to stays open: which card has the keyboard's focus, whether the
+/// board can take it, which card a move still owes it, and that column.
+private struct KeyMoment: Equatable {
+    var focused: CardSpot?
+    var isEnabled: Bool
+    var owed: CardSpot?
+    var opened: KeyOpened?
 }
 
 /// How wide the Board's columns are (`BoardWidths`): an open one as wide as the page allows, never narrower than its cards
@@ -170,9 +179,15 @@ private struct BoardMetrics {
         columns.reduce(0) { $0 + width($1) + gap(after: $1) }
     }
 
-    /// What shows of the board at once.
+    /// What shows of the board at once: the page's width, once it's known.
     var visible: CGFloat {
-        widths.available > 0 ? min(widths.available, content) : content
+        widths.available > 0 ? widths.available : content
+    }
+
+    /// How wide the lanes are: their columns, but never narrower than the page, so that a lane's header has the page's
+    /// width though every column is folded.
+    var lanes: CGFloat {
+        max(content, visible)
     }
 }
 
@@ -410,10 +425,15 @@ package struct OrderBoardView: View {
             guard !Task.isCancelled, springing == cell, isDragging else { return }
             _ = withAnimation(.easeOut(duration: 0.15)) { sprung.insert(cell.column) }
         }
-        // The column a key moved a card to folds back once the card's lost the keyboard's focus a moment, as you click
-        // elsewhere, but not while the card's drawn anew there, nor while the details cover the board.
-        .task(id: focused) {
+        // The column a key moved a card to folds back once no card in it has the keyboard's focus: at once where a card in
+        // another column has it, a moment later where none has, as you click elsewhere, but not while the card's owed it to
+        // be drawn anew there, nor while the details cover the board. Another card in that column that takes it keeps it open.
+        .task(id: KeyMoment(focused: focused, isEnabled: isEnabled, owed: refocus.spot, opened: keyOpened)) {
             guard let opened = keyOpened, focused != opened.spot else { return }
+            if let spot = focused, column(of: spot) == opened.column {
+                keyOpened = KeyOpened(column: opened.column, spot: spot)
+                return
+            }
             if focused == nil {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard !Task.isCancelled, focused == nil, isEnabled, refocus.spot != opened.spot else { return }
@@ -430,14 +450,19 @@ package struct OrderBoardView: View {
     // MARK: Folding
 
     /// The columns open for the moment, whatever else says: those a drag sprang open, the one a card you moved with a key
-    /// went to while it keeps the keyboard's focus there, and those Up Next's "2 more ›" opened.
+    /// went to while a card there keeps the keyboard's focus, and those Up Next's "2 more ›" opened.
     private var openForNow: Set<BoardColumn> {
         var open = sprung.union(revealedOpen)
-        if let opened = keyOpened, let card = board.card(opened.spot.ref, preferring: opened.spot.lane),
-           BoardColumn.stage(card.stage) == opened.column {
+        if let opened = keyOpened, column(of: opened.spot) == opened.column {
             open.insert(opened.column)
         }
         return open
+    }
+
+    /// The column a card is in on the board: a pull request's stage's, or a work item's.
+    private func column(of spot: CardSpot) -> BoardColumn? {
+        if let card = board.card(spot.ref, preferring: spot.lane) { return .stage(card.stage) }
+        return board.lanes.lazy.flatMap(\.tasks).first { $0.ref == spot.ref }.map { BoardColumn($0.column) }
     }
 
     /// Which columns show folded, and how wide each is, as the board is now.
@@ -453,12 +478,15 @@ package struct OrderBoardView: View {
         )
     }
 
-    /// Whether BriefBar would fold a column by itself, as the board is now: without your choice for it, or its being open
-    /// for the moment.
-    private func foldsByItself(_ column: BoardColumn, widths: BoardWidths) -> Bool {
+    /// Whether BriefBar would fold a column by itself, without your choice for it or its own moment: the same as the board
+    /// is now and once the other columns' moments end. Nil where those differ, as while one open for the moment takes the
+    /// room this one would have: then a click on it is kept, rather than forgotten for a moment that ends.
+    private func foldsByItself(_ column: BoardColumn, widths: BoardWidths) -> Bool? {
         var choices = order.boardFolds
         choices[column] = nil
-        return folding(widths, open: openForNow.subtracting([column]), choices: choices).isFolded(column)
+        let now = folding(widths, open: openForNow.subtracting([column]), choices: choices).isFolded(column)
+        let later = folding(widths, open: [], choices: choices).isFolded(column)
+        return now == later ? now : nil
     }
 
     /// No longer open for the moment.
@@ -475,7 +503,7 @@ package struct OrderBoardView: View {
             let wasOpenForNow = openForNow.contains(column)
             endMoment(column)
             if wasOpenForNow, currentMetrics().isFolded(column) { return }
-            let byItself = foldsByItself(column, widths: metrics.widths)
+            let byItself = foldsByItself(column, widths: metrics.widths) ?? false
             order.setBoardFolds(order.boardFolds.choosing(.folded, for: column, byItself: byItself))
         }
     }
@@ -484,7 +512,7 @@ package struct OrderBoardView: View {
     /// forgets that you folded it.
     private func open(_ column: BoardColumn, metrics: BoardMetrics) {
         withAnimation(.easeOut(duration: 0.15)) {
-            let byItself = foldsByItself(column, widths: metrics.widths)
+            let byItself = foldsByItself(column, widths: metrics.widths) ?? true
             order.setBoardFolds(order.boardFolds.choosing(.open, for: column, byItself: byItself))
         }
     }
@@ -732,7 +760,7 @@ package struct OrderBoardView: View {
                     }
                 }
                 .padding(.top, 8)
-                .frame(width: metrics.content, alignment: .leading)
+                .frame(width: metrics.lanes, alignment: .leading)
                 .coordinateSpace(.named(Self.lanesSpace))
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -1014,6 +1042,7 @@ package struct OrderBoardView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { open(column, metrics: metrics) }
+        .contextMenu { columnMenu(column, isFolded: true, metrics: metrics) }
         .dropDestination(for: String.self) { items, _ in
             drop(items, on: column, in: lane, moves: moves)
         } isTargeted: { isOver in
@@ -1151,7 +1180,7 @@ package struct OrderBoardView: View {
             if case .refused(let why) = outcome { refuse(why, about: ref, in: lane.kind) }
             return false
         }
-        return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref)
+        return apply(move, to: card, in: lane.kind, keepsFocus: focused?.ref == card.ref, opensColumn: false)
     }
 
     /// What dropping a card on a column of a lane does, to the card as it is now: a work item's stays where its work puts it,
@@ -1180,7 +1209,7 @@ package struct OrderBoardView: View {
             ThisMac.beep()
             return
         }
-        _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus)
+        _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus, opensColumn: true)
     }
 
     /// ⌘→ and ⌘← while the details cover the board, which can't take the keyboard's focus then: on the card of the pull
@@ -1207,9 +1236,13 @@ package struct OrderBoardView: View {
         return lane.map { CardSpot(lane: $0.kind, ref: shown) }
     }
 
-    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane.Kind, keepsFocus: Bool) -> Bool {
-        // How the columns fold once a drag's springs end, for where the card goes.
-        let folded = folding(BoardWidths(scale: textScale, available: width), open: openForNow.subtracting(sprung), choices: order.boardFolds)
+    /// Moves a card as a drop or a key asks.
+    /// - Parameters:
+    ///   - keepsFocus: it has the keyboard's focus, which it keeps, drawn anew where it goes.
+    ///   - opensColumn: a key moved it, and the column it goes to opens, folded or not, while it keeps the keyboard's focus,
+    ///     or has it back once the details that cover the board close, so that the next key moves it on from there. A drop
+    ///     leaves each column as it folds once the drag's springs end.
+    private func apply(_ move: BoardMove, to card: BoardCard, in lane: BoardLane.Kind, keepsFocus: Bool, opensColumn: Bool) -> Bool {
         switch move {
         case .setStage(let stage):
             notice = nil
@@ -1231,13 +1264,30 @@ package struct OrderBoardView: View {
             refuse(why, about: card.ref, in: lane)
             return false
         }
-        if keepsFocus { keepFocus(on: CardSpot(lane: lane, ref: card.ref), leaving: card.stage) }
-        // Into a folded column, without the keyboard's focus to open it: its title flashes, and its strip counts it.
-        if let stage = order.stage(of: card.ref)?.stage, stage != card.stage, folded.isFolded(.stage(stage)),
-           keyOpened?.spot.ref != card.ref {
-            flash(.stage(stage))
+        let spot = CardSpot(lane: lane, ref: card.ref)
+        if keepsFocus { keepFocus(on: spot, leaving: card.stage) }
+        let reading = order.stage(of: card.ref)
+        guard Self.owesFocus(after: reading, leaving: card.stage), let stage = reading?.stage else { return true }
+        let column = BoardColumn.stage(stage)
+        if opensColumn {
+            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: column, spot: spot) }
+            return true
         }
+        // A key opened the column it was in: that's over.
+        if keyOpened?.spot.ref == card.ref { keyOpened = nil }
+        // Into a column that stays folded: its title flashes, and its strip counts the card.
+        if foldsOnceMoved(card, to: column) { flash(column) }
         return true
+    }
+
+    /// Whether the column a card moves to shows folded once it's there and a drag's springs end: with the card in it, a
+    /// column folded only for having no cards opens, and Your review is your move.
+    private func foldsOnceMoved(_ card: BoardCard, to column: BoardColumn) -> Bool {
+        BoardFolding.make(
+            columns: board.columns, count: { board.count(of: $0) + ($0 == column ? 1 : 0) },
+            yourMove: { board.hasYourMove(in: $0) || $0 == column && column == .stage(.yourReview) },
+            choices: order.boardFolds, open: openForNow.subtracting(sprung), widths: BoardWidths(scale: textScale, available: width)
+        ).isFolded(column)
     }
 
     /// Why a card didn't move, or where it still waits once it did, under its lane until its stage changes; and while the
@@ -1252,18 +1302,14 @@ package struct OrderBoardView: View {
 
     /// The card keeps the keyboard's focus as a move takes it to another column: drawn anew there, it takes the focus back
     /// as it appears, however long the board takes to draw it, unless another card, or a field you type in, has it by then.
-    /// That column opens while it keeps it, folded or not, so that the next key moves it on (`keyOpened`). One the move
-    /// leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the board has
-    /// nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten seconds, as in
-    /// a lane you fold, it isn't owed it later.
+    /// One the move leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the
+    /// board has nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten
+    /// seconds, as in a lane you fold, or a column folded as you dropped it there, it isn't owed it later.
     private func keepFocus(on spot: CardSpot, leaving column: PullRequestStage) {
         let reading = order.stage(of: spot.ref)
         guard Self.owesFocus(after: reading, leaving: column) else {
             refocus.took(spot)
             return
-        }
-        if let stage = reading?.stage {
-            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: .stage(stage), spot: spot) }
         }
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
@@ -1284,12 +1330,15 @@ package struct OrderBoardView: View {
         return reading.isOnBoard && reading.stage != column
     }
 
-    /// Up Next's "2 more ›": the page scrolls the board to that column, opened for the moment where it's folded, and its title
-    /// flashes.
+    /// Up Next's "2 more ›": the page scrolls the board to that column, opened for the moment where it would be folded but for
+    /// its own moment, or where the board doesn't know its width yet to tell, and its title flashes.
     private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
         guard let stage else { return }
         let column = BoardColumn.stage(stage)
-        if currentMetrics().isFolded(column) { revealedOpen.insert(column) }
+        let widths = BoardWidths(scale: textScale, available: width)
+        if width <= 0 || folding(widths, open: openForNow.subtracting([column]), choices: order.boardFolds).isFolded(column) {
+            revealedOpen.insert(column)
+        }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(ColumnAnchor(column: column), anchor: .leading) }
             order.revealedColumn = nil
