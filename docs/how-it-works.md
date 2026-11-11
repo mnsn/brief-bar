@@ -1812,9 +1812,41 @@ the Board, as it shows the mission in List and on the Map; with Lanes: None, whi
 a lane for each mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first
 too, just under the column titles, which stay at the page's top over the cards while it shows the board: offset as it
 scrolls (`PinnedTitles`), not a lazy stack's pinned header, which loses the lanes' places when the page narrows while
-scrolled down the board, as when the details open beside it. The Board, its lanes and whether Up Next is folded are
-kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
-`order.boardLanes` and `order.upNextFolded`.
+scrolled down the board, as when the details open beside it.
+
+A column folds to a strip as you click its title, and opens as you click the strip (`BoardFolding`). What you chose is
+kept by column (`BoardFolds`), To start, a stage or Completed, folded or open; a click that does what BriefBar would do
+by itself then forgets your choice rather than keep it, as **Let BriefBar Decide** does. Otherwise a column with no
+cards folds, and where the open columns don't fit the page (`BoardWidths`: an open column at least 172 points, a strip
+20, 10 between open columns and 5 beside a strip, each grown with Text Size in Windows, a strip to 24 at 150%), BriefBar
+folds, until they fit: Completed, Merged, Waits and To start, whatever they hold; then those where you wait, the one
+that needs least from you first (`BoardFolding.thenWhereYouWait`), Can merge, In progress, Teammate's review and
+Approved, one step from done, last, then any other from the left; never one where it's your move
+(`PullRequestBoard.hasYourMove`: a card in Your review; one in Can merge that's ready and doesn't complete by itself;
+one in In progress that's your draft or that you set there, while no session writes it or asks you about it, which its
+flags say; or a work item you started, with no pull request or Copilot task, `BoardTask.isYourMove`), nor one you chose.
+What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points the Board has in a
+946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill bordered in its column's color where one of
+its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or a problem Fix next ranks,
+`fixRank`, but none in Merged), which only marks it, and the strip wears its column's mark, To start's dashed ring,
+Approved's seal, Completed's checkmark or a dot: a shape as well as a color. With
+every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
+card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
+column of a lane being one drop destination, folded or open, so that the one under the card stays as it springs open;
+the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, or Return or Space opened from a
+lane's strip, while a card in it has the keyboard's focus, until a card in another column has it, or none has for half
+a second while the board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be
+folded otherwise, or before the board knows its width, until you fold it or the board goes. A lane's strip with cards
+takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation (`focusable(interactions: .edit)`),
+in the same Tab order, its ring drawn inside it, and owes it to its first card in the lane as its column opens, on
+Return, Space, a click or VoiceOver's action. A click that folds or opens a column while another is open for the moment
+is kept, unless BriefBar would do the same once that moment ends. A drop leaves each column as it folds once the drag's
+springs end: one that stays folded, with the card in it, as one you folded, counts it in its strip, and its title
+flashes (`PullRequestBoard.foldsOnceMoved`, from the board before the drop, with the card as its reading has it once
+moved, so a session at work on it leaves it not your move there). Folding changes no stage, count or Up Next slot. The
+Board, its lanes, the columns you folded or opened, and whether Up Next is folded are kept as choices only:
+`order.view`, which GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes`,
+`order.boardColumns` and `order.upNextFolded`.
 
 #### My Work
 
@@ -1825,7 +1857,8 @@ section (`AzureDevOpsSource.companionPages`), so it's in each window that has th
 the setting does, the window going to Pull Requests if it showed My Work. Its segment counts nothing, so nothing counts
 twice. `AppModel.section(ofPage:)` takes it to its section, for `openWindow` and `hasPage`. Pull Requests then offers
 List and Map (`PullRequestOrder.views(for:)`), showing List where you chose the Board without saving that, as GitHub's
-page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, the Board's **Show By Status**
+page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, opened for the moment where it's
+folded, the Board's **Show By Status**
 opens Pull Requests by status, and a pull request's mission in its details shows its lane
 (`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
 no lanes.
@@ -1865,14 +1898,16 @@ canceled, as Done counts them finished, and whenever BriefBar follows none, with
 Completed keeps your sprint's done work for as long as the sprint is the one shown: on a card of its own, or on a pull
 request's that's out, which stays while Done lists it, as Merged's do; once it leaves the list, the work items it named
 have cards of their own there. Done work that a pull request in another column names, such as one held in Merged, is on
-that card. Completed counts its cards, as every column does: a pull request's once, whatever work items it names. Merged
-and Completed fold to their counts until you click their titles or a count. A count takes the keyboard's focus as a card
-does, whatever the Mac's keyboard navigation, so that Tab reaches what it hides: Return or Space shows its cards, the
-first of which takes the focus. A pull request's card in Completed tells VoiceOver so before its stage, Merged. The
-columns, their widths and their counts come from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card
-can take the keyboard's focus as a pull request's does, and Return or Space shows its details beside the Board; it
-doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's card dropped on To start or Completed, are refused, saying
-why (`BoardText.workStays`, `toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
+that card. Completed counts its cards, as every column does: a pull request's once, whatever work items it names; where
+the Board is too narrow, it folds first (`BoardFolding.foldsFirst`). A pull request's card in Completed tells VoiceOver
+so before its stage, Merged. A finished mission's lane folds while none of its cards is work of yours still to do
+(`BoardLane.hasWorkToDo`): in To start or In progress, not resolved yet, or named by a pull request's card. The line a
+lane folds to takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation, so that Tab reaches
+what it hides, and Return, Space or a click folds the lane or shows it. The columns, their widths and their counts come
+from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull
+request's does, and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a
+pull request's card dropped on To start or Completed, are refused, saying why (`BoardText.workStays`,
+`toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
 
 While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
 screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to

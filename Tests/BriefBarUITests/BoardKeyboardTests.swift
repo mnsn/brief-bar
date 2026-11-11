@@ -6,11 +6,12 @@ import Testing
 
 /// The Board's keyboard, with the Mac's keyboard navigation off, as it comes: a click on a card gives it the keyboard's
 /// focus, as a field takes it, then ⌘→ and ⌘← move it, again once it's drawn in its new column, and Return shows its
-/// details; Tab reaches a card too, and a folded column's count, whose Return shows its cards. Where its details cover
-/// the Board, the keys move the card whose own details show, which has the focus back once they close, and they say why
-/// one can't move. AppKit gets the clicks and the keys as it would from the window server, in a window off screen that
-/// takes the keyboard, as the app's do, though the tests' process can't be the active app. One test at a time: the app
-/// gives a key to the window that was made key last, whichever test's it is.
+/// details; Tab reaches a card too, a folded column's strip, whose Return opens it, and the line a finished mission's
+/// lane folds to, whose Return shows it. Where its details cover the Board, the keys move the card whose own details
+/// show, which has the focus back once they close, and they say why one can't move. AppKit gets the clicks and the keys
+/// as it would from the window server, in a window off screen that takes the keyboard, as the app's do, though the
+/// tests' process can't be the active app. One test at a time: the app gives a key to the window that was made key
+/// last, whichever test's it is.
 @MainActor
 @Suite(.serialized, .keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
     private final class KeyWindow: TestWindow {
@@ -128,7 +129,10 @@ import Testing
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: waits.map { waits in { @MainActor in await waits.wait() } }
+                focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
+                // On CI the main actor's turns can come seconds late, so a card can take the keyboard after the app's half
+                // second: a column a key opened folds back here only once a card in another column has the keyboard.
+                keyMomentWait: .seconds(3_600)
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
@@ -144,25 +148,42 @@ import Testing
     /// Why a card can't go to Approved from Teammate's review, as the Board says it.
     private static let azureDevOpsDecides = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
 
-    /// Pull Request Order, on, told of one pull request of yours, a draft: In progress; and of one of yours that merged, if
-    /// asked: Merged, which folds to its count.
-    private static func order(alsoMerged merged: ItemRef? = nil) -> PullRequestOrder {
+    /// Pull Request Order, on, told of one pull request of yours, a draft: In progress.
+    private static func order() -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
         let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
-        var pullRequests = [OrderPullRequest(
-            ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
-            createdAt: Date(timeIntervalSince1970: 1_791_000_000)
-        )]
-        var stages = [ref: StageFacts(role: .author, state: .draft)]
-        if let merged {
-            pullRequests.append(OrderPullRequest(
-                ref: merged, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/badges", targetBranch: "main",
-                author: "robin", state: .merged, createdAt: Date(timeIntervalSince1970: 1_790_000_000)
-            ))
-            stages[merged] = StageFacts(role: .author, state: .merged)
-        }
-        order.publish(.azureDevOps, pullRequests: pullRequests, stages: stages, account: "robin@contoso.com")
+        order.publish(
+            .azureDevOps,
+            pullRequests: [OrderPullRequest(
+                ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
+                createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+            )],
+            stages: [ref: StageFacts(role: .author, state: .draft)], account: "robin@contoso.com"
+        )
+        return order
+    }
+
+    /// A review Sam asks you for.
+    private static let review = ItemRef.pullRequest(organization: "contoso", number: 4088)
+
+    /// Pull Request Order, on, told of one pull request of yours, a draft, In progress, and of a review Sam asks you for, in
+    /// Your review.
+    private static func withAReview() -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        order.publish(
+            .azureDevOps,
+            pullRequests: [(ref, "robin/totals", "robin"), (review, "sam/coupons", "sam")].map { ref, branch, author in
+                OrderPullRequest(
+                    ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: branch, targetBranch: "main", author: author,
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                )
+            },
+            stages: [ref: StageFacts(role: .author, state: .draft), review: StageFacts(role: .reviewer, asksYou: "Sam asked you")],
+            account: "robin@contoso.com"
+        )
         return order
     }
 
@@ -428,6 +449,81 @@ import Testing
         }
     }
 
+    /// ⌘→ moves a card into a column you folded, stage by stage as ever: the column opens while the card keeps the keyboard,
+    /// so that it's drawn there and the next key moves it on, and what you chose stays.
+    @Test func aKeyMovesACardIntoAColumnYouFoldedWhichOpensWhileTheCardKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ into Your review, folded", order: order, drawn: drawn, in: window)
+            #expect(drawn.columns[Self.ref] == .yourReview)
+            try await Self.move(.rightArrow, to: .teammateReview, "⌘→ to move it on from there", order: order, drawn: drawn, in: window)
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// The column a key moved a card to stays open while a card in it has the keyboard: click another card there, and it
+    /// stays open for that one, rather than fold under it.
+    @Test func aColumnAKeyOpenedStaysOpenForAnotherCardInItYouGoTo() async throws {
+        let order = Self.withAReview()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click to show its details") { details.shown == Self.ref }
+            let before = drawn.frames[Self.ref]?.minX
+            try await Self.pressUntil("⌘→ into Your review, folded") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            try await until("both cards drawn in Your review") {
+                drawn.frames[Self.ref]?.minX != before && drawn.isDrawn(Self.review)
+            }
+            // Your review opens with an animation, until which the review takes no click: clicked again until it does.
+            let review = try #require(drawn.frames[Self.review])
+            try await Self.pressUntil("a click on the review to show its details") {
+                Self.click(at: drawn.frames[Self.review] ?? review, in: host)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "Your review folded under the card you went to")
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// While its details cover the Board, ⌘→ moves the card they show into a column you folded too, which opens for it: once
+    /// they close, the card has the keyboard back there, and its own keys move it on.
+    @Test func aCardTheKeysMoveIntoAFoldedColumnWhileItsDetailsCoverTheBoardHasTheKeyboardBackThere() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            let before = drawn.frame?.minX
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘→ to move the card the details show, drawn in Your review") {
+                order.stage(of: Self.ref)?.stage == .yourReview && drawn.frame?.minX != before
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            details.shown = nil
+            try await Self.move(
+                .rightArrow, to: .teammateReview, "⌘→ to move the card that has the focus back", order: order, drawn: drawn,
+                in: window
+            )
+        }
+    }
+
     /// Tab, as the window takes it, goes to the next view in its key view loop: with the Mac's keyboard navigation off, only
     /// what a click focuses, as a field, which a card is. With it on, every control is, so the card may not come first.
     @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
@@ -441,66 +537,65 @@ import Testing
         }
     }
 
-    /// Merged folds to its count, which Tab reaches as it does a card, with the Mac's keyboard navigation off too: Return
-    /// there shows what it hid, and the first of it takes the keyboard from the count, so that Return shows its details.
-    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
-    func tabReachesWhatMergedFoldsAndItsFirstCardTakesTheKeyboard() async throws {
-        let merged = ItemRef.pullRequest(organization: "contoso", number: 4085)
-        let order = Self.order(alsoMerged: merged)
-        #expect(order.stage(of: merged)?.stage == .merged)
-        let details = Details()
-        try await Self.showing(order, details: details) { window, _, drawn in
-            #expect(!drawn.isDrawn(merged), "Merged showed its card unfolded")
-            // Tab goes to the draft's card first, which Return shows the details of once it has the keyboard...
-            window.selectNextKeyView(nil)
-            try await Self.pressUntil("Return on the draft's card, which Tab reached") {
-                Self.press(.return, in: window)
-                return details.shown == Self.ref
-            }
-            // ...then to Merged's count, whose Return draws the merged card.
-            window.selectNextKeyView(nil)
-            try await Self.pressUntil("Return on Merged's count, which Tab reached next") {
-                if drawn.isDrawn(merged) { return true }
-                Self.press(.return, in: window)
-                return drawn.isDrawn(merged)
-            }
-            details.shown = nil
-            try await Self.pressUntil("Return on the merged card, which took the keyboard from the count") {
-                Self.press(.return, in: window)
-                return details.shown == merged
-            }
-        }
-    }
-
     /// A finished mission's lane folds to its line, which Tab reaches as it does a card, with the Mac's keyboard navigation
-    /// off too: Return there shows the lane, and Tab goes on to what it held, Merged's count, then a merged card.
+    /// off too: Return there shows the lane, and Tab goes on to what it held, a merged card.
     @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
     func tabReachesWhatAFinishedMissionsLaneFolds() async throws {
         let order = try Self.finishedMission()
         #expect(order.missions.first?.isFinished == true)
         let merged = Set([4101, 4102].map { ItemRef.pullRequest(organization: "contoso", number: $0) })
         let details = Details()
-        try await Self.showing(order, details: details) { window, host, drawn in
-            let folded = host.fittingSize.height
+        try await Self.showing(order, details: details) { window, _, drawn in
+            #expect(!merged.contains(where: drawn.isDrawn), "The finished mission's lane showed its cards")
             // Tab goes to the finished mission's line first, above the draft's lane, and Return there shows its lane...
             window.selectNextKeyView(nil)
             try await Self.pressUntil("Return on the finished mission's line, which Tab reached") {
-                if host.fittingSize.height > folded + 10 { return true }
-                Self.press(.return, in: window)
-                return host.fittingSize.height > folded + 10
-            }
-            #expect(details.shown == nil, "Tab went to the draft's card")
-            // ...then to Merged's count in it, whose Return draws the merged cards, the first of which takes the keyboard.
-            window.selectNextKeyView(nil)
-            try await Self.pressUntil("Return on Merged's count in the lane") {
                 if merged.contains(where: drawn.isDrawn) { return true }
                 Self.press(.return, in: window)
                 return merged.contains(where: drawn.isDrawn)
             }
-            try await Self.pressUntil("Return on the merged card, which took the keyboard from the count") {
+            #expect(details.shown == nil, "Tab went to the draft's card")
+            // ...then to a merged card in it, whose Return shows its details.
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on a merged card, which Tab reached next") {
                 Self.press(.return, in: window)
                 return details.shown.map(merged.contains) == true
             }
+        }
+    }
+
+    /// With the Mac's keyboard navigation off too, Tab goes on from a card to a folded column's strip in its lane, as to a
+    /// card: Return there opens the column for the moment, with the keyboard on its first card in the lane, which keeps it
+    /// open until the keyboard leaves it. What you chose stays.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesAFoldedColumnsStripWhereReturnOpensItOnItsFirstCard() async throws {
+        let order = Self.withAReview()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            // Tab to the card, then on.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            // Nothing else opens Your review, which you folded.
+            try await Self.pressUntil("Return on Your review's strip, which Tab went to, to open it") {
+                Self.press(.return, in: window)
+                return drawn.isDrawn(Self.review)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "Your review folded under the review that has the keyboard")
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+            let card = try #require(drawn.frames[Self.ref])
+            try await Self.pressUntil("a click on the card to take the keyboard from Your review") {
+                Self.click(at: drawn.frames[Self.ref] ?? card, in: host)
+                return details.shown == Self.ref
+            }
+            try await until("Your review to fold back once the keyboard left it") { !drawn.isDrawn(Self.review) }
         }
     }
 
