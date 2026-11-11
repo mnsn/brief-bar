@@ -72,7 +72,22 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// it stands, or your own question, which sends its conversation, with your question, to GitHub Copilot; and the
     /// forks it makes for that, until they're deleted. Right before a comment's Fix or Fix All goes with Push and reply
     /// once it's fixed checked, the same reads, requests and git fetch as right before a Push & Reply goes.
-    nonisolated package static let descriptionVersion = 26
+    /// 27: with Send Prompts to Copilot Sessions, for a prompt BriefBar's extension sends for you, what the extension
+    /// says of that prompt's turn, rather than the session's log: whether it waits in the session's queue, what it's
+    /// doing, what it waits on you for, with Copilot's question or its plan's summary, and how it ended, with what
+    /// Copilot said last or its error, and the session's name, from a file only you can read in BriefBar's own folder,
+    /// every few seconds until the turn ends; what Copilot said kept in memory only, and its first line in the
+    /// notifications BriefBar posts, with Notifications on, when the session waits on you and when the turn ends. With
+    /// Show Links, without Send Work to Copilot or once a pull request is closed, the folder the Copilot session its
+    /// details name works in, from that session's state, while they're on screen, for them to open it; kept in memory
+    /// only. Right before a Push & Reply, or a comment's Fix or Fix All with Push and reply once it's fixed checked,
+    /// goes, whether its pull request is still active, from the request that reads the branch it merges into; and, for
+    /// such a fix, the name of its pull request's branch and the commit git fetched it at, in the clone its session
+    /// works in, kept with it, and, once it's done, from git's logs in that clone, whether the commit the clone was at
+    /// as it ended, which that branch didn't have as the fix went, had come to it by then by a push from the clone,
+    /// fetching the branch again first when the clone's fetch settings don't name it, to tell whether it pushed a
+    /// commit of its own, kept with it too.
+    nonisolated package static let descriptionVersion = 27
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
