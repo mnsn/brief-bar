@@ -294,6 +294,11 @@ package struct OrderBoardView: View {
     let focusWait: (@MainActor () async -> Void)?
     /// The app's wait for that: ten seconds.
     package static let owedFocusWait: Duration = .seconds(10)
+    /// How long the column a key opened stays open once no card has the keyboard's focus, as when you click elsewhere: the
+    /// app's half second, `foldBackWait`, or a test's own, where the main actor's turns can come later than that.
+    let keyMomentWait: Duration
+    /// The app's wait for that: half a second.
+    package static let foldBackWait: Duration = .milliseconds(500)
 
     /// The card you drag, or dragged last: only what this drag carries drops.
     @LocalState private var drag: BoardDrag?
@@ -340,7 +345,7 @@ package struct OrderBoardView: View {
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void, shownOnTop: ItemRef?,
         setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?, work: BoardWorkContent? = nil, notOnBoard: Int,
         showByStatus: (() -> Void)?, now: Date, see: @escaping (MissionKey, Bool) -> Void = { _, _ in },
-        focusWait: (@MainActor () async -> Void)? = nil
+        focusWait: (@MainActor () async -> Void)? = nil, keyMomentWait: Duration = OrderBoardView.foldBackWait
     ) {
         self.board = board
         self.missions = missions
@@ -359,6 +364,7 @@ package struct OrderBoardView: View {
         self.now = now
         self.see = see
         self.focusWait = focusWait
+        self.keyMomentWait = keyMomentWait
     }
 
     package var body: some View {
@@ -440,7 +446,7 @@ package struct OrderBoardView: View {
                 return
             }
             if focused == nil {
-                try? await Task.sleep(for: .milliseconds(500))
+                try? await Task.sleep(for: keyMomentWait)
                 guard !Task.isCancelled, focused == nil, isEnabled, refocus.spot != opened.spot else { return }
             }
             if keyOpened == opened {
@@ -1073,7 +1079,9 @@ package struct OrderBoardView: View {
             }
         }
         .contentShape(Rectangle())
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 7, style: .continuous))
+        // Its ring inside the strip, where the lanes' scroll view would cut one drawn outside it, at the Board's leading
+        // edge.
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 7, style: .continuous).inset(by: 3))
         .onTapGesture {
             open(column, metrics: metrics)
             // The click gave the strip the keyboard, as it gives a card: the card it opens on here has it.
@@ -1092,7 +1100,11 @@ package struct OrderBoardView: View {
         .accessibilityLabel(Self.stripWords(title: column.stage?.title ?? column.title, count: count, needing: needing, here: true))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens it")
-        .accessibilityAction { open(column, metrics: metrics) }
+        .accessibilityAction {
+            open(column, metrics: metrics)
+            // VoiceOver follows the keyboard onto that card, rather than lose its place as the strip goes.
+            if let first { oweFocus(to: first) }
+        }
     }
 
     /// A lane's strip's tooltip: what's in it there, by number and title, and why it's folded.

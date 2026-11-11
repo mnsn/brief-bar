@@ -1838,12 +1838,13 @@ lane's strip, while a card in it has the keyboard's focus, until a card in anoth
 a second while the board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be
 folded otherwise, or before the board knows its width, until you fold it or the board goes. A lane's strip with cards
 takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation (`focusable(interactions: .edit)`),
-in the same Tab order, and owes it to its first card in the lane as its column opens, on Return, Space or a click. A click that folds or opens a column while
-another is open for the moment is kept, unless BriefBar would do the same once that moment ends. A drop leaves each
-column as it folds once the drag's springs end: one that stays folded, with the card in it, as one you folded, counts it
-in its strip, and its title flashes. Folding changes no stage, count or Up Next slot. The Board, its lanes, the columns
-you folded or opened, and whether Up Next is folded are kept as choices only: `order.view`, which GitHub's page reads as
-List where it's the Board, without saving that, `order.boardLanes`, `order.boardColumns` and `order.upNextFolded`.
+in the same Tab order, its ring drawn inside it, and owes it to its first card in the lane as its column opens, on
+Return, Space, a click or VoiceOver's action. A click that folds or opens a column while another is open for the moment
+is kept, unless BriefBar would do the same once that moment ends. A drop leaves each column as it folds once the drag's
+springs end: one that stays folded, with the card in it, as one you folded, counts it in its strip, and its title
+flashes. Folding changes no stage, count or Up Next slot. The Board, its lanes, the columns you folded or opened, and
+whether Up Next is folded are kept as choices only: `order.view`, which GitHub's page reads as List where it's the
+Board, without saving that, `order.boardLanes`, `order.boardColumns` and `order.upNextFolded`.
 
 #### My Work
 

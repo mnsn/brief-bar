@@ -127,7 +127,10 @@ import Testing
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: waits.map { waits in { @MainActor in await waits.wait() } }
+                focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
+                // On CI the main actor's turns can come seconds late, so a card can take the keyboard after the app's half
+                // second: a column a key opened folds back here only once a card in another column has the keyboard.
+                keyMomentWait: .seconds(3_600)
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
