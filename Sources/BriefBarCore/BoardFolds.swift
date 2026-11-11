@@ -155,19 +155,22 @@ extension PullRequestBoard {
         }
     }
 
-    /// Whether the column a card moves to from another shows folded once it's there, as this Board, from before the move,
-    /// tells it: with the card in it, a column folded only for having no cards opens, and one where it's your move once
-    /// there (`BoardCard.isYourMove`) stays open, as BriefBar folds it (`BoardFolding`).
-    /// - Parameter reading: its stage once moved, the column's, with the sessions at work on it in its flags.
+    /// Whether a column shows folded once a card moved, as BriefBar folds it (`BoardFolding`): this Board, from before the
+    /// move, with each of its pull requests in the column its stage takes it to now, and none that left the board. So the
+    /// column a card left counts it no more, and what a move did to the others counts too, as Set as Next to Merge has the
+    /// rest of its mission wait for the one you set. Its work items' cards stay as they are.
+    /// - Parameter stages: each pull request's stage once moved, with the sessions at work on it in its flags.
     public func foldsOnceMoved(
-        _ card: BoardCard, as reading: StageReading, choices: BoardFolds, open: Set<BoardColumn>, widths: BoardWidths
+        to column: BoardColumn, stages: [ItemRef: StageReading], choices: BoardFolds, open: Set<BoardColumn>, widths: BoardWidths
     ) -> Bool {
-        var moved = card
-        moved.reading = reading
-        let column = BoardColumn.stage(reading.stage)
+        let cards = refs.compactMap { ref in stages[ref].flatMap { $0.isOnBoard ? BoardCard(ref: ref, reading: $0) : nil } }
+        let byStage = Dictionary(grouping: cards, by: \.stage)
+        var moved = self
+        moved.lanes = [BoardLane(kind: .all, columns: byStage, tasks: lanes.flatMap(\.tasks))]
+        moved.counts = byStage.mapValues(\.count)
         return BoardFolding.make(
-            columns: columns, count: { count(of: $0) + ($0 == column ? 1 : 0) },
-            yourMove: { hasYourMove(in: $0) || $0 == column && moved.isYourMove }, choices: choices, open: open, widths: widths
+            columns: columns, count: moved.count(of:), yourMove: moved.hasYourMove(in:), choices: choices, open: open,
+            widths: widths
         ).isFolded(column)
     }
 }

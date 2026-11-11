@@ -1324,7 +1324,8 @@ package struct OrderBoardView: View {
         if keyOpened?.spot.ref == card.ref { keyOpened = nil }
         // Into a column that stays folded once the drag's springs end: its title flashes, and its strip counts the card.
         let widths = BoardWidths(scale: textScale, available: width)
-        if board.foldsOnceMoved(card, as: reading, choices: order.boardFolds, open: openForNow.subtracting(sprung), widths: widths) {
+        let open = openForNow.subtracting(sprung)
+        if board.foldsOnceMoved(to: column, stages: order.stages, choices: order.boardFolds, open: open, widths: widths) {
             flash(column)
         }
         return true
