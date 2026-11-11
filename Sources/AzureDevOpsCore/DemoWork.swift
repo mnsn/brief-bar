@@ -77,6 +77,35 @@ extension DemoData {
         )
     }
 
+    /// Your open tasks and bugs outside Sprint 42, for My Work: a bug still active in Sprint 39, a task of Sprint 41 under a
+    /// story that's in this one, one in no sprint; and the tasks of User Story 5180, "Checkout redesign", in Sprint 41 and
+    /// in no sprint, each linked to one of your pull requests (`workLinks`).
+    public static func outsideWork(now: Date = Date(), calendar: Calendar = .current) -> OutsideWork {
+        func item(
+            _ id: Int, _ type: String, _ title: String, _ state: String, in iteration: String, parent: Int? = nil, rank: Double,
+            changed hoursAgo: Double
+        ) -> WorkItem {
+            WorkItem(
+                id: id, organization: organization, project: team.projectName, type: type, title: title, state: state,
+                category: WorkItem.Category(category: nil, state: state), assignedTo: me, parentId: parent, rank: rank,
+                changedAt: now.addingTimeInterval(-hoursAgo * 3_600), iteration: iteration
+            )
+        }
+        let found = [
+            item(4990, "Bug", "Order emails show the wrong time zone", "Active", in: "Storefront\\Sprint 39", rank: 4, changed: 24 * 30),
+            item(5052, "Task", "Remove the old cart cookie", "New", in: "Storefront\\Sprint 41", parent: 5101, rank: 6, changed: 24 * 12),
+            item(4870, "Task", "Document the coupon API's error codes", "New", in: "Storefront", rank: 8, changed: 24 * 45),
+            item(5181, "Task", "Speed up the checkout page", "Active", in: "Storefront\\Sprint 41", parent: 5180, rank: 1, changed: 5),
+            item(5182, "Task", "Show delivery estimates", "Active", in: "Storefront\\Sprint 41", parent: 5180, rank: 2, changed: 26),
+            item(5183, "Task", "Prototype one-click checkout", "New", in: "Storefront", parent: 5180, rank: 3, changed: 3),
+        ]
+        let board = sprintBoard(now: now, calendar: calendar)
+        return OutsideWork(
+            items: OutsideWork.yours(found, board: board, taskTypes: board.taskTypes), sprintPath: board.sprint.path,
+            readAt: now.addingTimeInterval(-20), taskTypes: board.taskTypes
+        )
+    }
+
     /// More of the project's pipelines, to find and pin.
     public static let morePipelines: [PipelineRef] = [
         PipelineRef(organization: organization, projectId: team.projectId, projectName: team.projectName, definitionId: 33,

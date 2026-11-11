@@ -92,6 +92,63 @@ import Testing
         #expect(work[3].pullRequests.map(\.state) == [.merged, .abandoned, .open(author: nil), .unknown])
     }
 
+    /// Your open tasks and bugs outside the sprint are read while My Work shows + Sprint Tasks, for its line, or + All My Tasks,
+    /// whose cards have Show Links read their pull requests; with neither, or without Show Links, or once My Work goes, not.
+    @Test func itReadsYourWorkOutsideTheSprintForItsLineAndItsCardsForAllMyTasks() async throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
+        source.start()
+        defer { source.stop() }
+        services.pullRequestOrder.setMyWorkPage(true)
+        let sprint = try #require(source.sprint)
+        let window = SectionViewer(.window, id: "7")
+        source.sectionVisibilityChanged(.azureDevOpsMyWork, isShowing: true, by: window)
+        #expect(!sprint.readsOutside && !sprint.showsOutside)
+
+        source.settings.myWorkShows = .sprintTasks
+        try await settle { sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+        source.settings.myWorkShows = .allTasks
+        try await settle { sprint.showsOutside }
+        #expect(sprint.readsOutside && sprint.isShowing)
+        services.links.setOn(false)
+        try await settle { !sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+        services.links.setOn(true)
+        try await settle { sprint.showsOutside }
+        source.settings.myWorkShows = .pullRequests
+        try await settle { !sprint.readsOutside }
+        #expect(!sprint.showsOutside)
+
+        source.settings.myWorkShows = .allTasks
+        try await settle { sprint.showsOutside }
+        source.sectionVisibilityChanged(.azureDevOpsMyWork, isShowing: false, by: window)
+        #expect(!sprint.readsOutside && !sprint.showsOutside)
+    }
+
+    /// Your work outside the sprint goes on the Board as the sprint's does: a task with its parent's story, a bug as its own,
+    /// with what Show Links links it to.
+    @Test func yourWorkOutsideTheSprintHasItsStoryAsTheSprintsDoes() throws {
+        let outside = DemoData.outsideWork(now: Date())
+        func workItem(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        let links: [ItemRef: [ItemRef]] = [workItem(5181): [.pullRequest(organization: "contoso", number: 4113)]]
+        let work = MyWorkFacts.work(outside: outside, linked: { links[$0] ?? [] }, pullRequest: { _ in nil }, copilotWorks: { _ in false })
+        #expect(work.map(\.ref) == outside.items.map(\.linkRef))
+        #expect(try #require(work.first { $0.ref == workItem(4990) }).story == workItem(4990))
+        let task = try #require(work.first { $0.ref == workItem(5181) })
+        #expect(task.story == workItem(5180))
+        #expect(task.pullRequests.map(\.state) == [.unknown])
+        #expect(work.first { $0.ref == workItem(4870) }?.progress == .toDo)
+    }
+
+    /// The line under the header counts tasks and bugs apart, in the singular for one, and says when there may be more.
+    @Test func theLineCountsYourTasksAndBugsOutsideTheSprint() {
+        #expect(MyWorkText.outside(tasks: 5, bugs: 1, sprint: "Sprint 42", partial: false) == "5 tasks and 1 bug of yours aren't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 1, bugs: 0, sprint: "Sprint 42", partial: false) == "1 task of yours isn't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 2, sprint: "Sprint 42", partial: true) == "At least 2 bugs of yours aren't in Sprint 42.")
+        #expect(MyWorkText.outside(tasks: 0, bugs: 0, sprint: "Sprint 42", partial: false) == "All your open tasks and bugs are in Sprint 42.")
+    }
+
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and
     /// window shares, shows one since: that pull request's card isn't marked, and while the details cover the Board, ⌘→ and
     /// ⌘← don't move it. A pull request's card clicked last, its details show and the keys move it; with none, a work item's

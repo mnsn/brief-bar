@@ -12,10 +12,13 @@ public struct SprintSnapshot: Sendable, Equatable {
     public var refreshedAt: Date?
     public var isRefreshing: Bool
     public var hasLoaded: Bool
+    /// Your open tasks and bugs outside the sprint, while My Work wants them (`SprintEngine.setReadsOutside`), as last read;
+    /// nil until a read tried.
+    public var outside: OutsideWork?
 
     public init(
         board: SprintBoard? = nil, teams: [TeamRef] = [], foundTeam: TeamRef? = nil, problem: PulseProblem? = nil,
-        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false
+        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false, outside: OutsideWork? = nil
     ) {
         self.board = board
         self.teams = teams
@@ -24,12 +27,14 @@ public struct SprintSnapshot: Sendable, Equatable {
         self.refreshedAt = refreshedAt
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
+        self.outside = outside
     }
 }
 
 /// Reads your team's current sprint: the sprint (hourly), how the team's board is set up (once), and every refresh
-/// the sprint's work items, which is two requests (plus one per 200 work items). It polls only while something
-/// shows the sprint, and backs off when Azure DevOps can't be read. Every request is a GET.
+/// the sprint's work items, which is two requests (plus one per 200 work items); while My Work wants them, your open tasks
+/// and bugs outside it too, two more (plus one per 200). It polls only while something shows the sprint, and backs off
+/// when Azure DevOps can't be read. Every request is a GET.
 public actor SprintEngine {
     public typealias ChangeHandler = @Sendable (SprintSnapshot) -> Void
 
@@ -105,6 +110,12 @@ public actor SprintEngine {
     private var isRefreshing = false
     private var failures = 0
     private var lastPublished: SprintSnapshot?
+    /// Whether each refresh reads your work outside the sprint too, for My Work (`setReadsOutside`).
+    private var readsOutside = false
+    /// Your work outside the sprint, as last read; nil until a read tried, and once the team or who's signed in changes.
+    private var outside: OutsideWork?
+    /// The ID of the team whose project it was read in.
+    private var outsideTeam: String?
 
     public init(
         client: ADOClient, configuration: Configuration, now: @escaping @Sendable () -> Date = { Date() },
@@ -152,6 +163,18 @@ public actor SprintEngine {
         waker.wake()
     }
 
+    /// Whether each refresh reads your open tasks and bugs outside the sprint too, for My Work, after the sprint. Once
+    /// they're wanted, a refresh reads them as soon as something shows the sprint, unless a read got them less than half an
+    /// interval ago; while they aren't, what was read stays, read no more.
+    public func setReadsOutside(_ reads: Bool) {
+        guard reads != readsOutside else { return }
+        readsOutside = reads
+        guard reads else { return }
+        if let readAt = outside?.readAt, outside?.problem == nil, now().timeIntervalSince(readAt) < configuration.interval / 2 { return }
+        forced = true
+        waker.wake()
+    }
+
     public func setConfiguration(_ configuration: Configuration) {
         guard configuration != self.configuration else { return }
         let old = self.configuration
@@ -167,12 +190,14 @@ public actor SprintEngine {
         if let team = configuration.team, team != old.team, team.id != board?.team.id {
             // Another team: show nothing of the last one's while its sprint loads.
             board = nil
+            outside = nil
             problem = nil
             forced = true
         } else if configuration.team == nil, old.team != nil {
             foundTeam = nil
             checkedTeams = nil
             board = nil
+            outside = nil
             forced = true
         }
         publish()
@@ -276,6 +301,7 @@ public actor SprintEngine {
         let configuration = self.configuration
         guard !configuration.organizations.isEmpty || configuration.team != nil else {
             board = nil
+            outside = nil
             return .noOrganizations
         }
         // Someone else signed in to the Azure CLI: everything read as the last one is theirs.
@@ -301,6 +327,7 @@ public actor SprintEngine {
             let teamsProblem = unread.isEmpty ? nil : PulseProblem.organizations(unread)
             guard let team = chosen else {
                 board = nil
+                outside = nil
                 // No team's sprint could be read, for want of a sign-in to their directory: as when no teams could be, it's
                 // looked at again within a minute.
                 if allTeams.isEmpty, !teamsElsewhere.isEmpty, let teamsProblem { throw TeamsUnread(problem: teamsProblem) }
@@ -308,8 +335,10 @@ public actor SprintEngine {
             }
             // Another team's board, such as one just set aside, isn't shown in its stead if this one's can't be read.
             if board?.team.id != team.id { board = nil }
+            if outsideTeam != team.id { outside = nil }
             do {
                 try await readBoard(of: team, at: date)
+                if readsOutside { try await readOutside(of: team, at: date) }
                 return teamsProblem
             } catch let error as ADOError where configuration.team == nil && PulseProblem.isOtherDirectory(error) {
                 // The team found for you is in a directory to sign in to now: its organization waits on that sign-in, and
@@ -358,6 +387,55 @@ public actor SprintEngine {
             team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes,
             portfolioTypes: setup.portfolioTypes
         )
+    }
+
+    /// Your open tasks and bugs in the team's project that its sprint's board doesn't have (`OutsideWork.yours`): Azure
+    /// DevOps' Assigned to me query, then those it lists that the board doesn't have, 200 a request, with the iteration each
+    /// is in. A read that fails keeps what was read before, saying why; but Azure DevOps asking to slow down, or the read
+    /// stopping, ends the refresh, as for the sprint.
+    private func readOutside(of team: TeamRef, at date: Date) async throws {
+        do {
+            let setup = try await boardSetup(of: team)
+            let query = try await get(
+                ADOEndpoint.assignedToMe(organization: team.organization, project: team.projectId), as: ADOPredefinedQuery.self
+            )
+            let onBoard = Set((board?.items ?? []).map(\.id))
+            var seen: Set<Int> = []
+            let ids = query.ids.filter { !onBoard.contains($0) && seen.insert($0).inserted }
+            var found: [WorkItem] = []
+            for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
+                let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
+                let list = try await get(
+                    ADOEndpoint.workItems(organization: team.organization, ids: batch, fields: ADOWorkItem.fieldNamesWithIteration),
+                    as: ADOList<ADOWorkItem>.self
+                )
+                found += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
+            }
+            // The team may have changed while this loaded.
+            guard configuration.team == nil || configuration.team?.id == team.id else { return }
+            outside = OutsideWork(
+                items: OutsideWork.yours(found, board: board, taskTypes: setup.taskTypes), sprintPath: board?.sprint.path,
+                isPartial: query.hasMore, readAt: date, taskTypes: setup.taskTypes
+            )
+            outsideTeam = team.id
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as ADOError {
+            if case .throttled = error { throw error }
+            outsideFailed(error.description, team: team)
+        } catch {
+            outsideFailed(error.localizedDescription, team: team)
+        }
+    }
+
+    /// The read of your work outside the sprint failed: what was read before stays, without what the sprint's board has
+    /// now, saying why.
+    private func outsideFailed(_ problem: String, team: TeamRef) {
+        var failed = (outside ?? OutsideWork()).without(board)
+        failed.sprintPath = board?.sprint.path
+        failed.problem = problem
+        outside = failed
+        outsideTeam = team.id
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
@@ -535,6 +613,8 @@ public actor SprintEngine {
         checkedTeams = nil
         sprints = [:]
         board = nil
+        outside = nil
+        outsideTeam = nil
     }
 
     private func identity(in organization: String) async throws -> String {
@@ -568,7 +648,7 @@ public actor SprintEngine {
     private func snapshot() -> SprintSnapshot {
         SprintSnapshot(
             board: board, teams: allTeams, foundTeam: configuration.team == nil && foundWithout.isEmpty ? foundTeam : nil, problem: problem,
-            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
+            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, outside: outside
         )
     }
 

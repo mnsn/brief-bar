@@ -152,6 +152,8 @@ public struct ADOWorkItem: Decodable, Sendable {
         public var backlogPriority: Double?
         public var changedDate: Date?
         public var tags: String?
+        /// Its iteration's path, such as `Shop\Sprint 6`: asked for only for your work items outside the sprint.
+        public var iterationPath: String?
 
         enum CodingKeys: String, CodingKey, CaseIterable {
             case title = "System.Title"
@@ -165,6 +167,7 @@ public struct ADOWorkItem: Decodable, Sendable {
             case backlogPriority = "Microsoft.VSTS.Common.BacklogPriority"
             case changedDate = "System.ChangedDate"
             case tags = "System.Tags"
+            case iterationPath = "System.IterationPath"
         }
 
         public init(from decoder: Decoder) throws {
@@ -180,11 +183,34 @@ public struct ADOWorkItem: Decodable, Sendable {
             backlogPriority = container.lenient(Double.self, forKey: .backlogPriority)
             changedDate = container.lenient(Date.self, forKey: .changedDate)
             tags = container.lenient(String.self, forKey: .tags)
+            iterationPath = container.lenient(String.self, forKey: .iterationPath)
         }
     }
 
-    /// The fields to ask for: only these come back.
-    public static let fieldNames = Fields.CodingKeys.allCases.map(\.rawValue)
+    /// The fields to ask for: only these come back. Not the iteration, which is the sprint's for the sprint's work items.
+    public static let fieldNames = Fields.CodingKeys.allCases.filter { $0 != .iterationPath }.map(\.rawValue)
+    /// The same, with the iteration each is in: for your work items outside the sprint.
+    public static let fieldNamesWithIteration = fieldNames + [Fields.CodingKeys.iterationPath.rawValue]
+}
+
+/// What one of Azure DevOps' predefined queries found, from `{org}/{project}/_apis/work/predefinedqueries/{id}`: its work
+/// items, by their IDs alone, and whether it found more than it listed. Without its results, it's no answer to read.
+public struct ADOPredefinedQuery: Decodable, Sendable {
+    public var ids: [Int]
+    /// It found more than it listed (`$top`).
+    public var hasMore: Bool
+
+    private struct Reference: Decodable, Sendable {
+        var id: Int
+    }
+
+    private enum CodingKeys: String, CodingKey { case results, hasMore }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try container.decode(LenientArray<Reference>.self, forKey: .results).elements.map(\.id).filter { $0 > 0 }
+        hasMore = container.lenient(Bool.self, forKey: .hasMore) ?? false
+    }
 }
 
 /// How a team's backlogs are set up, from `{org}/{project}/{team}/_apis/work/backlogconfiguration`: which

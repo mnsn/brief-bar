@@ -85,9 +85,10 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] on in MainActor.assumeIsolated { self?.showLinks(on) } }
             .store(in: &cancellables)
-        // What the rows show, and what's in the sprint.
+        // What the rows show, and what's in the sprint, with your work outside it while My Work shows its cards.
         store.$items.map { _ in () }
             .merge(with: sprint.$board.map { _ in () }, sprint.$isShowing.removeDuplicates().map { _ in () })
+            .merge(with: sprint.$outside.map { _ in () }, sprint.$showsOutside.removeDuplicates().map { _ in () })
             .merge(with: copilot.objectWillChange.map { _ in () }, settings.$showToReview.removeDuplicates().map { _ in () })
             .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.update() } }
@@ -309,8 +310,12 @@ final class WorkLinksStore {
         return (workItems, pullRequests)
     }
 
+    /// The sprint's work items, and while My Work shows their cards (+ All My Tasks), your open tasks and bugs outside it:
+    /// whose pull requests Show Links reads, as the sprint shows, and which it tells as it tells the sprint's.
     private var sprintItems: [WorkItem] {
-        (sprint.board?.rows ?? []).flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+        let board = sprint.board?.items ?? []
+        guard sprint.showsOutside, let outside = sprint.outside?.without(sprint.board) else { return board }
+        return board + outside.items
     }
 
     // MARK: Telling Show Links
@@ -344,7 +349,9 @@ final class WorkLinksStore {
             items.append(Self.item(pullRequest))
         }
         let rows = sprint.board?.rows ?? []
-        for workItem in sprintItems + read.workItems.values {
+        let told = sprintItems
+        let toldKeys = Set(told.map(\.key))
+        for workItem in told + read.workItems.values.filter({ !toldKeys.contains($0.key) }) {
             // A story's or a bug's tasks, in the sprint.
             let tasks = rows.first { $0.parent?.key == workItem.key }?.tasks.count ?? 0
             items.append(Self.item(workItem, tasks: tasks))

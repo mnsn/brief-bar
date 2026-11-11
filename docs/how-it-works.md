@@ -779,7 +779,8 @@ left out.
 
 - Azure DevOps (`LinkEngine`, with the pull requests' client, after each of their refreshes; every request a GET): each
   of your pull requests' work items, then every quarter of an hour; the sprint's work items with their relations, while
-  the sprint is on screen; and what the linked work items and pull requests that no list shows are, so their rows can
+  the sprint is on screen, and, with My Work's + All My Tasks, your open tasks and bugs outside it with them; and what the
+  linked work items and pull requests that no list shows are, so their rows can
   say it. When someone else signs in to the Azure CLI, all it read goes, with what was told and summed up of it, and it
   reads again from the start, as them. The [table below](#where-the-data-comes-from-1) has the requests.
 - Copilot: the same database, read-only, in a query of its own, which an app without those columns doesn't answer:
@@ -1237,7 +1238,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
-| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
+| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
@@ -1785,15 +1786,22 @@ opens Pull Requests by status, and a pull request's mission in its details shows
 (`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
 no lanes.
 
-**Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, and **+ Sprint Tasks**, your sprint work on it
-too: `SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done. `MyWorkFacts.work` takes,
-for each, its story, whether it has started, the pull requests [Show Links](#links) links it to, and whether a task you
-sent to Copilot works on it now. A linked pull request is what your lists have of it, else what Show Links read of it
-(`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged; abandoned; or, unread or gone,
-can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is read; Azure DevOps' links
-from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only Azure DevOps' own), so
-that work stays in To start. Work items and pull requests go together only through those links, never by their states:
-with Show Links off, + Sprint Tasks shows none of your sprint work, and offers to turn it on.
+**Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, **+ Sprint Tasks**, your sprint work on it
+too, and **+ All My Tasks**, your work outside the sprint as well. Your sprint work is `SprintBoard.myWork`, your tasks
+and your stories and bugs without tasks that aren't done. Your work outside the sprint (`OutsideWork`) is your open tasks
+and bugs in the sprint's team's project that its board doesn't have: in older sprints, later ones, iterations outside the
+team's sprints, or none. Azure DevOps' Assigned to me query lists what's assigned to you there, up to 500, by ID only;
+`OutsideWork.yours` keeps those of the team's task types, such as Task, and bugs, not resolved, done or removed, as their
+states' categories say, leaves out a bug that's the parent of a task of yours, as the sprint leaves out a story with tasks,
+and orders them by iteration, the latest name first and those in none last. `MyWorkFacts.work` takes, for each, its story
+(for one outside the sprint, its parent for a task, itself for a bug), whether it has started, the pull requests
+[Show Links](#links) links it to, and whether a task you sent to Copilot works on it now. A linked pull request is what
+your lists have of it, else what Show Links read of it (`WorkLinksStore.linkedPullRequest`): open, someone else's by their
+first name; merged; abandoned; or, unread or gone, can't be read. One on GitHub, linked in BriefBar, counts as open, as
+nothing more of it is read; Azure DevOps' links from a work item to a GitHub pull request aren't read
+(`ArtifactLink.pullRequest` takes only Azure DevOps' own), so that work stays in To start. Work items and pull requests go
+together only through those links, never by their states: with Show Links off, + Sprint Tasks and + All My Tasks show
+none of your work, and offer to turn it on.
 
 `PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
 agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
@@ -1804,15 +1812,27 @@ can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task
 started, "Active · no pull request yet". An abandoned pull request counts as none, its card saying so. A resolved one
 without a pull request on the board has no card yet. Its card goes in its story's mission's lane; else, for a story in
 the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the missions'; else in that of those in no
-mission; with Lanes: None, in the one lane. The columns, their widths and their counts come from one list
+mission; with Lanes: None, in the one lane. Your work outside the sprint comes after the sprint's in each column, even
+with no sprint going on, and its card says where it is (`OutsideWork.place`): its iteration's name, such as "Sprint 38",
+or "No sprint" at the project's root; one in the sprint's own iteration that its board doesn't have, under another team's
+area, says nothing. The columns, their widths and their counts come from one list
 (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
 and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
 card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
 
-While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
-screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to
-its work items, as Show Links reads them for the Sprint page. Each window shows it as a viewer of its own
-(`myWork.window.<id>`), apart from the Sprint page in the same window. Nothing else is read for it.
+With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
+"5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
+with + Sprint Tasks offering **Show Them**, + All My Tasks; or says "All your open tasks and bugs are in Sprint 42";
+"Looking for…" until the first read, and why when one fails, keeping what was read before.
+
+While a window shows My Work with + Sprint Tasks or + All My Tasks and Show Links on, the sprint is read as while its
+Sprint page is on screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull
+requests linked to its work items, as Show Links reads them for the Sprint page. So is your work outside the sprint, with
+each of the sprint's refreshes, after it (`SprintEngine.setReadsOutside`): the query in the team's project, then those it
+lists that the sprint's board doesn't have, 200 a request, with the iteration each is in, all GETs, kept in memory only.
+Only with + All My Tasks are the pull requests linked to them read too, with the sprint's
+(`SprintStore.showsOutside`). Each window shows it as a viewer of its own (`myWork.window.<id>`), apart from the Sprint
+page in the same window. Nothing else is read for it.
 
 ### A pull request's details
 
@@ -2729,7 +2749,7 @@ the database instead, which needs no access. How the access survives rebuilds an
 The Sprint and Pipelines sections read Azure DevOps only while something shows them on screen: a
 window's page while the window is open, not minimized and not hidden behind other windows; a widget
 that isn't covered by windows; a menu-bar item that shows them, or its list. [My Work](#my-work) shows
-the sprint too, while it shows + Sprint Tasks with Show Links on. Each of those tells the
+the sprint too, while it shows + Sprint Tasks or + All My Tasks with Show Links on. Each of those tells the
 source when it starts and stops showing a section (`sectionVisibilityChanged`). Then they refresh as
 often as the pull requests (the **Refresh** setting), and right away when they come on screen with data
 more than half a refresh old. A refresh under way when they go off screen stops before its next request.
@@ -2744,6 +2764,8 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each state's category |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
+| `{project}/_apis/work/predefinedqueries/AssignedToMe?includeCompleted=false&$top=500` | every refresh, only while My Work shows + Sprint Tasks or + All My Tasks | the work items assigned to you in the team's project, by ID, in any sprint or none, done ones left out |
+| `_apis/wit/workitems?ids=…&fields=…` | with it, 200 work items a request, for those the sprint's board doesn't have | the same, with the iteration each is in |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint shows it changed while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
 | `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |

@@ -10,10 +10,35 @@ enum MyWorkShows: String, CaseIterable, Sendable {
     case pullRequests
     /// Your sprint work with them: + Sprint Tasks.
     case sprintTasks
+    /// Your sprint work, and your open tasks and bugs outside the sprint, with them: + All My Tasks.
+    case allTasks
+
+    /// Whether it shows your work: the sprint's, and with + All My Tasks, yours outside it.
+    var showsWork: Bool {
+        self != .pullRequests
+    }
+
+    /// What it wants of your open tasks and bugs outside the sprint: how many there are, for + Sprint Tasks' line, or their
+    /// cards too.
+    var outside: OutsideWanted? {
+        switch self {
+        case .pullRequests: nil
+        case .sprintTasks: .count
+        case .allTasks: .cards
+        }
+    }
+}
+
+/// What My Work wants of your open tasks and bugs outside the sprint, which are read only while it wants either: how many
+/// there are, for its line; or their cards too, which have Show Links read their pull requests.
+enum OutsideWanted: Sendable {
+    case count
+    case cards
 }
 
 /// Your sprint work as My Work's Board takes it (`SprintWork`), from what BriefBar reads already: the sprint, Show Links'
-/// links, your lists and the linked pull requests they don't have, and the tasks you sent to Copilot.
+/// links, your lists and the linked pull requests they don't have, and the tasks you sent to Copilot; and, with + All My
+/// Tasks, your open tasks and bugs outside the sprint, as it reads them for My Work, the same way.
 enum MyWorkFacts {
     /// What's known of an Azure DevOps pull request: as your lists have it, with whether it's yours, else as Show Links read
     /// it.
@@ -43,18 +68,35 @@ enum MyWorkFacts {
             } else {
                 item.parentId.map { .workItem(organization: item.organization, id: $0) }
             }
-            let progress: SprintWork.Progress = switch item.category {
-            case .proposed: .toDo
-            case .resolved: .resolved
-            default: .inProgress
-            }
-            let pullRequests = linked(item.linkRef).filter(\.kind.isPullRequest).map { ref in
-                LinkedPullRequest(ref: ref, state: state(of: ref, pullRequest: pullRequest))
-            }
-            return SprintWork(
-                ref: item.linkRef, story: story, progress: progress, pullRequests: pullRequests, copilotWorks: copilotWorks(item)
-            )
+            return work(item, story: story, linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
         }
+    }
+
+    /// Your open tasks and bugs outside the sprint (`OutsideWork`), in their order, as the sprint's: each with the story it's
+    /// for, its parent for a task and itself for a bug, how far along it is, the pull requests Show Links links it to, and
+    /// whether a task you sent to Copilot works on it.
+    static func work(
+        outside: OutsideWork, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?, copilotWorks: (WorkItem) -> Bool
+    ) -> [SprintWork] {
+        outside.items.map { item in
+            work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+        }
+    }
+
+    /// One of your work items, for its story.
+    private static func work(
+        _ item: WorkItem, story: ItemRef?, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?,
+        copilotWorks: (WorkItem) -> Bool
+    ) -> SprintWork {
+        let progress: SprintWork.Progress = switch item.category {
+        case .proposed: .toDo
+        case .resolved: .resolved
+        default: .inProgress
+        }
+        let pullRequests = linked(item.linkRef).filter(\.kind.isPullRequest).map { ref in
+            LinkedPullRequest(ref: ref, state: state(of: ref, pullRequest: pullRequest))
+        }
+        return SprintWork(ref: item.linkRef, story: story, progress: progress, pullRequests: pullRequests, copilotWorks: copilotWorks(item))
     }
 
     /// What a linked pull request is, for a work item whose pull requests aren't on the board: one on GitHub, linked in
@@ -103,7 +145,8 @@ struct MyWorkPage: View {
 
 extension MyWorkPage {
     /// My Work's pictures, while Pull Request Order is on: with + Sprint Tasks, wide enough for every column, in a narrow
-    /// window, and with Lanes: None; with Pull Requests; and what + Sprint Tasks says while Show Links is off.
+    /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; and what + Sprint Tasks says while Show Links
+    /// is off.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?, environment: (AnyView) -> AnyView
     ) -> [(name: String, view: AnyView)] {
@@ -112,6 +155,7 @@ extension MyWorkPage {
             ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_400, height: 2_050)),
             ("my-work-sprint-tasks-narrow", .sprintTasks, .missions, CGSize(width: 560, height: 2_250)),
             ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_400, height: 950)),
+            ("my-work-all-tasks", .allTasks, .missions, CGSize(width: 1_400, height: 2_150)),
             ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250)),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
@@ -182,14 +226,22 @@ private struct MyWorkContent: View {
     /// The work item's details show rather than a pull request's: you clicked a work item's card last.
     @LocalState private var showsWorkItem = false
 
-    /// What the Board shows: your pull requests, or your sprint work with them.
+    /// What the Board shows: your pull requests, or your sprint work with them, and your work outside the sprint too.
     private var shown: MyWorkShows {
         shows ?? settings.myWorkShows
     }
 
-    /// The sprint's work goes on the Board: + Sprint Tasks, with Show Links on, which is how it goes with pull requests.
+    /// The sprint's work goes on the Board: + Sprint Tasks or + All My Tasks, with Show Links on, which is how it goes with
+    /// pull requests.
     private var showsWork: Bool {
-        shown == .sprintTasks && links.isOn
+        shown.showsWork && links.isOn
+    }
+
+    /// Your open tasks and bugs outside the sprint, as last read, without what the sprint's board has now: on the Board with
+    /// + All My Tasks, and counted by the line under the header with + Sprint Tasks too. Nil while it shows neither.
+    private var outside: OutsideWork? {
+        guard showsWork else { return nil }
+        return sprint.outside?.without(sprint.board)
     }
 
     /// Whose details show, a work item's or a pull request's.
@@ -204,9 +256,10 @@ private struct MyWorkContent: View {
                 SegmentedPicker("Show", selection: Binding(get: { shown }, set: { settings.myWorkShows = $0 }), segments: [
                     .init(MyWorkShows.pullRequests, title: "Pull Requests"),
                     .init(MyWorkShows.sprintTasks, title: "+ Sprint Tasks"),
+                    .init(MyWorkShows.allTasks, title: "+ All My Tasks"),
                 ])
                 .fixedSize()
-                .help("+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start. It needs Show Links.")
+                .help(MyWorkText.showHelp)
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
@@ -245,27 +298,35 @@ private struct MyWorkContent: View {
     // MARK: The Board
 
     /// The Board, Up Next and each mission's next steps, worked out once each time the page draws, with your sprint work
-    /// while it shows it. Nil while Pull Request Order is off, as My Work is then.
+    /// while it shows it, and your work outside the sprint with + All My Tasks, after the sprint's, even with no sprint
+    /// going on. Nil while Pull Request Order is off, as My Work is then.
     private var board: PullRequestBoard? {
         guard ordering.isOn else { return nil }
         let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
-        guard showsWork, let sprintBoard = sprint.board else { return board }
+        guard showsWork else { return board }
+        let sprintBoard = sprint.board
+        let outside = shown == .allTasks ? self.outside : nil
+        guard sprintBoard != nil || outside?.items.isEmpty == false else { return board }
         return board.withWork(
-            work(in: sprintBoard), missions: PullRequestsByMission.missions(ordering.missions),
-            stories: sprintBoard.rows.compactMap(\.parent?.linkRef)
+            work(in: sprintBoard, outside: outside), missions: PullRequestsByMission.missions(ordering.missions),
+            stories: sprintBoard?.rows.compactMap(\.parent?.linkRef) ?? []
         )
     }
 
-    /// Your sprint work, as Show Links links it to pull requests.
-    private func work(in board: SprintBoard) -> [SprintWork] {
-        MyWorkFacts.work(
-            in: board, linked: { ref in links.connections(of: ref).map(\.item.ref) },
-            pullRequest: { key in
-                if let record = store.record(for: key) { return (record.pullRequest, record.role == .author) }
-                return linkedPullRequest(key).map { ($0, !board.me.isEmpty && $0.author.id == board.me.lowercased()) }
-            },
-            copilotWorks: { item in copilot.isOn && copilot.working(on: item) != nil }
-        )
+    /// Your sprint work, then your work outside it, as Show Links links them to pull requests.
+    private func work(in board: SprintBoard?, outside: OutsideWork?) -> [SprintWork] {
+        let me = board?.me ?? ""
+        let linked = { (ref: ItemRef) in links.connections(of: ref).map(\.item.ref) }
+        let pullRequest = { (key: PRKey) -> MyWorkFacts.KnownPullRequest? in
+            if let record = store.record(for: key) { return (record.pullRequest, record.role == .author) }
+            return linkedPullRequest(key).map { ($0, !me.isEmpty && $0.author.id == me.lowercased()) }
+        }
+        let copilotWorks = { (item: WorkItem) in copilot.isOn && copilot.working(on: item) != nil }
+        let sprintWork = board.map { MyWorkFacts.work(in: $0, linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks) } ?? []
+        let outsideWork = outside.map {
+            MyWorkFacts.work(outside: $0, linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+        } ?? []
+        return sprintWork + outsideWork
     }
 
     private var content: some View {
@@ -279,8 +340,8 @@ private struct MyWorkContent: View {
                         ordering.revealedColumn = stage
                     }
                 }
-                if shown == .sprintTasks {
-                    sprintLines
+                if shown.showsWork {
+                    workLines
                 }
                 if let board {
                     PullRequestsByMission(
@@ -301,7 +362,7 @@ private struct MyWorkContent: View {
     /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work.
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard, board: PullRequestBoard) -> BoardCardContent {
         let work = (board.workOfPullRequests[card.ref] ?? []).map { ref in
-            sprintItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
+            workItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
         }
         return PullRequestBoardCard.content(item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work) {
             select(item)
@@ -312,10 +373,10 @@ private struct MyWorkContent: View {
 
     private var workContent: BoardWorkContent {
         BoardWorkContent(
-            card: { task in sprintItem(task.ref).map { taskCard(task, item: $0) } },
+            card: { task in workItem(task.ref).map { taskCard(task, item: $0) } },
             story: { ref in AnyView(storyHeader(ref)) },
             isSelected: { ref in shownDetails.workItem?.linkRef == ref },
-            select: { ref in if let item = sprintItem(ref) { showDetails(of: item) } }
+            select: { ref in if let item = workItem(ref) { showDetails(of: item) } }
         )
     }
 
@@ -324,10 +385,16 @@ private struct MyWorkContent: View {
         sprint.board?.rows.lazy.flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }.first { $0.linkRef == ref }
     }
 
-    /// A work item's card: its menu as on the Sprint page.
+    /// A work item in the sprint, or one of yours outside it while it shows them.
+    private func workItem(_ ref: ItemRef) -> WorkItem? {
+        sprintItem(ref) ?? outside?.items.first { $0.linkRef == ref }
+    }
+
+    /// A work item's card: its menu as on the Sprint page. One outside the sprint says where it is.
     private func taskCard(_ task: BoardTask, item: WorkItem) -> BoardCardContent {
-        BoardCardContent(
-            view: AnyView(MyWorkTaskCard(item: item, task: task)),
+        let place = outside?.place(of: item)
+        return BoardCardContent(
+            view: AnyView(MyWorkTaskCard(item: item, task: task, place: place)),
             menu: AnyView(Group {
                 Button("Show Details") { showDetails(of: item) }
                 Button("Open in Azure DevOps") { sprint.open(item) }
@@ -335,7 +402,7 @@ private struct MyWorkContent: View {
                 LinkMenuItems(item.linkRef)
             }),
             label: "\(item.type) \(item.id) \(item.title)",
-            details: [BoardText.why(task, state: item.state, type: item.type)]
+            details: [BoardText.why(task, state: item.state, type: item.type)] + (place.map { [$0] } ?? [])
         )
     }
 
@@ -365,15 +432,20 @@ private struct MyWorkContent: View {
         .padding(.horizontal, 4)
     }
 
-    /// What + Sprint Tasks needs, or what's in the way: Show Links, which puts work items with their pull requests; and the
-    /// sprint, while it's read, when it can't be, above the cards read before, as on the Sprint page, or when there's none.
+    /// What + Sprint Tasks and + All My Tasks need, or what's in the way: Show Links, which puts work items with their pull
+    /// requests; and the sprint, while it's read, when it can't be, above the cards read before, as on the Sprint page, or
+    /// when there's none. Then how many of your tasks and bugs aren't in the sprint.
     @ViewBuilder
-    private var sprintLines: some View {
+    private var workLines: some View {
         if !links.isOn {
             SprintTasksNeedShowLinks(links: links)
         } else if let problem = sprint.problem {
             ProblemView(problem: problem) { store.signIn(for: problem) }
-        } else if sprint.board == nil {
+        } else if let board = sprint.board {
+            OutsideSprintLine(outside: outside, sprint: board.sprint.name, showsThem: shown == .allTasks) {
+                settings.myWorkShows = .allTasks
+            }
+        } else {
             HStack(spacing: 8) {
                 if sprint.isRefreshing || !sprint.hasLoaded {
                     ProgressView().controlSize(.small)
@@ -441,14 +513,14 @@ private struct MyWorkContent: View {
     }
 }
 
-/// + Sprint Tasks while Show Links is off: BriefBar puts your sprint work with its pull requests only through their links,
-/// never by their states, so it shows none of it until then. Turn On… shows its setting.
+/// + Sprint Tasks or + All My Tasks while Show Links is off: BriefBar puts your work with its pull requests only through
+/// their links, never by their states, so it shows none of it until then. Turn On… shows its setting.
 private struct SprintTasksNeedShowLinks: View {
     @ObservedObject var links: Links
 
     @LocalState private var showsSetting = false
 
-    static let text = "Your sprint tasks show here with Show Links: BriefBar puts each with its pull requests only through their links."
+    static let text = "Your tasks show here with Show Links: BriefBar puts each with its pull requests only through their links."
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -471,11 +543,88 @@ private struct SprintTasksNeedShowLinks: View {
     }
 }
 
-/// A work item's card on My Work's Board: its type and number, its title, on two lines at most, why it's where it is, and
-/// the task you sent to Copilot on it.
+/// How many of your open tasks and bugs aren't in the sprint, under My Work's header with + Sprint Tasks or + All My Tasks, so
+/// that one left in an older sprint, or in none, is noticed: with + Sprint Tasks, Show Them shows them, with + All My Tasks,
+/// whose cards say where each is. While they're read for the first time, it says so; when they can't be, why.
+private struct OutsideSprintLine: View {
+    let outside: OutsideWork?
+    /// The sprint's name.
+    let sprint: String
+    /// + All My Tasks shows them on the Board.
+    let showsThem: Bool
+    /// Shows them: + All My Tasks.
+    let show: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let outside, let problem = outside.problem {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(MyWorkText.outsideProblem(problem, sprint: sprint))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let outside, outside.readAt != nil {
+                Image(systemName: outside.count == 0 ? "checkmark.circle" : "calendar")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(MyWorkText.outside(
+                    tasks: outside.count - outside.bugCount, bugs: outside.bugCount, sprint: sprint, partial: outside.isPartial
+                ))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                if !showsThem, outside.count > 0 {
+                    Button("Show Them", action: show)
+                        .buttonStyle(.borderless)
+                        .help("Show them on the Board: + All My Tasks")
+                }
+            } else {
+                ProgressView().controlSize(.small)
+                Text("Looking for your tasks and bugs outside \(sprint)…")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(size: 12)
+        .padding(.horizontal, 4)
+    }
+}
+
+/// What My Work says of your work outside the sprint.
+enum MyWorkText {
+    /// Show's tooltip.
+    static let showHelp = "+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start. + All My Tasks: your "
+        + "open tasks and bugs outside the sprint too, each saying where it is. They need Show Links."
+
+    /// How many of your open tasks and bugs aren't in the sprint, by their types: "5 tasks and 1 bug of yours aren't in Sprint
+    /// 42.", "1 task of yours isn't in Sprint 42.", "All your open tasks and bugs are in Sprint 42."; "At least" before a
+    /// count when Azure DevOps listed only some of what's assigned to you.
+    static func outside(tasks: Int, bugs: Int, sprint: String, partial: Bool) -> String {
+        guard tasks + bugs > 0 else {
+            return partial
+                ? "None of the work items Azure DevOps listed as yours is outside \(sprint): it lists 500 at most."
+                : "All your open tasks and bugs are in \(sprint)."
+        }
+        let counts = [(tasks, "task", "tasks"), (bugs, "bug", "bugs")].filter { $0.0 > 0 }.map { count, one, many in
+            "\(count) \(count == 1 ? one : many)"
+        }
+        let verb = tasks + bugs == 1 ? "isn't" : "aren't"
+        return "\(partial ? "At least " : "")\(counts.joined(separator: " and ")) of yours \(verb) in \(sprint)."
+    }
+
+    /// Why your work outside the sprint couldn't be read: "Couldn't look for your tasks and bugs outside Sprint 42. Azure
+    /// DevOps answered with HTTP 500."
+    static func outsideProblem(_ problem: String, sprint: String) -> String {
+        "Couldn't look for your tasks and bugs outside \(sprint). \(problem)"
+    }
+}
+
+/// A work item's card on My Work's Board: its type and number, its title, on two lines at most, why it's where it is, where it
+/// is when it's outside the sprint, and the task you sent to Copilot on it.
 struct MyWorkTaskCard: View {
     let item: WorkItem
     let task: BoardTask
+    /// Its iteration, such as "Sprint 38", or "No sprint", for one of yours outside the sprint (`OutsideWork.place`).
+    var place: String? = nil
 
     @EnvironmentObject private var copilot: CopilotTasksStore
 
@@ -498,6 +647,15 @@ struct MyWorkTaskCard: View {
                 .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let place {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "calendar")
+                    Text(place)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(size: 11.5)
+                .foregroundStyle(.secondary)
+            }
             // The send that works on it, which its why line names, else the latest.
             if copilot.isOn, let entry = copilot.working(on: item) ?? copilot.latest(for: item) {
                 CopilotRunBadge(entry: entry)
