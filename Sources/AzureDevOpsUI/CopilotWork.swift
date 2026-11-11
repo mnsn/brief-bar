@@ -783,9 +783,16 @@ extension CopilotTasksStore {
     /// What a fix left in its session without pushing it, for a later push from there to take along, though it isn't ready
     /// to push on its own (`readyFixes`): of one that was to push and reply and finished without pushing
     /// (`CopilotWork.shipsUnpushed`), what it changed; of one that failed or was stopped, what it changed first, if anything
-    /// (`CopilotWork.endedPartway`), until a later push takes it along (`pushCarrying`).
+    /// (`CopilotWork.endedPartway`), until a later push took it along (`pushedAlong`).
     private func leftUnpushed(_ work: CopilotWork, of key: PRKey) -> Bool {
-        work.shipsUnpushed || (work.endedPartway && pushCarrying(work, of: key) == nil)
+        work.shipsUnpushed || (work.endedPartway && !pushedAlong(work, of: key))
+    }
+
+    /// Whether a push took a fix along, as `pushCarrying` has it, for certain: one that finished, which pushed it, not one
+    /// under way, or waiting its turn, which may not, as the fix's line has it, since what the fix changed stays in its
+    /// session, and in a fork made of that, for any push from there, until then.
+    private func pushedAlong(_ fix: CopilotWork, of key: PRKey) -> Bool {
+        pushCarrying(fix, of: key).map(Self.pushed) == true
     }
 
     /// The fixes of a pull request's threads, builds and conflicts that are done and not pushed, by the session they're in,
@@ -813,11 +820,12 @@ extension CopilotTasksStore {
     /// under way there changed by now, as a fork of a session under way copies it. Those of the session, and of those it
     /// has the changes of (`lineage`), by the latest fix of each among theirs, as what one changed in a session stays
     /// there, though another took it on since, and the bar at the foot of the details has it there instead; not one that's
-    /// pushed, and not one still waiting for its turn, or for you to paste it, which changed nothing yet, nor a line you
-    /// cleared. Wherever it goes, what may be committed there and not pushed (`mayBeCommitted`), which is all that goes where
-    /// only what's committed does, as in a fork the Copilot CLI made, or makes, of one of BriefBar's tasks: of the ready
-    /// ones, only the conflicts' resolution for sure. It names what may go rather than leave it out, since git doesn't tell
-    /// BriefBar what each fix committed. Nil when that's nothing.
+    /// pushed, by itself or by a push that took it along and finished (`pushedAlong`), and not one still waiting for its
+    /// turn, or for you to paste it, which changed nothing yet, nor a line you cleared. Wherever it goes, what may be
+    /// committed there and not pushed (`mayBeCommitted`), which is all that goes where only what's committed does, as in a
+    /// fork the Copilot CLI made, or makes, of one of BriefBar's tasks: of the ready ones, only the conflicts' resolution
+    /// for sure. It names what may go rather than leave it out, since git doesn't tell BriefBar what each fix committed.
+    /// Nil when that's nothing.
     func alsoPushes(
         _ key: PRKey, among parts: [PullRequestPart], in session: SessionChoice, forkedWithTheCLI: Bool, taking: [PullRequestPart]
     ) -> String? {
@@ -837,14 +845,10 @@ extension CopilotTasksStore {
         var unpushed: [PullRequestPart] = []
         for part in parts where mode != .demo || !clearedInDemo.contains(PartKey(pullRequest: key, part: part)) {
             // The latest fix of it there, if one's left of those taken on there: one another took on since may be all that's
-            // kept of it, and what one there committed may be all that's left of it there (`mayBeCommitted`). Past a push
-            // that takes it along (`pushCarrying`), unless that one's still waiting for its turn, which pushed nothing yet.
-            let work = latestAttempt(on: part, of: key, for: [.fix, .pushAndReply], where: there).map { work in
-                guard work.waitsToBePushed || work.shipsUnpushed, let push = pushCarrying(work, of: key) else { return work }
-                if case .waiting = push.state { return work }
-                return push
-            }
-            if let work, Self.pushed(work) { continue }
+            // kept of it, and what one there committed may be all that's left of it there (`mayBeCommitted`). Not one that's
+            // pushed, or that a push took along for certain (`pushedAlong`).
+            let work = latestAttempt(on: part, of: key, for: [.fix, .pushAndReply], where: there)
+            if let work, Self.pushed(work) || ((work.waitsToBePushed || work.shipsUnpushed) && pushedAlong(work, of: key)) { continue }
             // What's changed there goes as it is, done or not, as a fork of a session under way copies it.
             if let work, let hop = lineage.first(where: { $0.session == work.session }), !forkedWithTheCLI, !hop.committedOnly {
                 if work.waitsToBePushed {

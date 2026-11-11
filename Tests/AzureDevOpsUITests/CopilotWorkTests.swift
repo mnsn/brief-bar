@@ -3202,6 +3202,21 @@ import Testing
         let asked = try #require(SentPrompt(about(.explain, threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
         settings.copilotSentPrompts = [asked, failed]
         #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == named)
+        // A push under way in another fork of the session, which takes a fix of 13 there along, hasn't pushed it yet, so it
+        // goes from the session too: done, or stopped, once it changed something.
+        let pushingInFork = try #require(SentPrompt(
+            about(.pushAndReply, threads: [12]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(60), copied: false
+        ))
+        store.promptTurns[pushingInFork.id] = SessionTurn(phase: .working(step: nil), since: now)
+        for (ended, expected) in [
+            (RunPhase.finished, "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, without replying on that comment."),
+            (.stopped, "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment."),
+        ] {
+            let fixedThere = try #require(SentPrompt(about(threads: [13]), session: session, sentAt: first, copied: false, ended: ended))
+            settings.copilotSentPrompts = [fixedThere, pushingInFork]
+            if ended == .finished { #expect(store.work(on: .thread(13), of: key)?.state == .working(nil)) }
+            #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == expected)
+        }
     }
 
     /// A fix in a fork of the pull request's session works on the side: the pull request's session stays the one it was, as

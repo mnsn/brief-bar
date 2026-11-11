@@ -3336,12 +3336,14 @@ the tests pass, checks what it would push and where, and pushes the commit it ch
 thread alone and resolves it. Like Push & Reply, it commits all the session changed, so the session's other fixes that
 you haven't pushed go too, without a reply: the box's help says so, and the composer's note names those ready where it
 goes, and what other fixes there changed and didn't push, which aren't ready to push on their own: one sent to push and
-reply that didn't, and one that failed or was stopped, if it changed anything first, until a later push takes it along
+reply that didn't, and one that failed or was stopped, if it changed anything first, until a later push took it along
 (`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`), and what one still under way there changed by then, as a
 fork of a session under way copies it. It goes by the latest fix of each there, as what one changed there stays there
 though another session took it on since, which the bar at the foot of the details then has it in, but not one still
-waiting for its turn, queued or copied for you to paste, which changed nothing yet, nor a push still waiting to take it
-along, which pushed nothing yet; and it leaves out what's pushed. In a fork BriefBar made, it also names what the fork
+waiting for its turn, queued or copied for you to paste, which changed nothing yet; and it leaves out what's pushed, by
+the fix itself, or by a push that took it along and finished, not one still under way, or waiting its turn, which its
+line says pushes it, since what the fix changed stays in its session, and in a fork made of that, until such a push is
+done (`CopilotTasksStore.pushedAlong`). In a fork BriefBar made, it also names what the fork
 has of the session it forked: what was taken on there
 before the fork was made, and so on for a fork of a fork, but not past one that pushed after it was made, which pushed
 all it had (`CopilotTasksStore.lineage`, `CopilotTasksStore.forkOrigin`). Wherever it goes, it names what may be
