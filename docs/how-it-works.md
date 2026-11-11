@@ -255,7 +255,9 @@ their settings and positions (`WidgetMigration`).
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
 each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
 ([below](#the-overview)), and the first of them has the [Notifications page](#the-notifications-page)
-after it, while that's on and lists something. A section's page is its list, filling the window (`PanelStyle.page`), the
+after it, while that's on and lists something. A source can give a section companion pages, which aren't sections: they
+show only in windows, right before it, wherever it shows, with ⌘ numbers but no count, as [My Work](#my-work) does
+(`BriefBarSource.companionPages`, `WindowPages.companions`). A section's page is its list, filling the window (`PanelStyle.page`), the
 whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
 Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
 of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
@@ -1802,6 +1804,49 @@ scrolled down the board, as when the details open beside it. The Board, its lane
 kept as choices only: `order.view`, which GitHub's page reads as List where it's the Board, without saving that,
 `order.boardLanes` and `order.upNextFolded`.
 
+#### My Work
+
+**My Work Page (preview)**, off by default (`order.myWorkPage`), takes Up Next and the Board from Azure DevOps' Pull
+Requests page while Pull Request Order is on too (`PullRequestOrder.showsMyWork`). My Work isn't a section, which would
+be in the menu bar, the widgets and Settings › Windows too: it's a companion page of Azure DevOps' Pull Requests
+section (`AzureDevOpsSource.companionPages`), so it's in each window that has that page, right before it, and goes as
+the setting does, the window going to Pull Requests if it showed My Work. Its segment counts nothing, so nothing counts
+twice. `AppModel.section(ofPage:)` takes it to its section, for `openWindow` and `hasPage`. Pull Requests then offers
+List and Map (`PullRequestOrder.views(for:)`), showing List where you chose the Board without saving that, as GitHub's
+page does, and no Up Next. On My Work, **2 more ›** scrolls the Board to its column, the Board's **Show By Status**
+opens Pull Requests by status, and a pull request's mission in its details shows its lane
+(`PullRequestOrder.revealOnBoard`); a row's capsule on Pull Requests shows its mission in List or on the Map, and changes
+no lanes.
+
+**Show** (`ado.myWorkShows`) offers Pull Requests, the Board as it was, and **+ Sprint Tasks**, your sprint work on it
+too: `SprintBoard.myWork`, your tasks and your stories and bugs without tasks that aren't done. `MyWorkFacts.work` takes,
+for each, its story, whether it has started, the pull requests [Show Links](#links) links it to, and whether a task you
+sent to Copilot works on it now. A linked pull request is what your lists have of it, else what Show Links read of it
+(`WorkLinksStore.linkedPullRequest`): open, someone else's by their first name; merged; abandoned; or, unread or gone,
+can't be read. One on GitHub, linked in BriefBar, counts as open, as nothing more of it is read; Azure DevOps' links
+from a work item to a GitHub pull request aren't read (`ArtifactLink.pullRequest` takes only Azure DevOps' own), so
+that work stays in To start. Work items and pull requests go together only through those links, never by their states:
+with Show Links off, + Sprint Tasks shows none of your sprint work, and offers to turn it on.
+
+`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
+agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
+names it, resolved too (`workOfPullRequests`). One without, a `BoardTask`, goes in **To start**, a column before In
+progress (`BoardColumn.toStart`), while it hasn't started and no Copilot task works on it; else in In progress, after
+its pull requests: with a pull request that isn't on the board, the first of an open one, one that merged, one that
+can't be read, saying what it is, such as "Sam's !4120" or "!4120 merged · task still open"; with a Copilot task; or
+started, "Active · no pull request yet". An abandoned pull request counts as none, its card saying so. A resolved one
+without a pull request on the board has no card yet. Its card goes in its story's mission's lane; else, for a story in
+the sprint, in a lane of the story's own (`BoardLane.Kind.story`), after the missions'; else in that of those in no
+mission; with Lanes: None, in the one lane. The columns, their widths and their counts come from one list
+(`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull request's does,
+and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's
+card dropped on To start, are refused, saying why (`BoardText.workStays`, `toStartTakesNoPullRequest`).
+
+While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
+screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to
+its work items, as Show Links reads them for the Sprint page. Each window shows it as a viewer of its own
+(`myWork.window.<id>`), apart from the Sprint page in the same window. Nothing else is read for it.
+
 ### A pull request's details
 
 A click on a pull request on the window's page shows its details beside the list, or over it when the page is narrower
@@ -2715,7 +2760,8 @@ the database instead, which needs no access. How the access survives rebuilds an
 
 The Sprint and Pipelines sections read Azure DevOps only while something shows them on screen: a
 window's page while the window is open, not minimized and not hidden behind other windows; a widget
-that isn't covered by windows; a menu-bar item that shows them, or its list. Each of those tells the
+that isn't covered by windows; a menu-bar item that shows them, or its list. [My Work](#my-work) shows
+the sprint too, while it shows + Sprint Tasks with Show Links on. Each of those tells the
 source when it starts and stops showing a section (`sectionVisibilityChanged`). Then they refresh as
 often as the pull requests (the **Refresh** setting), and right away when they come on screen with data
 more than half a refresh old. A refresh under way when they go off screen stops before its next request.
@@ -2925,7 +2971,8 @@ another, nothing goes, and BriefBar says to open the window again, for a prompt 
 has read, the list reads the pull request again then, rather than at its next refresh, so that the window, opened again,
 names that one (`CopilotTasksStore.rereadPullRequest`, `PRStore.reread(_:)`). Nor does one go once the list no longer
 has the pull request open, as a comment's composer doesn't: the window checks as you send it, and the list is asked
-again, as for a retarget, until the prompt is sent or copied (`CopilotTasksStore.closedProblem`). Nor does a
+again, as for a retarget, until the prompt is sent or copied (`CopilotTasksStore.closedProblem`,
+`CopilotTasksStore.windowProblem`). Nor does a
 Push & Reply go to one of the
 app's sessions while Copilot runs a turn in it, or another of the app's sessions runs one in the checkout it works in,
 as the app's database says (`CopilotTasksStore.turnProblem`): the prompt would wait for that turn, whose changes, a
@@ -3370,14 +3417,43 @@ changed, in the same turn, with Push & Reply's own steps (`PullRequestPrompt.pus
 the tests pass, checks what it would push and where, and pushes the commit it checked, by its ID; then it replies on that
 thread alone and resolves it. Like Push & Reply, it commits all the session changed, so the session's other fixes that
 you haven't pushed go too, without a reply: the box's help says so, and the composer's note names those ready where it
-goes, as the bar at the foot of the details has them, less what it takes on itself, or what a fork of it has of them
-(`CopilotAsking.alsoPushes(_:in:forkedWithTheCLI:taking:)`). When it changed nothing for the thread, it doesn't commit or
-push, which would push those alone, but replies why, and leaves the thread active. It's sent as a Push &
-Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
-nothing, and it goes only as a Push & Reply goes, with the checks of what it would push and where
-([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as its prompt quotes
-it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is read
-(`CopilotSending.Fix.record`). To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a fix, it doesn't
+goes, and what other fixes there changed and didn't push, which aren't ready to push on their own: one sent to push and
+reply that didn't, and one that failed or was stopped, if it changed anything first, until a later push took it along
+(`CopilotWork.endedPartway`, `CopilotTasksStore.leftUnpushed`), and what one still under way there changed by then, as a
+fork of a session under way copies it. It goes by the latest fix of each there, as what one changed there stays there
+though another session took it on since, which the bar at the foot of the details then has it in, but not one still
+waiting for its turn, queued or copied for you to paste, which changed nothing yet; and it leaves out what's pushed, by
+the fix itself, or by a push that took it along and finished, not one still under way, or waiting its turn, which its
+line says pushes it, since what the fix changed stays in its session, and in a fork made of that, until such a push is
+done (`CopilotTasksStore.pushedAlong`). In a fork BriefBar made, it also names what the fork
+has of the session it forked: what was taken on there
+before the fork was made, and so on for a fork of a fork, but not past one that pushed after it was made, which pushed
+all it had (`CopilotTasksStore.lineage`, `CopilotTasksStore.forkOrigin`). Wherever it goes, it names what may be
+committed there and not pushed, which goes with the branch: the conflicts' resolution, which Resolve Conflicts commits
+as it merges, though it stopped after; and what a Push & Reply, or a fix sent to push and reply, that may not have
+pushed committed along, which is all the session had taken on by then, but a question asked there, which changes
+nothing, as a task keeps that with each push in its
+session (`SessionPush.parts`), though a fix there took it on again since, unless a push from there pushed it since, or
+you cleared it (`CopilotTasksStore.mayBeCommitted`,
+`CopilotTasksStore.alsoPushes`, `CopilotAsking.alsoPushes(_:unpushed:in:forkedWithTheCLI:taking:)`). It leaves out what
+it takes on itself, and, in a fork the Copilot CLI made, or makes, of a task, which starts at the commit the task's
+checkout had, all but that. Git doesn't tell BriefBar what each fix committed, so the note names what may go rather
+than leave it out; the lines and the bar at the foot of the details say a fix was pushed only once a push certainly
+took it along. The Send to Copilot window that Edit the Whole
+Prompt… opens says the same for where it sends it, among what the list has still to fix, leaving out the threads whose
+entries its prompt still lists as you send it, which Send takes on (`CopilotComposerView.alsoPushes`,
+`CopilotTasksStore.partsToFix`, `CopilotComposerView.sentParts`). When it changed nothing for the thread, it
+doesn't commit or push, which would push those alone, but replies why, and leaves the thread active. It's sent as a Push
+& Reply that fixes first (`CopilotSending.commentFix`, `TakenPart.fixes`, `SentPrompt.fixes`), so the CLI denies it
+nothing, and a new session, or a fork the CLI makes, that it starts is named for that, "Fix, Push & Reply: !4102 Add
+retry with backoff", as BriefBar calls its task, not "Push & Reply" (`CopilotLauncher.Request.fixing`,
+`CopilotCommand.sessionName(for:action:fixing:)`). It goes only as a Push & Reply goes, with the checks of what it would
+push and where ([above](#send-work-to-copilot)), against the branch its prompt names: it goes for the pull request as
+its prompt quotes it, though the pull request was read again since, as Edit the Whole Prompt… reads it once the code is
+read, in place or from the window (`CopilotSending.Fix.record`, `CopilotSending.windowSubject`). Once it's sent, it's
+Copilot's to finish, as every task is: turning off Send Work to Copilot, or quitting BriefBar, doesn't stop it, and it
+still pushes and replies; Stop does. To one of the app's sessions, it doesn't go while a turn runs there, so, unlike a
+fix, it doesn't
 wait for one. Unlike Push & Reply, which ships what an earlier task changed, it goes wherever a fix goes, a fork too
 (`CopilotComposerView.mustContinue(_:fixes:)`): it commits what's in the checkout it works in, all the session changed
 before too, and, in a fork of one of the app's sessions, the session's changes that it hasn't committed, which the fork
@@ -3470,9 +3546,11 @@ said with it, a task with its run, and with what it took on as the session goes 
 doesn't make it a plain push (`SentPrompt.pushed`, `CopilotRun.pushed`, `TakenPart.pushed`, `SessionPush.pushed`), and
 nothing since changes it: not another session's push, which had its own rejected; not a later push of the session's,
 which takes its change along but replies on nothing of it; nor one from before it went, which the commit kept has.
-Otherwise it says "Fixed in ‘Retry backoff’, but not pushed" (`CopilotWork.pushSeen`), with what Copilot said under it;
-the session's other fixes stay ready; its task's row says "Fixed, but not pushed" (`CopilotTaskEntry.pushSeen`); and
-the notification as it ends says only that Copilot finished fixing, with what it said. Nor is one known to have pushed
+Otherwise it says "Done in ‘Retry backoff’, but not pushed" (`CopilotWork.pushSeen`), not that it fixed it, since it may
+have changed nothing, with what Copilot said under it; the session's other fixes stay ready; its task's row says "Done,
+but not pushed" (`CopilotTaskEntry.pushSeen`); and the notification as it ends, which comes once git has told, says
+which: a task's "Copilot fixed, pushed and replied" or "Copilot is done, but didn't push", with what Copilot said. Nor
+is one known to have pushed
 when git can't tell, as when its checkout is gone, or one kept from before BriefBar kept the commit. What git can't tell
 apart: a push from another checkout of the clone, which shares the branch's place there, from the session's own, so that
 a commit someone pushed from another worktree, which the session checked out as it was, committing nothing, looks like
@@ -3496,7 +3574,8 @@ not have fixed them, so, unlike a Push & Reply that did, it doesn't make them re
 (`CopilotWork.waitsToBePushed`, `CopilotTasksStore.canTryAgain`). Once one such push finished, the fix
 stays pushed, whatever comes after it, such as a push that fails or one copied for you to paste, and even once what that
 push listed is taken on again: a task keeps the Push & Reply tasks that ran in its session, on the same pull request,
-with when each started and how it ended (`CopilotRun.pushes`); only fixing the thread again makes it ready to push.
+with when each started and how it ended, and what the session had taken on by then (`CopilotRun.pushes`,
+`SessionPush.parts`); only fixing the thread again makes it ready to push.
 BriefBar doesn't ask the prompt to commit only what the threads it lists changed: fixes can share files and
 lines, and build on each other, so a commit of some would be a guess, and could push what doesn't build. A thread that
 another session fixed since stays that one's. Once it's done, those it listed say they're pushed and replied, and a later
@@ -3582,10 +3661,10 @@ back on, if the turn still waits (`CopilotTasksStore.withdrawPromptNotifications
 once says nothing. Once the turn ends, one says how, in that one's place: done, failed, or stopped because the session
 closed or autopilot reached the most it may spend, never when you stopped it, which takes back the one that said it
 waited on you. Its title is what the pull request's line says, by the session's name as the app shows it, a fork's own:
-"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", but, for a comment's fix sent to
-push and reply that's done, only that Copilot finished fixing it, "Copilot finished fixing a comment in ‘Retry
-backoff’", as a task's says, once git has told whether it pushed, which its line says, as above; then the pull request, "!4102 Add retry with backoff", as
-a task's says it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
+"Fixed in ‘Retry backoff’, not pushed", "‘Retry backoff’ is waiting for your answer", and, for a comment's fix sent to
+push and reply that's done, once git has told whether it pushed, "Fixed, pushed and replied in ‘Retry backoff’" or "Done
+in ‘Retry backoff’, but not pushed", as above; then the pull request, "!4102 Add retry with backoff", as a task's says
+it; then the first line of what Copilot said. Clicking it opens the pull request, at the thread a thread's
 prompt took on, as other notifications about it do; one posted before the list read the pull request, as BriefBar
 starts, names it and the thread, and a click finds them as the list has them by then (`CopilotTasksStore.promptLink`).
 Its record keeps when BriefBar last said its turn waited on you, so that a restart doesn't say so again; an end BriefBar
@@ -3614,7 +3693,10 @@ or applied, still shows as it did; else its words come back all the same, going 
 you, as when it opened a while after Try Again, or the suggestion that fix applied isn't the thread's latest now, which
 it doesn't apply in its place. When BriefBar can't find where it went now, or it can't go there, the composer says so,
 with the words, and waits for you to choose (`CopilotDrafts.retryGone`). Without those words, as once BriefBar
-restarted, it opens going there, with what you wrote in it, for you to send. What the composer it opens anew was sending
+restarted, or for a thread Fix All took on, it opens going there, with what you wrote in it, for you to send, and, for a
+comment's fix, with Push and Reply as that fix had it, which its line knows after a restart too, though Push and Reply
+for the next fix stays as you last left it (`CopilotDrafts.Retry.ships`, `CopilotAsking.restoreShips`). What the
+composer it opens anew was sending
 is called off, as closing it would (`CopilotDrafts.takeRetry`). Nothing of it comes back once BriefBar
 forgot the words, as Send Work to Copilot was turned off, or Azure DevOps stopped, even for a send that ends after; and
 what Try Again asked of a composer that didn't open for it goes as you open the composer yourself, or close it. On a
@@ -3623,7 +3705,10 @@ build's row while it was closed, Try Again waits for the run to be read again, r
 attempt before; and on a closed build's row it's there only for a failed build, which opens to its Fix.
 **Clear**, once it's over, or copied for you to paste, lets go of what each task and prompt took on of it, and of what a
 send that couldn't start keeps of it, or one getting ready carries from before, so the line goes and nothing older takes
-its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); a task's is left empty, which tells it from one kept
+its place, as Dismiss does for an answer (`CopilotTasksStore.clear`); and of what each push in a task's session had
+taken on of it, as the task keeps it, and as a send getting ready carries it to launch with, so a fix sent to push and
+reply doesn't name it (`SessionPush.parts`). What a task took on is left
+empty, which tells it from one kept
 before BriefBar recorded what tasks take on, and the task says what it took on itself was let go, when it was
 (`CopilotRun.workLetGo`). A prompt copied for you to paste that takes on more, or a Push & Reply, which
 stays, no longer takes the thread's comments off Needs You once you paste it, and they hold back how far the others leave

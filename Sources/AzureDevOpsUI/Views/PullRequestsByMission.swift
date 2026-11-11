@@ -30,6 +30,10 @@ struct PullRequestsByMission: View {
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: () -> Void
     let now: Date
+    /// Your sprint work on the Board, on My Work with + Sprint Tasks.
+    var work: BoardWorkContent? = nil
+    /// Its foot says that stories need Show Links while it's off; not where the page says it itself, as My Work does.
+    var saysStoriesNeedShowLinks = true
 
     @EnvironmentObject private var services: AppServices
 
@@ -41,7 +45,9 @@ struct PullRequestsByMission: View {
         let apart = items.filter { $0.group == .idle }.map(\.key.linkRef)
         VStack(alignment: .leading, spacing: 18) {
             missions(byRef: byRef, listed: listed, apart: apart)
-            StoriesNeedShowLinks(links: services.links)
+            if saysStoriesNeedShowLinks {
+                StoriesNeedShowLinks(links: services.links)
+            }
         }
     }
 
@@ -65,7 +71,7 @@ struct PullRequestsByMission: View {
             shownOnTop: shownOnTop,
             rest: { refs in rest(refs.compactMap { byRef[$0] }) },
             board: board, card: { boardCard in byRef[boardCard.ref].map { card($0, boardCard) } },
-            setAsNext: Self.setAsNext(ordering),
+            setAsNext: Self.setAsNext(ordering), work: work,
             showByStatus: showByStatus, now: now
         )
     }
@@ -129,6 +135,8 @@ struct PullRequestBoardCard: View {
     /// Where it stands in its lane's mission, for its capsule.
     let order: OrderRowContext?
     @ObservedObject var ordering: PullRequestOrder
+    /// The work items of yours it's for, on My Work with + Sprint Tasks, which have no cards of their own: "Task 5112".
+    var work: [String] = []
     let now: Date
 
     var body: some View {
@@ -144,6 +152,16 @@ struct PullRequestBoardCard: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
+            if !work.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Image(systemName: "checklist")
+                    Text(work.joined(separator: " · "))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(size: 11, weight: .medium)
+                .foregroundStyle(.secondary)
+                .help("Your sprint work it's for, through Show Links' links")
+            }
             // Why alone: its flags are its marks, below.
             Text(StageText.reason(reading, name: name))
                 .font(size: 11.5)
@@ -192,6 +210,40 @@ struct PullRequestBoardCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Its card on the Board, on the Pull Requests page and on My Work: what it shows, its menu as its row's, with Make Next,
+    /// and what VoiceOver says of it. With a lane for every card, Undo shows at the top.
+    /// - Parameters:
+    ///   - lanes: the Board's lanes, for where Undo shows.
+    ///   - work: the work items of yours it's for, on My Work with + Sprint Tasks: "Task 5112".
+    ///   - select: shows its details.
+    @MainActor
+    static func content(
+        _ item: PRSnapshot, _ card: BoardCard, store: PRStore, ordering: PullRequestOrder, lanes: BoardLanes, work: [String] = [],
+        select: @escaping () -> Void
+    ) -> BoardCardContent {
+        let order = card.step.map {
+            OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
+        }
+        let mission = MissionMenuContext.of(item.key.linkRef, order: ordering, mission: card.mission, undo: .onBoard(lanes))
+        return BoardCardContent(
+            view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, work: work, now: store.now)),
+            menu: AnyView(Group {
+                Button("Show Details", action: select)
+                Button("Open in Azure DevOps") { store.open(item) }
+                MakeNextToggle(card: card, order: ordering)
+                PullRequestMenuItems(
+                    item: item, openSource: item.chatSource == nil ? nil : { store.openSource(item) },
+                    dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
+                    stopWatching: item.isWatched ? { store.stopWatching(item) } : nil, mission: mission, ordering: ordering
+                )
+            }),
+            label: "!\(item.key.number) \(item.title)",
+            details: details(item, reading: card.reading, order: order, ordering: ordering)
+                + (work.isEmpty ? [] : ["for " + work.joined(separator: ", ")]),
+            mission: mission
+        )
     }
 
     struct Flag {

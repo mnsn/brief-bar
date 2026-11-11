@@ -70,6 +70,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var lanes: BoardLanes
     /// Whether you folded Up Next.
     @Published package private(set) var isUpNextFolded: Bool
+    /// My Work Page, in Settings: Up Next and the Board on a window page of their own, My Work, rather than on Azure DevOps'
+    /// Pull Requests page. Off until you turn it on; it shows only while Pull Request Order is on too (`showsMyWork`).
+    @Published package private(set) var myWorkPage: Bool
     /// The pull request you chose for each of Up Next's slots that applies now: what BriefBar keeps for the account each
     /// one's source told last (`keptPicks`), and those kept in memory (`UpNextPicks`); none while it's off.
     @Published package private(set) var picks = UpNextPicks()
@@ -213,7 +216,32 @@ package final class PullRequestOrder: ObservableObject {
         view = OrderView.load(from: defaults)
         lanes = BoardLanes.load(from: defaults)
         isUpNextFolded = UpNext.isFolded(in: defaults)
+        myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
+    }
+
+    /// Where My Work Page is kept.
+    package static let myWorkPageKey = "order.myWorkPage"
+
+    /// My Work Page, remembered: Pull Request Order turned off keeps it, unused.
+    package func setMyWorkPage(_ on: Bool) {
+        guard on != myWorkPage else { return }
+        myWorkPage = on
+        defaults.set(on, forKey: Self.myWorkPageKey)
+        Log.app.info("My Work Page \(on ? "on" : "off", privacy: .public)")
+    }
+
+    /// Whether Azure DevOps shows My Work, with Up Next and the Board, rather than its Pull Requests page: My Work Page is
+    /// on, and so is Pull Request Order.
+    package var showsMyWork: Bool {
+        isOn && myWorkPage
+    }
+
+    /// By Mission's views on a Pull Requests page that lists these kinds: on Azure DevOps', all but the Board while My Work
+    /// shows it.
+    package func views(for kinds: Set<ItemRef.Kind>) -> [OrderView] {
+        let offered = OrderView.offered(for: kinds)
+        return showsMyWork ? offered.filter { $0 != .board } : offered
     }
 
     /// List, Map or the Board, remembered for both pages.
@@ -253,7 +281,14 @@ package final class PullRequestOrder: ObservableObject {
     /// which has no lane for it, the Board shows a lane for each mission again, remembered, as choosing Missions does.
     /// - Parameter kinds: the kinds of pull request the page lists, for the view it shows.
     package func reveal(_ key: MissionKey, kinds: Set<ItemRef.Kind>) {
-        if view(offering: OrderView.offered(for: kinds)) == .board { setLanes(.missions) }
+        if view(offering: views(for: kinds)) == .board { setLanes(.missions) }
+        revealed = key
+    }
+
+    /// Asks My Work's Board to show a mission, as its name in a pull request's details there does: with Lanes: None, which
+    /// has no lane for it, the Board shows a lane for each mission again, remembered.
+    package func revealOnBoard(_ key: MissionKey) {
+        setLanes(.missions)
         revealed = key
     }
 

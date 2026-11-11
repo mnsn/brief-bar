@@ -408,6 +408,29 @@ scrolls sideways; a line under it counts the pull requests in your lists that ar
 approved, and **Show By Status** lists them. GitHub's page, whose pull requests have no stages, offers List and Map, and
 shows List where you chose the Board.
 
+**My Work**, a preview, while **My Work Page** and Pull Request Order are both on in [Settings › Pull
+Requests](#settings): Up Next and the Board leave Azure DevOps' Pull Requests page, which keeps List, Map and By Status,
+for a page of their own, **My Work**, right before Pull Requests in the window. **Show**, at its top, offers **Pull
+Requests**, the Board as it was, and **+ Sprint Tasks**, which puts your sprint work on it too: what the Sprint page
+counts as yours and not done. BriefBar remembers which. What hasn't started, with no pull request linked to it and no
+task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
+request, or has Copilot working on it, has a card of its own in In progress; and a pull request's card names the work
+items of yours it's for, such as **Task 5112**. A work item's card says why it's there: **New**, **Active · no pull
+request yet** or **New · Copilot works on it**, or, when its pull request isn't on your board, what that is: **Sam's
+!4120**, a teammate's; **#412 on GitHub**, linked in BriefBar; **!4120 merged · task still open**; or **!4120 can't be
+read**. An abandoned pull request counts as none, and the card says so, as in **New · !4118 abandoned**. Of several, one
+on your board wins, then one that's active, merged, can't be read, then abandoned. BriefBar puts work items with their
+pull requests only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers to turn it on
+until it is; and it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that work stays in To
+start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull requests aren't on
+your board, in a lane of the story's own; otherwise with the pull requests in no mission. Click it, or press **Return**
+or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its menu. It moves by
+itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘← say so instead.
+On My Work, **2 more ›** scrolls the Board to its column, a pull request's mission in its details shows its lane, and
+**Show By Status** shows Pull Requests by status. To start and work items' cards are only on the Board: stages, Up
+Next's slots, groups, counts and what agents are told stay as they were. While My Work shows + Sprint Tasks, BriefBar
+reads your sprint, as it does for the Sprint page.
+
 **Suggested splits**, with Apple Intelligence on: when a mission's pull requests look like they've become different
 pieces of work, such as an unrelated fix or a tooling change among a story's feature, a box under the mission's header,
 in the List, on the Map and in its Board lane, suggests splitting it. It says which pull requests keep the mission, with
@@ -559,12 +582,20 @@ pull request, has Copilot address that thread alone, as you say in **Tell Copilo
 yours, then build and test; it doesn't commit, push or reply, and the thread leaves Needs You as with Fix Comments,
 below. Check **Push and reply once it's fixed** to have it then do what **Push & Reply** does, in the same turn: commit,
 push the branch (never with force), and reply on the thread and resolve it, as you. Like Push & Reply, it commits all the
-session changed, so other fixes there that you haven't pushed go too, without a reply, which the composer names as you
-send it; when it changed nothing for the thread, it doesn't commit or push, but replies why, and leaves the thread
-active. It goes as a Push & Reply
-goes, with the same checks, below, so it doesn't wait in a
-session of the Copilot app that's running a turn: BriefBar says to send it once that's done. The box stays as you last
-left it, for the next Fix or Fix All. A comment can suggest a change, which shows as **Suggested change**: **Apply ‹name›'s suggestion as written** has
+session changed, so other fixes there that you haven't pushed go too, without a reply, though you had one fixed again in
+another session since, as does what an earlier fix there changed and didn't push, because it was sent to push and reply
+and didn't, failed or was stopped, or, in a fork of a busy session, is still under way, and, in a fork, what it has of
+the session it forked, and, for a fork of a fork, of each before it. The composer names those as you send it, as the
+Send to Copilot window does, but not a fix whose line you cleared, and, for a fork, only when BriefBar made it; a fix
+still waiting for its turn there, or copied for you to paste, changed nothing yet, so it names what the one before it
+changed. When it changed nothing for the thread, it
+doesn't commit or push, but replies why, and leaves the thread active.
+It goes as a Push & Reply goes, with the same checks, below, so it doesn't wait in a session of the Copilot app that's
+running a turn: BriefBar says to send it once that's done. A new session, or a fork the Copilot CLI makes, that it
+starts is named for it, **Fix, Push & Reply: !4102 Add retry with backoff**. Once it's sent, it's Copilot's to finish:
+turning off **Send Work to Copilot**, or quitting BriefBar, doesn't stop it, and it still pushes and replies; **Stop**,
+below, does. The box stays as you last left it, for the next Fix or Fix All. A comment can suggest a change, which shows
+as **Suggested change**: **Apply ‹name›'s suggestion as written** has
 Copilot make it as it's written, and is checked when the suggestion is the thread's last word. Where it goes is one
 **▾** away: the session that worked on the thread, if one did, else the pull request's, first and chosen; for a fix, a
 fork of it, with its history, in a worktree of its own, while it stays as it is, which goes first while one of
@@ -580,10 +611,11 @@ explaining this in ‘Retry backoff’ · 1m**, **Fixing this in a fork of ‘Re
 backoff’, not pushed** or **Couldn't fix it in ‘Retry backoff’**, with what Copilot said under it, such as why it
 couldn't; click it to see the session. A fix sent to push and reply says **Copilot is fixing this in ‘Retry backoff’, to
 push and reply**, then, once its turn is done, **Fixed, pushed and replied in ‘Retry backoff’** when the session pushed
-a commit of its own, as git tells in the checkout it works in; when it stopped before it pushed, as when the tests still
-failed, the pull request was retargeted, completed or abandoned meanwhile, or someone else pushed first, **Fixed in
-‘Retry backoff’, but not pushed**, with what Copilot said under it. BriefBar tells once, as the turn ends, so a push
-since, from anywhere, doesn't change it. One of BriefBar's own tasks, named for what it does, is called a task there,
+a commit of its own, as git tells in the checkout it works in; when it didn't, as when it changed nothing for the
+thread, or stopped before it pushed, as when the tests still failed, the pull request was retargeted, completed or
+abandoned meanwhile, or someone else pushed first, **Done in ‘Retry backoff’, but not pushed**, with what Copilot said
+under it. BriefBar tells once, as the turn ends, so a push since, from anywhere, doesn't change it, and its notification
+says the same. One of BriefBar's own tasks, named for what it does, is called a task there,
 **Fixed in the ‘Fix Comments’ task, not pushed**. Sent with **Send to Session** or **Send to a Fork**, BriefBar's
 extension in the session tells BriefBar how its turn goes, and what Copilot said as it ended, so the line follows it
 however long that takes, and a notification says when the session waits for your answer and when it's done, failed, or
@@ -595,7 +627,10 @@ finished in twelve hours, such as one that waited overnight for your answer, or 
 before it said. A line's **⋯**, or its right-click menu, has what it allows:
 **Stop**, while Copilot is at it, which stops one of BriefBar's tasks, or the session's turn in the Copilot app, or shows
 the session to stop it there when BriefBar's extension in it can't; **Try Again**, for a fix that failed or stopped,
-which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go just as it did, opens it there for you to check and send, saying why; and **Clear**, which
+which sends it again with the same words, pushing and replying or not as it did, to where it went, or, when it can't go
+just as it did, opens it there for you to check and send, saying why; once BriefBar restarted, or for a thread Fix All
+took on, whose words it doesn't keep, it opens Fix going there for you to write and send, with **Push and reply once
+it's fixed** as that fix had it, which stays as you last left it for the next fix; and **Clear**, which
 lets the line go. **Fix** waits while Copilot fixes the
 thread. Once fixes are done, of comments or of a build
 (below), a bar at the foot of the details, or of a pull request's
@@ -1368,12 +1403,13 @@ or 3 days (see [Notifications](#notifications)).
 requests it works with: first those that work with Azure DevOps' and GitHub's, then those that work with
 Azure DevOps' only. A source's settings work only while it's on: while it's off, or paused until you look
 at what it reads now, they show all the same, disabled, saying so, with **Turn On…** or **Review…**. Azure
-DevOps' gear menu has its own too: they're the same settings.
+DevOps' gear menu has its own too, all but My Work Page, which goes with Pull Request Order: they're the same settings.
 
 | Works with | Setting | Options |
 |---|---|---|
 | Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
-| Azure DevOps only | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
+| Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, with Show Links (see [Azure DevOps](#azure-devops)) |
+| | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
@@ -1456,8 +1492,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   their IDs only; the IDs of the forks it made to ask a session about a comment, a build or merge conflicts, or with Ask…, until they're deleted;
   and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
-- **Your sprint and pipelines** are read only while something shows them on screen, with the same
-  sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
+- **Your sprint and pipelines** are read only while something shows them on screen, such as the Sprint page, or My
+  Work with **+ Sprint Tasks**, with the same sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
   are read with your pull requests, while Done keeps it, unless you turn **Follow Pipelines After You
   Merge** off. A work item's details are read only when you open them, and again when it changes while
   they show, and kept in memory only: they're forgotten a quarter of an hour after they're read, unless
@@ -1483,7 +1519,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   preferences or to disk, where other programs running as you could read it. It forgets them when you turn it off.
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
-  work items while it's on screen, and what the linked ones your lists don't show are; with **Pull Request
+  work items while it's on screen, on the Sprint page or My Work, and what the linked ones your lists don't show are; with **Pull Request
   Order** on too, each linked work item's parent and place in the backlog, and what those parents, its stories, are
   when BriefBar hasn't read them, kept in memory only, to put a story's pull requests together; from the Copilot
   app's database, read-only, which pull request each session started from or opened. The links you add

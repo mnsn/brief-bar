@@ -776,10 +776,13 @@ public enum BoardLanes: String, CaseIterable, Sendable {
     }
 }
 
-/// A lane of the Board: a mission's cards, those in no mission, or all of them.
+/// A lane of the Board: a mission's cards, those in no mission, or all of them; on My Work, with + Sprint Tasks, also a
+/// story's work items, for one with no mission.
 public struct BoardLane: Equatable, Sendable, Identifiable {
     public enum Kind: Hashable, Sendable {
         case mission(MissionKey)
+        /// A story's work items, on My Work with + Sprint Tasks, where no mission is the story's: after the missions'.
+        case story(ItemRef)
         case notInAMission
         /// Every card, with Lanes: None.
         case all
@@ -788,10 +791,13 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     public var kind: Kind
     /// Its cards in each column, in the order they come there.
     public var columns: [PullRequestStage: [BoardCard]]
+    /// Its work items' own cards, on My Work with + Sprint Tasks (`PullRequestBoard.withWork`), in the sprint's order.
+    public var tasks: [BoardTask]
 
-    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]]) {
+    public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = []) {
         self.kind = kind
         self.columns = columns
+        self.tasks = tasks
     }
 
     public var id: Kind { kind }
@@ -810,7 +816,7 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
         columns[stage] ?? []
     }
 
-    public var isEmpty: Bool { columns.values.allSatisfy(\.isEmpty) }
+    public var isEmpty: Bool { columns.values.allSatisfy(\.isEmpty) && tasks.isEmpty }
 
     /// Its next steps that are yours, in the order Up Next takes them: what a session asks you, what to fix, reviews, finding
     /// a reviewer, completing; in each, as its column has them, the one you chose for Up Next's slot first.
@@ -853,6 +859,12 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var kinds: Set<ItemRef.Kind>
     /// A lane for each mission, or one for every card.
     public var mode: BoardLanes
+    /// It shows your sprint work, on My Work with + Sprint Tasks (`withWork`): To start comes before In progress.
+    public var showsWork = false
+    /// How many work items' own cards each of those columns has.
+    public var taskCounts: [BoardTask.Column: Int] = [:]
+    /// The work items of yours linked to each pull request on the board, which its card names, in the sprint's order.
+    public var workOfPullRequests: [ItemRef: [ItemRef]] = [:]
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],
@@ -990,6 +1002,8 @@ public struct PullRequestBoard: Equatable, Sendable {
             }
         case .notInAMission, .all:
             if let changed, isUnhosted(changed, missions: missions) { refs.insert(changed) }
+        case .story:
+            break
         }
         return refs
     }

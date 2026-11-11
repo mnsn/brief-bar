@@ -20,16 +20,12 @@ extension PullRequestAction {
         }
     }
 
-    /// What a Push & Reply that fixes the comments it takes on first is called: a comment's Fix, or Fix All, sent with Push
-    /// and Reply on (`TakenPart.fixes`).
-    static let fixPushAndReplyTitle = "Fix, Push & Reply"
-
     /// What it's called for a task that takes on `parts`, what it does: "Push" for a Push & Reply that replies on no thread,
     /// as one that ships a build's fix alone; "Fix, Push & Reply" for one that fixes them first; else its own title, "Push &
     /// Reply".
     func title(taking parts: [PullRequestPart], fixing: Bool = false) -> String {
         guard self == .pushAndReply else { return title }
-        if fixing { return Self.fixPushAndReplyTitle }
+        if fixing { return title(fixing: true) }
         return parts.contains(where: { $0.thread != nil }) ? title : "Push"
     }
 

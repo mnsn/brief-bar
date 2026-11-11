@@ -101,10 +101,14 @@ public struct CopilotLauncher: Sendable {
         /// read, or the pull request is over (`PullRequestNotActive`), Copilot doesn't start (`LaunchError.retargeted`,
         /// `LaunchError.cantReadTarget`, `LaunchError.notActive`). Nil when nothing reads it.
         public var targetNow: (@Sendable () async throws -> String)?
+        /// A Push & Reply that fixes what it takes on first, as a comment's fix sent with Push and Reply on: the session it
+        /// starts, or the fork it makes, is named for that (`CopilotCommand.sessionName(for:action:fixing:)`).
+        public var fixing: Bool
 
         public init(
             subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?,
-            continuing: CopilotRun? = nil, forking: CopilotRun? = nil, targetNow: (@Sendable () async throws -> String)? = nil
+            continuing: CopilotRun? = nil, forking: CopilotRun? = nil, targetNow: (@Sendable () async throws -> String)? = nil,
+            fixing: Bool = false
         ) {
             self.subject = subject
             self.prompt = prompt
@@ -114,6 +118,7 @@ public struct CopilotLauncher: Sendable {
             self.continuing = continuing
             self.forking = forking
             self.targetNow = targetNow
+            self.fixing = fixing
         }
 
         public init(workItem: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL, worktreesFolder: URL?) {
@@ -214,7 +219,7 @@ public struct CopilotLauncher: Sendable {
         let forker = SessionForker(copilot: copilot, environment: environment, leftovers: leftovers)
         var fork: String?
         if let forking = request.forking {
-            let made = try await forker.fork(forking.id, name: CopilotCommand.sessionName(for: request.subject))
+            let made = try await forker.fork(forking.id, name: CopilotCommand.sessionName(for: request.subject, fixing: request.fixing))
             fork = made
             id = made
             forked?(made)
@@ -332,7 +337,7 @@ public struct CopilotLauncher: Sendable {
         let prompt = request.workItem == nil ? request.prompt : PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch)
         let arguments = CopilotCommand.arguments(
             prompt: prompt, options: request.options,
-            sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
+            sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject, fixing: request.fixing) : nil, directory: worktree,
             denied: request.subject.deniedTools, plugins: plugins
         )
         // Going on with a fork, it's still that session's fork, made as its first task started.

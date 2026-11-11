@@ -153,6 +153,22 @@ import Testing
         #expect(store.activeCount == 1)
     }
 
+    /// What works on a work item now, for My Work's To start: an older send that goes on, though a newer one ended.
+    @Test func anOlderSendStillWorksOnAWorkItemThoughANewerOneEnded() {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        settings.copilotRuns = [
+            run(first, startedAt: now.addingTimeInterval(-3_600)),
+            run(second, startedAt: now, ended: .failed),
+        ]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        #expect(store.latest(for: item)?.id == second)
+        #expect(store.working(on: item)?.id == first)
+
+        settings.copilotRuns = [run(first, startedAt: now.addingTimeInterval(-3_600), ended: .finished), run(second, startedAt: now, ended: .failed)]
+        #expect(store.working(on: item) == nil)
+    }
+
     @Test func remembersTheRepositoryEachProjectsWorkWentIn() {
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.copilotRepositories = ["contoso/storefront": "/Users/robin/dev/Storefront", "contoso/payments": "/Users/robin/dev/Payments"]

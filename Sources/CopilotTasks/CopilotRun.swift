@@ -216,8 +216,8 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// The Push & Reply tasks that ran in a session before the task that goes on with it, `previous` as BriefBar keeps it,
     /// on `pullRequest` (`pushes`): those `previous` kept, and `previous` itself when it's one, with how it ended, or, not
     /// seen to end, that it stopped, and whether it fixed what it took on first, and then pushed, as its run keeps them
-    /// (`fixes`, `pushed`), or, for one kept before it had those, what it took on does. Only on the same pull request; nil
-    /// when none did.
+    /// (`fixes`, `pushed`), or, for one kept before it had those, what it took on does; and what the session had taken on as
+    /// it went (`SessionPush.parts`). Only on the same pull request; nil when none did.
     public static func pushes(goingOnWith previous: CopilotRun?, on pullRequest: PullRequestReference?) -> [SessionPush]? {
         guard let previous, let pullRequest, previous.onPullRequest?.matches(pullRequest) == true else { return nil }
         var pushes = previous.pushes ?? []
@@ -225,7 +225,8 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
             let fixing = previous.taken?.first { $0.ended == nil && $0.fixes == true }
             let fixes = previous.fixes == true || fixing != nil
             pushes.append(SessionPush(
-                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixes ? true : nil, pushed: fixes ? previous.pushed : nil
+                since: previous.startedAt, ended: previous.ended ?? .stopped, fixes: fixes ? true : nil, pushed: fixes ? previous.pushed : nil,
+                parts: (previous.taken ?? []).map(\.part)
             ))
         }
         return pushes.isEmpty ? nil : pushes

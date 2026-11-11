@@ -20,10 +20,15 @@ import Testing
         LinkedItem(ref: ref, label: ref.id, title: "Round coupons", symbol: "circle", color: .secondary, state: state, status: status, date: date)
     }
 
+    /// Show Links, and the stories, whose clock stands still: on CI a test may get its next turn a minute or more after the
+    /// last, longer than a story stays current (`ItemStories.freshFor`), and telling it then would ask for it again.
     private func hub(on: Bool = true) -> (Links, ItemStories) {
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
         links.setOn(on)
-        return (links, ItemStories(links: links))
+        let stories = ItemStories(links: links)
+        let now = Date()
+        stories.now = { now }
+        return (links, stories)
     }
 
     @Test func itTellsNothingWhileShowLinksIsOff() async {
@@ -122,10 +127,6 @@ import Testing
     /// until the main actor's next turn, then asks for each thing once, for the latest row asked for.
     @Test func askingChangesNothingUntilTheNextTurn() async throws {
         let (_, stories) = hub()
-        // The clock stands still: a busy machine can keep this test from its next turn for longer than a story stays
-        // current (`ItemStories.freshFor`), and asking again then would tell it again.
-        let now = Date()
-        stories.now = { now }
         let asked = Asked()
         stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
             asked.refs.append(ref)

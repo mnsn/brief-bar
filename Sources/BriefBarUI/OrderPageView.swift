@@ -41,6 +41,8 @@ package struct MissionsBody: View {
     /// Set as Next to Merge in a mission, for a card dropped from Waits onto Can merge: nil where you can't change missions
     /// yourself.
     let setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)?
+    /// Your sprint work's cards on the Board, and its stories' lanes' headers, on My Work with + Sprint Tasks.
+    let work: BoardWorkContent?
     /// Lists the page By Status, for what isn't on the Board.
     let showByStatus: (() -> Void)?
     let now: Date
@@ -63,7 +65,7 @@ package struct MissionsBody: View {
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Bool, shownOnTop: ItemRef? = nil,
         rest: @escaping ([ItemRef]) -> AnyView,
         board: PullRequestBoard? = nil, card: ((BoardCard) -> BoardCardContent?)? = nil,
-        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)? = nil,
+        setAsNext: ((ItemRef, MissionKey, MissionMenuContext.UndoPlace) -> Void)? = nil, work: BoardWorkContent? = nil,
         showByStatus: (() -> Void)? = nil, now: Date = Date()
     ) {
         self.view = view
@@ -82,6 +84,7 @@ package struct MissionsBody: View {
         self.board = board
         self.card = card
         self.setAsNext = setAsNext
+        self.work = work
         self.showByStatus = showByStatus
         self.now = now
     }
@@ -155,7 +158,7 @@ package struct MissionsBody: View {
                         OrderBoardView(
                             board: board, missions: missions, order: ordering, elsewhere: elsewhere, openElsewhere: openElsewhere,
                             place: place(of:), card: card, isSelected: isSelected, select: { ref in _ = select(ref) },
-                            shownOnTop: shownOnTop, setAsNext: setAsNext, notOnBoard: board.notOnBoard(listed + apart),
+                            shownOnTop: shownOnTop, setAsNext: setAsNext, work: work, notOnBoard: board.notOnBoard(listed + apart),
                             showByStatus: showByStatus, now: now, see: see
                         )
                         .id(Self.boardTop)

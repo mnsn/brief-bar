@@ -1149,4 +1149,109 @@ import Testing
         #expect(OrderView.map.shown(offering: github) == .map)
         #expect(OrderView.board.shown(offering: azure) == .board)
     }
+
+    // MARK: My Work's + Sprint Tasks
+
+    static func task(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+
+    static func work(
+        _ id: Int, _ progress: SprintWork.Progress, story: Int? = nil, linked: [LinkedPullRequest] = [], copilot: Bool = false
+    ) -> SprintWork {
+        SprintWork(ref: task(id), story: story.map(task), progress: progress, pullRequests: linked, copilotWorks: copilot)
+    }
+
+    static func linked(_ number: Int, _ state: LinkedPullRequest.State = .open(author: nil)) -> LinkedPullRequest {
+        LinkedPullRequest(ref: pr(number), state: state)
+    }
+
+    /// Your sprint work goes on the Board as cards of its own: in To start until it's started, then in In progress, in its
+    /// story's mission's lane, else in a lane for its story, else in no mission's; one with a pull request on the board only
+    /// on that pull request's card, a resolved one too. Nothing about the pull requests changes.
+    @Test func sprintWorkHasCardsOfItsOwnUntilAPullRequestOnTheBoardNamesIt() throws {
+        var checkout = Self.mission([Self.step(4101, .next), Self.step(4102, .waiting(open: [Self.pr(4101)], unknown: []))])
+        checkout.story = MissionStory(ref: Self.task(5001))
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.inProgress, .draft, at: 1), 4102: Self.reading(.yourReview, .asked("Priya asked you"), at: 2),
+            4200: Self.reading(.teammateReview, .findReviewer, at: 3),
+        ]
+        let base = Self.board(stages, missions: [checkout])
+        let work = [
+            Self.work(5103, .inProgress, story: 5001, linked: [Self.linked(4101)]),
+            Self.work(5104, .toDo, story: 5001),
+            Self.work(5105, .resolved, story: 5001, linked: [Self.linked(4101)]),
+            Self.work(5106, .resolved, story: 5001),
+            Self.work(5201, .inProgress, story: 5002),
+            Self.work(5202, .toDo, story: 5002, copilot: true),
+            // Its story isn't in the sprint, and has no mission.
+            Self.work(5301, .toDo, story: 5003),
+            Self.work(5401, .toDo),
+            // A bug of yours without tasks has no lane of its own.
+            Self.work(5002, .toDo, story: 5002),
+        ]
+        let board = base.withWork(work, missions: [checkout], stories: [Self.task(5001), Self.task(5002)])
+        #expect(board.showsWork)
+        #expect(board.lanes.map(\.kind) == [.mission(checkout.key), .story(Self.task(5002)), .notInAMission])
+        let labels = { (lane: BoardLane, column: BoardTask.Column) in lane.tasks(in: column).map(\.ref.shortOrderLabel) }
+        #expect(labels(board.lanes[0], .toStart) == ["5104"])
+        #expect(board.lanes[0].tasks(in: .inProgress).isEmpty)
+        #expect(labels(board.lanes[1], .inProgress) == ["5201", "5202"])
+        #expect(board.lanes[1].story == Self.task(5002))
+        #expect(labels(board.lanes[2], .toStart) == ["5301", "5401", "5002"])
+        #expect(board.taskCounts == [.toStart: 4, .inProgress: 2])
+        #expect(board.columns == [.toStart] + PullRequestStage.columns.map(BoardColumn.stage))
+        #expect(base.columns == PullRequestStage.columns.map(BoardColumn.stage))
+        #expect(board.count(of: .toStart) == 4)
+        #expect(board.count(of: .stage(.inProgress)) == 3)
+        #expect(board.count(of: .stage(.yourReview)) == 1)
+        #expect(board.workOfPullRequests == [Self.pr(4101): [Self.task(5103), Self.task(5105)]])
+        let copilot = try #require(board.lanes[1].tasks.last)
+        #expect(copilot.why == .copilot)
+
+        // The pull requests' cards, columns, counts and Up Next stay as they were.
+        #expect(board.lanes.map(\.cards) == [base.lanes[0].cards, [], base.lanes[1].cards])
+        #expect(board.counts == base.counts)
+        #expect(board.upNext == base.upNext)
+        #expect(board.refs == base.refs)
+
+        // With Lanes: None, every card is in one lane, which a board with no pull request has too.
+        let one = Self.board(stages, missions: [checkout], lanes: .none).withWork(work, missions: [checkout], stories: [])
+        #expect(one.lanes.map(\.kind) == [.all])
+        #expect(one.lanes[0].tasks.map(\.ref.shortOrderLabel) == ["5104", "5201", "5202", "5301", "5401", "5002"])
+        let empty = Self.board([:]).withWork([Self.work(5401, .toDo)], missions: [], stories: [])
+        #expect(empty.lanes.map(\.kind) == [.notInAMission])
+        #expect(!empty.lanes[0].isEmpty)
+    }
+
+    /// A work item whose pull requests aren't on your board is in In progress, its card saying what its pull request is: an
+    /// open one first, then one that merged, then one BriefBar couldn't read. One abandoned counts as none, and its card says
+    /// so.
+    @Test func aWorkItemsPullRequestOffTheBoardSaysWhatItIs() throws {
+        func task(_ work: SprintWork) throws -> (column: BoardTask.Column, why: String) {
+            let task = try #require(BoardTask(work))
+            return (task.column, BoardText.why(task, state: work.progress == .toDo ? "New" : "Active", type: "Task"))
+        }
+        let sams = try task(Self.work(5103, .toDo, linked: [Self.linked(4120, .open(author: "Sam"))]))
+        #expect(sams.column == .inProgress)
+        #expect(sams.why == "Sam's !4120")
+        #expect(try task(Self.work(5103, .toDo, linked: [Self.linked(4120)])).why == "Your !4120")
+        let github = LinkedPullRequest(ref: Self.gh(412), state: .open(author: nil))
+        #expect(try task(Self.work(5103, .inProgress, linked: [github])).why == "#412 on GitHub")
+        #expect(try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .merged)])).why == "!4120 merged · task still open")
+        #expect(try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .unknown)])).why == "!4120 can't be read")
+        let several = [Self.linked(4118, .abandoned), Self.linked(4119, .unknown), Self.linked(4120, .merged), Self.linked(4121, .open(author: "Sam"))]
+        #expect(try task(Self.work(5103, .inProgress, linked: several)).why == "Sam's !4121")
+        #expect(try task(Self.work(5103, .inProgress, linked: Array(several.prefix(3)))).why == "!4120 merged · task still open")
+
+        let abandoned = try task(Self.work(5103, .toDo, linked: [Self.linked(4120, .abandoned)]))
+        #expect(abandoned.column == .toStart)
+        #expect(abandoned.why == "New · !4120 abandoned")
+        let started = try task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .abandoned)]))
+        #expect(started.column == .inProgress)
+        #expect(started.why == "Active · no pull request yet · !4120 abandoned")
+        #expect(try task(Self.work(5103, .toDo, copilot: true)) == (column: .inProgress, why: "New · Copilot works on it"))
+
+        // A resolved one has no card of its own.
+        #expect(BoardTask(Self.work(5103, .resolved)) == nil)
+        #expect(BoardTask(Self.work(5103, .resolved, linked: [Self.linked(4120, .open(author: "Sam"))])) == nil)
+    }
 }

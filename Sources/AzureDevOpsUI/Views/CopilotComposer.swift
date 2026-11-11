@@ -836,7 +836,10 @@ struct CopilotComposerView: View {
     /// What Copilot does, and where; or what BriefBar did, once it couldn't send it itself.
     private var footnote: String {
         if let fallback { return Self.fallbackNote(fallback) }
-        if !runsHere { return appFootnote }
+        // With Push and Reply on: what else goes, which you haven't pushed.
+        let also = Self.alsoPushes(subject, fixes: fixes, to: target, delivery: delivery, parts: parts, prompt: prompt, store: store)
+            .map { " " + $0 } ?? ""
+        if !runsHere { return appFootnote + also }
         let place: String
         switch target?.kind {
         case nil: place = "in a new worktree"
@@ -849,7 +852,7 @@ struct CopilotComposerView: View {
         case nil:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
         case .pushAndReply? where fixes:
-            text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It addresses the comments, then commits, pushes the pull request's branch, and replies on their threads, as you."
+            text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It addresses the comments, then commits, pushes the pull request's branch, and replies on their threads, as you.\(also)"
         case .pushAndReply? where onlyPushes:
             text = "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits and pushes the pull request's branch, as you, and replies on none of its threads."
         case .pushAndReply?:
@@ -863,6 +866,21 @@ struct CopilotComposerView: View {
             text += " Don't open the session in the Copilot app until Copilot is done: the app wouldn't see what it did."
         }
         return text
+    }
+
+    /// For a comment's fix sent with Push and Reply on, what else it pushes where the window sends it, which you haven't
+    /// pushed, as the composer it came from says for where that sends it (`CopilotTasksStore.alsoPushes`): what it doesn't
+    /// take on as you send it, of `parts`, which a thread whose entry you took out of the prompt it doesn't, as Send has it
+    /// (`sentParts`). Nil for anything else, and in a new worktree.
+    static func alsoPushes(
+        _ subject: TaskSubject, fixes: Bool, to target: SessionChoice?, delivery: Delivery, parts: [PullRequestPart], prompt: String,
+        store: CopilotTasksStore
+    ) -> String? {
+        guard fixes, case .pullRequest(let pullRequest, .pushAndReply) = subject, let target else { return nil }
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        return store.alsoPushes(
+            key, among: store.partsToFix(key), in: target, forkedWithTheCLI: delivery == .cliFork, taking: sentParts(parts, in: prompt)
+        )
     }
 
     /// What happens in the Copilot app, as things stand: BriefBar sends it, to the session or a fork of it, or copies it
@@ -1206,8 +1224,7 @@ struct CopilotComposerView: View {
         // The prompt names the branch the pull request merged into as the window wrote it, which BriefBar checks what the
         // session would push against: once the list has read another, it doesn't go; nor once the pull request was
         // completed or abandoned, as a comment's composer has it.
-        if case .pullRequest(let pullRequest, .pushAndReply) = subject,
-           let problem = store.closedProblem(pullRequest) ?? store.retargetProblem(pullRequest) {
+        if let problem = store.windowProblem(subject) {
             deliveryProblem = problem
             return
         }

@@ -43,6 +43,9 @@ public struct SectionID: RawRepresentable, Hashable, Codable, Sendable, CustomSt
     public static let azureDevOpsPullRequests = SectionID(rawValue: "azureDevOps.pullRequests")
     public static let azureDevOpsSprint = SectionID(rawValue: "azureDevOps.sprint")
     public static let azureDevOpsPipelines = SectionID(rawValue: "azureDevOps.pipelines")
+    /// Azure DevOps' My Work page, while My Work Page is on: not a section, but a page that goes with its Pull Requests in a
+    /// window (`WindowPages.companions`).
+    public static let azureDevOpsMyWork = SectionID(rawValue: "azureDevOps.myWork")
     public static let copilotSessions = SectionID(rawValue: "copilot.sessions")
     public static let githubPullRequests = SectionID(rawValue: "github.pullRequests")
 }

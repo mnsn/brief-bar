@@ -37,16 +37,17 @@ public enum CopilotCommand {
         short("\(item.type) \(item.id): \(item.title)")
     }
 
-    /// A pull request's session's name: what it's for, and the pull request, kept short.
-    public static func sessionName(for pullRequest: TaskPullRequest, action: PullRequestAction) -> String {
-        short("\(action.title): !\(pullRequest.id) \(pullRequest.title)")
+    /// A pull request's session's name: what it's for, and the pull request, kept short. A Push & Reply that fixes what it
+    /// takes on first, as a comment's fix sent with Push and Reply on, is "Fix, Push & Reply", as BriefBar calls its task.
+    public static func sessionName(for pullRequest: TaskPullRequest, action: PullRequestAction, fixing: Bool = false) -> String {
+        short("\(action.title(fixing: fixing)): !\(pullRequest.id) \(pullRequest.title)")
     }
 
-    /// The new session's name for a subject.
-    static func sessionName(for subject: TaskSubject) -> String {
+    /// The new session's name for a subject, or the fork's.
+    static func sessionName(for subject: TaskSubject, fixing: Bool = false) -> String {
         switch subject {
         case .workItem(let item): return sessionName(for: item)
-        case .pullRequest(let pullRequest, let action): return sessionName(for: pullRequest, action: action)
+        case .pullRequest(let pullRequest, let action): return sessionName(for: pullRequest, action: action, fixing: fixing)
         }
     }
 

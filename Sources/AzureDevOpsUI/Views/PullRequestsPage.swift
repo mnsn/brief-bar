@@ -24,8 +24,10 @@ struct PullRequestsPage: View {
 
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
 
-    /// By Mission's views on this page: List, Map and the Board.
-    private static let views = OrderView.offered(for: PullRequestsByMission.kinds)
+    /// By Mission's views on this page: List, Map and the Board, which goes to My Work while My Work Page is on.
+    private var views: [OrderView] {
+        ordering.views(for: PullRequestsByMission.kinds)
+    }
 
     /// By Mission only while Pull Request Order is on: by status otherwise.
     private var shownOrder: PROrder {
@@ -35,7 +37,7 @@ struct PullRequestsPage: View {
 
     /// By Mission's view, as you chose it, or a picture's.
     private var shownView: OrderView {
-        view ?? ordering.view(offering: Self.views)
+        view ?? ordering.view(offering: views)
     }
 
     /// It shows the Board.
@@ -52,7 +54,7 @@ struct PullRequestsPage: View {
                     .glassButtonStyle()
                     .fixedSize()
                 if shownOrder == .byMission {
-                    OrderViewPicker(order: ordering, views: Self.views, shown: view)
+                    OrderViewPicker(order: ordering, views: views, shown: view)
                 }
                 if showsBoard {
                     BoardLanesPicker(order: ordering, shown: lanes)
@@ -92,8 +94,8 @@ struct PullRequestsPage: View {
                     BriefView()
                         .padding(.horizontal, -4)
                 }
-                // What's next, in every order: it changes no group or count.
-                if let board, store.hasLoaded, !store.items.isEmpty {
+                // What's next, in every order: it changes no group or count. On My Work instead, while that shows.
+                if let board, store.hasLoaded, !store.items.isEmpty, !ordering.showsMyWork {
                     UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
                         Self.showColumn(stage, settings: settings, ordering: ordering)
                     }
@@ -136,28 +138,9 @@ struct PullRequestsPage: View {
         ordering.revealColumn(stage)
     }
 
-    /// A pull request's card on the Board: what it shows, its menu as its row's, with Make Next, and what VoiceOver says of
-    /// it. With a lane for every card, Undo shows at the top.
+    /// A pull request's card on the Board (`PullRequestBoardCard.content`).
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
-        let order = card.step.map {
-            OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
-        }
-        let mission = missionMenu(item, in: card.mission, undo: .onBoard(lanes ?? ordering.lanes))
-        return BoardCardContent(
-            view: AnyView(PullRequestBoardCard(item: item, card: card, order: order, ordering: ordering, now: store.now)),
-            menu: AnyView(Group {
-                Button("Show Details") { select(item) }
-                Button("Open in Azure DevOps") { store.open(item) }
-                MakeNextToggle(card: card, order: ordering)
-                PullRequestMenuItems(
-                    item: item, openSource: source(item), dismiss: dismissing(item), stopWatching: watching(item),
-                    mission: mission, ordering: ordering
-                )
-            }),
-            label: "!\(item.key.number) \(item.title)",
-            details: PullRequestBoardCard.details(item, reading: card.reading, order: order, ordering: ordering),
-            mission: mission
-        )
+        PullRequestBoardCard.content(item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes) { select(item) }
     }
 
     /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.

@@ -109,6 +109,11 @@ final class AppSettings: ObservableObject {
     @Published var pullRequestDetailsWidth: Double? {
         didSet { defaults.set(pullRequestDetailsWidth, forKey: Key.pullRequestDetailsWidth) }
     }
+    /// What My Work's Board shows, with My Work Page on: your pull requests, as the Board did on the Pull Requests page, or
+    /// your sprint work with them.
+    @Published var myWorkShows: MyWorkShows {
+        didSet { defaults.set(myWorkShows.rawValue, forKey: Key.myWorkShows) }
+    }
     /// The pipelines in the Pipelines section, in the order you pinned them.
     @Published var pinnedPipelines: [PipelineRef] {
         didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
@@ -233,6 +238,7 @@ final class AppSettings: ObservableObject {
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
         sprintDetailsWidth = Self.width(defaults.object(forKey: Key.sprintDetailsWidth))
         pullRequestDetailsWidth = Self.width(defaults.object(forKey: Key.pullRequestDetailsWidth))
+        myWorkShows = defaults.string(forKey: Key.myWorkShows).flatMap(MyWorkShows.init(rawValue:)) ?? .pullRequests
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
         makesChanges = defaults.bool(forKey: Key.makesChanges)
@@ -673,6 +679,7 @@ enum SettingsKey {
     static let sprintJustMine = "ado.sprintJustMine"
     static let sprintDetailsWidth = "ado.sprintDetailsWidth"
     static let pullRequestDetailsWidth = "ado.pullRequestDetailsWidth"
+    static let myWorkShows = "ado.myWorkShows"
     /// Which comment threads a pull request's details show: `active` or `all`.
     static let commentFilter = "ado.commentFilter"
     static let pinnedPipelines = "ado.pinnedPipelines"

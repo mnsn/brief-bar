@@ -268,12 +268,12 @@ import Testing
     /// What it started that ignores being asked to stop is made to, once the server itself has quit when its input
     /// ended, or when it was asked to stop.
     @Test(.timeLimit(.minutes(5)), arguments: [
-        // It quits when its input ends.
-        (quits: "read line; exit 0", status: Int32(0)),
+        // It quits when its input ends, long before it would be asked to stop, however busy the Mac.
+        (quits: "read line; exit 0", grace: 30.0, status: Int32(0)),
         // It doesn't, and is asked to stop.
-        (quits: "while :; do sleep 1; done", status: SIGTERM),
+        (quits: "while :; do sleep 1; done", grace: 0.3, status: SIGTERM),
     ])
-    func endsWhatTheServerStartedEvenOnceItHasQuit(_ server: (quits: String, status: Int32)) async throws {
+    func endsWhatTheServerStartedEvenOnceItHasQuit(_ server: (quits: String, grace: TimeInterval, status: Int32)) async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
         let copilot = folder.appendingPathComponent("copilot")
@@ -282,7 +282,7 @@ import Testing
         try "#!/bin/sh\n/bin/sh -c 'trap \"\" TERM; echo $$ > \"$CHILD\"; exec > /dev/null; while :; do sleep 1; done' &\n\(server.quits)\n"
             .write(to: copilot, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copilot.path)
-        let started = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
+        let started = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: server.grace)
         var child: pid_t?
         var deadline = ContinuousClock.now.advanced(by: waitLimit)
         while ContinuousClock.now < deadline {
@@ -291,7 +291,9 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         let pid = try #require(child)
-        #expect(await started.close() == server.status)
+        // Awaited apart, so that a failure shows the status, which #expect doesn't for an expression that awaits.
+        let status = await started.close()
+        #expect(status == server.status)
         deadline = ContinuousClock.now.advanced(by: waitLimit)
         while kill(pid, 0) == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
@@ -552,11 +554,16 @@ import Testing
         retargeted.targetBranch = "release/x"
 
         let request = CopilotLauncher.Request(
-            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Push and reply", options: CopilotModel.quick,
-            repository: repository.checkout, worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout)
+            subject: .pullRequest(retargeted, .pushAndReply), prompt: "Fix the comment, then push and reply", options: CopilotModel.quick,
+            repository: repository.checkout, worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout),
+            fixing: true
         )
         await #expect(throws: LaunchError.foreignMerge(target: "release/x")) { try await launcher(fixture).launch(request) { _ in } }
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
+        // The fork was named for what it does, as BriefBar calls its task: a comment's fix sent to push and reply.
+        #expect(fixture.parameters(of: "sessions.fork") as? [String: String] == [
+            "sessionId": FakeCopilot.session, "name": "Fix, Push & Reply: !4071 Fix the checkout total",
+        ])
         #expect(!FileManager.default.fileExists(atPath: repository.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-fork").path))
         #expect(!FileManager.default.fileExists(atPath: fixture.arguments.path))
         #expect(FileManager.default.fileExists(atPath: checkout.appendingPathComponent("main.txt").path))

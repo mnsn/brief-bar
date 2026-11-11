@@ -1017,11 +1017,16 @@ import Testing
     /// focus a moment after a click, Tab, its move or its details closing, later on a busy machine, and a key before
     /// that goes to no card. A key that reaches the card does what it does as it's pressed, so none does it twice. Only for
     /// a short while from when the card can have the keys, as once it's drawn anew or its details close: a card that has
-    /// them back late fails, as a key you press right away would go nowhere.
-    private static func pressUntil(_ what: String, within limit: Duration = .seconds(2), _ pressed: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: limit)
+    /// them back late fails, as a key you press right away would go nowhere. That while is counted in presses, 50 ms
+    /// apart and each in a turn of its own on the main actor, rather than on a clock: about two seconds on a Mac that isn't
+    /// busy. Where every test shares the main actor, as on CI, a turn can come seconds after the last, and the card waits
+    /// for its own turns as the presses do: on 2026-11-11, with the Mac 26 times slower than alone, every card had the
+    /// keys by the third press, up to nine seconds on, while two seconds on a clock ran out on CI.
+    private static func pressUntil(_ what: String, within limit: Int = 40, _ pressed: () -> Bool) async throws {
+        var count = 1
         while !pressed() {
-            guard ContinuousClock.now < deadline else { throw TestError("Timed out waiting for \(what)") }
+            guard count < limit else { throw TestError("Timed out waiting for \(what), after \(count) presses") }
+            count += 1
             try await Task.sleep(for: .milliseconds(50))
         }
     }

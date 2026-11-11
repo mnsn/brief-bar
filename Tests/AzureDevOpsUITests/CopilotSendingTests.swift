@@ -231,8 +231,10 @@ import Testing
 
     /// A comment's fix goes for the pull request as its prompts quote it, though its sender read the pull request again
     /// since, as Edit the Whole Prompt… does once the code it quotes is read: retargeted meanwhile, a fix sent to push and
-    /// reply goes for the branch its prompt names, which BriefBar's reads of the branch the pull request merges into then
-    /// refuse, rather than for the one the sender read.
+    /// reply goes for the branch its prompt names, rather than for the one the sender read, in place or from the Send to
+    /// Copilot window. BriefBar's reads of the branch the pull request merges into then refuse it: before a fork of a task
+    /// starts; as the window sends it, once the list read the retarget; and right before git checks what a session of the
+    /// Copilot app would push, as Azure DevOps says.
     @Test func aCommentsFixGoesForThePullRequestAsItsPromptsQuoteIt() async throws {
         let prs = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         await prs.loadOnce()
@@ -244,6 +246,8 @@ import Testing
         let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
         copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
         copilot.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
+        copilot.openForTests = { _, _ in false }
+        copilot.readTarget = { _ in "release/2" }
         final class Sent { var requests: [CopilotLauncher.Request] = [] }
         let sent = Sent()
         copilot.launchForTests = { request, _, _ in
@@ -267,7 +271,26 @@ import Testing
         }
         #expect(pullRequest.targetBranch == record.pullRequest.targetBranch)
         #expect(request.prompt == ships.prompts.session)
-        #expect(request.targetNow != nil)
+        // What the launcher reads before the fork starts, which isn't the branch the prompt names (`LaunchError.retargeted`).
+        #expect(try await request.targetNow?() == "release/2")
+
+        // From the window, as Edit the Whole Prompt… opens it: for the pull request as the prompts quote it.
+        guard case .pullRequest(let windowed, .pushAndReply) = later.windowSubject(ships) else {
+            Issue.record("The window's isn't a Push & Reply for the pull request")
+            return
+        }
+        #expect(windowed == pullRequest)
+        // Once the list read the retarget, the window sends nothing, saying why.
+        copilot.currentTarget = { _ in "release/2" }
+        #expect(copilot.windowProblem(later.windowSubject(ships)) == CopilotTasksStore.retargetedMessage("release/2"))
+        #expect(copilot.windowProblem(later.windowSubject(sending.commentFix(thread, how: nil, suggestion: nil, excerpt: nil))) == nil)
+        // Before then, it goes on to deliver it, to one of the Copilot app's sessions, which Azure DevOps' read refuses.
+        copilot.currentTarget = { _ in nil }
+        #expect(copilot.windowProblem(later.windowSubject(ships)) == nil)
+        #expect(await copilot.deliver(ships.prompts.session, to: appChoice(app), handOff: ships.handOff, checkingPush: windowed) == .notSent(
+            CopilotTasksStore.retargetedMessage("release/2")
+        ))
+        #expect(settings.copilotSentPrompts.isEmpty)
     }
 
     /// Sent while the pull request's branches move, as its conflicts are read again, a fix or a question doesn't build on
@@ -308,9 +331,9 @@ import Testing
         #expect(!build.isLeftOut)
     }
 
-    /// A comment's fix goes with Push and Reply as it is as you send it, Try Again's included, which puts back what the fix
-    /// it tries again went with right before it sends that again: not as it's set by the time the fix is written, once what
-    /// its prompt quotes is read, as when you change it in another composer meanwhile, for the next fix.
+    /// A comment's fix goes with Push and Reply as it is as you send it: not as it's set by the time the fix is written, once
+    /// what its prompt quotes is read, as when you change it in another composer meanwhile, for the next fix. Try Again's
+    /// restore, through the composer itself, is CommentTryAgainTests'.
     @Test func aFixPushesAndRepliesAsYouSentIt() {
         let choice = PushAndReplyChoice()
         func asking(readsChoice: Bool, ships: Bool = false) -> CopilotAsking {

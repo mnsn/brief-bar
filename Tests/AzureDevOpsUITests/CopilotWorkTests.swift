@@ -449,6 +449,21 @@ import Testing
         #expect(CopilotAsking.alsoPushes([.thread(12)], in: place, forkedWithTheCLI: false, taking: [.thread(12)]) == nil)
         #expect(CopilotAsking.alsoPushes([.thread(11)], in: place, forkedWithTheCLI: true, taking: [.thread(12)]) == nil)
         #expect(CopilotAsking.alsoPushes([], in: place, forkedWithTheCLI: false, taking: []) == nil)
+        // And what the session changed for fixes that were to push and reply and didn't, which aren't ready to push on their
+        // own; a fork the Copilot CLI makes starts at the commit the task's checkout has, with what they committed, if
+        // anything.
+        #expect(CopilotAsking.alsoPushes([], unpushed: [.thread(13)], in: place, forkedWithTheCLI: false, taking: [.thread(12)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+        #expect(CopilotAsking.alsoPushes([.build(31)], unpushed: [.thread(13), .thread(14)], in: place, forkedWithTheCLI: false, taking: [.thread(12)])
+            == "It also pushes a build's fix ready in ‘Retry backoff’, which you haven't pushed, and what Copilot changed there for 2 comments and didn't push, without replying on those comments.")
+        #expect(CopilotAsking.alsoPushes([.thread(11)], unpushed: [.thread(13)], in: "the ‘Fix, Push & Reply’ task", forkedWithTheCLI: true, taking: [.thread(12)])
+            == "It also pushes what Copilot committed in the ‘Fix, Push & Reply’ task for 1 comment and didn't push, without replying on that comment.")
+        #expect(CopilotAsking.alsoPushes([], unpushed: [.thread(12)], in: place, forkedWithTheCLI: false, taking: [.thread(12)]) == nil)
+        // What fixes of builds, or of the conflicts, that failed or were stopped left there, by what they were for.
+        #expect(CopilotAsking.alsoPushes([], unpushed: [.thread(13), .build(31), .conflicts], in: place, forkedWithTheCLI: false, taking: [.thread(12)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment, a build and the conflicts, and didn't push, without replying on that comment.")
+        #expect(CopilotAsking.alsoPushes([], unpushed: [.build(31), .build(32)], in: place, forkedWithTheCLI: false, taking: [.thread(12)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 2 builds and didn't push.")
     }
 
     /// Fix the Build quotes what the details read of a build, once one was opened there: its failed tests and the end of its
@@ -717,7 +732,7 @@ import Testing
         #expect(said(.working(nil), fork: true) == "Fixing this in a fork of ‘Retry backoff’, to push and reply")
         #expect(said(.done(nil), pushSeen: true) == "Fixed, pushed and replied in ‘Retry backoff’")
         #expect(said(.done(nil), fork: true, pushSeen: true) == "Fixed, pushed and replied in a fork of ‘Retry backoff’")
-        #expect(said(.done(nil)) == "Fixed in ‘Retry backoff’, but not pushed")
+        #expect(said(.done(nil)) == "Done in ‘Retry backoff’, but not pushed")
         #expect(said(.failed(nil)) == "Couldn't fix and push it in ‘Retry backoff’")
         #expect(said(.stopped) == "Stopped in ‘Retry backoff’ before it pushed it")
         let fixing = CopilotWork(part: .thread(11), purpose: .pushAndReply, state: .working(nil), session: session, isTask: false, since: now, fixes: true)
@@ -741,7 +756,7 @@ import Testing
         settings.copilotRuns[0].ended = .finished
         for pushed in [nil, false] as [Bool?] {
             settings.copilotRuns[0].pushed = pushed
-            #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Fixed in the ‘Fix, Push & Reply’ task, but not pushed")
+            #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Done in the ‘Fix, Push & Reply’ task, but not pushed")
             #expect(store.work(on: .thread(11), of: key)?.sentence(name: name, forkOf: nil) == "Fixed in the ‘Fix, Push & Reply’ task, not pushed")
             #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
             #expect(!CopilotTasksStore.canTryAgain(try #require(store.work(on: .thread(12), of: key))))
@@ -787,14 +802,44 @@ import Testing
         #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushing from ‘Retry backoff’")
         var finished = sent
         finished.ended = .finished
+        // A fix of another comment, sent there with Push and Reply on, pushes along 11's, ready, and what 12's changed and
+        // didn't push, as its composer says, and the Send to Copilot window, which goes there, or to a fork the app makes.
+        let there = SessionChoice(kind: .app(AppSession(id: session, name: "Retry backoff")), name: "Retry backoff", reasons: [.onItsBranch])
+        let parts: [PullRequestPart] = [.thread(11), .thread(12), .thread(13)]
+        store.partsToFix = { _ in parts }
+        let ships = TaskSubject.pullRequest(pullRequest, .pushAndReply)
+        let along = "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments."
+        let fixing13 = "1. Cap the backoff (thread 13)\n"
         for pushed in [nil, false] as [Bool?] {
             finished.pushed = pushed
             settings.copilotSentPrompts = [fixed, finished]
-            #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Fixed in ‘Retry backoff’, but not pushed")
+            #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Done in ‘Retry backoff’, but not pushed")
             #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
+            #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)]) == along)
+            for delivery in [CopilotComposerView.Delivery.session, .fork] {
+                #expect(CopilotComposerView.alsoPushes(
+                    ships, fixes: true, to: there, delivery: delivery, parts: [.thread(13)], prompt: fixing13, store: store
+                ) == along)
+            }
+            // A fork the Copilot CLI makes, as of a task, has only what's committed: what 12's fix committed before it
+            // stopped, which may be 11's fix too, as it commits all the session changed before it pushes.
+            #expect(CopilotComposerView.alsoPushes(ships, fixes: true, to: there, delivery: .cliFork, parts: [.thread(13)], prompt: fixing13, store: store)
+                == "It also pushes what Copilot committed in ‘Retry backoff’ for 2 comments and didn't push, without replying on those comments.")
+            #expect(CopilotComposerView.alsoPushes(ships, fixes: false, to: there, delivery: .session, parts: [.thread(13)], prompt: fixing13, store: store) == nil)
+            #expect(CopilotComposerView.alsoPushes(ships, fixes: true, to: nil, delivery: .cli, parts: [.thread(13)], prompt: fixing13, store: store) == nil)
+            // The window takes on what its prompt lists as you send it: a thread whose entry you took out of it goes along
+            // without a reply, as its fix's change does.
+            let fixingBoth = "1. Retry on 503 (thread 11)\n2. Cap the backoff (thread 13)\n"
+            #expect(CopilotComposerView.alsoPushes(
+                ships, fixes: true, to: there, delivery: .session, parts: [.thread(11), .thread(13)], prompt: fixingBoth, store: store
+            ) == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+            #expect(CopilotComposerView.alsoPushes(
+                ships, fixes: true, to: there, delivery: .session, parts: [.thread(11), .thread(13)], prompt: fixing13, store: store
+            ) == along)
         }
         finished.pushed = true
         settings.copilotSentPrompts = [fixed, finished]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)]) == nil)
         #expect(store.work(on: .thread(12), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Fixed, pushed and replied in ‘Retry backoff’")
         #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil) == "Pushed from ‘Retry backoff’, without a reply")
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).isEmpty)
@@ -803,6 +848,41 @@ import Testing
         settings.copilotSentPrompts = [fixed, failing]
         #expect(CopilotTasksStore.canTryAgain(try #require(store.work(on: .thread(12), of: key))))
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
+        // What a fix that failed, or was stopped, changed first, if anything, is still there for the next push to take along,
+        // which says so, though it isn't ready to push on its own; so is a plain fix's. A fork the Copilot CLI makes has
+        // what a fix sent to push and reply since committed of it, if anything.
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)]) == along)
+        var stoppedFix = fixed
+        stoppedFix.ended = .stopped
+        settings.copilotSentPrompts = [stoppedFix, failing]
+        #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).isEmpty)
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 2 comments and didn't push, without replying on those comments.")
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: true, taking: [.thread(13)])
+            == "It also pushes what Copilot committed in ‘Retry backoff’ for 2 comments and didn't push, without replying on those comments.")
+        // Not a plain fix's that no push went after, which nothing committed: the ready fix alone, or one sent to push and
+        // reply before it.
+        settings.copilotSentPrompts = [fixed]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)])
+            == "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, without replying on that comment.")
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: true, taking: [.thread(13)]) == nil)
+        var failedBefore = failing
+        failedBefore.sentAt = first.addingTimeInterval(-60)
+        settings.copilotSentPrompts = [failedBefore, fixed]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: true, taking: [.thread(13)])
+            == "It also pushes what Copilot committed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+        // Nor what one sent to a fork of it committed there.
+        var failedInFork = failing
+        failedInFork.session = fork
+        failedInFork.forkedFrom = session
+        settings.copilotSentPrompts = [fixed, failedInFork]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: true, taking: [.thread(13)]) == nil)
+        // Once a later push from there took them along, they're pushed.
+        let pushedLater = try #require(SentPrompt(
+            about(.pushAndReply, threads: [13]), session: session, sentAt: now.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [stoppedFix, failing, pushedLater]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)]) == nil)
         // Kept as it was sent, and as it ended, after BriefBar restarts; one kept before it had this didn't fix them, nor knew
         // where the branch was, or whether it pushed.
         let defaults = MemoryDefaults()
@@ -828,8 +908,11 @@ import Testing
     @Test func aFixThatShipsKeepsWhereTheBranchWasAsItStarted() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = store(settings)
+        // Whether each asked for a session named for fixing first (`CopilotLauncher.Request.fixing`).
+        var fixingAsked: [Bool] = []
         store.launchForTests = { request, id, now in
             guard case .pullRequest(_, let action) = request.subject else { throw CancellationError() }
+            fixingAsked.append(request.fixing)
             var run = Self.makeRun(id, action, startedAt: now)
             if action == .pushAndReply { run.head = "c1" }
             return run
@@ -846,6 +929,7 @@ import Testing
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 14", options: CopilotModel.standard,
                    repository: repository, parts: [.thread(14)])
         try await settle { settings.copilotRuns.count == 3 }
+        #expect(fixingAsked == [true, false, false])
         #expect(settings.copilotRuns.filter { $0.id != fixing.id }.allSatisfy { $0.fixes == nil && $0.head == nil && $0.pushed == nil })
         // Its row, once it finished: pushed once it pushed a commit of its own. As BriefBar keeps the run, where no read of its
         // log is under way, which says a task just started is still working, whatever it kept.
@@ -858,7 +942,7 @@ import Testing
             finished.pushed = pushed
             ended.copilotRuns = [finished]
             #expect(row()?.pushSeen == false)
-            #expect(row()?.sentence(now: nil) == "Fixed, but not pushed")
+            #expect(row()?.sentence(now: nil) == "Done, but not pushed")
         }
         finished.pushed = true
         ended.copilotRuns = [finished]
@@ -983,8 +1067,8 @@ import Testing
         #expect(await answers.ends.allSatisfy { $0.map { abs($0.timeIntervalSince(now.addingTimeInterval(2))) < 0.01 } ?? false })
         let name = PullRequestAction.fixPushAndReplyTitle
         #expect(store.work(on: .thread(12), of: key)?.sentence(name: name, forkOf: nil) == "Fixed, pushed and replied in the ‘Fix, Push & Reply’ task")
-        #expect(store.work(on: .thread(14), of: key)?.sentence(name: name, forkOf: nil) == "Fixed in the ‘Fix, Push & Reply’ task, but not pushed")
-        #expect(store.work(on: .thread(17), of: key)?.sentence(name: name, forkOf: nil) == "Fixed in the ‘Fix, Push & Reply’ task, but not pushed")
+        #expect(store.work(on: .thread(14), of: key)?.sentence(name: name, forkOf: nil) == "Done in the ‘Fix, Push & Reply’ task, but not pushed")
+        #expect(store.work(on: .thread(17), of: key)?.sentence(name: name, forkOf: nil) == "Done in the ‘Fix, Push & Reply’ task, but not pushed")
 
         // After BriefBar restarts, it reads how they ended again, but asks git nothing more, however it would answer now:
         // what they kept stays.
@@ -1240,7 +1324,7 @@ import Testing
         #expect(ends.allSatisfy { $0.map { abs($0.timeIntervalSince(sent.addingTimeInterval(2))) < 0.001 } == true })
         #expect(settings.copilotSentPrompts.first?.pushed == false)
         let work = try #require(store.work(on: .thread(12), of: key))
-        #expect(work.sentence(name: "Retry backoff", forkOf: nil) == "Fixed in ‘Retry backoff’, but not pushed")
+        #expect(work.sentence(name: "Retry backoff", forkOf: nil) == "Done in ‘Retry backoff’, but not pushed")
         #expect(work.said == "Done")
         #expect(store.promptsFinishedAt.isEmpty)
     }
@@ -1271,7 +1355,7 @@ import Testing
         ))
         settings.copilotSentPrompts = [fixed, fixed13, stopped, pushed13]
         #expect(line(13, "Null check") == "Pushed and replied from ‘Null check’")
-        #expect(line(12) == "Fixed in ‘Retry backoff’, but not pushed")
+        #expect(line(12) == "Done in ‘Retry backoff’, but not pushed")
         #expect(line(11) == "Fixed in ‘Retry backoff’, not pushed")
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12), .thread(13)]).map(\.threads) == [[11]])
 
@@ -1287,7 +1371,7 @@ import Testing
         // One that failed didn't take it along.
         pushing11.ended = .failed
         settings.copilotSentPrompts = [fixed, fixed13, stopped, pushed13, pushing11]
-        #expect(line(12) == "Fixed in ‘Retry backoff’, but not pushed")
+        #expect(line(12) == "Done in ‘Retry backoff’, but not pushed")
 
         // A fork's fix that stopped, then anything pushed elsewhere: 11 is still ready in the session.
         var forkStopped = try #require(SentPrompt(
@@ -1295,7 +1379,7 @@ import Testing
         ))
         forkStopped.pushed = false
         settings.copilotSentPrompts = [fixed, fixed13, forkStopped, pushed13]
-        #expect(line(12, "Retry backoff (fork)", forkOf: "Retry backoff") == "Fixed in a fork of ‘Retry backoff’, but not pushed")
+        #expect(line(12, "Retry backoff (fork)", forkOf: "Retry backoff") == "Done in a fork of ‘Retry backoff’, but not pushed")
         #expect(line(11) == "Fixed in ‘Retry backoff’, not pushed")
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
     }
@@ -1326,7 +1410,7 @@ import Testing
         let reference = try #require(fixing.onPullRequest)
         #expect(
             CopilotRun.pushes(goingOnWith: settings.copilotRuns.first, on: reference)
-                == [SessionPush(since: first, ended: .finished, fixes: true, pushed: true)]
+                == [SessionPush(since: first, ended: .finished, fixes: true, pushed: true, parts: [.thread(11)])]
         )
     }
 
@@ -1336,12 +1420,13 @@ import Testing
         let first = now.addingTimeInterval(-600), before = now.addingTimeInterval(-900)
         var push = run(task, .pushAndReply, startedAt: first, ended: .finished, taken: [TakenPart(.thread(12), since: first, ships: true)])
         let reference = try #require(push.onPullRequest)
-        #expect(CopilotRun.pushes(goingOnWith: push, on: reference) == [SessionPush(since: first, ended: .finished)])
+        // With what the session had taken on as it went, which it committed along.
+        #expect(CopilotRun.pushes(goingOnWith: push, on: reference) == [SessionPush(since: first, ended: .finished, parts: [.thread(12)])])
         push.pushes = [SessionPush(since: before, ended: .failed)]
-        #expect(CopilotRun.pushes(goingOnWith: push, on: reference) == [SessionPush(since: before, ended: .failed), SessionPush(since: first, ended: .finished)])
+        #expect(CopilotRun.pushes(goingOnWith: push, on: reference) == [SessionPush(since: before, ended: .failed), SessionPush(since: first, ended: .finished, parts: [.thread(12)])])
         // One not seen to end stopped.
         push.ended = nil
-        #expect(CopilotRun.pushes(goingOnWith: push, on: reference)?.last == SessionPush(since: first, ended: .stopped))
+        #expect(CopilotRun.pushes(goingOnWith: push, on: reference)?.last == SessionPush(since: first, ended: .stopped, parts: [.thread(12)]))
         #expect(CopilotRun.pushes(goingOnWith: run(task, startedAt: first, ended: .finished, taken: nil), on: reference) == nil)
         var other = reference
         other.id = 4099
@@ -1352,7 +1437,7 @@ import Testing
         var fixing = run(task, .pushAndReply, startedAt: first, ended: .finished, taken: [
             TakenPart(.thread(11), since: before, ended: .finished), TakenPart(.thread(12), since: first, ships: true, fixes: true),
         ])
-        #expect(CopilotRun.pushes(goingOnWith: fixing, on: reference) == [SessionPush(since: first, ended: .finished, fixes: true)])
+        #expect(CopilotRun.pushes(goingOnWith: fixing, on: reference) == [SessionPush(since: first, ended: .finished, fixes: true, parts: [.thread(11), .thread(12)])])
         let shipping = fixing
         fixing.action = .fixBuild
         fixing.startedAt = now
@@ -1365,7 +1450,7 @@ import Testing
             var shipped = shipping
             shipped.pushed = pushed
             let pushes = CopilotRun.pushes(goingOnWith: shipped, on: reference)
-            #expect(pushes == [SessionPush(since: first, ended: .finished, fixes: true, pushed: pushed)])
+            #expect(pushes == [SessionPush(since: first, ended: .finished, fixes: true, pushed: pushed, parts: [.thread(11), .thread(12)])])
             fixing.pushes = pushes
             carrying.copilotRuns = [fixing]
             if pushed == true {
@@ -1388,7 +1473,7 @@ import Testing
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 12 again", options: CopilotModel.standard,
                    repository: URL(fileURLWithPath: "/tmp/payments-api"), continuing: push, parts: [.thread(12)])
         try await settle { settings.copilotRuns.first?.action == .fixComments }
-        #expect(settings.copilotRuns.first?.pushes == [SessionPush(since: first, ended: .finished)])
+        #expect(settings.copilotRuns.first?.pushes == [SessionPush(since: first, ended: .finished, parts: [.thread(12)])])
     }
 
     /// Once a Push & Reply that shipped a thread finished, and its session went on, the thread still says it's pushed: an
@@ -2340,7 +2425,7 @@ import Testing
             store.work(on: .thread(11), of: key)?.sentence(name: "Retry backoff", forkOf: nil)
         }
         for (state, words, title) in [
-            ("finished", "Pushed and replied on the thread.", "Copilot finished fixing a comment in ‘Retry backoff’"),
+            ("finished", "Pushed and replied on the thread.", "Fixed, pushed and replied in ‘Retry backoff’"),
             ("failed", "The tests failed.", "Couldn't fix and push it in ‘Retry backoff’"),
         ] {
             let (store, outbox, recent, report, home, answers, gate) = try reported(answering: true)
@@ -2389,18 +2474,22 @@ import Testing
         try await settle { store.settings.copilotSentPrompts.first?.ended != nil }
         #expect(store.settings.copilotSentPrompts.first?.pushed == false)
         #expect(await answers.asked.count == 2)
-        #expect(said(store) == "Fixed in ‘Retry backoff’, but not pushed")
-        #expect(recent.history.entries.map(\.title) == ["Copilot finished fixing a comment in ‘Retry backoff’"])
+        #expect(said(store) == "Done in ‘Retry backoff’, but not pushed")
+        #expect(recent.history.entries.map(\.title) == ["Done in ‘Retry backoff’, but not pushed"])
         try await settle { !FileManager.default.fileExists(atPath: report.path) }
 
+        // One that took on several comments says the same, once git has told.
         let requestId = UUID().uuidString.lowercased()
-        let both = try #require(SentPrompt(
+        var both = try #require(SentPrompt(
             SentPrompt.About(pullRequest: key, purpose: .pushAndReply, parts: [.thread(11), .thread(12)], fixes: true),
             session: session, sentAt: now, copied: false, report: requestId
         ))
+        both.ended = .finished
         let done = OutboxReport(requestId: requestId, sessionId: session, pid: 1, startedAt: now, name: "Retry backoff", state: .finished, since: now)
-        #expect(CopilotTasksStore.promptNotification(both, requestId: requestId, report: done, pullRequest: nil).title
-            == "Copilot finished fixing the comments in ‘Retry backoff’")
+        for (pushed, title) in [(true, "Fixed, pushed and replied in ‘Retry backoff’"), (false, "Done in ‘Retry backoff’, but not pushed")] {
+            both.pushed = pushed
+            #expect(CopilotTasksStore.promptNotification(both, requestId: requestId, report: done, pullRequest: nil).title == title)
+        }
     }
 
     /// What a prompt's notification says, and opens: the line's words, by the name of the session it went to, a fork's own;
@@ -2634,18 +2723,21 @@ import Testing
         #expect(!entry.onlyPushes)
         #expect(entry.actionTitle == "Fix, Push & Reply")
         // Finished: pushed only once it pushed a commit of its own, as its run keeps (`pushSeen`).
-        #expect(entry.sentence(now: nil) == "Fixed, but not pushed")
+        #expect(entry.sentence(now: nil) == "Done, but not pushed")
         entry.pushSeen = true
         #expect(entry.sentence(now: nil) == "Fixed, pushed and replied")
         entry.pushSeen = false
         #expect(CopilotTasksStore.startedNotification(entry, subject: "!4102").title == "Copilot is fixing a comment")
-        // Its notification doesn't say whether it pushed: what Copilot said tells.
+        // Its notification, which comes once git has told, says whether it pushed, as its row does: it may have stopped short
+        // of its push, or changed nothing, as what Copilot said tells.
         let stopped = RunStatus(phase: .finished, detail: "The tests still fail, so I didn't commit, push or reply.\nMore.")
         let ended = try #require(CopilotTasksStore.endedNotification(entry, status: stopped, subject: "!4102"))
-        #expect(ended.title == "Copilot finished fixing a comment")
+        #expect(ended.title == "Copilot is done, but didn't push")
         #expect(ended.body == "The tests still fail, so I didn't commit, push or reply.")
         entry.taken?.append(TakenPart(.thread(12), since: now, ships: true, fixes: true))
-        #expect(CopilotTasksStore.endedNotification(entry, status: RunStatus(phase: .finished), subject: "!4102")?.title == "Copilot finished fixing the comments")
+        entry.pushSeen = true
+        #expect(CopilotTasksStore.endedNotification(entry, status: RunStatus(phase: .finished), subject: "!4102")?.title == "Copilot fixed, pushed and replied")
+        entry.pushSeen = false
         #expect(CopilotTasksStore.endedNotification(entry, status: RunStatus(phase: .working), subject: "!4102") == nil)
         entry.taken = [TakenPart(.thread(11), since: now, ships: true)]
         #expect(CopilotTasksStore.endedNotification(entry, status: RunStatus(phase: .finished), subject: "!4102")?.title == "Copilot pushed and replied")
@@ -2685,7 +2777,7 @@ import Testing
             store.work(on: part, of: key)?.sentence(name: name, forkOf: forkOf)
         }
         // Done, but it didn't push: 11's fix is still ready, and 12's isn't to push again.
-        #expect(said(.thread(12)) == "Fixed in a fork of ‘Retry backoff’, but not pushed")
+        #expect(said(.thread(12)) == "Done in a fork of ‘Retry backoff’, but not pushed")
         #expect(said(.thread(11), "Retry backoff", forkOf: "") == "Fixed in ‘Retry backoff’, not pushed")
         #expect(store.readyFixes(of: key, among: [.thread(11), .thread(12)]).map(\.threads) == [[11]])
         settings.copilotSentPrompts = [fixed, pushed(shipped)]
@@ -2787,6 +2879,346 @@ import Testing
         settings.copilotRuns = [again, forked]
         #expect(store.readyFixes(of: key, among: [.thread(11), .conflicts]).map(\.parts) == [[.thread(11)]])
     }
+
+    /// A fix sent to push and reply in a fork BriefBar made of a session names what the fork has of the session's fixes, as
+    /// a push from the fork carries them (`aFixThatShipsFromAForkPushesWhatTheForkHasOfTheSessionsFixes`): those over by when
+    /// the fork was made, ready or left unpushed, and none from after; in a fork the Copilot CLI made of one of BriefBar's
+    /// tasks, only what's committed (`CopilotTasksStore.alsoPushes`).
+    @Test func aFixThatShipsInAForkNamesWhatTheForkHasOfTheSessionsFixes() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        let parts: [PullRequestPart] = [.thread(11), .thread(12), .thread(13), .thread(14), .conflicts]
+        // 11 fixed in the session, then 12 fixed there to push and reply, which didn't push; then a plain fix of 13 forked it.
+        let fixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
+        var shipping = about(.pushAndReply, threads: [12])
+        shipping.fixes = true
+        let unpushed = try #require(SentPrompt(shipping, session: session, sentAt: first.addingTimeInterval(30), copied: false, ended: .finished))
+        let madeIt = try #require(SentPrompt(
+            about(threads: [13]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [fixed, unpushed, madeIt]
+        let inFork = SessionChoice(
+            kind: .app(AppSession(id: fork, name: "Retry backoff (fork)")), name: "Retry backoff (fork)", reasons: [.onItsBranch]
+        )
+        #expect(store.alsoPushes(key, among: parts, in: inFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 2 fixes ready in ‘Retry backoff (fork)’, which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments.")
+        // The session has its own, not the fork's.
+        let there = SessionChoice(kind: .app(AppSession(id: session, name: "Retry backoff")), name: "Retry backoff", reasons: [.onItsBranch])
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments.")
+        // A fork made before those were over, or of another session, has only its own.
+        let madeEarly = try #require(SentPrompt(
+            about(threads: [13]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(-60), copied: false, ended: .finished
+        ))
+        let ofAnother = try #require(SentPrompt(
+            about(threads: [13]), session: fork, forkedFrom: task, sentAt: first.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        for made in [madeEarly, ofAnother] {
+            settings.copilotSentPrompts = [fixed, unpushed, made]
+            #expect(store.alsoPushes(key, among: parts, in: inFork, forkedWithTheCLI: false, taking: [.thread(14)])
+                == "It also pushes 1 fix ready in ‘Retry backoff (fork)’, which you haven't pushed, without replying on that comment.")
+        }
+        // A fork the Copilot CLI made of one of BriefBar's tasks has the conflicts' resolution, which the task committed, and
+        // not 11's fix, which it didn't.
+        settings.copilotSentPrompts = []
+        let resolved = run(task, .resolveConflicts, startedAt: first, ended: .finished, taken: [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .finished), TakenPart(.conflicts, since: first, target: "main"),
+        ])
+        let forked = run("44444444-4444-4444-8444-444444444444", startedAt: now, ended: .finished, taken: [
+            TakenPart(.thread(13), since: now),
+        ], forkedFrom: task)
+        settings.copilotRuns = [resolved, forked]
+        let inTaskFork = SessionChoice(kind: .task(forked), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inTaskFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix and the conflicts' resolution ready in the ‘Fix Comments’ task, which you haven't pushed, without replying on that comment.")
+        // A fork the CLI makes of the task has the resolution, until a fork of it pushed it.
+        let inResolved = SessionChoice(kind: .task(resolved), name: "Resolve Conflicts", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inResolved, forkedWithTheCLI: true, taking: [.thread(14)])
+            == "It also pushes the conflicts' resolution ready in the ‘Resolve Conflicts’ task, which you haven't pushed.")
+        var pushedResolution = run(forked.id, .pushAndReply, startedAt: now, ended: .finished, taken: [
+            TakenPart(.thread(12), since: now, ships: true, fixes: true),
+        ], forkedFrom: task)
+        pushedResolution.pushed = true
+        settings.copilotRuns = [resolved, pushedResolution]
+        #expect(store.alsoPushes(key, among: parts, in: inResolved, forkedWithTheCLI: true, taking: [.thread(14)]) == nil)
+        // Resolve Conflicts commits as it merges: stopped after, what it committed is in its task, and in a fork of it with
+        // the CLI.
+        let stoppedResolving = run(task, .resolveConflicts, startedAt: first, ended: .stopped, taken: [
+            TakenPart(.conflicts, since: first, target: "main"),
+        ])
+        settings.copilotRuns = [stoppedResolving, forked]
+        let inTask = SessionChoice(kind: .task(stoppedResolving), name: "Resolve Conflicts", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inTask, forkedWithTheCLI: true, taking: [.thread(14)])
+            == "It also pushes what Copilot committed in the ‘Resolve Conflicts’ task for the conflicts and didn't push.")
+        #expect(store.alsoPushes(key, among: parts, in: inTaskFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, and what Copilot changed there for the conflicts and didn't push, without replying on that comment.")
+        // Not once a push from the task since pushed what it merged.
+        let reference = try #require(stoppedResolving.onPullRequest)
+        var pushedMerge = run(task, .pushAndReply, startedAt: first.addingTimeInterval(60), ended: .finished, taken: nil)
+        pushedMerge.taken = CopilotRun.taken(
+            goingOnWith: stoppedResolving, on: reference, taking: [], for: .pushAndReply, at: pushedMerge.startedAt
+        )
+        settings.copilotRuns = [pushedMerge]
+        let inPushedTask = SessionChoice(kind: .task(pushedMerge), name: "Push & Reply", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inPushedTask, forkedWithTheCLI: true, taking: [.thread(14)]) == nil)
+        // A fix sent to push and reply that stopped may have committed what the task changed before it too, as it commits all
+        // of it before it pushes: 11's fix, which a fork with the CLI has then.
+        let stoppedShipping = run(task, .pushAndReply, startedAt: first, ended: .stopped, taken: [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .finished), TakenPart(.thread(12), since: first, ships: true, fixes: true),
+        ])
+        settings.copilotRuns = [stoppedShipping, forked]
+        let inShippingTask = SessionChoice(kind: .task(stoppedShipping), name: "Fix, Push & Reply", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inShippingTask, forkedWithTheCLI: true, taking: [.thread(14)])
+            == "It also pushes what Copilot committed in the ‘Fix, Push & Reply’ task for 2 comments and didn't push, without replying on those comments.")
+        let committedThere = "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, and what Copilot changed there for 2 comments and didn't push, without replying on those comments."
+        #expect(store.alsoPushes(key, among: parts, in: inTaskFork, forkedWithTheCLI: false, taking: [.thread(14)]) == committedThere)
+        // The same once the task's session goes on, after the fork was made: what went on there since isn't the fork's.
+        var goneOnShipping = run(task, startedAt: now.addingTimeInterval(30), taken: nil)
+        goneOnShipping.taken = CopilotRun.taken(
+            goingOnWith: stoppedShipping, on: reference, taking: [.thread(15)], for: .fixComments, at: goneOnShipping.startedAt
+        )
+        goneOnShipping.pushes = CopilotRun.pushes(goingOnWith: stoppedShipping, on: reference)
+        settings.copilotRuns = [goneOnShipping, forked]
+        #expect(store.alsoPushes(key, among: parts + [.thread(15)], in: inTaskFork, forkedWithTheCLI: false, taking: [.thread(14)]) == committedThere)
+        // Once the fork pushed since it was made, it pushed what it had of the task: only what it changed since goes.
+        var forkPushed = run(forked.id, .pushAndReply, startedAt: now, ended: .finished, taken: [
+            TakenPart(.thread(13), since: now, ships: true, fixes: true),
+        ], forkedFrom: task)
+        let inPushingFork = SessionChoice(kind: .task(forkPushed), name: "Fix, Push & Reply", reasons: [.earlierTask])
+        settings.copilotRuns = [stoppedShipping, forkPushed]
+        #expect(store.alsoPushes(key, among: parts, in: inPushingFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes what Copilot changed in the ‘Fix, Push & Reply’ task for 3 comments and didn't push, without replying on those comments.")
+        forkPushed.pushed = true
+        settings.copilotRuns = [stoppedShipping, forkPushed]
+        #expect(store.alsoPushes(key, among: parts, in: inPushingFork, forkedWithTheCLI: false, taking: [.thread(14)]) == nil)
+        // Not what it committed after the fork was made, which the fork doesn't have.
+        var forkedBefore = forked
+        forkedBefore.forkedAt = first.addingTimeInterval(-30)
+        let shippingLater = run(task, .pushAndReply, startedAt: first, ended: .stopped, taken: [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-120), ended: .finished, overBy: first.addingTimeInterval(-60)),
+            TakenPart(.thread(12), since: first, ships: true, fixes: true),
+        ])
+        settings.copilotRuns = [shippingLater, forkedBefore]
+        let inEarlierFork = SessionChoice(kind: .task(forkedBefore), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, without replying on that comment.")
+        // A Push & Reply that failed, ready to push again, may have committed what it pushes first, as when its push was
+        // refused: a fork with the CLI has it.
+        let failedPush = run(task, .pushAndReply, startedAt: first, ended: .failed, taken: [TakenPart(.thread(11), since: first, ships: true)])
+        settings.copilotRuns = [failedPush]
+        #expect(store.readyFixes(of: key, among: parts).map(\.parts) == [[.thread(11)]])
+        let inPushTask = SessionChoice(kind: .task(failedPush), name: "Push & Reply", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inPushTask, forkedWithTheCLI: true, taking: [.thread(14)])
+            == "It also pushes what Copilot committed in the ‘Push & Reply’ task for 1 comment and didn't push, without replying on that comment.")
+        #expect(store.alsoPushes(key, among: parts, in: inPushTask, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Push & Reply’ task, which you haven't pushed, without replying on that comment.")
+    }
+
+    /// A fix sent to push and reply names what its session left of each fix by the latest fix of it there, though another
+    /// session took it on since, which the bar at the foot of the details has it in: a push from the session takes along
+    /// what it changed all the same (`CopilotTasksStore.alsoPushes`).
+    @Test func aFixThatShipsNamesWhatItsSessionLeftOfAFixTakenOnElsewhereSince() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        let other = "55555555-5555-4555-8555-555555555555"
+        let parts: [PullRequestPart] = [.thread(11), .thread(12), .thread(13)]
+        let there = SessionChoice(kind: .app(AppSession(id: session, name: "Retry backoff")), name: "Retry backoff", reasons: [.onItsBranch])
+        let elsewhere = SessionChoice(kind: .app(AppSession(id: other, name: "Backoff again")), name: "Backoff again", reasons: [.onItsBranch])
+        // 11's fix was stopped in the session, then tried again in another, where it's done.
+        let stopped = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: false, ended: .stopped))
+        let again = try #require(SentPrompt(
+            about(threads: [11]), session: other, sentAt: first.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [stopped, again]
+        #expect(store.work(on: .thread(11), of: key)?.sentence(name: "Backoff again", forkOf: nil) == "Fixed in ‘Backoff again’, not pushed")
+        #expect(store.readyFixes(of: key, among: parts).map(\.session) == [other])
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+        #expect(store.alsoPushes(key, among: parts, in: elsewhere, forkedWithTheCLI: false, taking: [.thread(13)])
+            == "It also pushes 1 fix ready in ‘Backoff again’, which you haven't pushed, without replying on that comment.")
+        // Done in both, each has its own.
+        var done = stopped
+        done.ended = .finished
+        settings.copilotSentPrompts = [done, again]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)])
+            == "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, without replying on that comment.")
+        // Once a push from the session took it along, it's pushed.
+        let pushed = try #require(SentPrompt(
+            about(.pushAndReply, threads: [12]), session: session, sentAt: first.addingTimeInterval(120), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [done, again, pushed]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(13)]) == nil)
+    }
+
+    /// A fix sent to push and reply in a fork of a fork names what that has of each session along the way: those taken on
+    /// in each before the next was forked from it, as far back as a session that pushed them along. Where only what's
+    /// committed goes, it names what a push there that didn't go through may have committed, though the fix was taken on
+    /// again since (`CopilotTasksStore.alsoPushes`).
+    @Test func aFixThatShipsNamesWhatAForkOfAForkHasAndWhatMayBeCommitted() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        let second = "66666666-6666-4666-8666-666666666666"
+        let parts: [PullRequestPart] = [.thread(11), .thread(12), .thread(13), .thread(14)]
+        // 11 fixed in the session, 12 in a fork of it, and 13 in a fork of that one.
+        let fixed = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
+        let inFork = try #require(SentPrompt(
+            about(threads: [12]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(60), copied: false, ended: .finished
+        ))
+        let inSecond = try #require(SentPrompt(
+            about(threads: [13]), session: second, forkedFrom: fork, sentAt: first.addingTimeInterval(120), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [fixed, inFork, inSecond]
+        let inSecondFork = SessionChoice(
+            kind: .app(AppSession(id: second, name: "Retry backoff (fork 2)")), name: "Retry backoff (fork 2)", reasons: [.onItsBranch]
+        )
+        #expect(store.alsoPushes(key, among: parts, in: inSecondFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 3 fixes ready in ‘Retry backoff (fork 2)’, which you haven't pushed, without replying on those comments.")
+        // Once the second fork pushed, it pushed all it had of the others.
+        let pushedThere = try #require(SentPrompt(
+            about(.pushAndReply, threads: [13]), session: second, sentAt: first.addingTimeInterval(180), copied: false, ended: .finished
+        ))
+        settings.copilotSentPrompts = [fixed, inFork, inSecond, pushedThere]
+        #expect(store.alsoPushes(key, among: parts, in: inSecondFork, forkedWithTheCLI: false, taking: [.thread(14)]) == nil)
+
+        // A fix of 11 sent to push and reply in one of BriefBar's tasks committed it and didn't push; the task took 11 on
+        // again since, with a plain fix. A fork the Copilot CLI makes of it has the commit.
+        settings.copilotSentPrompts = []
+        let shipping = run(task, .pushAndReply, startedAt: first, ended: .finished, taken: [
+            TakenPart(.thread(11), since: first, ships: true, fixes: true),
+        ])
+        let reference = try #require(shipping.onPullRequest)
+        var again = run(task, startedAt: now, ended: .finished, taken: nil)
+        again.taken = CopilotRun.taken(goingOnWith: shipping, on: reference, taking: [.thread(11)], for: .fixComments, at: now)
+        again.pushes = CopilotRun.pushes(goingOnWith: shipping, on: reference)
+        settings.copilotRuns = [again]
+        let inTask = SessionChoice(kind: .task(again), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(store.readyFixes(of: key, among: parts).map(\.threads) == [[11]])
+        #expect(store.alsoPushes(key, among: parts, in: inTask, forkedWithTheCLI: true, taking: [.thread(14)])
+            == "It also pushes what Copilot committed in the ‘Fix Comments’ task for 1 comment and didn't push, without replying on that comment.")
+        // Not for a push kept before BriefBar kept what its session had taken on, nor once one pushed it.
+        again.pushes = again.pushes?.map { push in
+            var push = push
+            push.parts = nil
+            return push
+        }
+        settings.copilotRuns = [again]
+        #expect(store.alsoPushes(key, among: parts, in: inTask, forkedWithTheCLI: true, taking: [.thread(14)]) == nil)
+        again.pushes = CopilotRun.pushes(goingOnWith: shipping, on: reference)
+        again.pushes?.append(SessionPush(since: first.addingTimeInterval(60), ended: .finished))
+        settings.copilotRuns = [again]
+        #expect(store.alsoPushes(key, among: parts, in: inTask, forkedWithTheCLI: true, taking: [.thread(14)]) == nil)
+        // A fork the CLI made of the task before it took 11 on again has the commit too, which only the push that may have
+        // made it still says, until you clear 11.
+        let forkMade = first.addingTimeInterval(60)
+        let forkedEarlier = run(
+            "77777777-7777-4777-8777-777777777777", startedAt: forkMade, ended: .finished, taken: [TakenPart(.thread(13), since: forkMade)],
+            forkedFrom: task
+        )
+        again.pushes = CopilotRun.pushes(goingOnWith: shipping, on: reference)
+        settings.copilotRuns = [again, forkedEarlier]
+        let inEarlierFork = SessionChoice(kind: .task(forkedEarlier), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(store.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments.")
+        // Nothing once Send Work to Copilot is off.
+        settings.copilotEnabled = false
+        #expect(store.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)]) == nil)
+        settings.copilotEnabled = true
+        store.clear(.thread(11), of: key)
+        #expect(settings.copilotRuns.first?.pushes?.first?.parts == [])
+        #expect(store.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, without replying on that comment.")
+        // The demo lets it go in memory, keeping what each push had taken on.
+        let demoSettings = AppSettings(defaults: MemoryDefaults())
+        let demo = CopilotTasksStore(settings: demoSettings, mode: .demo, notifier: nil)
+        demoSettings.copilotRuns = [again, forkedEarlier]
+        #expect(demo.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, and what Copilot changed there for 1 comment and didn't push, without replying on those comments.")
+        demo.clear(.thread(11), of: key)
+        #expect(demoSettings.copilotRuns.first?.pushes?.first?.parts == [.thread(11)])
+        #expect(demo.alsoPushes(key, among: parts, in: inEarlierFork, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes 1 fix ready in the ‘Fix Comments’ task, which you haven't pushed, without replying on that comment.")
+    }
+
+    /// A fix sent to push and reply where Copilot is at it, as to a fork of a session under way, which copies all it has,
+    /// names what Copilot changed there by now, and what a push under way there may have committed, though that doesn't
+    /// list it (`CopilotTasksStore.alsoPushes`).
+    @Test func aFixThatShipsNamesWhatASessionUnderWayHas() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        let first = now.addingTimeInterval(-600)
+        let parts: [PullRequestPart] = [.thread(11), .thread(12), .thread(13), .thread(14)]
+        // A task that goes on with one of the Copilot app's sessions fixes 13.
+        var fixing = run(task, startedAt: first, taken: [TakenPart(.thread(13), since: first)])
+        fixing.isAppSession = true
+        settings.copilotRuns = [fixing]
+        let there = SessionChoice(kind: .task(fixing), name: "Retry backoff", reasons: [.onItsBranch])
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+        // A push of 12 under way there commits 11's fix too, which one stopped before.
+        var pushing = run(task, .pushAndReply, startedAt: first, taken: [
+            TakenPart(.thread(11), since: first.addingTimeInterval(-60), ended: .stopped), TakenPart(.thread(12), since: first, ships: true),
+        ])
+        pushing.isAppSession = true
+        settings.copilotRuns = [pushing]
+        #expect(store.alsoPushes(key, among: parts, in: there, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 2 comments and didn't push, without replying on those comments.")
+        // A fix still waiting for its turn changed nothing yet; one BriefBar lost track of may have.
+        settings.copilotRuns = []
+        var waiting = try #require(SentPrompt(about(threads: [13]), session: session, sentAt: first, copied: false))
+        settings.copilotSentPrompts = [waiting]
+        let inSession = SessionChoice(kind: .app(AppSession(id: session, name: "Retry backoff")), name: "Retry backoff", reasons: [.onItsBranch])
+        #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == nil)
+        waiting.lostTrack = true
+        settings.copilotSentPrompts = [waiting]
+        #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)])
+            == "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment.")
+        // Nor does one waiting for its turn, which its line shows, hide an earlier fix there, done and not pushed: a fix of it
+        // queued or copied for you to paste, or a Push & Reply queued to take it along, which pushed nothing yet.
+        let fixed = try #require(SentPrompt(
+            about(threads: [13]), session: session, sentAt: first.addingTimeInterval(-60), copied: false, ended: .finished
+        ))
+        for (waits, copied) in [(about(threads: [13]), false), (about(threads: [13]), true), (about(.pushAndReply, threads: [12]), false)] {
+            let queued = try #require(SentPrompt(waits, session: session, sentAt: first, copied: copied))
+            settings.copilotSentPrompts = [fixed, queued]
+            #expect(store.work(on: .thread(13), of: key)?.state == .waiting(copied: copied))
+            #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)])
+                == "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, without replying on that comment.")
+        }
+        // Nor did a push there that may have committed what the session had commit a fix copied for you to paste before it,
+        // which you didn't.
+        let failed = try #require(SentPrompt(
+            about(.pushAndReply, threads: [12]), session: session, sentAt: first.addingTimeInterval(60), copied: false, ended: .failed
+        ))
+        settings.copilotSentPrompts = [failed]
+        let named = store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)])
+        #expect(named != nil)
+        let copied = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: true))
+        settings.copilotSentPrompts = [copied, failed]
+        #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == named)
+        // Nor a question asked there before it, which changes nothing.
+        let asked = try #require(SentPrompt(about(.explain, threads: [11]), session: session, sentAt: first, copied: false, ended: .finished))
+        settings.copilotSentPrompts = [asked, failed]
+        #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == named)
+        // A push under way in another fork of the session, which takes a fix of 13 there along, hasn't pushed it yet, so it
+        // goes from the session too: done, or stopped, once it changed something.
+        let pushingInFork = try #require(SentPrompt(
+            about(.pushAndReply, threads: [12]), session: fork, forkedFrom: session, sentAt: first.addingTimeInterval(60), copied: false
+        ))
+        store.promptTurns[pushingInFork.id] = SessionTurn(phase: .working(step: nil), since: now)
+        for (ended, expected) in [
+            (RunPhase.finished, "It also pushes 1 fix ready in ‘Retry backoff’, which you haven't pushed, without replying on that comment."),
+            (.stopped, "It also pushes what Copilot changed in ‘Retry backoff’ for 1 comment and didn't push, without replying on that comment."),
+        ] {
+            let fixedThere = try #require(SentPrompt(about(threads: [13]), session: session, sentAt: first, copied: false, ended: ended))
+            settings.copilotSentPrompts = [fixedThere, pushingInFork]
+            if ended == .finished { #expect(store.work(on: .thread(13), of: key)?.state == .working(nil)) }
+            #expect(store.alsoPushes(key, among: parts, in: inSession, forkedWithTheCLI: false, taking: [.thread(14)]) == expected)
+        }
+    }
+
     /// A fix in a fork of the pull request's session works on the side: the pull request's session stays the one it was, as
     /// does the one you chose, and the task the window goes on with, unless you choose the fork.
     @Test func aForkDoesntBecomeThePullRequestsSession() throws {
@@ -2920,7 +3352,9 @@ import Testing
             return Self.makeRun(id, action, startedAt: now)
         }
         let first = now.addingTimeInterval(-600)
-        let fixed = run(task, startedAt: first, ended: .finished, taken: [TakenPart(.thread(16), since: first)])
+        var fixed = run(task, startedAt: first, ended: .finished, taken: [TakenPart(.thread(16), since: first)])
+        // A push in its session that may have committed 16.
+        fixed.pushes = [SessionPush(since: first.addingTimeInterval(-60), ended: .failed, parts: [.thread(16)])]
         settings.copilotRuns = [fixed]
         store.send(.pullRequest(pullRequest, .fixComments), prompt: "Fix 17", options: CopilotModel.standard,
                    repository: fixed.repository, continuing: fixed, parts: [.thread(17)])
@@ -2930,10 +3364,13 @@ import Testing
         #expect(store.work(on: .thread(16), of: key) == nil)
         #expect(store.work(on: .thread(17), of: key)?.state == .working(nil))
         #expect(settings.copilotRuns.first?.taken == [])
+        #expect(settings.copilotRuns.first?.pushes?.first?.parts == [])
+        #expect(store.pending.first { $0.id == task }?.pushes?.first?.parts == [])
         // It launches without what was let go.
         letItGo.yield()
         try await settle { !store.pending.contains { $0.id == task } }
         #expect(settings.copilotRuns.first?.taken?.map(\.part) == [.thread(17)])
+        #expect(settings.copilotRuns.first?.pushes?.first?.parts == [])
         #expect(store.work(on: .thread(16), of: key) == nil)
     }
 
@@ -2951,7 +3388,36 @@ import Testing
         drafts.retry(composer, words: nil, to: .session(session))
         #expect(drafts.retries[composer]?.destination == .session(session))
         #expect(drafts.retries[composer]?.words == nil)
+        #expect(drafts.retries[composer]?.ships == nil)
+        // A comment's fix: whether it was to push and reply, which its line knows, without its words too.
+        drafts.retry(composer, words: nil, ships: false, to: .session(session))
+        #expect(drafts.retries[composer]?.ships == false)
         #expect(CopilotComposerID(ask: .fix, tries: 0) != CopilotComposerID(ask: .fix, tries: 1))
+    }
+
+    /// Try Again knows whether the fix it tries again was to push and reply once it's fixed from its line, without its words
+    /// too: after BriefBar restarted, which forgot them, and on a thread Fix All took on, whose words it doesn't keep.
+    @Test func tryAgainKnowsWhetherAFixWasToPushAndReplyWithoutItsWords() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        settings.copilotFixesPushAndReply = true
+        let first = now.addingTimeInterval(-600)
+        // A thread's Fix, sent with Push and Reply off, which failed; then BriefBar restarted, which forgot its words.
+        let fix = try #require(SentPrompt(about(threads: [11]), session: session, sentAt: first, copied: false, ended: .failed))
+        // Fix All, sent with it off, which failed too.
+        let fixAll = try #require(SentPrompt(about(threads: [12, 13]), session: fork, sentAt: now, copied: false, ended: .failed))
+        // A thread's Fix sent with it on, which stopped.
+        var shipping = about(.pushAndReply, threads: [14])
+        shipping.fixes = true
+        let shipped = try #require(SentPrompt(shipping, session: fork, sentAt: now, copied: false, ended: .stopped))
+        settings.copilotSentPrompts = [fix, fixAll, shipped]
+        store.remember(.init(text: "Keep the API.", takenAt: now, ships: false), for: [.thread(12), .thread(13)], of: key, from: .fixAll)
+        for (thread, ships) in [(11, false), (12, false), (14, true)] {
+            let work = try #require(store.work(on: .thread(thread), of: key))
+            #expect(CopilotTasksStore.canTryAgain(work))
+            #expect(store.retryWords(for: work, of: key) == nil)
+            #expect(ThreadCopilotActions.shipped(work) == ships, "Try Again on \(thread)")
+        }
     }
 
     /// Taking what Try Again asked of a composer, as it opens anew, calls off what the composer it replaces was sending,
@@ -3054,6 +3520,19 @@ import Testing
         #expect(plan(wordless, kept: nil) == CopilotDrafts.RetryPlan(words: nil, destination: .newSession, problem: nil, sends: false))
         #expect(plan(wordless, kept: nil)?.text == nil)
         #expect(plan(wordless, kept: nil)?.includesAnswer == nil)
+        #expect(plan(wordless, kept: nil)?.ships == nil)
+        // A comment's fix: with Push and Reply as it was, as its line knows, wherever it goes.
+        for ships in [false, true] {
+            let comments = CopilotDrafts.Retry(at: at, destination: .newSession, words: nil, ships: ships)
+            #expect(plan(comments, kept: nil) == CopilotDrafts.RetryPlan(
+                words: nil, destination: .newSession, problem: nil, sends: false, ships: ships
+            ))
+            #expect(plan(comments, kept: nil, available: false)?.ships == ships)
+        }
+        // With its words, those put it back (`restore`), as they do the rest.
+        let worded = CopilotDrafts.Retry(at: at, destination: .session(session), words: words, ships: false)
+        #expect(plan(worded, kept: words, shown: answer)?.ships == nil)
+        #expect(plan(worded, kept: words, shown: answer, available: false)?.ships == nil)
     }
 
     /// An open build's composer, and so a fix Try Again sends as it opens, shows only once what shows of its run is
@@ -3140,6 +3619,35 @@ import Testing
         // have what it did.
         let inFork = CopilotWork(part: .thread(13), purpose: .fix, state: .failed(nil), session: fork, forkedFrom: session, isTask: false, since: now)
         #expect(names.retryDestination(of: inFork) == nil)
+    }
+
+    /// Try Again asks the Fix composer it opens anew for a fix as its line knows it, though BriefBar doesn't keep its words,
+    /// as after a restart: pushing and replying once it's fixed or not, as that fix was to, where it went
+    /// (`ThreadCopilotActions.retry`).
+    @Test func tryAgainAsksForAFixAsItsLineKnowsIt() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = store(settings)
+        store.launchForTests = { _, _, _ in throw CancellationError() }
+        let names = CopilotSessionNames(session: nil, copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        let original = run(task, startedAt: now.addingTimeInterval(-3_600), ended: .finished, taken: nil)
+        settings.copilotRuns = [original]
+        for (thread, ships) in [(11, true), (12, false)] {
+            let part = PullRequestPart.thread(thread)
+            store.send(.pullRequest(pullRequest, ships ? .pushAndReply : .fixComments), prompt: "Fix \(thread)", options: CopilotModel.standard,
+                       repository: original.repository, forking: original, parts: [part], fixing: ships)
+            try await settle {
+                if case .failed? = store.work(on: part, of: key)?.state { return true }
+                return false
+            }
+            let work = try #require(store.work(on: part, of: key))
+            #expect(CopilotTasksStore.canTryAgain(work))
+            let drafts = CopilotDrafts()
+            ThreadCopilotActions.retry(work, about: part, of: key, names: names, copilot: store, in: drafts)
+            let retry = try #require(drafts.retries[CopilotComposing(part: part, ask: .fix)])
+            #expect(retry.ships == ships)
+            #expect(retry.words == nil)
+            #expect(retry.destination == .fork(task))
+        }
     }
 
     /// A Push & Reply that lists no thread, sent to one of the Copilot app's sessions, is kept, so the fixes there say

@@ -180,6 +180,16 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
         }
     }
 
+    /// What a Push & Reply that fixes the comments it takes on first is called: a comment's Fix, or Fix All, sent with Push
+    /// and Reply on (`TakenPart.fixes`).
+    public static let fixPushAndReplyTitle = "Fix, Push & Reply"
+
+    /// What it's called for a task that does it, `fixing` what it takes on first, as a Push & Reply sent with a comment's fix
+    /// does: "Fix, Push & Reply"; else its own title.
+    public func title(fixing: Bool) -> String {
+        self == .pushAndReply && fixing ? Self.fixPushAndReplyTitle : title
+    }
+
     /// The tools the Copilot CLI refuses on this task, whatever the prompt says (`--deny-tool`, which wins over
     /// `--allow-all-tools`): a review writes nothing, and only Push & Reply pushes. Merging a target branch in needs a
     /// commit, so resolving conflicts may commit, but not push.
