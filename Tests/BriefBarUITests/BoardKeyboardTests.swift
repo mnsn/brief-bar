@@ -127,7 +127,10 @@ import Testing
                 },
                 shownOnTop: details.hasPageOver ? nil : details.shown,
                 setAsNext: nil, notOnBoard: 0, showByStatus: nil, now: Date(timeIntervalSince1970: 1_792_000_000),
-                focusWait: waits.map { waits in { @MainActor in await waits.wait() } }
+                focusWait: waits.map { waits in { @MainActor in await waits.wait() } },
+                // On CI the main actor's turns can come seconds late, so a card can take the keyboard after the app's half
+                // second: a column a key opened folds back here only once a card in another column has the keyboard.
+                keyMomentWait: .seconds(3_600)
             )
             .disabled(covered)
             .overlay(alignment: .topTrailing) {
@@ -155,6 +158,29 @@ import Testing
                 createdAt: Date(timeIntervalSince1970: 1_791_000_000)
             )],
             stages: [ref: StageFacts(role: .author, state: .draft)], account: "robin@contoso.com"
+        )
+        return order
+    }
+
+    /// A review Sam asks you for.
+    private static let review = ItemRef.pullRequest(organization: "contoso", number: 4088)
+
+    /// Pull Request Order, on, told of one pull request of yours, a draft, In progress, and of a review Sam asks you for, in
+    /// Your review.
+    private static func withAReview() -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        order.publish(
+            .azureDevOps,
+            pullRequests: [(ref, "robin/totals", "robin"), (review, "sam/coupons", "sam")].map { ref, branch, author in
+                OrderPullRequest(
+                    ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: branch, targetBranch: "main", author: author,
+                    createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+                )
+            },
+            stages: [ref: StageFacts(role: .author, state: .draft), review: StageFacts(role: .reviewer, asksYou: "Sam asked you")],
+            account: "robin@contoso.com"
         )
         return order
     }
@@ -391,6 +417,81 @@ import Testing
         }
     }
 
+    /// ⌘→ moves a card into a column you folded, stage by stage as ever: the column opens while the card keeps the keyboard,
+    /// so that it's drawn there and the next key moves it on, and what you chose stays.
+    @Test func aKeyMovesACardIntoAColumnYouFoldedWhichOpensWhileTheCardKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ into Your review, folded", order: order, drawn: drawn, in: window)
+            #expect(drawn.columns[Self.ref] == .yourReview)
+            try await Self.move(.rightArrow, to: .teammateReview, "⌘→ to move it on from there", order: order, drawn: drawn, in: window)
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// The column a key moved a card to stays open while a card in it has the keyboard: click another card there, and it
+    /// stays open for that one, rather than fold under it.
+    @Test func aColumnAKeyOpenedStaysOpenForAnotherCardInItYouGoTo() async throws {
+        let order = Self.withAReview()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click to show its details") { details.shown == Self.ref }
+            let before = drawn.frames[Self.ref]?.minX
+            try await Self.pressUntil("⌘→ into Your review, folded") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .yourReview
+            }
+            try await until("both cards drawn in Your review") {
+                drawn.frames[Self.ref]?.minX != before && drawn.isDrawn(Self.review)
+            }
+            // Your review opens with an animation, until which the review takes no click: clicked again until it does.
+            let review = try #require(drawn.frames[Self.review])
+            try await Self.pressUntil("a click on the review to show its details") {
+                Self.click(at: drawn.frames[Self.review] ?? review, in: host)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "Your review folded under the card you went to")
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// While its details cover the Board, ⌘→ moves the card they show into a column you folded too, which opens for it: once
+    /// they close, the card has the keyboard back there, and its own keys move it on.
+    @Test func aCardTheKeysMoveIntoAFoldedColumnWhileItsDetailsCoverTheBoardHasTheKeyboardBackThere() async throws {
+        let order = Self.order()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details(covers: true)
+        try await Self.showing(order, details: details) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details over the Board") { details.shown == Self.ref }
+            #expect(window.makeFirstResponder(nil))
+            try await Task.sleep(for: .milliseconds(200))
+            let before = drawn.frame?.minX
+            Self.press(.rightArrow, command: true, in: window, throughTheApp: true)
+            try await until("⌘→ to move the card the details show, drawn in Your review") {
+                order.stage(of: Self.ref)?.stage == .yourReview && drawn.frame?.minX != before
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            details.shown = nil
+            try await Self.move(
+                .rightArrow, to: .teammateReview, "⌘→ to move the card that has the focus back", order: order, drawn: drawn,
+                in: window
+            )
+        }
+    }
+
     /// Tab, as the window takes it, goes to the next view in its key view loop: with the Mac's keyboard navigation off, only
     /// what a click focuses, as a field, which a card is. With it on, every control is, so the card may not come first.
     @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
@@ -401,6 +502,41 @@ import Testing
             try await Self.move(
                 .rightArrow, to: .yourReview, "⌘→ to move the card Tab reached", order: order, drawn: drawn, in: window
             )
+        }
+    }
+
+    /// With the Mac's keyboard navigation off too, Tab goes on from a card to a folded column's strip in its lane, as to a
+    /// card: Return there opens the column for the moment, with the keyboard on its first card in the lane, which keeps it
+    /// open until the keyboard leaves it. What you chose stays.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesAFoldedColumnsStripWhereReturnOpensItOnItsFirstCard() async throws {
+        let order = Self.withAReview()
+        order.setBoardFolds(BoardFolds([.stage(.yourReview): .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            // Tab to the card, then on.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            // Nothing else opens Your review, which you folded.
+            try await Self.pressUntil("Return on Your review's strip, which Tab went to, to open it") {
+                Self.press(.return, in: window)
+                return drawn.isDrawn(Self.review)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "Your review folded under the review that has the keyboard")
+            #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+            let card = try #require(drawn.frames[Self.ref])
+            try await Self.pressUntil("a click on the card to take the keyboard from Your review") {
+                Self.click(at: drawn.frames[Self.ref] ?? card, in: host)
+                return details.shown == Self.ref
+            }
+            try await until("Your review to fold back once the keyboard left it") { !drawn.isDrawn(Self.review) }
         }
     }
 
