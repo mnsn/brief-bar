@@ -6,10 +6,11 @@ import Testing
 
 /// The Board's keyboard, with the Mac's keyboard navigation off, as it comes: a click on a card gives it the keyboard's
 /// focus, as a field takes it, then ⌘→ and ⌘← move it, again once it's drawn in its new column, and Return shows its
-/// details; Tab reaches a card too. Where its details cover the Board, the keys move the card whose own details show, which
-/// has the focus back once they close, and they say why one can't move. AppKit gets the clicks and the keys as it would from
-/// the window server, in a window off screen that takes the keyboard, as the app's do, though the tests' process can't be the
-/// active app. One test at a time: the app gives a key to the window that was made key last, whichever test's it is.
+/// details; Tab reaches a card too, and a folded column's count, whose Return shows its cards. Where its details cover
+/// the Board, the keys move the card whose own details show, which has the focus back once they close, and they say why
+/// one can't move. AppKit gets the clicks and the keys as it would from the window server, in a window off screen that
+/// takes the keyboard, as the app's do, though the tests' process can't be the active app. One test at a time: the app
+/// gives a key to the window that was made key last, whichever test's it is.
 @MainActor
 @Suite(.serialized, .keepsTheMainRunLoopRunning) struct BoardKeyboardTests {
     private final class KeyWindow: TestWindow {
@@ -143,19 +144,25 @@ import Testing
     /// Why a card can't go to Approved from Teammate's review, as the Board says it.
     private static let azureDevOpsDecides = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
 
-    /// Pull Request Order, on, told of one pull request of yours, a draft: In progress.
-    private static func order() -> PullRequestOrder {
+    /// Pull Request Order, on, told of one pull request of yours, a draft: In progress; and of one of yours that merged, if
+    /// asked: Merged, which folds to its count.
+    private static func order(alsoMerged merged: ItemRef? = nil) -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
         let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
-        order.publish(
-            .azureDevOps,
-            pullRequests: [OrderPullRequest(
-                ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
-                createdAt: Date(timeIntervalSince1970: 1_791_000_000)
-            )],
-            stages: [ref: StageFacts(role: .author, state: .draft)], account: "robin@contoso.com"
-        )
+        var pullRequests = [OrderPullRequest(
+            ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
+            createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+        )]
+        var stages = [ref: StageFacts(role: .author, state: .draft)]
+        if let merged {
+            pullRequests.append(OrderPullRequest(
+                ref: merged, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/badges", targetBranch: "main",
+                author: "robin", state: .merged, createdAt: Date(timeIntervalSince1970: 1_790_000_000)
+            ))
+            stages[merged] = StageFacts(role: .author, state: .merged)
+        }
+        order.publish(.azureDevOps, pullRequests: pullRequests, stages: stages, account: "robin@contoso.com")
         return order
     }
 
@@ -401,6 +408,37 @@ import Testing
             try await Self.move(
                 .rightArrow, to: .yourReview, "⌘→ to move the card Tab reached", order: order, drawn: drawn, in: window
             )
+        }
+    }
+
+    /// Merged folds to its count, which Tab reaches as it does a card, with the Mac's keyboard navigation off too: Return
+    /// there shows what it hid, and the first of it takes the keyboard from the count, so that Return shows its details.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesWhatMergedFoldsAndItsFirstCardTakesTheKeyboard() async throws {
+        let merged = ItemRef.pullRequest(organization: "contoso", number: 4085)
+        let order = Self.order(alsoMerged: merged)
+        #expect(order.stage(of: merged)?.stage == .merged)
+        let details = Details()
+        try await Self.showing(order, details: details) { window, _, drawn in
+            #expect(!drawn.isDrawn(merged), "Merged showed its card unfolded")
+            // Tab goes to the draft's card first, which Return shows the details of once it has the keyboard...
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the draft's card, which Tab reached") {
+                Self.press(.return, in: window)
+                return details.shown == Self.ref
+            }
+            // ...then to Merged's count, whose Return draws the merged card.
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on Merged's count, which Tab reached next") {
+                if drawn.isDrawn(merged) { return true }
+                Self.press(.return, in: window)
+                return drawn.isDrawn(merged)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on the merged card, which took the keyboard from the count") {
+                Self.press(.return, in: window)
+                return details.shown == merged
+            }
         }
     }
 

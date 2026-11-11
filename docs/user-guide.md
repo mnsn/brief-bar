@@ -426,7 +426,8 @@ approval** or **1 pipeline running**, while BriefBar follows its pipelines after
 Then it's in Completed, as one with none of your work on it is once it's out. Completed keeps your sprint's done work
 all sprint, and a pull request's card for as long as Done lists it; done work whose pull request is still in Merged is
 on that card. Each column counts its cards: a pull request's once, with the work items it names.
-Merged and Completed fold to their counts until you click their titles. BriefBar puts work items with their pull requests
+Merged and Completed fold to their counts until you click their titles or a count, or press **Return** on a count, which
+Tab reaches as it does a card. BriefBar puts work items with their pull requests
 only through [Show Links](#links)' links, never by their states, so + Sprint Tasks offers to turn it on until it is; and
 it doesn't read Azure DevOps' links from a work item to a GitHub pull request, so that work stays in To start. A work
 item's card goes in its story's mission's lane; for a story in the sprint whose pull requests aren't on your board, in a

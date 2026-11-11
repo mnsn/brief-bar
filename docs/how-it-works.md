@@ -1866,11 +1866,13 @@ Completed keeps your sprint's done work for as long as the sprint is the one sho
 request's that's out, which stays while Done lists it, as Merged's do; once it leaves the list, the work items it named
 have cards of their own there. Done work that a pull request in another column names, such as one held in Merged, is on
 that card. Completed counts its cards, as every column does: a pull request's once, whatever work items it names. Merged
-and Completed fold to their counts until you click their titles. The columns, their widths and their counts come from
-one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull
-request's does, and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a
-pull request's card dropped on To start or Completed, are refused, saying why (`BoardText.workStays`,
-`toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
+and Completed fold to their counts until you click their titles or a count. A count takes the keyboard's focus as a card
+does, whatever the Mac's keyboard navigation, so that Tab reaches what it hides: Return or Space shows its cards, the
+first of which takes the focus. A pull request's card in Completed tells VoiceOver so before its stage, Merged. The
+columns, their widths and their counts come from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card
+can take the keyboard's focus as a pull request's does, and Return or Space shows its details beside the Board; it
+doesn't move: a drag, ⌘→ or ⌘← on it, and a pull request's card dropped on To start or Completed, are refused, saying
+why (`BoardText.workStays`, `toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
 
 While a window shows My Work with + Sprint Tasks and Show Links on, the sprint is read as while its Sprint page is on
 screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull requests linked to

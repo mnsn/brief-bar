@@ -781,7 +781,7 @@ package struct OrderBoardView: View {
         let refusal: String? = if case .refused(let why)? = move { why } else { nil }
         return VStack(alignment: .leading, spacing: 8 * textScale) {
             if column.foldsToCount, !opened.contains(column) {
-                foldedCount(cards, tasks, in: column)
+                foldedCount(cards, tasks, in: column, lane: lane.kind)
             } else {
                 ForEach(cards) { card in
                     cardView(card, in: lane, column: column, moves: moves)
@@ -832,33 +832,46 @@ package struct OrderBoardView: View {
             .overlay(shape.strokeBorder(column.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
     }
 
-    /// Merged or Completed, folded: how many cards the lane has there, which a click shows.
+    /// Merged or Completed, folded: how many cards the lane has there, which a click shows. It takes the keyboard's focus as a
+    /// card does, whatever the Mac's keyboard navigation, so that what it hides stays in reach: Return or Space shows them,
+    /// and the first of them takes the focus it leaves.
     @ViewBuilder
-    private func foldedCount(_ cards: [BoardCard], _ tasks: [BoardTask], in column: BoardColumn) -> some View {
+    private func foldedCount(_ cards: [BoardCard], _ tasks: [BoardTask], in column: BoardColumn, lane: BoardLane.Kind) -> some View {
         let count = cards.count + tasks.count
         if count > 0 {
             let words = column == .completed ? "\(count) completed" : "\(count) merged"
             let names = cards.map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
                 + tasks.map { work?.card($0)?.label ?? $0.ref.shortOrderLabel }
-            Button {
+            let open = {
                 withAnimation(.easeOut(duration: 0.15)) { _ = opened.insert(column) }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: foldedSymbol(column))
-                        .foregroundStyle(column.color)
-                    Text(words)
-                        .lineLimit(1)
-                }
-                .font(size: 11.5, weight: .medium)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            HStack(spacing: 4) {
+                Image(systemName: foldedSymbol(column))
+                    .foregroundStyle(column.color)
+                Text(words)
+                    .lineLimit(1)
+            }
+            .font(size: 11.5, weight: .medium)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 2)
             .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: open)
+            .focusable(interactions: .edit)
+            .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                open()
+                // The first of what it hid takes the focus it leaves, as the board draws it.
+                if let first = cards.first?.ref ?? tasks.first?.ref {
+                    oweFocus(CardSpot(lane: lane, ref: first))
+                }
+                return .handled
+            }
             .help(names.joined(separator: "\n") + "\nClick to show them")
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(words)
             .accessibilityHint("Shows them")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, open)
         }
     }
 
@@ -877,7 +890,7 @@ package struct OrderBoardView: View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
-                card: card, content: content, color: column.color, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
+                card: card, content: content, column: column, nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
                 picked: Set(board.picked.filter { $0.value == card.ref }.keys), isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
@@ -910,6 +923,7 @@ package struct OrderBoardView: View {
             let spot = CardSpot(lane: lane.kind, ref: task.ref)
             BoardTaskCardView(
                 task: task, content: content, isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
+                takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
                     lastFocus = spot
                     work.select(task.ref)
@@ -1070,6 +1084,11 @@ package struct OrderBoardView: View {
             refocus.took(spot)
             return
         }
+        oweFocus(spot)
+    }
+
+    /// A card is owed the keyboard's focus, which it takes as the board draws it, unless that takes longer than the wait.
+    private func oweFocus(_ spot: CardSpot) {
         let move = refocus.owe(spot)
         Task { @MainActor [focusWait] in
             if let focusWait {
@@ -1130,8 +1149,8 @@ package struct OrderBoardView: View {
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
-    /// Its column's color, on its edge: its stage's, but Completed's there.
-    let color: Color
+    /// The column it's in: its stage's, or Completed, whose color is on its edge and which VoiceOver says before its stage.
+    let column: BoardColumn
     /// The Up Next slots it's the pull request of: Fix next's, and its column's.
     let nexts: [UpNextSlot]
     /// Of those, the ones you chose it for (`UpNextPicks`).
@@ -1141,7 +1160,8 @@ private struct BoardCardView: View {
     let now: Date
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
-    /// Drawn anew in another column by a move it made with the keyboard's focus: it takes the focus back as it appears.
+    /// Owed the keyboard's focus, which it takes as it appears: drawn anew in another column by a move it made with the
+    /// focus, or shown by a folded column's count that had it.
     let takesFocus: Bool
     let tookFocus: () -> Void
     /// Whether it may take the focus back now: not from a field you type in.
@@ -1157,6 +1177,10 @@ private struct BoardCardView: View {
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
+    }
+
+    private var color: Color {
+        column.color
     }
 
     var body: some View {
@@ -1293,7 +1317,9 @@ private struct BoardCardView: View {
     }
 
     private var accessibilityValue: String {
-        var parts = [StageWords.spoken(card.reading, order: order, now: now)]
+        // Its stage stays Merged there: the column says where it is.
+        var parts = column == .completed ? [column.title] : []
+        parts.append(StageWords.spoken(card.reading, order: order, now: now))
         parts += content.details
         for slot in nexts {
             let name = slot == .fix ? "Fix next" : "Up Next"
@@ -1335,6 +1361,11 @@ private struct BoardTaskCardView: View {
     let isSelected: Bool
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
+    /// Owed the keyboard's focus, which it takes as it appears: shown by a folded column's count that had it.
+    let takesFocus: Bool
+    let tookFocus: () -> Void
+    /// Whether it may take the focus now: not from a field you type in.
+    let mayTakeFocus: () -> Bool
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
@@ -1385,6 +1416,16 @@ private struct BoardTaskCardView: View {
             }
             .focusable(interactions: .edit)
             .focused(focus, equals: spot)
+            .onAppear {
+                guard takesFocus else { return }
+                tookFocus()
+                // Once this update is done, which also takes the count away, and the focus with it: unless a card, or a
+                // field you type in, took the keyboard meanwhile.
+                DispatchQueue.main.async {
+                    guard focus.wrappedValue == nil || focus.wrappedValue == spot, mayTakeFocus() else { return }
+                    focus.wrappedValue = spot
+                }
+            }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 guard press.modifiers.isCommandAlone else { return .ignored }
                 move()
