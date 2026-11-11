@@ -7,9 +7,9 @@ description: Keep BriefBar, the user's macOS menu-bar app, current on your pull 
 
 With Pull Request Order on in BriefBar's Settings, BriefBar's MCP server, `briefbar`, keeps the order that pull
 requests going together must merge in, and each Azure DevOps pull request's stage: in progress, waiting for the user's
-review or their teammates', ready to merge, or waiting for another. Its Pull Requests pages show the user what's next
-for them, so tell BriefBar as you work, without being asked. Some clients show its tools with its name first, as
-briefbar-order_pull_requests.
+review or their teammates', approved, ready to merge, or waiting for another. Its Pull Requests pages show the user
+what's next for them, so tell BriefBar as you work, without being asked. Some clients show its tools with its name
+first, as briefbar-order_pull_requests.
 
 - If `order_pull_requests` isn't there, do nothing more here, and don't mention it. Only the user turns Pull Request
   Order on, in BriefBar's Settings: never ask them to, and never change BriefBar's settings or files.
@@ -64,7 +64,8 @@ briefbar-order_pull_requests.
   reviewers, add them in Azure DevOps with your own tools: BriefBar sees them there.
 - `clear` to leave its stage to BriefBar again.
 - `pull_requests`: each by its link, or its number with `organization`.
-- Never claim a pull request can merge, waits or merged: BriefBar sees those itself, from Azure DevOps and the order.
+- Never claim a pull request is approved, can merge, waits or merged: BriefBar sees those itself, from Azure DevOps and
+  the order.
 
 ## Stories
 

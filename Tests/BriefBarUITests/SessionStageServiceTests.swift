@@ -266,9 +266,9 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4094))?.isSetByYou == true)
     }
 
-    /// A Your review you set lasts until you change it, also once a session that pushed says the same, as BriefBar's
-    /// prompts ask: what the session says shows at once, over its own work since yours, and lasts as yours does as a
-    /// teammate approves, with yours kept, and Let BriefBar Decide forgets both, as it would yours alone. Where the
+    /// A Your review you set lasts until you change it, a session's work on it since only marking it, also once a session
+    /// that pushed says the same, as BriefBar's prompts ask: what the session says shows at once, and lasts as yours does as
+    /// a teammate approves, with yours kept, and Let BriefBar Decide forgets both, as it would yours alone. Where the
     /// session's other stage replaced yours first, what it says later counts as any stage does, and once that ends, none
     /// does: yours doesn't come back.
     @Test func aSessionsYourReviewAfterYoursShowsAndLastsAsYoursDoes() async throws {
@@ -289,10 +289,11 @@ private final class Clock {
         order.agentChanged()
         #expect(order.stage(of: Self.ref(4094))?.replaced?.stage == .yourReview)
 
-        // You sent ‘Cart’ your comments, and it's writing both.
+        // You sent ‘Cart’ your comments, and it's writing both: yours stays where you set it, marked.
         clock.advance(seconds: 60)
         Self.list(order, [Self.cart: .working], since: clock.now, on: [4093, 4094])
-        #expect(order.stage(of: Self.ref(4093))?.stage == .inProgress)
+        #expect(order.stage(of: Self.ref(4093))?.stage == .yourReview)
+        #expect(order.stage(of: Self.ref(4093))?.writer?.ref == Self.cart)
 
         // It pushed to both, and says each is ready for your review, before it ends its turn.
         clock.advance(seconds: 60)

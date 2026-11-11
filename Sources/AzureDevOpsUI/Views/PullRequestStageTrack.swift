@@ -4,11 +4,11 @@ import BriefBarUI
 import SwiftUI
 
 /// Under a pull request's heading, in its details, while Pull Request Order shows its stage: the steps of its flow, In
-/// progress › Your review › Teammate's review › Can merge, wrapping where the details are narrow, the one it's in filled in
-/// its stage's color and those before it ticked, Merged ticking them all; why it's there, since when and who set it; its
-/// next step's button; and its stage's menu. A click on one of the first three moves it there; Can merge's says when it
-/// comes, or, while it waits, what its order puts first. Someone else's that you finished reviewing says so, off your
-/// board.
+/// progress › Your review › Teammate's review › Approved › Can merge, wrapping where the details are narrow, the one it's
+/// in filled in its stage's color and those before it ticked, Merged ticking them all; why it's there, since when and who
+/// set it; its next step's button; and its stage's menu. A click on one of the first three moves it there; Approved's and
+/// Can merge's say when they come, or, while it waits, what its order puts first. Someone else's that you finished
+/// reviewing says so, off your board.
 struct PullRequestStageTrack: View {
     let item: PRSnapshot
     @ObservedObject var ordering: PullRequestOrder
@@ -51,8 +51,8 @@ struct PullRequestStageTrack: View {
 
     // MARK: Its steps
 
-    /// The four steps of its flow: Waits stands where Can merge does, by what it waits for.
-    private static let track: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .canMerge]
+    /// The five steps of its flow: Waits stands where Can merge does, by what it waits for.
+    private static let track: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .approved, .canMerge]
 
     /// Each step, with › after it but the last, so a line that wraps ends on one.
     @ViewBuilder
@@ -97,6 +97,7 @@ struct PullRequestStageTrack: View {
             label
                 .help(othersReviews.map { state == .current ? StageText.sentence(reading, now: now, name: ordering.name(of:)) : $0 }
                     ?? (stage == .canMerge ? (shown == .waits ? title : StageText.canMergeHelp)
+                        : stage == .approved && state != .current ? StageText.approvedHelp
                         : StageText.sentence(reading, now: now, name: ordering.name(of:))))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(spoken)

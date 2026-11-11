@@ -100,6 +100,10 @@ package final class PullRequestOrder: ObservableObject {
     /// kept do. They count with those toward the most an account keeps, and stay, unused, while Pull Request Order is off.
     /// One waits here too while its account has no room: one set before BriefBar knew the account, or put back by Undo.
     private var marksInMemory: [ItemRef: StageMarks.Entry] = [:]
+    /// How far each of your pull requests got, for each Azure DevOps account (`order.reached`), so that BriefBar never moves
+    /// one back on its own, but where it loses what its stage stands for (`StageRules.worked`): only with an account it
+    /// knows. None while it's off.
+    private var reached = StagesReached()
     /// The stages Copilot sessions set (`order.stage.<id>`), as their `--mcp` kept them: read as Pull Request Order turns
     /// on and as an agent changes something, the demo's in memory. Each counts only while the Copilot source lists its
     /// session (`listedSessionsDoing`).
@@ -334,6 +338,7 @@ package final class PullRequestOrder: ObservableObject {
             picksAway = [:]
             keptPicks = UpNextPicks.Kept()
             marks = StageMarks()
+            reached = StagesReached()
             sessionStages = SessionStages()
             stages = [:]
             stagedKinds = []
@@ -345,6 +350,7 @@ package final class PullRequestOrder: ObservableObject {
         evidence = OrderEvidence.load(from: defaults).merging(evidenceInMemory)
         focus = OrderFocus.load(from: defaults)
         marks = StageMarks.load(from: defaults)
+        reached = StagesReached.load(from: defaults)
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         yourNames = MissionNames.load(from: defaults)
         keptPicks = UpNextPicks.Kept.load(from: defaults)
@@ -377,15 +383,16 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Looks again at what time alone changes, as its clock does every hour: orders that went stale, those that finished
-    /// long enough ago to go, the stages you set for pull requests no list has had for 30 days, kept or in memory, and
-    /// those sessions set 30 days ago, and what you chose for Up Next's slots that BriefBar keeps, once no list has had its
-    /// pull request for 30 days, with any account. What you set or chose goes so only once its source has listed what it
+    /// long enough ago to go, the stages you set for pull requests no list has had for 30 days, kept or in memory, how far
+    /// each of yours got, and those sessions set 30 days ago, and what you chose for Up Next's slots that BriefBar keeps,
+    /// once no list has had its pull request for 30 days, with any account. What you set or chose goes so only once its source has listed what it
     /// shows since Pull Request Order turned on (`listedSinceOn`): till then, no list could note that it has it.
     package func timePassed() {
         guard isOn else { return }
         let date = now()
         let looked = Set(listedSinceOn.flatMap { ItemRef.Kind.of($0) })
         if marks.forgetUnlisted(now: date, of: looked) { marks.save(to: defaults) }
+        if reached.forgetUnlisted(now: date, of: looked) { reached.save(to: defaults) }
         marksInMemory = marksInMemory.filter { !looked.contains($0.key.kind) || !$0.value.isUnlisted(at: date) }
         if keptPicks.forgetUnlisted(now: date, of: looked) {
             keptPicks.save(to: defaults)
@@ -541,6 +548,8 @@ package final class PullRequestOrder: ObservableObject {
         if together.forget(kinds, keepingPlans: plans) { together.save(to: defaults) }
         var marks = StageMarks.load(from: defaults)
         if marks.forget(kinds) { marks.save(to: defaults) }
+        var reached = StagesReached.load(from: defaults)
+        if reached.forget(kinds) { reached.save(to: defaults) }
         var picks = UpNextPicks.Kept.load(from: defaults)
         if picks.forget(kinds) { picks.save(to: defaults) }
         forgetInMemory(kinds)
@@ -557,6 +566,7 @@ package final class PullRequestOrder: ObservableObject {
             self.changes = changes
             self.focus = kept
             self.marks = marks
+            self.reached = reached
             keptPicks = picks
             self.picks = picksNow()
             if lastOrderChange != nil { lastChange = nil }
@@ -1596,10 +1606,13 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps a stage you or a session set, or a pull request you chose for one of Up Next's slots, on or
-    /// off: for Forget Stages… in Settings.
+    /// off: for Forget Stages… in Settings. How far each of yours got counts only while Pull Request Order is off, when
+    /// nothing else forgets it: while it's on, BriefBar keeps that again at once as it works stages out, or forgets it on
+    /// its own once no list has had its pull request for 30 days. Forget Stages… forgets all of it.
     package var keepsStages: Bool {
         defaults.object(forKey: StageMarks.defaultsKey) != nil || !marksInMemory.isEmpty || SessionStages.keepsAny(in: defaults)
             || !sessionStages.isEmpty || defaults.object(forKey: UpNextPicks.Kept.defaultsKey) != nil || !picksInMemory.isEmpty
+            || (!isOn && defaults.object(forKey: StagesReached.defaultsKey) != nil)
     }
 
     /// The stages you set that BriefBar keeps, for each account, as many as there are, whatever lists have them now.
@@ -1740,14 +1753,16 @@ package final class PullRequestOrder: ObservableObject {
         lastChange = nil
     }
 
-    /// Forget Stages…: every stage you set, with every account, every one sessions set, and the pull requests you chose for
-    /// Up Next's slots, with every account, on or off.
+    /// Forget Stages…: every stage you set, with every account, every one sessions set, how far each of your pull requests
+    /// got, and the pull requests you chose for Up Next's slots, with every account, on or off.
     package func forgetStages() {
         objectWillChange.send()
         StageMarks.forgetAll(in: defaults)
+        StagesReached.forgetAll(in: defaults)
         SessionStages.forgetAll(in: defaults)
         defaults.removeObject(forKey: UpNextPicks.Kept.defaultsKey)
         marks = StageMarks()
+        reached = StagesReached()
         marksInMemory = [:]
         sessionStages = SessionStages()
         picks = UpNextPicks()
@@ -1864,7 +1879,9 @@ package final class PullRequestOrder: ObservableObject {
     /// once it can be, and one kept with the account goes into memory once it's only sent to you, such as when you stop
     /// watching it; and what lists have now is noted, for what no list has had for 30 days to go: in memory each time,
     /// and once a day for those kept. Only those a list has show a stage: what was set on one it still reads, but no
-    /// list has, still ends as it moves on. A pull request you chose for one of Up Next's slots goes from it once it's been
+    /// list has, still ends as it moves on. How far each of yours got is kept as BriefBar works it out itself, whatever was
+    /// set, from how far it got before, or from what was set as that ends (`StageRules.reached(kept:ended:)`), with the
+    /// account its source told; it goes once it merges, closes, or is a draft again. A pull request you chose for one of Up Next's slots goes from it once it's been
     /// away from where you chose it for half an hour (`UpNextPicks.awayFor`), in another stage, off your board, out of the
     /// lists its source read in full, merged or closed; one its source can't tell where it is now waits
     /// (`UpNextPicks.moved(by:known:away:now:)`); and what lists have now of what's kept of them is noted too, once a day.
@@ -1883,6 +1900,7 @@ package final class PullRequestOrder: ObservableObject {
         let names = self.names
         var readings: [ItemRef: StageReading] = [:]
         var changed = false
+        var reachedChanged = false
         for (ref, facts) in all {
             let sessions = Self.merged(facts.sessions, sessionsOn[ref] ?? [])
             if let memory = marksInMemory[ref], !keepsInMemory(ref, facts: facts), let account = account(of: ref),
@@ -1910,11 +1928,30 @@ package final class PullRequestOrder: ObservableObject {
                 if let account = account(of: ref), marks.clear(ref, for: account) { changed = true }
                 mine = nil
             }
+            // How far yours got, and where it goes from: from what was set, as that ends. It goes once it merges or closes, or
+            // is a draft again, whatever a draft shows.
+            let yours = facts.isYours ? account(of: ref) : nil
+            let got = StageRules.reached(kept: yours.flatMap { reached.reach(of: ref, for: $0, at: now()) }, ended: counted.ended)
+            if let yours, facts.state != .open, reached.set(nil, of: ref, for: yours, at: now()) { reachedChanged = true }
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
+            if let yours, facts.state == .open {
+                let worked = StageRules.worked(facts: facts, sessions: sessions, reached: got, order: order)
+                // A session whose end BriefBar can't tell says nothing of it yet. A stage set on it that ended moved it, as a
+                // known session would: it isn't where BriefBar first saw it any more.
+                let knowsSessions = sessions.contains { !$0.isReview && $0.activity != .stopped }
+                if reached.set(
+                    StageRules.reached(worked), of: ref, for: yours, at: now(), since: worked.since,
+                    knowsSessions: knowsSessions || counted.ended != nil
+                ) {
+                    reachedChanged = true
+                }
+            }
             let set = [mine].compactMap { $0 } + counted.theirs
-            if var reading = StageRules.reading(facts: facts, sessions: sessions, marks: set, order: order, setters: setters) {
+            if var reading = StageRules.reading(
+                facts: facts, sessions: sessions, marks: set, order: order, setters: setters, reached: got
+            ) {
                 // Its words name the other order where two go round: what they say naming none, as agents read it, so that
                 // a rename, which restages it, changes only its words (`StageReading.readTheSame`).
                 if case .orderHolds = reading.why, case .holds(let words) = StageOrder.of(ref, in: missions),
@@ -1932,6 +1969,10 @@ package final class PullRequestOrder: ObservableObject {
             changed = true
         }
         if changed { marks.save(to: defaults) }
+        for (account, refs) in listed where reached.listed(refs, for: account, at: now()) {
+            reachedChanged = true
+        }
+        if reachedChanged { reached.save(to: defaults) }
         // What you chose for Up Next's slots stands while its pull request does, where you chose it, or is back there soon;
         // one the lists its source read in full don't have, as one you reviewed that its author completed, is away too.
         let left = picks.refs.values.filter { all[$0] == nil && hasLeftTheLists($0) }
