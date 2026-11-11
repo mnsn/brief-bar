@@ -980,7 +980,10 @@ that leaves it empty.
 Notification Center keeps its database open. FSEvents reports a file's writes only once the writer
 closes it, so it never sees them. BriefBar instead watches SQLite's write-ahead log (`db-wal`)
 with **kqueue** (`EVFILT_VNODE`), which reports every write as it happens, and reads Teams' rows
-again 0.3 s later, combining bursts. FSEvents on the `db2` folder reports the log being created or
+again 0.3 s later, combining bursts, and once more a second after the last such read. SQLite writes
+a commit to the log before it lets readers see it, so a read made while Notification Center is held
+up between the two misses the commit, and when nothing is written after it, nothing else would read
+it before the safety rescan. FSEvents on the `db2` folder reports the log being created or
 replaced, so the kqueue watch can move to the new file. `db` itself is deliberately not opened for
 watching: closing an extra file descriptor on a SQLite database drops the process's SQLite locks.
 
@@ -2674,8 +2677,9 @@ from a menu, turning it on opens Settings › Pull Requests, which says what it 
   a short read each time, and never changes it. Like any SQLite reader, it takes brief shared locks
   and updates SQLite's shared-memory index (`db-shm`) while it reads; neither changes any
   notification. It reads it when you turn the setting on, whenever the database's write-ahead log
-  changes (watched with kqueue, so a new message shows within a second), when you open the pull
-  requests, and once a minute.
+  changes (watched with kqueue, so a new message shows within a second), once more a second after
+  that read, for a change SQLite hadn't let readers see yet, when you open the pull requests, and
+  once a minute.
 - Each notification's title, subtitle and text are searched for links to pull requests:
   `dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}` and the older
   `{org}.visualstudio.com/…/pullrequest/{id}`.
@@ -4042,7 +4046,11 @@ it applies. A few more details:
   FSEvents only reports a file's content changes once the writer **closes** it. The Copilot app
   keeps its SQLite connection open, so its writes to `data.db-wal` produce no FSEvents at all,
   even though the file changes. A kqueue `EVFILT_VNODE` watch reports every write immediately.
-  Bursts (one tool call causes about 10 writes) are combined into one reload after 0.25 s.
+  Bursts (one tool call causes about 10 writes) are combined into one reload after 0.25 s, and
+  the database is read once more a second after the last reload. SQLite writes a commit to the
+  WAL file before it lets readers see it, so a reload made while the app is held up between the
+  two misses the commit, and when nothing is written after it, as when a session ends, nothing
+  else would read it before the safety rescan.
   When the app quits and SQLite deletes the WAL file, the watch is re-armed as soon as the file
   is recreated. `data.db` itself is deliberately not opened for watching: closing an extra file
   descriptor on a SQLite database drops the process's SQLite locks.

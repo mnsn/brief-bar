@@ -227,6 +227,105 @@ import Testing
                    app: Chats.teams, delivered: t(10))
         try await waitFor("the new link") { latest.withLock { $0?.links.count == 1 } }
     }
+
+    @Test(.timeLimit(.minutes(5)))
+    func readsOnceMoreForACommitItCouldntSeeYet() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("db2/db")
+        let db = try TestNotificationDatabase(at: url)
+        defer { db.close() }
+        try db.add(NotificationRecord.data(app: Chats.slack, title: "Sam Rivera", body: "Hi", date: t(0)), app: Chats.slack, delivered: t(0))
+
+        let reads = HeldReads<ChatLinkMonitor.Snapshot>()
+        let latest = Mutex<ChatLinkMonitor.Snapshot?>(nil)
+        // No safety read within the test: only the monitor's reads after a write can find it.
+        let monitor = ChatLinkMonitor(
+            database: url, debounce: 0.05, rereadDelay: 0.1, safetyInterval: 3_600, deliverOn: DispatchQueue(label: "test"),
+            scan: { database in reads.read { ChatLinkMonitor.scanOnce(database: database) } }
+        ) { snapshot in
+            latest.withLock { $0 = snapshot }
+        }
+        monitor.start()
+        defer { monitor.stop() }
+        try await waitFor("the first read") { latest.withLock { $0?.access == .granted } }
+
+        // A link arrives, but the read Notification Center's write brings doesn't find it, as when SQLite hasn't let
+        // readers see the commit yet.
+        reads.hold()
+        try db.add(NotificationRecord.teamsMessage(Chats.dana, title: "Dana Whitfield", body: Chats.link, at: t(10)),
+                   app: Chats.teams, delivered: t(10))
+        try await reads.waitForAHeldRead()
+        // Nor does the read its next write brings, its last for a while, of something the monitor doesn't read, though
+        // readers can see the link by then, however busy the Mac: only a read after it can find the link.
+        reads.release()
+        try db.exec("PRAGMA user_version = 1;")
+        try await waitFor("the new link") { latest.withLock { $0?.links.count == 1 } }
+
+        // Once more, not over and over.
+        try await reads.waitUntilTheyStop()
+    }
+}
+
+/// Stands in for the monitor's reads of the database, to hold them up as SQLite does between writing a commit to its
+/// write-ahead log, which is what the monitor hears of, and letting readers see it: a held read finds what the last
+/// read before it did.
+private final class HeldReads<Value: Sendable>: Sendable {
+    private struct State {
+        var last: Value?
+        var holding = false
+        var releasing = false
+        var held = 0
+        var reads = 0
+    }
+
+    private let state = Mutex(State())
+
+    /// Holds every read from now on.
+    func hold() {
+        state.withLock { $0.holding = true }
+    }
+
+    /// Holds one more read, and none after it.
+    func release() {
+        state.withLock { $0.releasing = true }
+    }
+
+    func read(_ readForReal: () throws -> Value) rethrows -> Value {
+        let held: Value? = state.withLock { state in
+            state.reads += 1
+            guard state.holding, let last = state.last else { return nil }
+            state.held += 1
+            if state.releasing {
+                state.holding = false
+                state.releasing = false
+            }
+            return last
+        }
+        if let held { return held }
+        let value = try readForReal()
+        state.withLock { $0.last = value }
+        return value
+    }
+
+    func waitForAHeldRead() async throws {
+        try await waitFor("a held read") { state.withLock { $0.held > 0 } }
+    }
+
+    /// Waits until no read was made for half a second, five times the `rereadDelay` the test gives: reads that go on one
+    /// after another never leave that long.
+    func waitUntilTheyStop() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: waitLimit)
+        var reads = state.withLock { $0.reads }
+        while clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(500))
+            let now = state.withLock { $0.reads }
+            if now == reads { return }
+            reads = now
+        }
+        throw TestError("The reads hadn't stopped after \(waitLimit), at \(reads)")
+    }
 }
 
 private func waitFor(_ what: String, timeout: Duration = waitLimit, until condition: () -> Bool) async throws {

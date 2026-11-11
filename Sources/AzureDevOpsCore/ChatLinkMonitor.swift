@@ -27,7 +27,8 @@ public enum ChatLinkDatabase {
 
 /// Watches Notification Center's database for pull request links in new notifications. It checks for
 /// access, reads every stored notification (a short read-only read), and reads again whenever the
-/// database's write-ahead log changes (kqueue, debounced) and once a minute in case a change was missed.
+/// database's write-ahead log changes (kqueue, debounced), once more a moment after that read
+/// (`scheduleReread`), and once a minute in case a change was missed.
 ///
 /// All mutable state is confined to `queue`. `onChange` is called on the delivery queue, and never once `stop()`
 /// has returned there, even for a read that was under way.
@@ -56,20 +57,28 @@ public final class ChatLinkMonitor: @unchecked Sendable {
     /// Set by `stop()` at once, rather than on `queue`, so what a read in progress finds isn't delivered.
     private let stopped = Mutex(false)
     private let debounce: TimeInterval
+    private let rereadDelay: TimeInterval
+    private let safetyInterval: TimeInterval
     private var watcher: FileWriteWatcher?
     private var timer: DispatchSourceTimer?
     private var pendingRead = false
+    /// Counts the reads writes bring, so that only the last one's reread happens.
+    private var writeReads = 0
     private var isActive = false
     private var fastAccessChecks = false
     private var lastPublished: Snapshot?
 
-    /// `scan` reads the database; tests replace it.
+    /// `scan` reads the database; tests replace it. `rereadDelay` is how long after the last read a write brought to
+    /// read once more (`scheduleReread`), and `safetyInterval` how often to read in case a change was missed.
     public init(
-        database: URL = ChatLinkDatabase.url(), debounce: TimeInterval = 0.5, deliverOn delivery: DispatchQueue = .main,
+        database: URL = ChatLinkDatabase.url(), debounce: TimeInterval = 0.5, rereadDelay: TimeInterval = 1,
+        safetyInterval: TimeInterval = 60, deliverOn delivery: DispatchQueue = .main,
         scan: @escaping @Sendable (URL) -> Snapshot = { ChatLinkMonitor.scanOnce(database: $0) }, onChange: @escaping ChangeHandler
     ) {
         self.database = database
         self.debounce = debounce
+        self.rereadDelay = rereadDelay
+        self.safetyInterval = safetyInterval
         self.delivery = delivery
         self.scan = scan
         self.onChange = onChange
@@ -132,7 +141,7 @@ public final class ChatLinkMonitor: @unchecked Sendable {
 
     private func scheduleTimer() {
         timer?.cancel()
-        let interval: TimeInterval = fastAccessChecks ? 2 : 60
+        let interval: TimeInterval = fastAccessChecks ? 2 : safetyInterval
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(500))
         timer.setEventHandler { [weak self] in
@@ -150,6 +159,21 @@ public final class ChatLinkMonitor: @unchecked Sendable {
             guard let self else { return }
             self.pendingRead = false
             guard self.isActive else { return }
+            self.read()
+            self.scheduleReread()
+        }
+    }
+
+    /// Reads once more, `rereadDelay` after the last read a write brought. SQLite writes a commit to its write-ahead log
+    /// before it lets readers see it, and only the write is heard of, so a writer held up between the two, as on a busy
+    /// Mac, leaves that read without the commit. When nothing is written after it, nothing else would read it before the
+    /// safety read, a minute later.
+    private func scheduleReread() {
+        writeReads += 1
+        let readsSoFar = writeReads
+        queue.asyncAfter(deadline: .now() + rereadDelay) { [weak self] in
+            // A later write's read, made or to come, has its own.
+            guard let self, self.isActive, readsSoFar == self.writeReads, !self.pendingRead else { return }
             self.read()
         }
     }

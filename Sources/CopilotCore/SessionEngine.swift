@@ -46,9 +46,10 @@ public struct EngineSnapshot: Sendable, Equatable {
 
 /// Watches `~/.copilot` with FSEvents and keeps one `EventLogReader` per visible session.
 /// Event-log appends are applied immediately; database changes trigger a throttled metadata
-/// reload. The app keeps its database open, and FSEvents only reports a file's writes once it's
-/// closed, so database commits are picked up by a kqueue watch on SQLite's write-ahead log.
-/// A slow safety rescan covers anything the watches might miss.
+/// reload, and one more read a moment after the last (`scheduleReread`). The app keeps its database
+/// open, and FSEvents only reports a file's writes once it's closed, so database commits are picked
+/// up by a kqueue watch on SQLite's write-ahead log. A slow safety rescan covers anything the
+/// watches might miss.
 ///
 /// All mutable state is confined to `queue`; `onChange` is called on that queue.
 public final class SessionEngine: @unchecked Sendable {
@@ -58,7 +59,9 @@ public final class SessionEngine: @unchecked Sendable {
     private let queue: DispatchQueue
     private let onChange: ChangeHandler
     private let metadataThrottle: TimeInterval
+    private let rereadDelay: TimeInterval
     private let safetyInterval: TimeInterval
+    private let loadDatabase: @Sendable (URL, Bool) throws -> DatabaseSnapshot
 
     private var metas: [SessionMeta] = []
     private var view = AppViewState()
@@ -71,22 +74,32 @@ public final class SessionEngine: @unchecked Sendable {
     private var walWatcher: FileWriteWatcher?
     private var safetyTimer: DispatchSourceTimer?
     private var metadataReloadScheduled = false
+    /// Counts the reads writes bring, so that only the last one's reread happens.
+    private var writeReads = 0
     private var isActive = false
     /// Reads where each session's work goes too, for Show Links.
     private var readsLinks = false
     /// The sessions it lists were read with where each session's work goes, as far as that's anywhere to read.
     private var linksRead = false
 
+    /// - Parameters:
+    ///   - metadataThrottle: how long after a write to the database to read it, so that a burst of writes is read once.
+    ///   - rereadDelay: how long after the last such read to read once more (`scheduleReread`).
+    ///   - loadDatabase: reads the app's database, with where each session's work goes or not; tests replace it.
     public init(
         paths: CopilotPaths = .default(),
         metadataThrottle: TimeInterval = 0.25,
+        rereadDelay: TimeInterval = 1,
         safetyInterval: TimeInterval = 60,
+        loadDatabase: @escaping @Sendable (URL, Bool) throws -> DatabaseSnapshot = { try AppDatabase.load(at: $0, links: $1) },
         onChange: @escaping ChangeHandler
     ) {
         self.paths = paths
         self.queue = DispatchQueue(label: "BriefBar.Copilot.SessionEngine", qos: .utility)
         self.metadataThrottle = metadataThrottle
+        self.rereadDelay = rereadDelay
         self.safetyInterval = safetyInterval
+        self.loadDatabase = loadDatabase
         self.onChange = onChange
     }
 
@@ -228,6 +241,22 @@ public final class SessionEngine: @unchecked Sendable {
             guard self.isActive else { return }
             self.reloadMetadata()
             self.publish()
+            self.scheduleReread()
+        }
+    }
+
+    /// Reads the database once more, `rereadDelay` after the last read a write brought. SQLite writes a commit to its
+    /// write-ahead log before it lets readers see it, and only the write is heard of, so a writer held up between the
+    /// two, as on a busy Mac, leaves that read without the commit. When nothing is written after it, as when a session
+    /// ends, nothing else would read it before the safety rescan, a minute later.
+    private func scheduleReread() {
+        writeReads += 1
+        let readsSoFar = writeReads
+        queue.asyncAfter(deadline: .now() + rereadDelay) { [weak self] in
+            // A later write's read, made or to come, has its own.
+            guard let self, self.isActive, readsSoFar == self.writeReads, !self.metadataReloadScheduled else { return }
+            self.reloadMetadata()
+            self.publish()
         }
     }
 
@@ -242,7 +271,7 @@ public final class SessionEngine: @unchecked Sendable {
 
     private func reloadMetadata() {
         do {
-            let snapshot = try AppDatabase.load(at: paths.database, links: readsLinks)
+            let snapshot = try loadDatabase(paths.database, readsLinks)
             metas = snapshot.sessions
             view = snapshot.view
             metadataFromDatabase = true
