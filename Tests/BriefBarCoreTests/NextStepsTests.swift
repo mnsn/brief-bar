@@ -1166,10 +1166,11 @@ import Testing
         _ counts: [BoardColumn: Int], yourMove: Set<BoardColumn> = [], choices: BoardFolds = BoardFolds(), open: Set<BoardColumn> = [],
         width: Double, columns: [BoardColumn] = allColumns
     ) -> [BoardColumn: BoardFolding.Why] {
-        BoardFolding.make(
-            columns: columns, count: { counts[$0] ?? 0 }, yourMove: { yourMove.contains($0) }, choices: choices, open: open,
-            widths: BoardWidths(scale: 1, available: width)
-        ).folded
+        let folding = BoardFolding.make(
+            columns: columns.map(ShownColumn.init), count: { counts[$0.first] ?? 0 }, yourMove: { yourMove.contains($0.first) },
+            choices: choices, open: Set(open.map(ShownColumn.init)), widths: BoardWidths(scale: 1, available: width)
+        )
+        return Dictionary(uniqueKeysWithValues: folding.folded.map { ($0.key.first, $0.value) })
     }
 
     @Test func aColumnFoldsAsYouChoseElseOnceItHasNoCards() {
@@ -1286,8 +1287,8 @@ import Testing
     /// stages to those.
     static func foldsOnceMoved(_ column: PullRequestStage, from before: [Int: StageReading], to moved: [Int: StageReading]) -> Bool {
         board(before).foldsOnceMoved(
-            to: .stage(column), stages: refs(before.merging(moved) { $1 }), choices: BoardFolds(), open: [],
-            widths: BoardWidths(scale: 1, available: 664)
+            to: .stage(column), stages: refs(before.merging(moved) { $1 }), shown: PullRequestStage.columns.map { ShownColumn(.stage($0)) },
+            choices: BoardFolds(), open: [], widths: BoardWidths(scale: 1, available: 664)
         )
     }
 
@@ -1343,10 +1344,10 @@ import Testing
         #expect(defaults.object(forKey: BoardFolds.defaultsKey) == nil)
 
         // A click that does what BriefBar would do by itself forgets your choice, rather than keep its opposite.
-        #expect(folds.choosing(.folded, for: .stage(.merged), byItself: false)[.stage(.merged)] == .folded)
-        #expect(folds.choosing(.open, for: .stage(.teammateReview), byItself: false)[.stage(.teammateReview)] == nil)
-        #expect(folds.choosing(.folded, for: .toStart, byItself: true)[.toStart] == nil)
-        #expect(folds.choosing(.open, for: .stage(.waits), byItself: true)[.stage(.waits)] == .open)
+        #expect(folds.choosing(.folded, for: ShownColumn(.stage(.merged)), byItself: false)[.stage(.merged)] == .folded)
+        #expect(folds.choosing(.open, for: ShownColumn(.stage(.teammateReview)), byItself: false)[.stage(.teammateReview)] == nil)
+        #expect(folds.choosing(.folded, for: ShownColumn(.toStart), byItself: true)[.toStart] == nil)
+        #expect(folds.choosing(.open, for: ShownColumn(.stage(.waits)), byItself: true)[.stage(.waits)] == .open)
     }
 
     @Test func theBoardIsAzureDevOpsPagesAndGitHubsShowsListWhereYouChoseIt() {
@@ -1357,6 +1358,108 @@ import Testing
         #expect(OrderView.board.shown(offering: github) == .list)
         #expect(OrderView.map.shown(offering: github) == .map)
         #expect(OrderView.board.shown(offering: azure) == .board)
+    }
+
+    // MARK: Laying out columns
+
+    /// The Board's columns on the Pull Requests page, without To start and Completed.
+    static let pullRequestColumns = PullRequestStage.columns.map(BoardColumn.stage)
+
+    static func shown(_ parts: BoardColumn...) -> ShownColumn {
+        ShownColumn(parts: parts)!
+    }
+
+    @Test func neighborsYouJoinShowAsOneColumnNamedForWhatTheyHoldAndOnlyHistoryHides() {
+        let joined = BoardLayout().joining(ShownColumn(.stage(.yourReview)), ShownColumn(.stage(.teammateReview)))
+        #expect(joined.shown(Self.allColumns).map(\.title)
+            == ["To start", "In progress", "In review", "Approved", "Can merge", "Waits", "Merged", "Completed"])
+        // Named where they're known, else by what they join; the gap you join is the one between them, whichever side.
+        #expect(Self.shown(.stage(.teammateReview), .stage(.approved)).title == "Teammate's review")
+        #expect(Self.shown(.stage(.approved), .stage(.canMerge)).title == "Approved + Can merge")
+        #expect(Self.shown(.stage(.approved), .stage(.canMerge)).menuTitle == "Approved + Can Merge")
+        #expect(Self.shown(.stage(.canMerge), .stage(.waits)).spokenTitle == "Ready: Can merge and Waits for another PR")
+        #expect(ShownColumn(parts: [.stage(.yourReview), .stage(.approved)]) == nil)
+
+        // Simple Columns: five, four without your sprint work, Done there only Merged.
+        let simple = BoardLayout.simple
+        #expect(simple.shown(Self.allColumns).map(\.title) == ["To start", "In progress", "In review", "Ready", "Done"])
+        #expect(simple.shown(Self.pullRequestColumns).map(\.title) == ["In progress", "In review", "Ready", "Merged"])
+        // A drag springs one open into its columns, for the moment; split, it's all of them again.
+        let inReview = Self.shown(.stage(.yourReview), .stage(.teammateReview), .stage(.approved))
+        #expect(simple.shown(Self.allColumns, splitting: [inReview]).count == 7)
+        #expect(simple.splitting(inReview).shown(Self.allColumns).map(\.title)
+            == ["To start", "In progress", "Your review", "Teammate's review", "Approved", "Ready", "Done"])
+
+        // Only what merged and what you finished hide, Done as one, into the tab, which shows Done again joined.
+        let done = Self.shown(.stage(.merged), .completed)
+        #expect(BoardLayout.canHide(done) && !BoardLayout.canHide(ShownColumn(.toStart)) && !BoardLayout.canHide(inReview))
+        #expect(simple.hiding(ShownColumn(.toStart)) == simple)
+        let hidden = simple.hiding(done)
+        #expect(hidden.shown(Self.allColumns).map(\.title) == ["To start", "In progress", "In review", "Ready"])
+        #expect(hidden.hiddenColumns(Self.allColumns) == [done])
+        #expect(hidden.showing(done) == simple)
+        // Hidden on the Pull Requests page, where Merged has no Completed beside it: on My Work, Completed shows alone, and
+        // Waits, joined to Merged, doesn't reach across it.
+        let mergedHidden = BoardLayout(joins: [.stage(.waits), .stage(.merged)], hidden: [.stage(.merged)])
+        #expect(mergedHidden.shown(Self.allColumns).suffix(2).map(\.title) == ["Waits", "Completed"])
+        #expect(!BoardLayout.canJoin(ShownColumn(.stage(.waits)), ShownColumn(.completed)))
+        #expect(mergedHidden.hiddenColumns(Self.allColumns) == [ShownColumn(.stage(.merged))])
+    }
+
+    @Test func itRemembersTheLayoutAndLeavesOutWhatCantBe() {
+        let defaults = MemorySettings()
+        #expect(BoardLayout.load(from: defaults) == BoardLayout())
+        let layout = BoardLayout.simple.hiding(ShownColumn(.completed))
+        layout.save(to: defaults)
+        #expect(defaults.object(forKey: "order.boardJoins") as? [String]
+            == ["yourReview+teammateReview", "teammateReview+approved", "canMerge+waits", "merged+completed"])
+        #expect(defaults.object(forKey: "order.boardHidden") as? [String] == ["completed"])
+        #expect(BoardLayout.load(from: defaults) == layout)
+        // Not neighbors, more than two, an unknown column, one that can't hide.
+        defaults.set(["yourReview+approved", "toStart+inProgress+yourReview", "later+merged", "toStart+inProgress"], forKey: BoardLayout.joinsKey)
+        defaults.set(["approved", "merged", "someday"], forKey: BoardLayout.hiddenKey)
+        #expect(BoardLayout.load(from: defaults) == BoardLayout(joins: [.toStart], hidden: [.stage(.merged)]))
+        BoardLayout().save(to: defaults)
+        #expect(defaults.object(forKey: BoardLayout.joinsKey) == nil && defaults.object(forKey: BoardLayout.hiddenKey) == nil)
+
+        // A joined column's fold is its own, kept while it's joined; each column keeps its own for when you split it.
+        let ready = Self.shown(.stage(.canMerge), .stage(.waits))
+        let folds = BoardFolds(shown: [ready: .folded, ShownColumn(.stage(.canMerge)): .open])
+        folds.save(to: defaults)
+        #expect(defaults.object(forKey: BoardFolds.defaultsKey) as? [String: String] == ["canMerge+waits": "folded", "canMerge": "open"])
+        #expect(BoardFolds.load(from: defaults) == folds)
+        #expect(folds.keeping(.simple) == folds)
+        #expect(folds.keeping(BoardLayout.simple.splitting(ready)) == BoardFolds([.stage(.canMerge): .open]))
+    }
+
+    /// The user's window leaves the Board 664 points: a joined column takes one column's room, and folds as late as the
+    /// latest of its columns in Fold's order, never while it's your move in one of them.
+    @Test func aJoinedColumnFoldsAsOneAndStaysOpenWhileItHoldsYourMove() {
+        let columns = BoardLayout.simple.shown(Self.allColumns)
+        let inReview = columns[2], ready = columns[3], done = columns[4]
+        func folded(width: Double, yourMove: Set<ShownColumn> = [columns[2]]) -> Set<ShownColumn> {
+            Set(BoardFolding.make(
+                columns: columns, count: { _ in 2 }, yourMove: yourMove.contains, choices: BoardFolds(),
+                widths: BoardWidths(scale: 1, available: width)
+            ).folded.keys)
+        }
+        // Done and To start first, whatever's in them: In progress, In review and Ready open.
+        #expect(folded(width: 664) == [done, columns[0]])
+        // Then Ready, where Can merge would fold, before In progress; but not while you can complete one there.
+        #expect(folded(width: 500) == [done, columns[0], ready])
+        #expect(folded(width: 500, yourMove: [inReview, ready]) == [done, columns[0], columns[1]])
+        // In review, where a review waits on you, never folds for room.
+        #expect(!folded(width: 200).contains(inReview))
+
+        // Hiding Merged and Completed costs no room: their tab takes a strip's, so three columns still open with both, or
+        // one, hidden.
+        let window = BoardWidths(scale: 1, available: 664, endsWithHidden: true)
+        let open: Set<BoardColumn> = [.stage(.inProgress), .stage(.yourReview), .stage(.teammateReview)]
+        for hidden in [[BoardColumn.completed], [.stage(.merged), .completed]] {
+            let shown = Self.allColumns.filter { !hidden.contains($0) }
+            #expect(window.fits(shown, folded: Set(shown).subtracting(open)))
+        }
+        #expect(window.reserved == 18 + 3)
     }
 
     // MARK: My Work's + Sprint Tasks

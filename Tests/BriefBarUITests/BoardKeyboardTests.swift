@@ -369,6 +369,25 @@ import Testing
         }
     }
 
+    /// In a joined column, ⌘→ and ⌘← still move a card stage by stage: drawn anew among the next stage's cards there, in
+    /// the same column, it keeps the keyboard, so that the next key moves it on.
+    @Test func theKeysMoveACardStageByStageInAJoinedColumnWhereItKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        order.setBoardLayout(.simple)
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ to move the card into In review", order: order, drawn: drawn, in: window)
+            for (arrow, stage) in [(KeyEquivalent.rightArrow, PullRequestStage.teammateReview), (.leftArrow, .yourReview)] {
+                try await Self.pressUntil("⌘ and an arrow to move it to \(stage.title) in In review") {
+                    Self.press(arrow, command: true, in: window)
+                    return order.stage(of: Self.ref)?.stage == stage
+                }
+                try await until("the Board to draw it among \(stage.title)'s cards") { drawn.columns[Self.ref] == stage }
+            }
+        }
+    }
+
     /// However long the Board takes to draw a card a key moved in its new column, as on a busy Mac, the card takes the
     /// keyboard back once it's drawn there, so that the next key moves it on.
     @Test func aMovedCardTakesTheKeyboardBackHoweverLongTheBoardTakesToDrawIt() async throws {
