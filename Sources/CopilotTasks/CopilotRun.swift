@@ -81,6 +81,10 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// once git fetched it there (`Git.remoteHead(of:branch:)`, `CopilotLauncher.launch`): what a push of its own adds to.
     /// Nil otherwise, when git couldn't read it, and for runs that BriefBar kept before it had this.
     public var head: String?
+    /// BriefBar's check stopped a push it made (`PushStop`), as BriefBar saw in its log: so that it failed even when the
+    /// part of its log BriefBar reads after a restart no longer has that. Only that it did, not why, which names
+    /// branches. Nil otherwise, and for runs that BriefBar kept before it had this.
+    public var pushStopped: Bool?
     /// For one that fixes them first, whether it pushed a commit of its own from its checkout since `head`, as git there
     /// said once it finished (`Git.pushedItsOwn(in:branch:since:)`): kept once, whatever moves the branch since, as someone
     /// else's push, or a later one from its session. Its prompt has it stop before it pushes when the tests don't pass, the
@@ -93,7 +97,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
         ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
         forkedFrom: String? = nil, forkedAt: Date? = nil, taken: [TakenPart]? = nil, pushes: [SessionPush]? = nil,
-        workLetGo: Bool? = nil, fixes: Bool? = nil, head: String? = nil, pushed: Bool? = nil
+        workLetGo: Bool? = nil, fixes: Bool? = nil, head: String? = nil, pushed: Bool? = nil, pushStopped: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -116,6 +120,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.fixes = fixes
         self.head = head
         self.pushed = pushed
+        self.pushStopped = pushStopped
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -240,9 +245,18 @@ public struct RunStatus: Sendable, Equatable {
         self.detail = detail
     }
 
+    /// The push BriefBar's check stopped in a run that started at `startedAt`, as its log says: not one from before then,
+    /// which was the session's.
+    public static func pushStop(in log: SessionLogState?, since startedAt: Date?) -> PushStop? {
+        guard let stop = log?.pushStop, let at = stop.at ?? log?.lastEventAt, startedAt.map({ at >= $0 }) ?? true else { return nil }
+        return stop
+    }
+
     /// From whether Copilot's process still runs, then, once it's gone, from Copilot's log of the session. While it
     /// runs, it's working whatever the log says: in autopilot, Copilot goes on after a turn that looks like its last,
-    /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
+    /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone. A
+    /// push BriefBar's check stopped since it started fails it, with why, whatever Copilot said after it (`PushStop`); or,
+    /// once the log BriefBar reads no longer has it, as BriefBar saw before (`pushStopped`).
     /// - Parameters:
     ///   - log: nil until Copilot has written one.
     ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log was put in before then, and not
@@ -251,9 +265,12 @@ public struct RunStatus: Sendable, Equatable {
     ///   - exitStatus: how its process ended, when BriefBar saw it end.
     ///   - stoppedByYou: you stopped it.
     ///   - output: what it printed, which says why when it couldn't start.
+    ///   - pushStopped: BriefBar saw its check stop a push of this run's before (`CopilotRun.pushStopped`).
     public static func derive(
-        log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
+        log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?,
+        pushStopped: Bool = false
     ) -> RunStatus {
+        let whole = log
         var log = log
         var phaseSince = log?.phaseSince
         if let startedAt, let state = log {
@@ -266,6 +283,14 @@ public struct RunStatus: Sendable, Equatable {
         }
         if isRunning {
             return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
+        }
+        // BriefBar's check stopped a push it made, as Copilot made it (`PushGuard`): whatever Copilot said since, it didn't
+        // push that. One from before it started was the session's, not this run's.
+        if let stop = pushStop(in: whole, since: startedAt) {
+            return RunStatus(phase: .failed, since: whole?.lastEventAt ?? stop.at, detail: "BriefBar stopped the push: \(stop.reason)")
+        }
+        if pushStopped {
+            return RunStatus(phase: .failed, since: whole?.lastEventAt, detail: "BriefBar stopped a push it made.")
         }
         switch log?.phase {
         case .finished?:

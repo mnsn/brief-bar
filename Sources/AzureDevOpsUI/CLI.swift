@@ -8,7 +8,7 @@ import NotificationCenterDB
 package enum AzureDevOpsCommandLine: SourceCommandLine {
     package static let source = SourceID.azureDevOps
     package static var descriptionVersion: Int { AzureDevOpsSource.descriptionVersion }
-    package static let flags = ["--orgs", "--chats", "--sprint", "--teams", "--pipelines", WaitCLI.flag]
+    package static let flags = ["--orgs", "--chats", "--sprint", "--teams", "--pipelines", WaitCLI.flag, PushGuardCLI.flag]
     package static let usage = """
         Azure DevOps:
           --orgs             List your organizations, and the ones where you have pull requests
@@ -30,6 +30,10 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
                              build failed, 5 for comments, 6 for conflicts, 7 once it's completed or
                              abandoned. Only while agents and Azure DevOps are on in the app
             --timeout <minutes>   …for at most this long, from 1 to 120 (90 by default)
+          --push-guard <pull request>   For BriefBar's own Push & Reply tasks, whose Copilot CLI runs it
+                             before each shell command, with the command on its standard input: it
+                             denies a push other than the one the task's prompt names, and one it can't
+                             check. Not for you to run
           --org <name>       Read this organization instead of the app's choice (repeatable)
           It signs in with the Azure CLI (az login) and only reads: every request is a GET. Set
           BRIEFBAR_AZ to the path of az to use another one. --dump, --json and --watch leave out pull
@@ -76,6 +80,9 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
 
     package static func run(_ options: CommandLineOptions) -> Int32? {
         // The demo never uses the Azure CLI, your settings, Azure DevOps or Notification Center.
+        if options.arguments.contains(PushGuardCLI.flag) {
+            return PushGuardCLI.run(options)
+        }
         if options.arguments.contains(WaitCLI.flag) {
             return WaitCLI.run(options)
         }

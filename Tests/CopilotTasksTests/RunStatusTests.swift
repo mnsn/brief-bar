@@ -67,6 +67,48 @@ import Testing
                 .detail == "Copilot ended before it started working.")
     }
 
+    /// A shell command the CLI denied as BriefBar's check of a push said, as the CLI logs it.
+    private func denied(_ id: String, _ reason: String, at seconds: Int) -> String {
+        Line.event("tool.execution_complete", data: [
+            "toolCallId": id, "success": false, "error": ["code": "denied", "message": "Denied by preToolUse hook: \(reason)"],
+        ], at: seconds)
+    }
+
+    /// A push BriefBar's check stopped fails the run, with why, whatever Copilot said after it, once it's over; one it
+    /// asked to push as the prompt says doesn't, nor one from the session's history, before the run started.
+    @Test func failsAtAPushBriefBarStopped() {
+        let stopped = log([
+            Line.userMessage(), Line.toolStart("bash", id: "c1", description: "Push", at: 30),
+            denied("c1", PushStop.marker + "the pull request was completed." + PushStop.ending, at: 40),
+            Line.taskComplete("Pushed and replied", at: 50),
+        ])
+        #expect(RunStatus.derive(log: stopped, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil) == RunStatus(phase: .working))
+        #expect(RunStatus.derive(log: stopped, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil) == RunStatus(
+            phase: .failed, since: Date(timeIntervalSince1970: 1_792_000_000 + 50), detail: "BriefBar stopped the push: the pull request was completed."
+        ))
+        let before = RunStatus.derive(
+            log: stopped, startedAt: Date(timeIntervalSince1970: 1_792_000_000 + 45), isRunning: false, exitStatus: 0, stoppedByYou: false,
+            output: nil
+        )
+        #expect(before.phase == .finished && before.detail == "Pushed and replied")
+
+        let retried = log([
+            Line.userMessage(), Line.toolStart("bash", id: "c1", description: "Push", at: 30),
+            denied("c1", PushGuard.retryMarker + "push once, in a command of its own.", at: 40),
+            Line.taskComplete("Pushed and replied", at: 50),
+        ])
+        #expect(RunStatus.derive(log: retried, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil).phase == .finished)
+
+        // Once the part of its log BriefBar reads after a restart no longer has it, as BriefBar saw it before.
+        let later = log([Line.userMessage("Go on", at: 60), Line.taskComplete("Pushed and replied", at: 90)])
+        #expect(RunStatus.derive(log: later, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil, pushStopped: true) == RunStatus(
+            phase: .failed, since: Date(timeIntervalSince1970: 1_792_000_000 + 90), detail: "BriefBar stopped a push it made."
+        ))
+        #expect(RunStatus.derive(log: later, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil, pushStopped: true).phase == .working)
+        #expect(RunStatus.pushStop(in: stopped, since: nil)?.reason == "the pull request was completed.")
+        #expect(RunStatus.pushStop(in: stopped, since: Date(timeIntervalSince1970: 1_792_000_000 + 45)) == nil)
+    }
+
     /// Going on with a session, or forking one, the log has that session's history too: how it stood before this run
     /// started isn't how this run went.
     @Test func readsNothingTheLogSaidBeforeItStarted() {

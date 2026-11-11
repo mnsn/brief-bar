@@ -59,6 +59,41 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
     }
 
+    /// The options a push needs to push only its branch, as git's configuration has it, the repository's and yours.
+    @Test(.timeLimit(.minutes(5)))
+    func findsWhatGitsConfigurationWouldPushMore() async throws {
+        let fixture = try await RepositoryFixture()
+        defer { fixture.remove() }
+        let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment)
+        let checkout = fixture.checkout.path
+        #expect(try await git.pushOptions(in: fixture.checkout) == [])
+        try await fixture.git(["config", "--global", "push.followTags", "true"])
+        #expect(try await git.pushOptions(in: fixture.checkout) == ["--no-follow-tags"])
+        try await fixture.git(["-C", checkout, "config", "push.followTags", "false"])
+        #expect(try await git.pushOptions(in: fixture.checkout) == [])
+        // A name with no value is on, as git reads it.
+        let config = fixture.checkout.appendingPathComponent(".git/config")
+        let configured = try String(contentsOf: config, encoding: .utf8)
+        try (configured + "[push]\n\tfollowTags\n").write(to: config, atomically: true, encoding: .utf8)
+        #expect(try await git.pushOptions(in: fixture.checkout) == ["--no-follow-tags"])
+        try configured.write(to: config, atomically: true, encoding: .utf8)
+        try await fixture.git(["-C", checkout, "config", "submodule.recurse", "true"])
+        #expect(try await git.pushOptions(in: fixture.checkout) == ["--no-recurse-submodules"])
+        // push.recurseSubmodules, set, decides.
+        try await fixture.git(["-C", checkout, "config", "push.recurseSubmodules", "check"])
+        #expect(try await git.pushOptions(in: fixture.checkout) == [])
+        try await fixture.git(["-C", checkout, "config", "push.recurseSubmodules", "on-demand"])
+        try await fixture.git(["-C", checkout, "config", "push.followTags", "1"])
+        #expect(try await git.pushOptions(in: fixture.checkout) == ["--no-follow-tags", "--no-recurse-submodules"])
+        // Outside a repository, git still reads yours; somewhere that isn't there, it can't say.
+        await #expect(throws: GitError.self) { try await git.pushOptions(in: fixture.folder.appendingPathComponent("gone")) }
+    }
+
+    @Test func readsGitsBooleansAsGitDoes() {
+        for on in [nil, "true", "Yes", "on", "1", "2", "-1", "maybe"] as [String?] { #expect(Git.isOn(on), "\(String(describing: on))") }
+        for off in ["false", "No", "off", "0", ""] { #expect(!Git.isOn(off), "\(off)") }
+    }
+
     // MARK: What Push & Reply would push
 
     private static let source = "users/robin/fix-total"

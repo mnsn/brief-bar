@@ -683,7 +683,8 @@ final class CopilotTasksStore: ObservableObject {
                     // Asked again for each send, so a tool you've just installed is found.
                     let environment = await environment(fresh: true)
                     let launcher = CopilotLauncher(
-                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings
+                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings,
+                        pushGuard: PushGuardPlugin.executable(Bundle.main.executableURL)
                     )
                     run = try await launcher.launch(request, id: id, now: now, forked: { [weak self] fork in
                         launched.id = fork
@@ -721,7 +722,11 @@ final class CopilotTasksStore: ObservableObject {
                 if case .pullRequest(let pullRequest, _) = subject {
                     settings.forgetChosenSession(for: PRKey(pullRequest.organization, pullRequest.id), supersededBy: run)
                 }
-                let how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                var how: String = continuing != nil ? ", going on with its session" : forking != nil ? ", in a fork of a session" : ""
+                if case .pullRequest(_, .pushAndReply) = subject {
+                    let checks = FileManager.default.fileExists(atPath: PushGuardPlugin.folder(in: Self.outputFolder, id: run.id).path)
+                    how += checks ? ", with its check of each push" : ", without its check of each push"
+                }
                 Log.app.info("Sent a task to Copilot\(how, privacy: .public)")
                 if let handOff { handedOff(handOff, prompt) }
                 refresh()
@@ -859,7 +864,7 @@ final class CopilotTasksStore: ObservableObject {
                     let status = RunStatus.derive(
                         log: log, startedAt: run.launchedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil
                     )
-                    results.append(Ended(run: run, status: status))
+                    results.append(Ended(run: run, status: status, pushStopped: RunStatus.pushStop(in: log, since: run.launchedAt) != nil))
                     continue
                 }
                 let log = await monitor.log(id: run.id, events: events)
@@ -873,9 +878,11 @@ final class CopilotTasksStore: ObservableObject {
                 }.value
                 let status = RunStatus.derive(
                     log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
-                    stoppedByYou: wasStoppedByYou(run.id), output: found.0
+                    stoppedByYou: wasStoppedByYou(run.id), output: found.0, pushStopped: run.pushStopped == true
                 )
-                let ended = Ended(run: run, status: status, pullRequest: found.1)
+                let ended = Ended(
+                    run: run, status: status, pullRequest: found.1, pushStopped: RunStatus.pushStop(in: log, since: run.launchedAt) != nil
+                )
                 if run.ended == nil, run.fixes == true, run.action == .pushAndReply, status.phase == .finished {
                     tellWhetherPushed(ended)
                     continue
@@ -897,13 +904,15 @@ final class CopilotTasksStore: ObservableObject {
         return Date().timeIntervalSince(gone) < Self.exitGrace
     }
 
-    /// What `refresh` read of a run: its status, the pull request it opened, once found, and, for one that fixed what it
-    /// took on first and finished, whether it pushed a commit of its own (`CopilotRun.pushed`).
+    /// What `refresh` read of a run: its status, the pull request it opened, once found; for one that fixed what it took
+    /// on first and finished, whether it pushed a commit of its own (`CopilotRun.pushed`); and whether BriefBar's check
+    /// stopped a push of its (`CopilotRun.pushStopped`).
     private struct Ended {
         var run: CopilotRun
         var status: RunStatus
         var pullRequest: URL? = nil
         var pushed: Bool? = nil
+        var pushStopped = false
     }
 
     /// Ends a task that fixed what it took on first, then was to push and reply, and finished, once git in its checkout
@@ -953,6 +962,9 @@ final class CopilotTasksStore: ObservableObject {
             guard let index else { continue }
             var run = settings.copilotRuns[index]
             if run.pullRequest == nil, let pullRequest = result.pullRequest { run.pullRequest = pullRequest }
+            // Kept, in case the part of its log BriefBar reads after a restart no longer has it; and only for the run that
+            // was read, not one that went on with its session since.
+            if result.pushStopped, run.pushStopped != true, run.launchedAt == result.run.launchedAt { run.pushStopped = true }
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
                 // Whether it pushed, as git said in its checkout as it finished: once, whatever moves the branch since.
@@ -1233,19 +1245,26 @@ final class CopilotTasksStore: ObservableObject {
         settings.copilotRuns.contains { $0.id == id && $0.stoppedByYou == true }
     }
 
-    /// Forgets it here, and deletes what it printed. Its worktree, branch and session stay.
+    /// Forgets it here, and deletes what it printed, and the plugin of its check of each push. Its worktree, branch and
+    /// session stay.
     func clear(_ entry: CopilotTaskEntry) {
         pending.removeAll { $0.id == entry.id }
         settings.copilotRuns.removeAll { $0.id == entry.id }
         statuses[entry.id] = nil
         if let run = entry.run, run.isValid {
-            try? FileManager.default.removeItem(at: output(of: run))
+            Self.deleteOutput(ofRun: run.id)
             let monitor = monitor
             Task { await monitor.forget(run.id) }
         } else if UUID(uuidString: entry.id) != nil {
             // A send that couldn't start may have printed why.
-            try? FileManager.default.removeItem(at: Self.outputFolder.appendingPathComponent("\(entry.id.lowercased()).log"))
+            Self.deleteOutput(ofRun: entry.id.lowercased())
         }
+    }
+
+    /// Deletes what a run printed, and the plugin of its check of each push, by the run's ID, a UUID.
+    nonisolated static func deleteOutput(ofRun id: String, in folder: URL = outputFolder) {
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).log"))
+        PushGuardPlugin.remove(in: folder, id: id)
     }
 
     /// Forgets every task that has ended.
