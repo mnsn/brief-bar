@@ -195,6 +195,36 @@ import Testing
         return order
     }
 
+    /// Pull Request Order, on, with a session's order of !4101, then !4102 after it, both merged: a finished mission, whose
+    /// lane folds; and a draft of yours in no mission.
+    private static func finishedMission() throws -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        BoardLanes.missions.save(to: defaults)
+        var orders = DeclaredOrders()
+        let link = { (number: Int) in "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)" }
+        try orders.apply(OrderRequest(entries: [.init(link: link(4101)), .init(link: link(4102), after: ["4101"])]))
+        orders.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        let merged = [4101, 4102].map { ItemRef.pullRequest(organization: "contoso", number: $0) }
+        var stages = Dictionary(uniqueKeysWithValues: merged.map { ($0, StageFacts(role: .author, state: .merged)) })
+        stages[ref] = StageFacts(role: .author, state: .draft)
+        order.publish(
+            .azureDevOps,
+            pullRequests: merged.map { merged in
+                OrderPullRequest(
+                    ref: merged, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/\(merged.shortOrderLabel)",
+                    targetBranch: "main", author: "robin", state: .merged, createdAt: Date(timeIntervalSince1970: 1_790_000_000)
+                )
+            } + [OrderPullRequest(
+                ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
+                createdAt: Date(timeIntervalSince1970: 1_791_000_000)
+            )],
+            stages: stages, account: "robin@contoso.com"
+        )
+        return order
+    }
+
     /// Shows the Board in a window while `body` runs, once its card is drawn.
     /// - Parameter waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as
     ///   in the app.
@@ -438,6 +468,38 @@ import Testing
             try await Self.pressUntil("Return on the merged card, which took the keyboard from the count") {
                 Self.press(.return, in: window)
                 return details.shown == merged
+            }
+        }
+    }
+
+    /// A finished mission's lane folds to its line, which Tab reaches as it does a card, with the Mac's keyboard navigation
+    /// off too: Return there shows the lane, and Tab goes on to what it held, Merged's count, then a merged card.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesWhatAFinishedMissionsLaneFolds() async throws {
+        let order = try Self.finishedMission()
+        #expect(order.missions.first?.isFinished == true)
+        let merged = Set([4101, 4102].map { ItemRef.pullRequest(organization: "contoso", number: $0) })
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            let folded = host.fittingSize.height
+            // Tab goes to the finished mission's line first, above the draft's lane, and Return there shows its lane...
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the finished mission's line, which Tab reached") {
+                if host.fittingSize.height > folded + 10 { return true }
+                Self.press(.return, in: window)
+                return host.fittingSize.height > folded + 10
+            }
+            #expect(details.shown == nil, "Tab went to the draft's card")
+            // ...then to Merged's count in it, whose Return draws the merged cards, the first of which takes the keyboard.
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on Merged's count in the lane") {
+                if merged.contains(where: drawn.isDrawn) { return true }
+                Self.press(.return, in: window)
+                return merged.contains(where: drawn.isDrawn)
+            }
+            try await Self.pressUntil("Return on the merged card, which took the keyboard from the count") {
+                Self.press(.return, in: window)
+                return details.shown.map(merged.contains) == true
             }
         }
     }

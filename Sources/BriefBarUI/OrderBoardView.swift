@@ -726,7 +726,9 @@ package struct OrderBoardView: View {
         order.lastStageChange.map { undoRefs.contains($0.ref) } == true || notice?.lane == lane.kind
     }
 
-    /// A finished mission's lane folds to its header, as List's merged line does.
+    /// A finished mission's lane folds to its header, as List's merged line does. Its line takes the keyboard's focus as a
+    /// card does, whatever the Mac's keyboard navigation, so that what the lane hides stays in reach: Return or Space folds
+    /// or shows it.
     /// - Parameter canFold: false for a lane with cards of your work that's still to do, which doesn't fold: the line only
     ///   says it's finished.
     @ViewBuilder
@@ -744,18 +746,25 @@ package struct OrderBoardView: View {
         .font(size: 11.5, weight: .medium)
         .foregroundStyle(.secondary)
         if canFold {
-            Button {
+            let toggle = {
                 withAnimation(.easeOut(duration: 0.15)) {
                     if isFolded { unfolded.insert(mission.key) } else { unfolded.remove(mission.key) }
                 }
-            } label: {
-                label
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 4)
-            .help(isFolded ? "Show its lane" : "Fold its lane")
-            .accessibilityLabel(isFolded ? "Show \(OrderText.folded(mission.steps))" : "Hide \(OrderText.folded(mission.steps))")
+            label
+                .contentShape(Rectangle())
+                .onTapGesture(perform: toggle)
+                .focusable(interactions: .edit)
+                .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                    toggle()
+                    return .handled
+                }
+                .padding(.leading, 4)
+                .help(isFolded ? "Show its lane" : "Fold its lane")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(isFolded ? "Show \(OrderText.folded(mission.steps))" : "Hide \(OrderText.folded(mission.steps))")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(.default, toggle)
         } else {
             label
                 .padding(.leading, 4)

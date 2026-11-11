@@ -189,11 +189,13 @@ extension BoardLane {
         }
     }
 
-    /// Whether it has cards of your work that's still to do, in To start or In progress, which keep a finished mission's lane
-    /// from folding, as it would hide them. Resolved and done work, in Merged and Completed, folds with it, as a merged pull
-    /// request's card does.
+    /// Whether it has cards of your work that's still to do, which keep a finished mission's lane from folding, as it would
+    /// hide them: in To start or In progress, or not resolved yet, as one still open whose pull request merged, in Merged.
+    /// Resolved and done work folds with it, as a merged pull request's card does.
     public var hasWorkToDo: Bool {
-        tasks.contains { $0.column == .toStart || $0.column == .inProgress }
+        tasks.contains { task in
+            task.column == .toStart || task.column == .inProgress || task.work.progress == .toDo || task.work.progress == .inProgress
+        }
     }
 
     /// The story whose lane it is, for one of a story without a mission.
