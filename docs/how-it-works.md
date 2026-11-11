@@ -1782,7 +1782,8 @@ rest as strips, with My Work's + Sprint Tasks too. A strip's count is in a pill 
 of its cards needs you (`BoardCard.needsYou`: your move, or a problem Fix next ranks, `fixRank`, but none in Merged), and
 the strip wears its column's mark, To start's dashed ring or a dot: a shape as well as a color. Some columns open for
 the moment, unsaved: one a card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's
-spring-loaded folders do; the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, while a
+spring-loaded folders do, a column of a lane being one drop destination, folded or open, so that the one under the card
+stays as it springs open; the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, while a
 card in it has the keyboard's focus, until a card in another column has it, or none has for half a second while the
 board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be folded otherwise, or
 before the board knows its width, until you fold it or the board goes. A click that folds or opens a column while

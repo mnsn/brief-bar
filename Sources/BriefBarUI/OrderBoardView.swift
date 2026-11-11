@@ -945,13 +945,31 @@ package struct OrderBoardView: View {
 
     // MARK: Cells
 
-    /// A column of a lane: its cards, or its strip while it's folded.
-    @ViewBuilder
+    /// A column of a lane: its cards, or its strip while it's folded. Either is the one place a card you drag drops there,
+    /// which stays as a strip springs open under the card, rather than another taking its place in the middle of the drag.
     private func cell(_ lane: BoardLane, column: BoardColumn, metrics: BoardMetrics, moves: BoardMoves) -> some View {
-        if metrics.isFolded(column) {
-            stripCell(lane, column: column, metrics: metrics, moves: moves)
-        } else {
-            openCell(lane, column: column, width: metrics.width(column), moves: moves)
+        let target = BoardCell(lane: lane.kind, column: column)
+        let isFolded = metrics.isFolded(column)
+        let takes = dropping(on: column, in: lane, moves: moves)?.isTaken == true
+        return ZStack(alignment: .topLeading) {
+            if isFolded {
+                stripCell(lane, column: column, metrics: metrics, moves: moves)
+            } else {
+                openCell(lane, column: column, width: metrics.width(column), moves: moves)
+            }
+        }
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { items, _ in
+            drop(items, on: column, in: lane, moves: moves)
+        } isTargeted: { isOver in
+            if isOver {
+                hovered = target
+                // A strip that takes the card springs open once the card stays over it a moment.
+                if isFolded, takes { springing = target }
+            } else {
+                if hovered == target { hovered = nil }
+                if springing == target { springing = nil }
+            }
         }
     }
 
@@ -988,15 +1006,6 @@ package struct OrderBoardView: View {
             if isHovered, let refusal {
                 refusalBubble(refusal)
                     .padding(6)
-            }
-        }
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, on: column, in: lane, moves: moves)
-        } isTargeted: { isOver in
-            if isOver {
-                hovered = target
-            } else if hovered == target {
-                hovered = nil
             }
         }
     }
@@ -1043,17 +1052,6 @@ package struct OrderBoardView: View {
         .contentShape(Rectangle())
         .onTapGesture { open(column, metrics: metrics) }
         .contextMenu { columnMenu(column, isFolded: true, metrics: metrics) }
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, on: column, in: lane, moves: moves)
-        } isTargeted: { isOver in
-            if isOver {
-                hovered = target
-                if takes { springing = target }
-            } else {
-                if hovered == target { hovered = nil }
-                if springing == target { springing = nil }
-            }
-        }
         .help(stripCellHelp(lane, column: column, count: count, needing: needing, why: metrics.folding.folded[column]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.stripWords(title: column.stage?.title ?? column.title, count: count, needing: needing, here: true))
