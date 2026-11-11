@@ -844,7 +844,7 @@ package struct OrderBoardView: View {
                 withAnimation(.easeOut(duration: 0.15)) { _ = opened.insert(column) }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: foldedSymbol(column))
                         .foregroundStyle(column.color)
                     Text(words)
                         .lineLimit(1)
@@ -859,6 +859,16 @@ package struct OrderBoardView: View {
             .help(names.joined(separator: "\n") + "\nClick to show them")
             .accessibilityLabel(words)
             .accessibilityHint("Shows them")
+        }
+    }
+
+    /// The mark before a folded column's count: Completed's checkmark; beside it, Merged's pill's symbol, as what merged
+    /// isn't done there until it's out; else, with pull requests alone, the checkmark Merged had.
+    private func foldedSymbol(_ column: BoardColumn) -> String {
+        switch column {
+        case .completed: BoardText.completedSymbol
+        case .stage(let stage) where board.showsWork: stage.symbol
+        default: "checkmark.circle.fill"
         }
     }
 
