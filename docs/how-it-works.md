@@ -1836,7 +1836,7 @@ card you drag has hovered for 0.6 seconds, where it can go, until the drag ends,
 column of a lane being one drop destination, folded or open, so that the one under the card stays as it springs open;
 the one ⌘→ or ⌘← moved a card to, the details' keys too while they cover the board, or Return or Space opened from a
 lane's strip, while a card in it has the keyboard's focus, until a card in another column has it, or none has for half
-a second while the board can take it and owes it to no card; and one Up Next's **2 more ›** shows where it would be
+a second while the board can take it and owes it to no card; and one Up Next's **2 more ›**, or My Work's **Show Them**, shows where it would be
 folded otherwise, or before the board knows its width, until you fold it or the board goes. A lane's strip with cards
 takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation (`focusable(interactions: .edit)`),
 in the same Tab order, its ring drawn inside it, and owes it to its first card in the lane as its column opens, on
@@ -1904,7 +1904,9 @@ card dropped on To start, are refused, saying why (`BoardText.workStays`, `toSta
 
 With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
-with + Sprint Tasks offering **Show Them**, + All My Tasks; or says "All your open tasks and bugs are in Sprint 42";
+with + Sprint Tasks offering **Show Them**, + All My Tasks, with the Board at the first column that has a card of that
+work, To start or In progress (`MyWorkFacts.column`), opened for the moment where it's folded, as **2 more ›** shows its
+column (`PullRequestOrder.revealedColumn`); or says "All your open tasks and bugs are in Sprint 42";
 "Looking for…" until the first read, and why when one fails, keeping what was read before. It shows under the sprint's
 problem too, as the Sprint page shows the cards read before under it. With no sprint going on, it says how many are open
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,

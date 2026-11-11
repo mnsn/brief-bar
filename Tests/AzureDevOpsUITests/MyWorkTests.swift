@@ -167,6 +167,29 @@ import Testing
         #expect(MyWorkFacts.work(sprint: sprint, outside: []).map(\.ref) == [1, 2, 3, 4].map(ref))
     }
 
+    /// Show Them takes the Board to the first column with a card of your work outside the sprint: To start while any of it
+    /// hasn't started, else In progress, whatever the sprint's work there; none where a pull request's card names each.
+    @Test func showThemTakesTheBoardToTheFirstColumnWithYourWorkOutsideTheSprint() {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        let onBoard = ItemRef.pullRequest(organization: "contoso", number: 4113)
+        func work(_ id: Int, _ progress: SprintWork.Progress, linked: [ItemRef] = []) -> SprintWork {
+            SprintWork(
+                ref: ref(id), story: nil, progress: progress,
+                pullRequests: linked.map { LinkedPullRequest(ref: $0, state: .open(author: nil)) }, copilotWorks: false
+            )
+        }
+        let pullRequests = PullRequestBoard.make(
+            stages: [onBoard: StageReading(stage: .inProgress, why: .draft)], missions: [], kinds: PullRequestsByMission.kinds
+        )
+        func column(sprint: [SprintWork], outside: [SprintWork]) -> BoardColumn? {
+            MyWorkFacts.column(of: Set(outside.map(\.ref)), on: pullRequests.withWork(sprint + outside, missions: [], stories: []))
+        }
+        #expect(column(sprint: [work(1, .inProgress)], outside: [work(10, .inProgress), work(11, .toDo)]) == .toStart)
+        #expect(column(sprint: [work(1, .toDo)], outside: [work(10, .inProgress)]) == .stage(.inProgress))
+        #expect(column(sprint: [work(1, .toDo)], outside: [work(10, .toDo, linked: [onBoard])]) == nil)
+        #expect(column(sprint: [work(1, .toDo)], outside: []) == nil)
+    }
+
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and
     /// window shares, shows one since: that pull request's card isn't marked, and while the details cover the Board, ⌘→ and
     /// ⌘← don't move it. A pull request's card clicked last, its details show and the keys move it; with none, a work item's

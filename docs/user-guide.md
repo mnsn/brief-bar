@@ -433,9 +433,10 @@ Requests**, the Board as it was; **+ Sprint Tasks**, which puts your sprint work
 as yours and not done; and **+ All My Tasks**, which adds your open tasks and bugs outside the sprint, in your team's
 project: from older sprints, later ones, iterations outside your team's sprints, or none. BriefBar remembers which.
 Under the header, with either, a line counts yours outside the sprint, such as **5 tasks and 1 bug of yours aren't in
-Sprint 42**, so that one left behind in an older sprint doesn't go unnoticed, and **Show Them** shows them; or it says
-**All your open tasks and bugs are in Sprint 42**. With no sprint going on, for a team you chose on the Sprint page, it
-says how many are open instead. What hasn't started, with no pull request linked to it and no
+Sprint 42**, so that one left behind in an older sprint doesn't go unnoticed, and **Show Them** shows them: + All My
+Tasks, with the Board at the first column that has one, opened for the moment if it's folded, as **2 more ›** opens its
+column; or it says **All your open tasks and bugs are in Sprint 42**. With no sprint going on, for a team you chose on
+the Sprint page, it says how many are open instead. What hasn't started, with no pull request linked to it and no
 task you sent to Copilot working on it, is in **To start**, a column before In progress; what has started without a pull
 request, or has Copilot working on it, has a card of its own in In progress; and a pull request's card names the work
 items of yours it's for, such as **Task 5112**, or **Task 5181 (Sprint 41)** for one outside the sprint. A work item's card says why it's there: **New**, **Active · no pull

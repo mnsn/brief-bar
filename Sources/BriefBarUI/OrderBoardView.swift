@@ -311,7 +311,8 @@ package struct OrderBoardView: View {
     @LocalState private var sprung: Set<BoardColumn> = []
     /// The column a card you moved with a key went to, open while it keeps the keyboard's focus.
     @LocalState private var keyOpened: KeyOpened?
-    /// The folded columns Up Next's "2 more ›" opened, for the moment: until you fold them, or the board goes.
+    /// The folded columns Up Next's "2 more ›", or My Work's Show Them, opened, for the moment: until you fold them, or the
+    /// board goes.
     @LocalState private var revealedOpen: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
     @LocalState private var unfolded: Set<MissionKey> = []
@@ -461,7 +462,7 @@ package struct OrderBoardView: View {
     // MARK: Folding
 
     /// The columns open for the moment, whatever else says: those a drag sprang open, the one a card you moved with a key
-    /// went to while a card there keeps the keyboard's focus, and those Up Next's "2 more ›" opened.
+    /// went to while a card there keeps the keyboard's focus, and those Up Next's "2 more ›" or My Work's Show Them opened.
     private var openForNow: Set<BoardColumn> {
         var open = sprung.union(revealedOpen)
         if let opened = keyOpened, column(of: opened.spot) == opened.column {
@@ -766,7 +767,7 @@ package struct OrderBoardView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Where Up Next's "2 more ›" scrolls to.
+                    // Where Up Next's "2 more ›", or My Work's Show Them, scrolls to.
                     HStack(spacing: 0) {
                         ForEach(board.columns, id: \.self) { column in
                             Color.clear
@@ -792,7 +793,7 @@ package struct OrderBoardView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(metrics.content > metrics.visible + 1 ? .automatic : .hidden)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in scroll.x = x }
-            .onChange(of: order.revealedColumn) { _, stage in reveal(stage, with: proxy) }
+            .onChange(of: order.revealedColumn) { _, column in reveal(column, with: proxy) }
             .onAppear { reveal(order.revealedColumn, with: proxy) }
         }
     }
@@ -1375,11 +1376,10 @@ package struct OrderBoardView: View {
         return reading.isOnBoard && reading.stage != column
     }
 
-    /// Up Next's "2 more ›": the page scrolls the board to that column, opened for the moment where it would be folded but for
-    /// its own moment, or where the board doesn't know its width yet to tell, and its title flashes.
-    private func reveal(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
-        guard let stage else { return }
-        let column = BoardColumn.stage(stage)
+    /// Up Next's "2 more ›", or My Work's Show Them: the page scrolls the board to that column, opened for the moment where it
+    /// would be folded but for its own moment, or where the board doesn't know its width yet to tell, and its title flashes.
+    private func reveal(_ column: BoardColumn?, with proxy: ScrollViewProxy) {
+        guard let column else { return }
         let widths = BoardWidths(scale: textScale, available: width)
         if width <= 0 || folding(widths, open: openForNow.subtracting([column]), choices: order.boardFolds).isFolded(column) {
             revealedOpen.insert(column)

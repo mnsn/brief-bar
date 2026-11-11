@@ -171,7 +171,7 @@ package struct MissionsBody: View {
                 revealBoard(ordering.revealedColumn, with: proxy)
                 ordering.showing(onScreen, in: viewer, on: page)
             }
-            .onChange(of: ordering.revealedColumn) { _, stage in revealBoard(stage, with: proxy) }
+            .onChange(of: ordering.revealedColumn) { _, column in revealBoard(column, with: proxy) }
             .onChange(of: onScreen) { _, keys in ordering.showing(keys, in: viewer, on: page) }
             .onDisappear { ordering.stopShowing(in: viewer) }
         }
@@ -236,8 +236,8 @@ package struct MissionsBody: View {
     }
 
     /// Up Next's "2 more ›": the page scrolls to the Board, which scrolls sideways to the column.
-    private func revealBoard(_ stage: PullRequestStage?, with proxy: ScrollViewProxy) {
-        guard stage != nil, view == .board else { return }
+    private func revealBoard(_ column: BoardColumn?, with proxy: ScrollViewProxy) {
+        guard column != nil, view == .board else { return }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.boardTop, anchor: .top) }
         }

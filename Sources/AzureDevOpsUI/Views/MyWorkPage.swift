@@ -91,6 +91,14 @@ enum MyWorkFacts {
         return sprint.filter { $0.story != $0.ref || !storiesOfTasks.contains($0.ref) } + outside
     }
 
+    /// Where Show Them takes the Board: the first column, from the left, with a card of its own of your work outside the
+    /// sprint, To start or In progress; nil where a pull request's card names each.
+    static func column(of outside: Set<ItemRef>, on board: PullRequestBoard) -> BoardColumn? {
+        let columns = Set(board.lanes.flatMap(\.tasks).filter { outside.contains($0.ref) }.map(\.column))
+        if columns.contains(.toStart) { return .toStart }
+        return columns.contains(.inProgress) ? .stage(.inProgress) : nil
+    }
+
     /// One of your work items, for its story.
     private static func work(
         _ item: WorkItem, story: ItemRef?, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?,
@@ -339,9 +347,14 @@ private struct MyWorkContent: View {
     /// while it shows it, and your work outside the sprint with + All My Tasks, after the sprint's, even with no sprint
     /// going on. Nil while Pull Request Order is off, as My Work is then.
     private var board: PullRequestBoard? {
+        board(showing: shown)
+    }
+
+    /// The Board as a choice of Show's has it.
+    private func board(showing shown: MyWorkShows) -> PullRequestBoard? {
         guard ordering.isOn else { return nil }
         let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
-        guard showsWork else { return board }
+        guard shown.showsWork, links.isOn else { return board }
         let sprintBoard = sprint.board
         let outside = shown == .allTasks ? self.outside : nil
         guard sprintBoard != nil || outside?.items.isEmpty == false else { return board }
@@ -375,7 +388,7 @@ private struct MyWorkContent: View {
                 if let board, store.hasLoaded, !store.items.isEmpty {
                     // "2 more ›" scrolls the Board here to its column.
                     UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
-                        ordering.revealedColumn = stage
+                        ordering.revealedColumn = .stage(stage)
                     }
                 }
                 if shown.showsWork {
@@ -516,8 +529,17 @@ private struct MyWorkContent: View {
     /// How many of your tasks and bugs aren't in the sprint, or are open with none going on.
     private func outsideLine(sprint name: String?) -> some View {
         OutsideSprintLine(outside: outside, sprint: name, showsThem: shown == .allTasks) {
-            settings.myWorkShows = .allTasks
+            showOutside()
         }
+    }
+
+    /// Show Them: + All My Tasks, with the Board at the first column a card of your work outside the sprint is in, opened for
+    /// the moment where it's folded, as Up Next's "2 more ›" shows its column.
+    private func showOutside() {
+        let refs = Set(outside?.items.map(\.linkRef) ?? [])
+        let column = board(showing: .allTasks).flatMap { MyWorkFacts.column(of: refs, on: $0) }
+        settings.myWorkShows = .allTasks
+        if let column { ordering.revealedColumn = column }
     }
 
     // MARK: Selection
@@ -609,7 +631,7 @@ private struct OutsideSprintLine: View {
     let sprint: String?
     /// + All My Tasks shows them on the Board.
     let showsThem: Bool
-    /// Shows them: + All My Tasks.
+    /// Shows them: + All My Tasks, with the Board at their column.
     let show: () -> Void
 
     var body: some View {

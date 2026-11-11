@@ -73,7 +73,7 @@ import Testing
 
         #expect(settings.pullRequestOrder == .byMission)
         #expect(ordering.view == .board)
-        #expect(ordering.revealedColumn == .teammateReview)
+        #expect(ordering.revealedColumn == .stage(.teammateReview))
     }
 
     /// While the details cover the Board, why its keys couldn't move a pull request shows under its stage track in them, as

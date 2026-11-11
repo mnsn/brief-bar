@@ -78,8 +78,8 @@ package final class PullRequestOrder: ObservableObject {
     /// The pull request you chose for each of Up Next's slots that applies now: what BriefBar keeps for the account each
     /// one's source told last (`keptPicks`), and those kept in memory (`UpNextPicks`); none while it's off.
     @Published package private(set) var picks = UpNextPicks()
-    /// The column Up Next's "2 more ›" asked the Board to show, until it has.
-    @Published package var revealedColumn: PullRequestStage?
+    /// The column Up Next's "2 more ›", or My Work's Show Them, asked the Board to show, until it has.
+    @Published package var revealedColumn: BoardColumn?
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -284,7 +284,7 @@ package final class PullRequestOrder: ObservableObject {
     /// Shows the Board at a column, as Up Next's "2 more ›" does: By Mission's Board, remembered, scrolled to it.
     package func revealColumn(_ stage: PullRequestStage) {
         setView(.board)
-        revealedColumn = stage
+        revealedColumn = .stage(stage)
     }
 
     /// Asks By Mission to show a mission, as clicking a row's capsule does. On a page that shows the Board with Lanes: None,
