@@ -1893,14 +1893,18 @@ package final class PullRequestOrder: ObservableObject {
             }
             // How far yours got, and where it goes from: from what was set, as that ends.
             let yours = facts.isYours ? account(of: ref) : nil
-            let got = StageRules.reached(kept: yours.flatMap { reached.reach(of: ref, for: $0) }, ended: counted.ended)
+            let got = StageRules.reached(kept: yours.flatMap { reached.reach(of: ref, for: $0, at: now()) }, ended: counted.ended)
             if let yours, !facts.state.isOpen, reached.set(nil, of: ref, for: yours, at: now()) { reachedChanged = true }
             guard facts.isListed else { continue }
             marksInMemory[ref]?.listedAt = now()
             let order = StageOrder.of(ref, in: missions, names: names)
             if let yours, facts.state.isOpen {
                 let worked = StageRules.worked(facts: facts, sessions: sessions, reached: got, order: order)
-                if reached.set(StageRules.reached(worked), of: ref, for: yours, at: now()) { reachedChanged = true }
+                // A session whose end BriefBar can't tell says nothing of it yet.
+                let knowsSessions = sessions.contains { !$0.isReview && $0.activity != .stopped }
+                if reached.set(StageRules.reached(worked), of: ref, for: yours, at: now(), knowsSessions: knowsSessions) {
+                    reachedChanged = true
+                }
             }
             let set = [mine].compactMap { $0 } + counted.theirs
             if var reading = StageRules.reading(

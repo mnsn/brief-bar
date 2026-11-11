@@ -204,7 +204,7 @@ struct PullRequestBoardCard: View {
     /// (`StageReading.flags`): a session that asks you, one that writes it, what fails, ✋ changes someone wants; then the
     /// rest (`others`).
     static func flags(_ item: PRSnapshot, reading: StageReading, name: (ItemRef) -> String? = { _ in nil }) -> [Flag] {
-        reading.flags.map { mark($0, name: name) } + others(item, reading: reading)
+        reading.saidFlags.map { mark($0, name: name) } + others(item, reading: reading)
     }
 
     /// A flag of yours as a mark: "‘Cart’ asks you", "‘Cart’ is writing it", "Build failed", "Priya wants changes".

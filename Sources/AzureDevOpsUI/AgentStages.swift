@@ -138,7 +138,7 @@ extension AzureDevOpsAgent {
             let marks = [counted.yours].compactMap { $0 } + counted.theirs
             let order = StageOrder.of(ref, in: missions)
             let got = StageRules.reached(
-                kept: fact.isYours ? account.flatMap { kept.reached.reach(of: ref, for: $0) } : nil, ended: counted.ended
+                kept: fact.isYours ? account.flatMap { kept.reached.reach(of: ref, for: $0, at: now) } : nil, ended: counted.ended
             )
             if let reading = StageRules.reading(
                 facts: fact, sessions: sessions, marks: marks, order: order, setters: setters, reached: got

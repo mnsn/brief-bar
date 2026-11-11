@@ -1553,41 +1553,47 @@ what you and sessions set, its order, and, for yours, how far it got (below). Th
 
 Approved means what Azure DevOps counts: its approvals, the reviewers it requires and its other reviewer policies, all
 done, as What's Left reads them (`PullRequestOrderFacts.isApproved`); one that requires nobody's review, as where its
-reviewer policy doesn't apply, isn't approved until someone approves it. While what BriefBar read of its policies isn't current, as after a push or a vote until it reads
-them again, only the votes tell: not approved while a reviewer it requires hasn't approved, or nobody has; else it stays
-in Approved or Can merge where it got.
+reviewer policy doesn't apply, isn't approved until someone approves it. While what BriefBar read of its policies isn't
+current, as after a push or a vote until it reads them again, only the votes tell: not approved while a reviewer it
+requires hasn't approved, or nobody has; else it stays in Approved or Can merge where it got.
 
 On yours, what goes on with it besides why it's in its stage never moves it: a session that asks you or writes it, a
 required item that failed or expired, conflicts or a merge Azure DevOps couldn't make, and changes someone wants, each
-where why doesn't say it already. They're its flags (`StageFlag`): after its reason, **Maria approved it · build
-failed**, **‘Cart’ finished · ‘Cart’ asks you**, wherever its words show: its row, its tooltip and its details, Up Next,
-and what its mission waits for, VoiceOver hearing each after a pause; and marks on its card, **✕ Build failed**, **✋
-Sam wants changes**. Fix next has what they say needs you, from every column (below). Someone else's pull request that
-asks nothing of you has no stage.
+where why doesn't say it already; the session that set its In progress writes it too, which **‘Cart’ is on it** says, so
+that Fix next doesn't offer it while that session may be fixing it. They're its flags (`StageFlag`): after its reason,
+**Maria approved it · build failed**, **‘Cart’ finished · ‘Cart’ asks you**, wherever its words show: its row, its
+tooltip and its details, Up Next, and what its mission waits for, VoiceOver hearing each after a pause; and marks on its
+card, **✕ Build failed**, **✋ Sam wants changes**. Fix next has what they say needs you, from every column (below).
+Someone else's pull request that asks nothing of you has no stage.
 
 **How far yours got.** BriefBar never moves one of yours back on its own, but where it loses what its stage stands for:
 its approval, as when a push resets the votes or Azure DevOps requires another reviewer, back to Teammate's review from
-Approved, Can merge or Waits; and Azure DevOps' readiness while it's still approved, as when its build fails or
-expires, back to Approved from Can merge or Waits. Your review, once a session finished writing it, gives way once
-someone else approves it; one someone only wants changes on stays there, marked. So BriefBar keeps how far each of your open pull requests got, as it works it
-out itself, whatever was set (`StageRules.worked`, `StagesReached`, `order.reached`): Your review, Teammate's review,
-Approved, or Can merge, for Waits too; nothing for In progress. A stage you or a session set moves it either way, and
-once that ends, BriefBar goes on from the stage that was set (`StageRules.reached(kept:ended:)`): Your review or
-Teammate's review, or, after In progress, from what Azure DevOps shows alone, as it was sent back. It's kept in the
-preferences for each account you sign in with, each as its pull request's reference, its stage and when a list last had
-it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no list has had it for 30
-days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and its stage comes from
-what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none.
-`--mcp` only reads it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps
-it, unused. Beside Can merge and Waits, whose words say where its order puts
-it, a row or a card shows its order capsule only where a change of yours speaks of it (`OrderRowContext.isSaid(by:)`):
-✎ **Next to merge** for one you set as next, or, for one an order went against yours, its capsule, which says so in
-its tooltip and to VoiceOver, with Put Yours Back in its menu. You can set In progress, Your review or Teammate's
-review; Approved, Can merge, Waits and Merged come only from what Azure DevOps and the order show. What you set holds until the
-pull request moves on (`StageRules.stands`): In progress until new commits come, or a session writing it finishes (a
-review, such as Copilot's pre-review, ends nothing); Teammate's review, on yours, until the votes others cast change
-(a digest of the votes, never who cast them), so asking someone else to review it keeps it, and, on someone else's,
-until your own vote changes or new commits come; Your review until you change it; merging or closing ends any.
+Approved, Can merge or Waits; and Azure DevOps' readiness while it's still approved, as when its build fails or expires,
+back to Approved from Can merge or Waits. Your review, once a session finished writing it, gives way once someone else
+approves it; one someone only wants changes on stays there, marked. So BriefBar keeps how far each of your open pull
+requests got, as it works it out itself, whatever was set (`StageRules.worked`, `StagesReached`, `order.reached`): Your
+review, Teammate's review, Approved, or Can merge, for Waits too; nothing for In progress. A stage you or a session set
+moves it either way, and once that ends, BriefBar goes on from the stage that was set
+(`StageRules.reached(kept:ended:)`): Your review or Teammate's review, or, after In progress, from what Azure DevOps
+shows alone, as it was sent back. Azure DevOps can list a new pull request before the Copilot app says which session
+opened it: until BriefBar knows of a session writing it, at work or done, and for ten minutes at most, one it first kept
+in Teammate's review is that session's, where the session was at work, or done, by then: In progress while it writes it,
+Your review once it finished (`StagesReached.firstSight`). It's kept in the preferences for each account you sign in
+with, each as its pull request's reference, its stage, when it got there, whether that's where BriefBar first kept it,
+and when a list last had it, noted once a day; it goes once its pull request merges, closes or is a draft again, or no
+list has had it for 30 days, as a stage you set does; 500 at most for each account, past which a new one isn't kept, and
+its stage comes from what Azure DevOps shows alone. Without an account BriefBar knows, it keeps none. `--mcp` only reads
+it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused.
+
+Beside Can merge and Waits, whose words say where its order puts it, a row or a card shows its order capsule only where
+a change of yours speaks of it (`OrderRowContext.isSaid(by:)`): ✎ **Next to merge** for one you set as next, or, for one
+an order went against yours, its capsule, which says so in its tooltip and to VoiceOver, with Put Yours Back in its
+menu. You can set In progress, Your review or Teammate's review; Approved, Can merge, Waits and Merged come only from
+what Azure DevOps and the order show. What you set holds until the pull request moves on (`StageRules.stands`): In
+progress until new commits come, or a session writing it finishes (a review, such as Copilot's pre-review, ends
+nothing); Teammate's review, on yours, until the votes others cast change (a digest of the votes, never who cast them),
+so asking someone else to review it keeps it, and, on someone else's, until your own vote changes or new commits come;
+Your review until you change it; merging or closing ends any.
 **Finished My Review** sets Teammate's review: on someone else's, it takes it off your board until you vote in Azure
 DevOps, or something new needs you there. Sessions never put someone else's pull request in progress, whether they work
 on it or set its stage. BriefBar never

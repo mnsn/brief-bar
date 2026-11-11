@@ -125,12 +125,12 @@ import Testing
         let approved = reached.set(.approved, of: Self.pr(4088), for: "Robin@Contoso.com", at: t(0))
         let same = reached.set(.approved, of: Self.pr(4088), for: "robin@contoso.com", at: t(10))
         #expect(approved && !same)
-        #expect(reached.reach(of: Self.pr(4088), for: "ROBIN@contoso.com") == StageReach(.approved, since: t(0), isFirst: true))
+        #expect(reached.reach(of: Self.pr(4088), for: "ROBIN@contoso.com", at: t(10)) == StageReach(.approved, since: t(0), isFirst: true))
         // Moved since, it's no longer where BriefBar first kept it.
         _ = reached.set(.canMerge, of: Self.pr(4088), for: "robin@contoso.com", at: t(5))
         _ = reached.set(.approved, of: Self.pr(4088), for: "robin@contoso.com", at: t(6))
-        #expect(reached.reach(of: Self.pr(4088), for: "robin@contoso.com") == StageReach(.approved, since: t(6)))
-        #expect(reached.reach(of: Self.pr(4088), for: "sam@contoso.com") == nil)
+        #expect(reached.reach(of: Self.pr(4088), for: "robin@contoso.com", at: t(10)) == StageReach(.approved, since: t(6)))
+        #expect(reached.reach(of: Self.pr(4088), for: "sam@contoso.com", at: t(10)) == nil)
 
         let inProgress = reached.set(.inProgress, of: Self.pr(4090), for: "robin", at: t(0))
         let workItem = reached.set(.yourReview, of: .workItem(organization: "contoso", id: 5101), for: "robin", at: t(0))
@@ -140,6 +140,23 @@ import Testing
         let backToInProgress = reached.set(.inProgress, of: Self.pr(4088), for: "robin@contoso.com", at: t(20))
         #expect(backToInProgress && reached.isEmpty)
         #expect(StagesReached(accounts: ["robin": [Self.pr(1): .init(stage: .waits, since: t(0), listedAt: t(0))]]).isEmpty)
+    }
+
+    /// Where BriefBar first kept one is only where it first saw it before it knew of a session writing it, and only for ten
+    /// minutes: kept with such a session known, or once one is, it's how far it got, as any.
+    @Test func whereBriefBarFirstSawOneLastsUntilItKnowsItsSessionsForMinutesAtMost() {
+        var reached = StagesReached()
+        _ = reached.set(.teammateReview, of: Self.pr(4093), for: "robin", at: t(0))
+        #expect(reached.reach(of: Self.pr(4093), for: "robin", at: t(599))?.isFirst == true)
+        #expect(reached.reach(of: Self.pr(4093), for: "robin", at: t(600)) == StageReach(.teammateReview, since: t(0)))
+        #expect(reached.accounts["robin"]?[Self.pr(4093)]?.isFirst == true)
+        let known = reached.set(.teammateReview, of: Self.pr(4093), for: "robin", at: t(60), knowsSessions: true)
+        let again = reached.set(.teammateReview, of: Self.pr(4093), for: "robin", at: t(70), knowsSessions: true)
+        #expect(known && !again)
+        #expect(reached.reach(of: Self.pr(4093), for: "robin", at: t(60)) == StageReach(.teammateReview, since: t(0)))
+
+        _ = reached.set(.teammateReview, of: Self.pr(4094), for: "robin", at: t(0), knowsSessions: true)
+        #expect(reached.reach(of: Self.pr(4094), for: "robin", at: t(0)) == StageReach(.teammateReview, since: t(0)))
     }
 
     /// At the most, a new one isn't kept, and none is dropped; it's noted once a day as lists have it, and goes 30 days
@@ -160,8 +177,8 @@ import Testing
         #expect(!halfADay && aDay)
         let unlisted = reached.forgetUnlisted(now: t(day * 30 + 1), of: [.pullRequest])
         #expect(unlisted)
-        #expect(reached.reach(of: Self.pr(1), for: "robin")?.stage == .approved)
-        #expect(reached.reach(of: Self.pr(2), for: "robin") == nil)
+        #expect(reached.reach(of: Self.pr(1), for: "robin", at: t(0))?.stage == .approved)
+        #expect(reached.reach(of: Self.pr(2), for: "robin", at: t(0)) == nil)
         let gitHub = reached.forget([.gitHubPullRequest])
         let azureDevOps = reached.forget([.pullRequest])
         #expect(!gitHub && azureDevOps && reached.isEmpty)

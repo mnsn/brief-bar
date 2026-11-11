@@ -386,7 +386,7 @@ public struct StageReading: Equatable, Sendable {
     /// On yours, what else goes on with it than why it's in its stage, which doesn't move it: marks on its card, and its
     /// words after why, in this order: a session that asks you, one that writes it, what fails, changes someone wants;
     /// each only where why doesn't say it already: "Waiting on Sam · build failed", "‘Cart’ finished · Priya wants
-    /// changes".
+    /// changes". The session that set its In progress writes it too, which its words say already (`saidFlags`).
     public var flags: [StageFlag]
     /// Where why it's in its stage names a mission, as the order where two go round does: the same naming none, "Another
     /// order puts !4102 after it: check the order", as agents read it. Whether it reads the same goes by that
@@ -414,6 +414,16 @@ public struct StageReading: Equatable, Sendable {
             if case .failing(let words) = flag { return words }
             return nil
         }.first
+    }
+
+    /// Its flags as its words and its card say them: all but the session that set its In progress writing it, which
+    /// "‘Cart’ is on it" says already.
+    public var saidFlags: [StageFlag] {
+        guard why == .set, stage == .inProgress, let setter = mark?.by else { return flags }
+        return flags.filter { flag in
+            if case .working(let session) = flag { return session.ref != setter }
+            return true
+        }
     }
 
     /// The session that writes it now, as why it's in its stage or its flags say.
@@ -517,8 +527,9 @@ public struct StageReach: Equatable, Sendable {
     public var stage: PullRequestStage
     /// When it got there, as BriefBar saw it.
     public var since: Date?
-    /// It's where BriefBar first saw it, and nothing moved it since: a session already at work on it then, or done, may be
-    /// the one that opened it, which BriefBar didn't know of yet.
+    /// It's where BriefBar first saw it, minutes ago at most (`StagesReached.firstSight`), before it knew of a session
+    /// writing it, and nothing moved it since: a session already at work on it then, or done, may be the one that opened
+    /// it, which BriefBar didn't know of yet.
     public var isFirst: Bool
 
     public init(_ stage: PullRequestStage, since: Date? = nil, isFirst: Bool = false) {
@@ -605,9 +616,9 @@ public enum StageRules {
     /// to Teammate's review or further, as when a push reset its votes, waits for teammates again. Before that: in
     /// progress while the session that opened it writes it, nobody else having voted on it yet; yours to review once a
     /// session finished writing it, or once it got there before, as when a session writes it again, until someone else
-    /// approves it; else your teammates'. One BriefBar first saw in Teammate's review before it knew of the session on it,
-    /// as when Azure DevOps listed it before the Copilot app said which session opened it, is that session's, as one
-    /// BriefBar saw nowhere yet, where the session's turn began, or ended, by then. Where BriefBar can't tell whether it's
+    /// approves it; else your teammates'. One BriefBar first saw in Teammate's review minutes ago, before it knew of any
+    /// session writing it, as when Azure DevOps listed it before the Copilot app said which session opened it, is that
+    /// session's, as one BriefBar saw nowhere yet, where the session's turn began, or ended, by then. Where BriefBar can't tell whether it's
     /// approved, as while its details are read again after a push or a vote, it stays in Approved or Can merge where it was.
     public static func worked(
         facts: StageFacts, sessions: [StageSession], reached reach: StageReach?, order: StageOrder
@@ -704,17 +715,18 @@ public enum StageRules {
         return reached(set: ended.stage).map { StageReach($0, since: ended.at) }
     }
 
-    /// One of yours' flags, beside its reading: the sessions that write it or ask you, but a review, which writes nothing,
-    /// and the session whose In progress shows, which why names; what fails; and changes someone wants: each once, and
-    /// not what why says already.
+    /// One of yours' flags, beside its reading: the sessions that write it or ask you, but a review, which writes nothing;
+    /// what fails; and changes someone wants: each once, and not what why says already. Of the sessions that write it,
+    /// one besides the session whose In progress shows, which its words name already (`saidFlags`).
     static func flags(facts: StageFacts, sessions: [StageSession], for reading: StageReading) -> [StageFlag] {
         let setter = reading.why == .set && reading.stage == .inProgress ? reading.mark?.by : nil
-        let busy = sessions.filter { !$0.isReview && $0.activity.isBusy && $0.ref != setter }
+        let busy = sessions.filter { !$0.isReview && $0.activity.isBusy }
         var flags: [StageFlag] = []
         if let asking = busy.first(where: { $0.activity == .waitsForYou }), reading.why != .asksYou(asking) {
             flags.append(.asksYou(asking))
         }
-        if let working = latest(busy.filter { $0.activity == .working }), reading.why != .working(working) {
+        let writing = busy.filter { $0.activity == .working }
+        if let working = latest(writing.filter { $0.ref != setter }) ?? latest(writing), reading.why != .working(working) {
             flags.append(.working(working))
         }
         if let failure = facts.failure, reading.why != .failing(failure) { flags.append(.failing(failure)) }
@@ -890,7 +902,7 @@ public enum StageText {
 
     /// Its flags, after why it's in its stage: " · ‘Cart’ is writing it · build failed"; nothing without any.
     public static func flags(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
-        reading.flags.map { separator + words($0, name: name) }.joined()
+        reading.saidFlags.map { separator + words($0, name: name) }.joined()
     }
 
     /// A flag, as it follows why: "‘Cart’ asks you", "build failed", "Priya wants changes", "changes requested".

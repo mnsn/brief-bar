@@ -184,9 +184,9 @@ public struct StageMarks: Equatable, Sendable {
 /// How far each of your pull requests got, as BriefBar worked its stage out itself (`StageRules.worked`), in BriefBar's
 /// preferences, for each Azure DevOps account you sign in with, as the stages you set are (`StageMarks`): one key,
 /// `order.reached`, which only the app writes, of references, stages, when each got there, whether that's where BriefBar
-/// first kept it, and when a list last had it, and nothing else: so
-/// that BriefBar never moves one back on its own, as a failed build, or a session that writes it again, would, but where
-/// it loses what its stage stands for. Only Your review, Teammate's review, Approved and Can merge, Waits kept as Can merge;
+/// first kept it before it knew of a session writing it, and when a list last had it, and nothing else: so that BriefBar
+/// never moves one back on its own, as a failed build, or a session that writes it again, would, but where it loses what
+/// its stage stands for. Only Your review, Teammate's review, Approved and Can merge, Waits kept as Can merge;
 /// one in progress keeps none. One goes once its pull request merges, closes or is a draft again, or no list has had it for
 /// 30 days; turning a source off forgets its own, and Forget Stages… all of them. At most 500 for each account: past
 /// that, a new one isn't kept, and BriefBar works its stage out from what its source shows alone.
@@ -195,12 +195,17 @@ public struct StagesReached: Equatable, Sendable {
     public static let mostPerAccount = StageMarks.mostPerAccount
     /// The stages it keeps.
     public static let kept: Set<PullRequestStage> = [.yourReview, .teammateReview, .approved, .canMerge]
+    /// How long one BriefBar first kept before it knew of a session writing it may still be that session's
+    /// (`StageReach.isFirst`): Azure DevOps can list a pull request before the Copilot app tells which session opened it,
+    /// which it does within seconds.
+    public static let firstSight: TimeInterval = 10 * 60
 
     public struct Entry: Equatable, Sendable {
         public var stage: PullRequestStage
         /// When it got there, as BriefBar saw it (`StageReach.since`).
         public var since: Date
-        /// It's where BriefBar first kept it, and nothing moved it since (`StageReach.isFirst`).
+        /// It's where BriefBar first kept it, before it knew of a session writing it, and nothing moved it since
+        /// (`StageReach.isFirst`).
         public var isFirst: Bool
         /// When a list last had its pull request, as `listed` notes it.
         public var listedAt: Date
@@ -233,9 +238,11 @@ public struct StagesReached: Equatable, Sendable {
     public var isEmpty: Bool { accounts.values.allSatisfy(\.isEmpty) }
 
     /// How far a pull request got, with this account, and since when; nil for one that got no further than In progress, or
-    /// that BriefBar keeps nothing of.
-    public func reach(of ref: ItemRef, for account: String) -> StageReach? {
-        accounts[account.lowercased()]?[ref].map { StageReach($0.stage, since: $0.since, isFirst: $0.isFirst) }
+    /// that BriefBar keeps nothing of. Where BriefBar first kept it only for `firstSight`.
+    public func reach(of ref: ItemRef, for account: String, at now: Date) -> StageReach? {
+        accounts[account.lowercased()]?[ref].map { entry in
+            StageReach(entry.stage, since: entry.since, isFirst: entry.isFirst && now.timeIntervalSince(entry.since) < Self.firstSight)
+        }
     }
 
     /// How many this account keeps.
@@ -245,9 +252,14 @@ public struct StagesReached: Equatable, Sendable {
 
     /// Keeps how far a pull request got now, in place of what it kept, or forgets it, for nil or a stage it doesn't keep:
     /// true when that changed what's kept. A new one isn't kept once the account keeps the most.
-    /// - Parameter now: when it got there, for a stage it didn't keep, and when a list last had it.
+    /// - Parameters:
+    ///   - now: when it got there, for a stage it didn't keep, and when a list last had it.
+    ///   - knowsSessions: BriefBar knows of a session writing it, at work or done, not one whose end it can't tell: where it
+    ///     keeps it first isn't where it first saw it before it knew of them, and where it kept it before stops being that.
     @discardableResult
-    public mutating func set(_ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date) -> Bool {
+    public mutating func set(
+        _ stage: PullRequestStage?, of ref: ItemRef, for account: String, at now: Date, knowsSessions: Bool = false
+    ) -> Bool {
         let account = account.lowercased()
         var entries = accounts[account] ?? [:]
         guard let stage, Self.kept.contains(stage), ref.kind.isPullRequest else {
@@ -257,11 +269,16 @@ public struct StagesReached: Equatable, Sendable {
         }
         let isNew = entries[ref] == nil
         if let entry = entries[ref] {
-            guard entry.stage != stage else { return false }
+            guard entry.stage != stage else {
+                guard knowsSessions, entry.isFirst else { return false }
+                entries[ref]?.isFirst = false
+                accounts[account] = entries
+                return true
+            }
         } else if entries.count >= Self.mostPerAccount {
             return false
         }
-        entries[ref] = Entry(stage: stage, since: now, isFirst: isNew, listedAt: now)
+        entries[ref] = Entry(stage: stage, since: now, isFirst: isNew && !knowsSessions, listedAt: now)
         accounts[account] = entries
         return true
     }

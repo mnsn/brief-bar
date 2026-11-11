@@ -204,7 +204,7 @@ private final class Clock {
         let defaults = Self.defaults()
         let order = Self.service(defaults, clock: clock)
         func reached(_ number: Int) -> PullRequestStage? {
-            StagesReached.load(from: defaults).reach(of: Self.ref(number), for: Self.account)?.stage
+            StagesReached.load(from: defaults).reach(of: Self.ref(number), for: Self.account, at: clock.now)?.stage
         }
         let approved = StageFacts(role: .author, isApproved: true, approvedBy: "Maria", othersVoted: true, votes: "10")
         Self.tell(order, [4093: approved])
@@ -261,6 +261,39 @@ private final class Clock {
         #expect(order.stage(of: Self.ref(4093))?.mark == nil)
         #expect(order.stage(of: Self.ref(4093))?.stage == .teammateReview)
         #expect(Self.why(order, 4093) == "Waiting on Maria · Maria wants changes")
+    }
+
+    /// Azure DevOps can list a pull request before the Copilot app tells which session opened it: told within minutes, it's
+    /// that session's, as if BriefBar had known it first. Told later, or where BriefBar knew of the session as it first kept
+    /// the pull request, it's no such thing: one that loses its approval stays with your teammates.
+    @Test func whereBriefBarFirstSawOneIsItsSessionsOnlyBeforeItKnewOfThemAndForMinutes() {
+        let clock = Clock()
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Maria")
+        let raced = Self.service(Self.defaults(), clock: clock)
+        Self.tell(raced, [4093: waiting])
+        #expect(raced.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        clock.advance(seconds: 60)
+        Self.tellSession(raced, on: [4093], state: .running, since: clock.now - 120)
+        #expect(raced.stage(of: Self.ref(4093))?.stage == .inProgress)
+        #expect(Self.why(raced, 4093) == "‘Cart’ is writing it")
+
+        let late = Self.service(Self.defaults(), clock: clock)
+        Self.tell(late, [4093: waiting])
+        clock.advance(seconds: 660)
+        Self.tellSession(late, on: [4093], state: .done, since: clock.now - 900)
+        #expect(late.stage(of: Self.ref(4093))?.stage == .teammateReview)
+
+        let known = Self.service(Self.defaults(), clock: clock)
+        Self.tellSession(known, on: [4093], state: .done, since: clock.now - 3_600)
+        Self.tell(known, [4093: StageFacts(
+            role: .author, isApproved: false, approvedBy: "Maria", waitingFor: "1 of 2 approvals", othersVoted: true, votes: "10"
+        )])
+        #expect(known.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        // A push reset the votes, minutes later.
+        clock.advance(seconds: 120)
+        Self.tell(known, [4093: waiting])
+        #expect(known.stage(of: Self.ref(4093))?.stage == .teammateReview)
+        #expect(Self.why(known, 4093) == "Waiting on Maria")
     }
 
     @Test func aSessionAtWorkThenDoneMovesItAsTheCopilotAppTellsIt() {
