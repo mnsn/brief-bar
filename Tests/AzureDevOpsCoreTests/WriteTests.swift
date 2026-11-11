@@ -592,6 +592,7 @@ import Testing
         let urls = [
             ADOEndpoint.threads(organization: "contoso", projectId: "p1", repositoryId: "r1", pullRequestId: 7),
             ADOEndpoint.pullRequest(organization: "contoso", id: 7), ADOEndpoint.profile,
+            ADOEndpoint.assignedToMe(organization: "contoso", project: "p1"),
         ]
         for url in urls {
             #expect(ADOClient.request(url, token: "t").httpMethod == "GET")

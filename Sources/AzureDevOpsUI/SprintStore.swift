@@ -17,6 +17,11 @@ final class SprintStore: ObservableObject {
     @Published private(set) var hasLoaded = false
     /// Something shows the sprint on screen, so it's read.
     @Published private(set) var isShowing = false
+    /// Your open tasks and bugs outside the sprint, as last read, while My Work wants them, or since (`setOutside`); nil
+    /// until a read tried.
+    @Published private(set) var outside: OutsideWork?
+    /// My Work shows their cards, with + All My Tasks: Show Links reads their pull requests, as it does the sprint's.
+    @Published private(set) var showsOutside = false
 
     let settings: AppSettings
     let mode: PRStore.Mode
@@ -24,6 +29,8 @@ final class SprintStore: ObservableObject {
     private var engine: SprintEngine?
     /// What shows the sprint right now: windows, widgets and popovers, by name.
     private var viewers: Set<String> = []
+    /// What My Work wants of your work outside the sprint, by the name its viewer shows the sprint by.
+    private var outsideViewers: [String: OutsideWanted] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     init(settings: AppSettings, mode: PRStore.Mode, client: ADOClient) {
@@ -84,6 +91,7 @@ final class SprintStore: ObservableObject {
 
     private func load(demo now: Date) {
         board = DemoData.sprintBoard(now: now)
+        outside = DemoData.outsideWork(now: now)
         teams = [DemoData.team, DemoData.otherTeam]
         refreshedAt = now.addingTimeInterval(-20)
         hasLoaded = true
@@ -91,6 +99,12 @@ final class SprintStore: ObservableObject {
 
     private func receive(_ snapshot: SprintSnapshot) {
         if board != snapshot.board { board = snapshot.board }
+        if outside != snapshot.outside {
+            if let problem = snapshot.outside?.problem, problem != outside?.problem {
+                Log.app.error("Sprint: your work outside it: \(problem, privacy: .public)")
+            }
+            outside = snapshot.outside
+        }
         if teams != snapshot.teams { teams = snapshot.teams }
         if problem != snapshot.problem {
             problem = snapshot.problem
@@ -116,6 +130,24 @@ final class SprintStore: ObservableObject {
         Task { await engine.setActive(active) }
     }
 
+    /// What My Work wants of your open tasks and bugs outside the sprint, for one of its viewers: how many there are, for its
+    /// line, or their cards too; nil for nothing. They're read with the sprint while any viewer wants either, as long as
+    /// something shows the sprint; their pull requests only while one wants their cards.
+    func setOutside(_ wanted: OutsideWanted?, for viewer: String) {
+        let wasRead = !outsideViewers.isEmpty
+        outsideViewers[viewer] = wanted
+        let shows = outsideViewers.values.contains(.cards)
+        if showsOutside != shows { showsOutside = shows }
+        let read = !outsideViewers.isEmpty
+        guard read != wasRead, let engine else { return }
+        Task { await engine.setReadsOutside(read) }
+    }
+
+    /// Whether My Work wants your work outside the sprint read.
+    var readsOutside: Bool {
+        !outsideViewers.isEmpty
+    }
+
     /// Stops reading for good, when Azure DevOps is turned off.
     func stop() {
         cancellables.removeAll()
@@ -123,6 +155,8 @@ final class SprintStore: ObservableObject {
         engine = nil
         viewers = []
         isShowing = false
+        outsideViewers = [:]
+        showsOutside = false
     }
 
     func refresh() {
@@ -138,10 +172,9 @@ final class SprintStore: ObservableObject {
         AzureDevOps.open(item.webURL)
     }
 
-    /// A work item's title, if it's in the sprint shown.
+    /// A work item's title, if it's in the sprint shown, or among your work outside it.
     func title(of reference: WorkItemReference) -> String? {
-        guard let board else { return nil }
-        let items = board.rows.flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+        let items = (board?.items ?? []) + (outside?.items ?? [])
         return items.first { $0.copilotTask.reference.matches(reference) }?.title
     }
 

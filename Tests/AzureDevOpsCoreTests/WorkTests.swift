@@ -40,7 +40,7 @@ enum WorkFixture {
 
     static func workItem(
         _ id: Int, _ type: String = "Task", _ title: String = "A task", state: String = "New", assignee: Person? = nil, parent: Int? = nil,
-        remaining: Double? = nil, rank: Double? = nil
+        remaining: Double? = nil, rank: Double? = nil, iteration: String? = nil
     ) -> [String: Any] {
         var fields: [String: Any] = [
             "System.Id": id, "System.WorkItemType": type, "System.Title": title, "System.State": state, "System.TeamProject": "Shop",
@@ -50,6 +50,7 @@ enum WorkFixture {
         if let parent { fields["System.Parent"] = parent }
         if let remaining { fields["Microsoft.VSTS.Scheduling.RemainingWork"] = remaining }
         if let rank { fields["Microsoft.VSTS.Common.StackRank"] = rank }
+        if let iteration { fields["System.IterationPath"] = iteration }
         return ["id": id, "rev": 1, "fields": fields, "url": "https://example.invalid"]
     }
 
@@ -264,6 +265,20 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(withGaps.skipped == 1)
     }
 
+    @Test func decodesWhatsAssignedToYou() throws {
+        let query = try Fixture.decode(ADOPredefinedQuery.self, ["results": [["id": 7], ["id": 0], "junk", ["id": 9]], "hasMore": true])
+        #expect(query.ids == [7, 9])
+        #expect(query.hasMore)
+        #expect(try Fixture.decode(ADOPredefinedQuery.self, ["results": []]).hasMore == false)
+        // Without its list, it isn't "none of yours": it couldn't be read.
+        #expect(throws: DecodingError.self) { try Fixture.decode(ADOPredefinedQuery.self, ["hasMore": false]) }
+        let item = try Fixture.decode(ADOWorkItem.self, WorkFixture.workItem(9, iteration: "Shop\\2026\\Sprint 6"))
+        #expect(WorkItem(organization: Fixture.org, project: "Shop", item, categories: [:]).iteration == "Shop\\2026\\Sprint 6")
+        // Only your work outside the sprint is read with its iteration: the sprint's request stays as it was.
+        #expect(!ADOWorkItem.fieldNames.contains("System.IterationPath"))
+        #expect(ADOWorkItem.fieldNamesWithIteration == ADOWorkItem.fieldNames + ["System.IterationPath"])
+    }
+
     @Test func decodesTheBacklogConfiguration() throws {
         let configuration = try Fixture.decode(ADOBacklogConfiguration.self, WorkFixture.backlogConfiguration)
         #expect(configuration.taskBacklog?.workItemTypes?.elements.map(\.name) == ["Task"])
@@ -443,6 +458,75 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
     }
 }
 
+// MARK: - Your work outside the sprint
+
+@Suite struct OutsideWorkTests {
+    private func mine(
+        _ id: Int, _ type: String = "Task", state: String = "Active", parent: Int? = nil, rank: Double? = nil,
+        in iteration: String? = "Shop\\Sprint 5"
+    ) -> WorkItem {
+        var work = item(id, type, state: state, assignee: People.me, parent: parent, rank: rank)
+        work.iteration = iteration
+        return work
+    }
+
+    /// Your open tasks and bugs that the board doesn't have, once each: not resolved, done or removed, nor stories, nor a bug
+    /// one of your tasks is under, on the board or not. The latest sprint first, in backlog order within one, those in no
+    /// sprint last; counted, apart from the bugs, but for those in the sprint's own iteration that its board doesn't have.
+    @Test func keepsYourOpenTasksAndBugsTheBoardDoesntHaveTheLatestSprintFirst() {
+        let board = SprintBoard.build(
+            team: WorkFixture.team, sprint: sprint, me: People.me.id,
+            relations: [relation(1), relation(3), relation(4), relation(2, under: 1)],
+            items: [item(1, "User Story", state: "Active"), item(2, assignee: People.me, parent: 1), item(3, "Bug", state: "Active"),
+                    item(4, assignee: People.me, parent: 21)],
+            taskTypes: ["Task"]
+        )
+        let found = [
+            mine(2, parent: 1, in: "Shop\\Sprint 7"),
+            mine(10, parent: 1, rank: 2), mine(10, parent: 1, rank: 2),
+            mine(11, state: "New", in: "Shop\\Sprint 12"),
+            mine(12, "Bug", state: "New", in: "Shop"),
+            mine(13, state: "Closed"), mine(14, state: "Resolved"), mine(15, state: "Removed"),
+            mine(16, "User Story"),
+            mine(17, "Bug", in: "Shop\\Sprint 6"), mine(18, parent: 17, in: "Shop\\Sprint 6"),
+            mine(19, "Bug", rank: 1),
+            mine(21, "Bug"),
+            mine(22, in: "Shop\\Sprint 7"),
+        ]
+        let items = OutsideWork.yours(found, board: board, taskTypes: ["Task"])
+        #expect(items.map(\.id) == [11, 22, 18, 19, 10, 12])
+        // A bug with your tasks under it is theirs to show where the team tracks bugs as tasks too.
+        #expect(OutsideWork.yours(found, board: board, taskTypes: ["Task", "Bug"]).map(\.id) == items.map(\.id))
+        let work = OutsideWork(items: items, sprintPath: "shop\\sprint 7", readAt: t(0))
+        #expect(work.count == 5)
+        #expect(work.bugCount == 2)
+        #expect(items.map(work.place(of:)) == ["Sprint 12", nil, "Sprint 6", "Sprint 5", "Sprint 5", OutsideWork.noSprint])
+        #expect(work.place(of: mine(30, in: "Shop\\2026\\Q4\\Sprint 41")) == "Sprint 41")
+        #expect(work.place(of: mine(31, in: nil)) == nil)
+        // Without a sprint today, every one is outside it.
+        #expect(OutsideWork(items: items).count == 6)
+    }
+
+    /// A task's story is its parent, as on the board; a bug is its own, unless the team tracks bugs as tasks.
+    @Test func eachIsForItsStoryAsOnTheBoard() {
+        let work = OutsideWork(taskTypes: ["Task"])
+        #expect(work.story(of: mine(10, parent: 1)) == .workItem(organization: Fixture.org, id: 1))
+        #expect(work.story(of: mine(11)) == nil)
+        #expect(work.story(of: mine(12, "Bug", parent: 1)) == .workItem(organization: Fixture.org, id: 12))
+        #expect(OutsideWork(taskTypes: ["Task", "Bug"]).story(of: mine(12, "Bug", parent: 1)) == .workItem(organization: Fixture.org, id: 1))
+    }
+
+    /// One the board has since, moved into the sprint, shows there only.
+    @Test func leavesOutWhatTheBoardHasNow() {
+        let board = SprintBoard.build(team: WorkFixture.team, sprint: sprint, me: People.me.id, relations: [relation(10)],
+                                      items: [item(10, assignee: People.me)], taskTypes: ["Task"])
+        let work = OutsideWork(items: [mine(10), mine(11)], sprintPath: sprint.path, problem: "Azure DevOps answered with HTTP 500.")
+        #expect(work.without(board).items.map(\.id) == [11])
+        #expect(work.without(board).problem == work.problem)
+        #expect(work.without(nil) == work)
+    }
+}
+
 // MARK: - Pipelines
 
 @Suite struct PipelineTests {
@@ -583,6 +667,9 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
             == "https://dev.azure.com/contoso/p1/t1/_apis/work/teamsettings/iterations/i1/workitems?api-version=7.1")
         #expect(ADOEndpoint.backlogConfiguration(team: team).absoluteString
             == "https://dev.azure.com/contoso/p1/t1/_apis/work/backlogconfiguration?api-version=7.1")
+        #expect(ADOEndpoint.assignedToMe(organization: "contoso", project: "p1").absoluteString
+            == "https://dev.azure.com/contoso/p1/_apis/work/predefinedqueries/AssignedToMe?$top=500&includeCompleted=false"
+            + "&api-version=7.2-preview.1")
         #expect(ADOEndpoint.workItems(organization: "contoso", ids: [3, 1], fields: ["System.Title", "System.State"]).absoluteString
             == "https://dev.azure.com/contoso/_apis/wit/workitems?ids=3%2C1&fields=System.Title%2CSystem.State&errorPolicy=omit&api-version=7.1")
         #expect(ADOEndpoint.buildDefinitions(organization: "contoso", projectId: "p1", containing: " web* ").absoluteString
@@ -795,6 +882,193 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         }
         #expect(server.requests.count == 1)
         #expect(await engine.currentSnapshot().refreshedAt == nil)
+    }
+
+    /// Your open tasks and bugs outside the sprint, for My Work: read only once wanted, after the sprint, with GET requests,
+    /// through Azure DevOps' Assigned to me query, then what it lists that the board doesn't have, with their iterations.
+    /// No longer wanted, what was read stays, read no more.
+    @Test func readsYourWorkOutsideTheSprintOnlyOnceWanted() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1], children: [(1, 2)])], items: [
+            WorkFixture.workItem(1, "User Story", "Story", state: "Active"),
+            WorkFixture.workItem(2, state: "Active", assignee: People.me, parent: 1, iteration: "Shop\\Sprint 7"),
+            WorkFixture.workItem(10, state: "Active", assignee: People.me, parent: 1, iteration: "Shop\\Sprint 5"),
+            WorkFixture.workItem(11, "Bug", "Old bug", assignee: People.me, iteration: "Shop"),
+            WorkFixture.workItem(12, state: "Closed", assignee: People.me, iteration: "Shop\\Sprint 6"),
+            WorkFixture.workItem(13, "User Story", "Old story", state: "Active", assignee: People.me, iteration: "Shop\\Sprint 6"),
+        ])
+        server.on("/p1/_apis/work/predefinedqueries/AssignedToMe", json: ["results": [2, 10, 11, 12, 13].map { ["id": $0] }, "hasMore": false])
+        let engine = engine(server)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside == nil)
+        #expect(server.requests.count == 6)
+
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let outside = try #require(await engine.currentSnapshot().outside)
+        #expect(outside.items.map(\.id) == [10, 11])
+        #expect(outside.sprintPath == "Shop\\Sprint 7")
+        #expect(outside.readAt == t(0) && outside.problem == nil && !outside.isPartial)
+        #expect(outside.items.map(outside.place(of:)) == ["Sprint 5", OutsideWork.noSprint])
+        // The sprint's work items, the query, then what it lists that the board doesn't have, with their iterations.
+        let requests = Array(server.requests.dropFirst(6))
+        #expect(requests.count == 4)
+        let query = URLComponents(url: try #require(requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(query.first { $0.name == "ids" }?.value == "10,11,12,13")
+        #expect(query.first { $0.name == "fields" }?.value?.split(separator: ",").contains("System.IterationPath") == true)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+
+        await engine.setReadsOutside(false)
+        await engine.refreshNow()
+        #expect(server.requests.count == 12)
+        #expect(await engine.currentSnapshot().outside == outside)
+    }
+
+    /// Wanted while the sprint shows, your work outside it is read at once, not at the next refresh.
+    @Test func readsYourWorkOutsideTheSprintAsSoonAsItsWanted() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+            WorkFixture.workItem(1), WorkFixture.workItem(10, assignee: People.me, iteration: "Shop"),
+        ])
+        server.on("/_apis/work/predefinedqueries/AssignedToMe", json: ["results": [["id": 10]]])
+        let published = Collected<SprintSnapshot>()
+        let engine = engine(server, interval: 3_600, published: published)
+        await engine.start()
+        defer { Task { await engine.stop() } }
+        await engine.setActive(true)
+        try await published.wait("the sprint") { $0.board != nil && !$0.isRefreshing }
+        await engine.setReadsOutside(true)
+        try await published.wait("your work outside it") { $0.outside?.items.map(\.id) == [10] && !$0.isRefreshing }
+    }
+
+    /// Your work outside the sprint that can't be read again stays as it was read, saying why, while the sprint is read as
+    /// ever, without backing off; read again, it no longer says so.
+    @Test func keepsYourWorkOutsideTheSprintWhenItCantBeReadAgain() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+            WorkFixture.workItem(1, assignee: People.me, iteration: "Shop\\Sprint 7"),
+            WorkFixture.workItem(10, assignee: People.me, iteration: "Shop\\Sprint 5"),
+        ])
+        let fails = Locked(false)
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in
+            fails.value ? .status(500) : .json(["results": [["id": 1], ["id": 10]], "hasMore": true])
+        }
+        let engine = engine(server)
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let read = try #require(await engine.currentSnapshot().outside)
+        #expect(read.items.map(\.id) == [10])
+        #expect(read.isPartial)
+
+        fails.set(true)
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.problem == nil)
+        #expect(snapshot.board?.myWork.map(\.id) == [1])
+        #expect(snapshot.outside?.items == read.items)
+        #expect(snapshot.outside?.problem == "Azure DevOps answered with HTTP 500.")
+        #expect(await engine.nextDelay() == 60)
+
+        fails.set(false)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.problem == nil)
+
+        // Azure DevOps asking to slow down ends the refresh, as for the sprint.
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in .status(429, headers: ["Retry-After": "120"]) }
+        await engine.refreshNow()
+        guard case .throttled? = await engine.currentSnapshot().problem else {
+            Issue.record("Expected to be throttled")
+            return
+        }
+        #expect(await engine.nextDelay() > 60)
+    }
+
+    /// Someone else signed in, or another team, forgets the last one's work outside the sprint: none of it shows, even when
+    /// theirs can't be read.
+    @Test func forgetsYourWorkOutsideTheSprintForAnotherAccountOrTeam() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+            WorkFixture.workItem(1), WorkFixture.workItem(10, assignee: People.me, iteration: "Shop\\Sprint 5"),
+        ])
+        let fails = Locked(false)
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in fails.value ? .status(500) : .json(["results": [["id": 10]]]) }
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/robin")
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.map(\.id) == [10])
+
+        fails.set(true)
+        await tokens.signIn(as: "tenant/sam")
+        server.on("/\(Fixture.org)/_apis/connectionData", json: ["authenticatedUser": ["id": People.sam.id.uppercased()]])
+        await engine.refreshNow()
+        let failed = try #require(await engine.currentSnapshot().outside)
+        #expect(failed.items.isEmpty)
+        #expect(failed.problem != nil)
+
+        fails.set(false)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.map(\.id) == [10])
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.otherTeam))
+        #expect(await engine.currentSnapshot().outside == nil)
+    }
+
+    /// No longer wanted while it's read, as when My Work goes while the Sprint page still shows, your work outside the sprint
+    /// isn't read further; and a read for a team no longer chosen says nothing of the next one's, even that it failed.
+    @Test func stopsReadingYourWorkOutsideTheSprintOnceItsNoLongerWantedOrTheTeamChanges() async throws {
+        for change in ["wanted", "team"] {
+            let server = StubServer()
+            WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+                WorkFixture.workItem(1), WorkFixture.workItem(10, assignee: People.me, iteration: "Shop\\Sprint 5"),
+            ])
+            server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in
+                change == "team" ? .status(500) : .json(["results": [["id": 10]]])
+            }
+            // Who's signed in, then your teams, the sprint, your identity, the board's setup, the sprint's work items and
+            // their fields: the eighth token is the query's.
+            let tokens = HeldTokens(server.id, holdAt: 8)
+            let engine = SprintEngine(
+                client: server.client(tokens: tokens),
+                configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team), now: { t(0) },
+                calendar: WorkFixture.utc
+            ) { _ in }
+            await engine.setReadsOutside(true)
+            let refresh = Task { await engine.refreshNow() }
+            try await waitUntilHeld(tokens)
+            if change == "wanted" {
+                await engine.setReadsOutside(false)
+            } else {
+                await engine.setConfiguration(SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.otherTeam))
+            }
+            await tokens.release()
+            await refresh.value
+            #expect(server.requests.last?.url?.path.hasSuffix("/AssignedToMe") == true, "\(change)")
+            #expect(await engine.currentSnapshot().outside == nil, "\(change)")
+        }
+    }
+
+    /// Wanted again soon after it was read, your work outside the sprint waits for the next refresh.
+    @Test func readsYourWorkOutsideTheSprintAgainOnlyWhenItsDue() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1)])
+        server.on("/_apis/work/predefinedqueries/AssignedToMe", json: ["results": []])
+        let published = Collected<SprintSnapshot>()
+        let engine = engine(server, interval: 3_600, published: published)
+        await engine.start()
+        defer { Task { await engine.stop() } }
+        await engine.setReadsOutside(true)
+        await engine.setActive(true)
+        try await published.wait("your work outside the sprint") { $0.outside?.readAt != nil && !$0.isRefreshing }
+        let count = server.requests.count
+        await engine.setReadsOutside(false)
+        await engine.setReadsOutside(true)
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(server.requests.count == count)
     }
 
     @Test func backsOffWhenAzureDevOpsCantBeRead() async {

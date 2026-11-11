@@ -6,8 +6,9 @@ import Foundation
 /// one; a feature or an epic, too broad for a mission, none; anything else on the backlog, such as a user story, a product
 /// backlog item, a requirement, an issue or a bug, is a story itself; and one whose type BriefBar hasn't read yet, none,
 /// until it has. Tasks are the types on the sprint's team's task board, in its project, the sprint saying which story each
-/// of its own is under; features and epics, its portfolio backlogs' types. Elsewhere, as in every process Azure DevOps comes
-/// with: Task, and Feature and Epic.
+/// of its own is under; features and epics, its portfolio backlogs' types. With no sprint today, tasks are the types your
+/// work outside the sprint was read with, in the team's project, as My Work takes them (`OutsideWork`). Elsewhere, as in
+/// every process Azure DevOps comes with: Task, and Feature and Epic.
 public struct WorkItemStories: Sendable {
     /// What a project's types are, lowercased.
     public struct Types: Sendable, Equatable {
@@ -41,7 +42,9 @@ public struct WorkItemStories: Sendable {
     ///   - workItems: the work items BriefBar read: the sprint's, the linked ones Show Links read, and their parents. The
     ///     first of each wins.
     ///   - board: the sprint's task board, when BriefBar has it.
-    public init(workItems: [WorkItem], board: SprintBoard?) {
+    ///   - outside: your work outside the sprint, as read in the team's project: with no board, its task types are that
+    ///     project's, and its portfolio's as standard.
+    public init(workItems: [WorkItem], board: SprintBoard?, outside: OutsideWork? = nil) {
         var byKey: [WorkItemKey: WorkItem] = [:]
         for item in workItems where byKey[item.key] == nil {
             byKey[item.key] = item
@@ -53,7 +56,14 @@ public struct WorkItemStories: Sendable {
             for task in row.tasks { placed[task.key] = story.id }
         }
         self.placed = placed
-        project = board.map { ($0.team.organization.lowercased(), $0.team.projectName.lowercased(), Types(board: $0)) }
+        if let board {
+            project = (board.team.organization.lowercased(), board.team.projectName.lowercased(), Types(board: board))
+        } else if let outside, let item = outside.items.first {
+            let tasks = outside.taskTypes.isEmpty ? Types.standard.tasks : outside.taskTypes
+            project = (item.organization.lowercased(), item.project.lowercased(), Types(tasks: tasks, portfolio: Types.standard.portfolio))
+        } else {
+            project = nil
+        }
     }
 
     /// The types in a work item's project.

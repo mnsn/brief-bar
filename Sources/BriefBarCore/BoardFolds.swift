@@ -330,7 +330,7 @@ public struct BoardFolding: Equatable, Sendable {
     ///   - yourMove: whether it's your move on a card in a column (`BoardCard.isYourMove`), which keeps it open.
     ///   - choices: what you chose.
     ///   - open: the columns open for a moment, whatever else says: one a card you drag springs open, the one a card you
-    ///     moved with a key is in while it has the keyboard's focus, one Up Next's "2 more ›" shows.
+    ///     moved with a key is in while it has the keyboard's focus, one Up Next's "2 more ›" or My Work's Show Them shows.
     ///   - widths: the page's room.
     public static func make(
         columns: [ShownColumn], count: (ShownColumn) -> Int, yourMove: (ShownColumn) -> Bool, choices: BoardFolds,

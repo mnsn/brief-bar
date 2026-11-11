@@ -172,11 +172,13 @@ public struct WorkItem: Sendable, Codable, Equatable, Identifiable {
     public var rank: Double?
     public var changedAt: Date?
     public var tags: [String]
+    /// Its iteration's path, such as `Storefront\Sprint 41`, when it was read with it: for your work outside the sprint.
+    public var iteration: String?
 
     public init(
         id: Int, organization: String, project: String, type: String, title: String, state: String, category: Category,
         assignedTo: Person? = nil, parentId: Int? = nil, remainingWork: Double? = nil, rank: Double? = nil, changedAt: Date? = nil,
-        tags: [String] = []
+        tags: [String] = [], iteration: String? = nil
     ) {
         self.id = id
         self.organization = organization
@@ -191,6 +193,7 @@ public struct WorkItem: Sendable, Codable, Equatable, Identifiable {
         self.rank = rank
         self.changedAt = changedAt
         self.tags = tags
+        self.iteration = iteration
     }
 
     /// What a work item read without its type is called. Which story it's for isn't known (`WorkItemStories`).
@@ -207,7 +210,8 @@ public struct WorkItem: Sendable, Codable, Equatable, Identifiable {
             category: Category(category: categories[type]?[state], state: state),
             assignedTo: fields.assignedTo.map(Person.init), parentId: fields.parent,
             remainingWork: fields.remainingWork, rank: fields.stackRank ?? fields.backlogPriority, changedAt: fields.changedDate,
-            tags: (fields.tags ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            tags: (fields.tags ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+            iteration: fields.iterationPath
         )
     }
 

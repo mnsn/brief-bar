@@ -579,6 +579,13 @@ public enum ADOEndpoint {
             [("api-version", apiVersion)])
     }
 
+    /// Azure DevOps' Assigned to me query in a project: the work items assigned to you there, in any iteration or none, up to
+    /// `top`, by their IDs alone. Done ones are left out; resolved and removed ones aren't.
+    public static func assignedToMe(organization: String, project: String, top: Int = 500) -> URL {
+        url("https://dev.azure.com", [organization, project, "_apis", "work", "predefinedqueries", "AssignedToMe"],
+            [("$top", String(top)), ("includeCompleted", "false"), ("api-version", "7.2-preview.1")])
+    }
+
     /// Up to 200 work items by ID, with the given fields. Ones that were deleted or can't be read are left out.
     public static func workItems(organization: String, ids: [Int], fields: [String] = ADOWorkItem.fieldNames) -> URL {
         url("https://dev.azure.com", [organization, "_apis", "wit", "workitems"], [

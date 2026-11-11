@@ -135,7 +135,8 @@ struct PullRequestBoardCard: View {
     /// Where it stands in its lane's mission, for its capsule.
     let order: OrderRowContext?
     @ObservedObject var ordering: PullRequestOrder
-    /// The work items of yours it's for, on My Work with + Sprint Tasks, which have no cards of their own: "Task 5112".
+    /// The work items of yours it's for, on My Work with + Sprint Tasks or + All My Tasks, which have no cards of their own:
+    /// "Task 5112", and for one outside the sprint where it is, "Task 5181 (Sprint 41)".
     var work: [String] = []
     /// What keeps it in Merged, on My Work with + Sprint Tasks, after "Merged": "Production waits for approval".
     var held: String? = nil
@@ -162,7 +163,7 @@ struct PullRequestBoardCard: View {
                 }
                 .font(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
-                .help("Your sprint work it's for, through Show Links' links")
+                .help("Your work items it's for, through Show Links' links")
             }
             // Why alone: its flags are its marks, below.
             Text([StageText.reason(reading, name: name), held].compactMap { $0 }.joined(separator: " · "))

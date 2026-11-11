@@ -82,6 +82,8 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var picks = UpNextPicks()
     /// The column Up Next's "2 more ›" asked the Board to show, until it has.
     @Published package var revealedColumn: PullRequestStage?
+    /// The card My Work's Show Them asked the Board to show, until it has: a work item's, or a pull request's that names one.
+    @Published package var revealedCard: ItemRef?
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?

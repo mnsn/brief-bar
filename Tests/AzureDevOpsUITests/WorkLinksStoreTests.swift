@@ -131,6 +131,36 @@ import Testing
         #expect(inputs.parentLookups == Set([5110, 5140, 5180].map { WorkItemKey(organization, $0) }))
     }
 
+    /// Your work outside the sprint is the sprint's to Show Links, whose pull requests it reads and which it doesn't look up,
+    /// only while My Work shows its cards, with + All My Tasks: not for + Sprint Tasks' line alone.
+    @Test func yourWorkOutsideTheSprintIsReadAsTheSprintsWhileMyWorkShowsItsCards() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+        let outside = Set(try #require(sprint.outside).items.map { WorkItemKey(organization, $0.id) })
+        let checkout = Set([5181, 5182, 5183].map { WorkItemKey(organization, $0) })
+        #expect(outside.isSuperset(of: checkout))
+        #expect(workLinks.inputs().sprintItems.isDisjoint(with: outside))
+        #expect(workLinks.inputs().workItemLookups.isSuperset(of: checkout))
+
+        sprint.setOutside(.count, for: "myWork.7")
+        #expect(workLinks.inputs().sprintItems.isDisjoint(with: outside))
+        sprint.setOutside(.cards, for: "myWork.7")
+        let inputs = workLinks.inputs()
+        #expect(inputs.sprintItems.isSuperset(of: outside))
+        #expect(inputs.workItemLookups.isDisjoint(with: outside))
+        sprint.setOutside(nil, for: "myWork.7")
+        #expect(workLinks.inputs().sprintItems.isDisjoint(with: outside))
+    }
+
     /// One of your pull requests, in the lists, shows in BriefBar's window from a link to it, as the source says; a
     /// teammate's, which the lists don't have, opens only where it lives.
     @Test func yourPullRequestsShowInBriefBarFromALink() async throws {
