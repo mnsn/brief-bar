@@ -287,13 +287,31 @@ private struct MyWorkContent: View {
     }
 
     /// What the Board shows, on a row of its own under the header: in the header, its three choices, which have no symbols
-    /// to shrink to, took the title's and the subtitle's room in a narrow window.
+    /// to shrink to, took the title's and the subtitle's room in a narrow window. Where the row is too narrow for its label,
+    /// as in the narrowest window with larger text, it goes without, then with a smaller control, which keeps every word.
     private var showPicker: some View {
+        ViewThatFits(in: .horizontal) {
+            showRow(label: true)
+            showRow(label: false)
+            showRow(label: false).controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 18)
+        .padding(.trailing, 24)
+        .padding(.bottom, 10)
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
+    }
+
+    /// Show's control, after its label or not.
+    private func showRow(label: Bool) -> some View {
         HStack(spacing: 6) {
-            Text("Show")
-                .font(size: 12)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+            if label {
+                Text("Show")
+                    .font(size: 12)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
             SegmentedPicker("Show", selection: Binding(get: { shown }, set: { settings.myWorkShows = $0 }), segments: [
                 .init(MyWorkShows.pullRequests, title: "Pull Requests"),
                 .init(MyWorkShows.sprintTasks, title: "+ Sprint Tasks"),
@@ -301,13 +319,7 @@ private struct MyWorkContent: View {
             ])
             .fixedSize()
             .help(MyWorkText.showHelp)
-            Spacer(minLength: 0)
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 24)
-        .padding(.bottom, 10)
-        .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
     }
 
     private var subtitle: String {
