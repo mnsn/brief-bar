@@ -177,10 +177,12 @@ import BriefBarCore
 
         // Notification Center keeps its connection open; only the write-ahead log changes.
         let row = try db.add(Record.message(Chat.launchCrew, title: "Launch crew", body: "Jordan Lee: Go", at: t(1)), delivered: t(1))
+        try db.commitSomethingElse()
         let second = try await collector.wait("the new message") { $0.notifications?.count == 2 }
         #expect(second.notifications?.compactMap(\.item.message).map(\.kind).sorted { $0.rawValue < $1.rawValue } == [.group, .oneOnOne])
 
         try db.remove(row)
+        try db.commitSomethingElse()
         try await collector.wait("the removal") { $0.notifications?.count == 1 }
     }
 
@@ -247,5 +249,18 @@ import BriefBarCore
             #expect(snapshot.problem == .layoutChanged(missing: ["record.app_id", "record.data"]))
             #expect(snapshot.notifications == nil)
         }
+    }
+}
+
+private extension TestDatabase {
+    /// Commits something the engine doesn't read, as Notification Center goes on doing, so that the engine reads the commit
+    /// before. SQLite writes a commit to its write-ahead log before it lets readers see it, and the engine reads once,
+    /// `reloadDelay` after hearing of that write: a writer held up between the two, as on a busy runner, leaves that read
+    /// with nothing new, and with nothing else written, only the safety rescan, an hour here, reads again, as
+    /// SessionEngineTests found on CI on 2026-11-09. A commit is written only once the one before it can be read, so the
+    /// read this one brings finds that.
+    func commitSomethingElse() throws {
+        // A commit whatever the value: SQLite writes the database's first page each time.
+        try exec("PRAGMA user_version = 1;")
     }
 }
