@@ -62,8 +62,9 @@ import Testing
     // MARK: Up Next
 
     /// The user's own example: A waits, B's session finished, C needs someone to review it; with a failed build, a review
-    /// Priya asked for, one that can merge and one that merged.
-    @Test func upNextHasASlotForEachKindOfNextWithHowManyAndOnlyThoseWithSomething() {
+    /// Priya asked for, one that can merge and one that merged. Up Next has only your next steps, Fix next and Your next
+    /// review: what waits on others stays on the Board, each column's first wearing Next.
+    @Test func upNextHasASlotForEachOfYourNextStepsWithHowManyAndOnlyThoseWithSomething() {
         let payments = Self.mission([
             Self.step(4074, .merged, status: .merged), Self.step(4102, .next), Self.step(4079, .waiting(open: [Self.pr(4102)], unknown: [])),
             Self.step(4091, .waiting(open: [Self.pr(4102)], unknown: [])),
@@ -82,20 +83,22 @@ import Testing
         ]
         let board = Self.board(stages, missions: [payments])
         let slots = board.upNext.slots
-        #expect(slots.map(\.kind) == [.fix, .yourReview, .teammateReview, .canMerge, .waits])
-        #expect(slots.map(\.card.ref.shortOrderLabel) == ["!4131", "!4088", "!4079", "!4120", "!4091"])
-        #expect(slots.map(\.count) == [1, 2, 2, 1, 1])
-        #expect(slots.map(\.more) == [nil, "1 more", "1 more", nil, nil])
-        #expect(slots.map(\.kind.stage) == [.inProgress, .yourReview, .teammateReview, .canMerge, .waits])
-        #expect(UpNextSlot.allCases.map(\.title) == [
-            "Fix next", "Your next review", "Next for a teammate", "Approved next", "Merge next", "Waits next",
-        ])
+        #expect(slots.map(\.kind) == [.fix, .yourReview])
+        // C needs a reviewer: Fix next has it, the mission you focus on first, then the failed build.
+        #expect(slots.map(\.card.ref.shortOrderLabel) == ["!4079", "!4088"])
+        #expect(slots.first?.cards.map(\.ref.shortOrderLabel) == ["!4079", "!4131"])
+        #expect(slots.map(\.count) == [2, 2])
+        #expect(slots.map(\.more) == ["1 more", "1 more"])
+        #expect(slots.map(\.kind.stage) == [.inProgress, .yourReview])
+        #expect(UpNextSlot.allCases.map(\.title) == ["Fix next", "Your next review"])
 
-        // Up Next's pull request wears Next in its column; a session writing one isn't yours to do, so In progress's Next
-        // is Fix next's, ahead of it.
-        #expect(board.next[.fix] == Self.pr(4131))
-        #expect(board.next[.teammateReview] == Self.pr(4079))
-        #expect(board.next[.approved] == nil)
+        // Fix next's wears Fix next, wherever it is; each column's first wears Next where its order says what's next, but
+        // In progress's, whose next is Fix next's, and Merged's.
+        #expect(board.next == [.fix: Self.pr(4079), .yourReview: Self.pr(4088)])
+        #expect(board.nextInColumn == [
+            .yourReview: Self.pr(4088), .teammateReview: Self.pr(4079), .canMerge: Self.pr(4120), .waits: Self.pr(4091),
+        ])
+        // A session writing one isn't yours to do: what needs you comes first in In progress.
         #expect(Self.column(.inProgress, stages, missions: [payments]) == ["!4131", "!4102"])
         #expect(board.counts == [.inProgress: 2, .yourReview: 2, .teammateReview: 2, .canMerge: 1, .waits: 1, .merged: 1])
     }
@@ -132,8 +135,9 @@ import Testing
 
     /// Fix next has what needs you from every column, as its flags say, saying what and where; one in Your review stays
     /// your next review too, wearing both on the Board; one a session writes isn't there, as it may be fixing just that.
-    /// Approved next has the approved ones, the earliest in their mission's order first.
-    @Test func fixNextHasWhatNeedsYouFromEveryColumnAndApprovedNextWhatsApproved() throws {
+    /// Approved has no slot: its first card, the earliest in its mission's order, wears Next, and Make Next isn't offered
+    /// there.
+    @Test func fixNextHasWhatNeedsYouFromEveryColumnAndApprovedsFirstWearsNext() throws {
         let writing = StageSession(ref: Self.cart, activity: .working, since: t(5))
         let checkout = Self.mission([
             Self.step(4087, .next, place: 1), Self.step(4088, .waiting(open: [Self.pr(4087)], unknown: []), place: 2, after: [4087]),
@@ -147,11 +151,11 @@ import Testing
         ]
         let board = Self.board(stages, missions: [checkout])
         let slots = Dictionary(uniqueKeysWithValues: board.upNext.slots.map { ($0.kind, $0) })
-        #expect(board.upNext.slots.map(\.kind) == [.fix, .yourReview, .teammateReview, .approved])
+        #expect(board.upNext.slots.map(\.kind) == [.fix, .yourReview])
         #expect(slots[.fix]?.cards.map(\.ref.shortOrderLabel) == ["!4088", "!4093", "!4079"])
         #expect(slots[.yourReview]?.card.ref == Self.pr(4093))
-        #expect(slots[.approved]?.cards.map(\.ref.shortOrderLabel) == ["!4087", "!4088"])
-        #expect(board.next == [.fix: Self.pr(4088), .yourReview: Self.pr(4093), .teammateReview: Self.pr(3990), .approved: Self.pr(4087)])
+        #expect(board.next == [.fix: Self.pr(4088), .yourReview: Self.pr(4093)])
+        #expect(board.nextInColumn == [.yourReview: Self.pr(4093), .teammateReview: Self.pr(3990), .approved: Self.pr(4087)])
         #expect(stages[3990]?.fixRank == nil)
 
         let fix = try #require(stages[4088])
@@ -163,8 +167,49 @@ import Testing
         #expect(UpNextSlot.fix.keeps(stages[4093]) && UpNextSlot.fix.keeps(stages[3990]))
         #expect(!UpNextSlot.fix.has(stages[3990]) && !UpNextSlot.fix.keeps(stages[4087]))
         #expect(!UpNextSlot.fix.keeps(Self.reading(.merged, .merged)))
-        // Make Next on a card chooses its column's slot.
-        #expect(UpNextSlot.of(BoardCard(ref: Self.pr(4088), reading: fix)) == .approved)
+        // Make Next on a card chooses its column's slot: none in Approved, where BriefBar's order alone decides.
+        #expect(UpNextSlot.of(BoardCard(ref: Self.pr(4088), reading: fix)) == nil)
+        #expect(UpNextSlot.of(BoardCard(ref: Self.pr(4093), reading: try #require(stages[4093]))) == .yourReview)
+    }
+
+    /// One of yours that needs a reviewer, as nobody but you is asked to review it, is in Fix next, after what failed and
+    /// what someone wants changed, as nothing's broken: "Find a reviewer · in Teammate's review". One waiting for a
+    /// reviewer, or that a session writes, isn't; a failed build on one that needs a reviewer comes first, as it says.
+    @Test func oneThatNeedsAReviewerIsInFixNextAfterWhatFailedAndChangesWanted() throws {
+        let asking = StageSession(ref: Self.cart, activity: .waitsForYou, since: t(9))
+        let writing = StageSession(ref: Self.cart, activity: .working, since: t(9))
+        let stages: [Int: StageReading] = [
+            4079: Self.reading(.teammateReview, .findReviewer, at: 1),
+            4080: Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 0),
+            4081: Self.flagged(.teammateReview, .findReviewer, at: 2, [.failing("Build failed")]),
+            4082: Self.flagged(.teammateReview, .findReviewer, at: 0, [.working(writing)]),
+            4101: Self.reading(.inProgress, .changesWanted("Priya wants changes"), at: 5),
+            4102: Self.reading(.inProgress, .asksYou(asking), at: 9),
+            4103: Self.flagged(.approved, .approvedBy("Maria"), at: 8, [.failing("Merge conflicts")]),
+        ]
+        #expect(stages[4079]?.fixRank == 3 && stages[4081]?.fixRank == 1)
+        #expect(stages[4080]?.fixRank == nil && stages[4082]?.fixRank == nil)
+        let board = Self.board(stages)
+        let fix = try #require(board.upNext.slots.first)
+        #expect(fix.kind == .fix)
+        #expect(fix.cards.map(\.ref.shortOrderLabel) == ["!4102", "!4081", "!4103", "!4101", "!4079"])
+        let needs = try #require(stages[4079]), failed = try #require(stages[4081])
+        #expect(StageText.fixWords(needs, name: Self.name) == "Find a reviewer · in Teammate's review")
+        #expect(StageText.fixWords(failed, name: Self.name) == "Build failed · in Teammate's review")
+        #expect(StageText.reason(needs, name: Self.name) == "Find a reviewer")
+        // Teammate's review has no slot: its first is still one that needs a reviewer, the oldest, which wears Next; Fix
+        // next's choice stands on one while it needs a reviewer.
+        #expect(board.nextInColumn[.teammateReview] == Self.pr(4082))
+        #expect(UpNextSlot.fix.has(needs) && UpNextSlot.fix.keeps(needs))
+        #expect(UpNextSlot.of(BoardCard(ref: Self.pr(4079), reading: needs)) == nil)
+        let picked = Self.board(stages, picks: UpNextPicks([.fix: Self.pr(4079)]))
+        #expect(picked.upNext.slots.first?.card.ref == Self.pr(4079))
+        #expect(picked.picked == [.fix: Self.pr(4079)])
+        // Asked, it's off Fix next: the reviewer it waits for has it.
+        #expect(!UpNextSlot.fix.keeps(Self.reading(.teammateReview, .waitingFor("Waiting for Sam"))))
+        // A mission's next step for it is still Find a reviewer.
+        let card = BoardCard(ref: Self.pr(4079), reading: needs)
+        #expect(MissionNextStep.of(card)?.title == "Find a reviewer: !4079")
     }
 
     /// The mission you focus on comes first in every stage but In progress, ahead of what would otherwise come first there: the
@@ -490,7 +535,8 @@ import Testing
     }
 
     /// Up Next's pull request is the first in its column's order, across the lanes, whichever lane has it: the one that wears
-    /// Next, though another lane above has a card in that column, and the first card with every card in one lane.
+    /// Next, though another lane above has a card in that column, and the first card with every card in one lane. So is
+    /// the Next of a column Up Next has no slot for, as Teammate's review.
     @Test func upNextsPullRequestIsAlwaysTheFirstCardInItsColumnAcrossTheLanes() {
         let focused = Self.mission([Self.step(4201, .next), Self.step(4202, .waiting(open: [Self.pr(4201)], unknown: []))], focused: true)
         let other = Self.mission([Self.step(4301, .next), Self.step(4302, .anyTime), Self.step(4303)])
@@ -510,12 +556,18 @@ import Testing
         let oneLane = Self.board(stages, missions: [other, focused], lanes: .none)
         #expect(board.lanes.map(\.kind) == [.mission(other.key), .mission(focused.key), .notInAMission])
         #expect(board.upNext == oneLane.upNext)
-        #expect(board.upNext.slots.map(\.card.ref.shortOrderLabel) == ["!4101", "!4202", "!4201"])
+        #expect(board.upNext.slots.map(\.card.ref.shortOrderLabel) == ["!4101", "!4202"])
         for slot in board.upNext.slots {
             #expect(oneLane.lanes.first?.cards(in: slot.kind.stage).first?.ref == slot.card.ref, "\(slot.kind)")
             #expect(board.next[slot.kind] == slot.card.ref, "\(slot.kind)")
             // Whichever lane has it: not the top lane's first card in that column.
             #expect(board.lanes.first?.cards(in: slot.kind.stage).first?.ref != slot.card.ref, "\(slot.kind)")
+        }
+        #expect(board.nextInColumn == [.yourReview: Self.pr(4202), .teammateReview: Self.pr(4201)])
+        #expect(board.nextInColumn == oneLane.nextInColumn)
+        for (stage, ref) in board.nextInColumn {
+            #expect(oneLane.lanes.first?.cards(in: stage).first?.ref == ref, "\(stage)")
+            #expect(board.lanes.first?.cards(in: stage).first?.ref != ref, "\(stage)")
         }
     }
 
@@ -585,16 +637,18 @@ import Testing
     /// nothing: what needs you still comes first, and BriefBar's order chooses.
     @Test func aChoiceItsSlotDoesntHaveChangesNothing() {
         var stages = Self.fixes
-        stages[4201] = Self.reading(.teammateReview, .findReviewer, at: 1)
+        stages[4201] = Self.reading(.teammateReview, .waitingFor("Waiting for Sam"), at: 1)
+        stages[4202] = Self.reading(.yourReview, .asked("Sam asked you"), at: 2)
         let plain = Self.board(stages)
         for pick in [Self.pr(4104), Self.pr(4201), Self.pr(4999)] {
             let board = Self.board(stages, picks: UpNextPicks([.fix: pick, .yourReview: pick]))
             #expect(board == plain, "\(pick)")
         }
-        // Each pull request is in one slot at most: Make Next chooses it there.
+        // Each pull request is in one slot at most by its column: Make Next chooses it there; none in a column Up Next has
+        // no slot for.
         let cards = Self.board(stages, lanes: .none).lanes.first?.cards ?? []
         let slots = Dictionary(uniqueKeysWithValues: cards.map { ($0.ref.shortOrderLabel, UpNextSlot.of($0)) })
-        #expect(slots == ["!4101": .fix, "!4102": .fix, "!4103": .fix, "!4104": nil, "!4201": .teammateReview])
+        #expect(slots == ["!4101": .fix, "!4102": .fix, "!4103": .fix, "!4104": nil, "!4201": nil, "!4202": .yourReview])
     }
 
     /// A choice stands while its pull request does, where you chose it; Fix next's waits while a session writes it, as it
@@ -602,17 +656,11 @@ import Testing
     /// your board, merged or closed, the choice goes, whether it's back by then or not, as when the Mac wakes; back sooner,
     /// as when Sam pushes again just after you finished reviewing it, it's still yours.
     @Test func aChoiceStandsUntilItsPullRequestMovesOn() {
-        var picks = UpNextPicks([
-            .fix: Self.pr(4101), .yourReview: Self.pr(4202), .teammateReview: Self.pr(4301), .canMerge: Self.pr(4120),
-            .waits: Self.pr(4091),
-        ])
-        // Its source reads each, though no list has !4120, which closed.
+        var picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
         let known = Set(picks.refs.values)
         var readings: [ItemRef: StageReading] = [
-            Self.pr(4101): Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(0)))),
+            Self.pr(4101): Self.reading(.merged, .merged),
             Self.pr(4202): Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
-            Self.pr(4301): Self.reading(.canMerge, .ready(autoComplete: false)),
-            Self.pr(4091): Self.reading(.merged, .merged),
         ]
         var away: [UpNextSlot: UpNextPicks.Away] = [:]
         func moved(at seconds: TimeInterval) -> Set<UpNextSlot> {
@@ -621,25 +669,26 @@ import Testing
             return moved
         }
         #expect(moved(at: 0).isEmpty)
-        #expect(away.mapValues(\.since) == [.yourReview: t(0), .teammateReview: t(0), .canMerge: t(0), .waits: t(0)])
+        #expect(away.mapValues(\.since) == [.fix: t(0), .yourReview: t(0)])
         #expect(away[.yourReview]?.ref == Self.pr(4202))
 
         readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
         #expect(moved(at: UpNextPicks.awayFor - 1).isEmpty)
-        #expect(away[.yourReview] == nil && away[.canMerge]?.since == t(0))
-        #expect(moved(at: UpNextPicks.awayFor) == [.teammateReview, .canMerge, .waits])
+        #expect(away[.yourReview] == nil && away[.fix]?.since == t(0))
+        #expect(moved(at: UpNextPicks.awayFor) == [.fix])
         #expect(away.isEmpty)
-        #expect(picks == UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]))
+        #expect(picks == UpNextPicks([.yourReview: Self.pr(4202)]))
 
         // You finish it again, and it's back only an hour later.
         readings[Self.pr(4202)] = Self.reading(.teammateReview, .finishedReview, isOnBoard: false)
         #expect(moved(at: 2_000).isEmpty)
         readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
         #expect(moved(at: 5_600) == [.yourReview])
-        #expect(picks == UpNextPicks([.fix: Self.pr(4101)]))
+        #expect(picks.isEmpty)
 
-        #expect(UpNextSlot.fix.keeps(readings[Self.pr(4101)]))
-        #expect(!UpNextSlot.fix.has(readings[Self.pr(4101)]))
+        let writing = Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(0))))
+        #expect(UpNextSlot.fix.keeps(writing))
+        #expect(!UpNextSlot.fix.has(writing))
         #expect(UpNextSlot.fix.has(Self.fixes[4101]))
         #expect(!UpNextSlot.fix.has(nil))
         // Once nothing needs you there, and no session writes it, as once its build passed, it's moved on.
@@ -670,7 +719,7 @@ import Testing
 
     /// What BriefBar keeps of what you chose: for each account, by its name in lowercase, each slot's pull request with
     /// when a list last had it, a record each; of what another program or an earlier build wrote, only the records it can
-    /// read, each alone.
+    /// read, each alone, which it saves again in place of the rest, as a slot Up Next no longer has.
     @Test func itRemembersWhatEachAccountChoseAndReadsOnlyWhatItCan() throws {
         let defaults = MemorySettings()
         #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
@@ -689,28 +738,43 @@ import Testing
         #expect(saved.allSatisfy { Set($0.keys) == ["account", "slot", "pullRequest", "listedAt"] })
         #expect(UpNextPicks.Kept.load(from: defaults) == kept)
 
-        // Only the pull requests of slots it knows, with an account; one that isn't a pull request doesn't take its slot.
+        // Only the pull requests of slots it knows, with an account; one that isn't a pull request doesn't take its slot. The
+        // slots Up Next no longer has, as Approved next's, an earlier build's, drop alone too.
         defaults.set(Data(#"""
         [{"account":"Robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4101","listedAt":0},
          {"account":"robin@contoso.com","slot":"later","pullRequest":"pullRequest/contoso/1","listedAt":0},
-         {"account":"robin@contoso.com","slot":"waits","pullRequest":"workItem/contoso/5","listedAt":0},
+         {"account":"robin@contoso.com","slot":"yourReview","pullRequest":"workItem/contoso/5","listedAt":0},
          {"account":"robin@contoso.com","slot":"yourReview","pullRequest":42,"listedAt":0},
-         {"slot":"canMerge","pullRequest":"pullRequest/contoso/4120","listedAt":0},
+         {"slot":"fix","pullRequest":"pullRequest/contoso/4120","listedAt":0},
          {"account":"robin@contoso.com","slot":"fix","pullRequest":"pullRequest/contoso/4102","listedAt":0},
-         {"account":"robin@contoso.com","slot":"waits","pullRequest":"pullRequest/contoso/4140","listedAt":0}]
+         {"account":"robin@contoso.com","slot":"approved","pullRequest":"pullRequest/contoso/4088","listedAt":0},
+         {"account":"robin@contoso.com","slot":"canMerge","pullRequest":"pullRequest/contoso/4120","listedAt":0},
+         {"account":"robin@contoso.com","slot":"yourReview","pullRequest":"pullRequest/contoso/4140","listedAt":0}]
         """#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
-        #expect(UpNextPicks.Kept.load(from: defaults) == UpNextPicks.Kept(accounts: [
+        let read = UpNextPicks.Kept.load(from: defaults)
+        #expect(read == UpNextPicks.Kept(accounts: [
             "robin@contoso.com": [
                 .fix: .init(ref: Self.pr(4101), listedAt: Date(timeIntervalSinceReferenceDate: 0)),
-                .waits: .init(ref: Self.pr(4140), listedAt: Date(timeIntervalSinceReferenceDate: 0)),
+                .yourReview: .init(ref: Self.pr(4140), listedAt: Date(timeIntervalSinceReferenceDate: 0)),
             ],
         ]))
-        // An earlier build's, each slot's reference alone, and what isn't a list.
+        // Saved again, only what it read stays; then nothing changes.
+        #expect(read.tidy(in: defaults))
+        let tidied = try #require(defaults.data(forKey: UpNextPicks.Kept.defaultsKey))
+        let records = try #require(try JSONSerialization.jsonObject(with: tidied) as? [[String: Any]])
+        #expect(records.map { $0["slot"] as? String } == ["fix", "yourReview"])
+        #expect(UpNextPicks.Kept.load(from: defaults) == read)
+        #expect(!read.tidy(in: defaults))
+        #expect(!kept.tidy(in: MemorySettings()))
+        // An earlier build's, each slot's reference alone, and what isn't a list: nothing it can read, so the key goes.
         defaults.set(Data(#"{"fix":"pullRequest/contoso/4101"}"#.utf8), forKey: UpNextPicks.Kept.defaultsKey)
         #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
         defaults.set(Data("[".utf8), forKey: UpNextPicks.Kept.defaultsKey)
         #expect(UpNextPicks.Kept.load(from: defaults).isEmpty)
+        #expect(UpNextPicks.Kept.load(from: defaults).tidy(in: defaults))
+        #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
 
+        kept.save(to: defaults)
         UpNextPicks.Kept().save(to: defaults)
         #expect(defaults.object(forKey: UpNextPicks.Kept.defaultsKey) == nil)
     }
@@ -721,7 +785,7 @@ import Testing
     @Test func whatEachAccountChoseGoesOnceNoListHasHadItFor30Days() {
         var kept = UpNextPicks.Kept()
         kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]), for: "robin@contoso.com", at: t(0))
-        kept.set(UpNextPicks([.canMerge: Self.gh(12)]), for: "sam@contoso.com", at: t(0))
+        kept.set(UpNextPicks([.yourReview: Self.gh(12)]), for: "sam@contoso.com", at: t(0))
         kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4203)]), for: "robin@contoso.com", at: t(3_600))
         #expect(kept.accounts["robin@contoso.com"]?[.fix]?.listedAt == t(0))
         #expect(kept.accounts["robin@contoso.com"]?[.yourReview] == UpNextPicks.Kept.Entry(ref: Self.pr(4203), listedAt: t(3_600)))
@@ -730,19 +794,19 @@ import Testing
         let aDayLater = kept.listed([Self.pr(4101), Self.gh(12)], for: "Robin@contoso.com", at: t(86_400))
         #expect(!tooSoon && aDayLater)
         #expect(kept.accounts["robin@contoso.com"]?[.fix]?.listedAt == t(86_400))
-        #expect(kept.accounts["sam@contoso.com"]?[.canMerge]?.listedAt == t(0))
+        #expect(kept.accounts["sam@contoso.com"]?[.yourReview]?.listedAt == t(0))
         let anotherAccount = kept.listed([Self.pr(4101)], for: "kai@contoso.com", at: t(2 * 86_400))
         #expect(!anotherAccount)
 
         let notYet = kept.forgetUnlisted(now: t(UpNextPicks.Kept.unlistedFor), of: [.pullRequest, .gitHubPullRequest])
         // Only of the kinds whose sources have listed since: GitHub's waits till it has.
         let azureDevOpsOnes = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor), of: [.pullRequest])
-        #expect(kept.picks(for: "sam@contoso.com") == UpNextPicks([.canMerge: Self.gh(12)]))
+        #expect(kept.picks(for: "sam@contoso.com") == UpNextPicks([.yourReview: Self.gh(12)]))
         let then = kept.forgetUnlisted(now: t(3_601 + UpNextPicks.Kept.unlistedFor), of: [.pullRequest, .gitHubPullRequest])
         #expect(!notYet && azureDevOpsOnes && then)
         #expect(kept == UpNextPicks.Kept(accounts: ["robin@contoso.com": [.fix: .init(ref: Self.pr(4101), listedAt: t(86_400))]]))
 
-        kept.set(UpNextPicks([.fix: Self.pr(4101), .canMerge: Self.gh(12)]), for: "robin@contoso.com", at: t(90_000))
+        kept.set(UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.gh(12)]), for: "robin@contoso.com", at: t(90_000))
         let forgot = kept.forget([.gitHubPullRequest])
         let again = kept.forget([.gitHubPullRequest])
         #expect(forgot && !again)
@@ -753,14 +817,15 @@ import Testing
     }
 
     @Test func choicesSplitMergeAndForgetASourcesOwn() {
-        var picks = UpNextPicks([.fix: Self.pr(4101), .canMerge: Self.gh(12)])
-        picks[.waits] = .workItem(organization: "contoso", id: 5)
-        #expect(picks[.waits] == nil)
+        var picks = UpNextPicks([.fix: Self.pr(4101)])
+        picks[.yourReview] = .workItem(organization: "contoso", id: 5)
+        #expect(picks[.yourReview] == nil)
+        picks[.yourReview] = Self.gh(12)
         #expect(picks.first(in: .inProgress) == Self.pr(4101))
         #expect(picks.first(in: .merged) == nil)
         let (sent, kept) = picks.split { $0 == Self.pr(4101) }
         #expect(sent == UpNextPicks([.fix: Self.pr(4101)]))
-        #expect(kept == UpNextPicks([.canMerge: Self.gh(12)]))
+        #expect(kept == UpNextPicks([.yourReview: Self.gh(12)]))
         #expect(kept.merging(sent) == picks)
         #expect(UpNextPicks([.fix: Self.pr(4102)]).merging(sent)[.fix] == Self.pr(4102))
         let forgot = picks.forget([.gitHubPullRequest])
@@ -834,13 +899,13 @@ import Testing
         #expect(titles(UpNextPicks([.fix: Self.pr(4102)])) == ["Answer !4103", "Fix !4102", "Fix !4101"])
 
         // Two approved whose builds failed: the one you chose for Fix next is its next fix, as it's Up Next's, while the
-        // Approved column keeps the one you chose for Approved next first.
+        // Approved column, which has no slot, keeps BriefBar's order: the oldest first.
         var approved = Self.fixes
         approved[4105] = Self.flagged(.approved, .approvedBy("Maria"), at: 3, [.failing("Build failed")])
         approved[4106] = Self.flagged(.approved, .approvedBy("Sam"), at: 4, [.failing("Build failed")])
         let shop = Self.mission([4101, 4102, 4103, 4104, 4105, 4106].map { Self.step($0) })
         #expect(titles(UpNextPicks(), approved, in: shop) == ["Answer !4103", "Fix !4105", "Fix !4106", "Fix !4101", "Fix !4102"])
-        let picks = UpNextPicks([.fix: Self.pr(4106), .approved: Self.pr(4105)])
+        let picks = UpNextPicks([.fix: Self.pr(4106)])
         let chosen = Self.board(approved, missions: [shop], picks: picks)
         #expect(chosen.next[.fix] == Self.pr(4106))
         #expect(chosen.lane(for: shop.key)?.nextSteps.map(\.title)
@@ -1243,7 +1308,10 @@ import Testing
         let merged = Self.card(.merged, .merged)
         #expect([review, complete].allSatisfy { $0.isYourMove && $0.needsYou })
         #expect(failing.needsYou && !failing.isYourMove)
-        #expect([completesItself, reviewer, merged].allSatisfy { !$0.needsYou && !$0.isYourMove })
+        // One of yours that needs a reviewer needs you, as Fix next has it, but only marks its strip: like a failed build,
+        // it keeps no column open.
+        #expect(reviewer.needsYou && !reviewer.isYourMove)
+        #expect([completesItself, merged].allSatisfy { !$0.needsYou && !$0.isYourMove })
         // In progress, what only you are working on is your move, though it doesn't need you: your draft, or one you set
         // there yourself. Not one a session set there, nor one a session writes, or asks you about, which leaves a draft
         // and what you set as they are, with the session in their flags. A failing build there is only a mark.

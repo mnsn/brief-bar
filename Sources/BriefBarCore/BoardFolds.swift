@@ -120,8 +120,8 @@ extension BoardCard {
     }
 
     /// It needs you, as BriefBar counts it: a review that waits on you, one you can complete, or one Fix next offers, as a
-    /// session asks you something, a build failed or someone wants changes; never one that merged. A folded column's strip
-    /// marks it.
+    /// session asks you something, a build failed, someone wants changes, or yours needs a reviewer; never one that merged.
+    /// A folded column's strip marks it.
     public var needsYou: Bool {
         guard stage != .merged else { return false }
         return stage == .yourReview || stage == .canMerge && reading.why == .ready(autoComplete: false) || reading.fixRank != nil

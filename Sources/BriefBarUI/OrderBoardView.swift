@@ -317,10 +317,11 @@ private struct FollowsScroll<Content: View>: View {
     }
 }
 
-/// By Mission's Board: Up Next's pull request wears Next in its column, with ✎ where you chose it (`UpNextPicks`), and each
-/// mission's lane has its header, its next steps and the Undo line of your last change to one of its pull requests, on the
-/// board or not. With Lanes: None, every card is in one lane. A change that takes a pull request in no mission off the board
-/// keeps a lane for its Undo line.
+/// By Mission's Board: each column's first card wears Next where its order says what's next there, Your review's with ✎
+/// where you chose it for Up Next (`UpNextPicks`), and Fix next's wears Fix next, wherever it is; each mission's lane has its
+/// header, its next steps and the Undo line of your last change to one of its pull requests, on the board or not. With
+/// Lanes: None, every card is in one lane. A change that takes a pull request in no mission off the board keeps a lane for
+/// its Undo line.
 package struct OrderBoardView: View {
     let board: PullRequestBoard
     /// The missions the page shows, as By Mission lists them, for the lanes' headers.
@@ -1561,8 +1562,7 @@ package struct OrderBoardView: View {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
-                nexts: UpNextSlot.allCases.filter { board.next[$0] == card.ref },
-                picked: Set(board.picked.filter { $0.value == card.ref }.keys), isSelected: isSelected(card.ref),
+                badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref),
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
@@ -2022,10 +2022,11 @@ private struct Sideways: Layout {
 
 // MARK: - A card
 
-/// A card on the Board: the page's content, framed in its stage's color, Next on its column's Up Next, Fix next on Fix
-/// next's, wherever it is, with ✎ where you chose it, a click showing its details and giving it the keyboard's focus, as a
-/// field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and Return or Space shows its details.
-/// Tab goes from card to card. It drags to another column, and VoiceOver has every move among its actions, and Make Next.
+/// A card on the Board: the page's content, framed in its stage's color, Next as its column's first where its order says
+/// what's next, Fix next on Fix next's, wherever it is, with ✎ where you chose it, a click showing its details and giving it
+/// the keyboard's focus, as a field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and Return or
+/// Space shows its details. Tab goes from card to card. It drags to another column, and VoiceOver has every move among its
+/// actions, and Make Next where its column has an Up Next slot.
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
@@ -2034,10 +2035,8 @@ private struct BoardCardView: View {
     /// It's in Approved, joined to another column, as Teammate's review: it wears Approved's seal in its corner, which tells
     /// it from the rest at a glance.
     let marksApproved: Bool
-    /// The Up Next slots it's the pull request of: Fix next's, and its column's.
-    let nexts: [UpNextSlot]
-    /// Of those, the ones you chose it for (`UpNextPicks`).
-    let picked: Set<UpNextSlot>
+    /// What it wears: Fix next, as Fix next's pull request, then Next, as its column's first.
+    let badges: [CardBadge]
     let isSelected: Bool
     @ObservedObject var order: PullRequestOrder
     let now: Date
@@ -2080,10 +2079,10 @@ private struct BoardCardView: View {
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
-                if nexts.count <= 1, marksApproved || !nexts.isEmpty {
+                if badges.count <= 1, marksApproved || !badges.isEmpty {
                     HStack(spacing: 4) {
                         if marksApproved { approvedSeal }
-                        if let slot = nexts.first { badge(slot) }
+                        if let badge = badges.first { badgeView(badge) }
                     }
                     .padding(7 * textScale)
                     .allowsHitTesting(false)
@@ -2142,7 +2141,7 @@ private struct BoardCardView: View {
                     Button("Set as Next to Merge", action: setAsNext)
                 }
                 if let slot = UpNextSlot.of(card) {
-                    if picked.contains(slot) {
+                    if order.picks[slot] == card.ref {
                         Button("Let BriefBar Choose Next") { order.letBriefBarChoose(slot) }
                     } else {
                         Button("Make Next") { order.pickNext(card.ref, in: slot) }
@@ -2159,12 +2158,12 @@ private struct BoardCardView: View {
     /// it: in the corner, where one stays, they would cover its number.
     private var withBadgeLine: some View {
         VStack(alignment: .leading, spacing: 4 * textScale) {
-            if nexts.count > 1 {
+            if badges.count > 1 {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     if marksApproved { approvedSeal }
-                    ForEach(nexts) { slot in
-                        badge(slot)
+                    ForEach(badges) { badge in
+                        badgeView(badge)
                     }
                 }
                 // As far in as one in the corner.
@@ -2184,30 +2183,20 @@ private struct BoardCardView: View {
             .accessibilityHidden(true)
     }
 
-    /// Next, or Fix next, in its slot's color, with ✎ where you chose it.
-    private func badge(_ slot: UpNextSlot) -> some View {
-        let isPicked = picked.contains(slot)
-        return HStack(spacing: 2) {
-            if isPicked {
+    /// Next, or Fix next, in its color, with ✎ where you chose it.
+    private func badgeView(_ badge: CardBadge) -> some View {
+        HStack(spacing: 2) {
+            if badge.isPicked {
                 Image(systemName: "pencil")
             }
-            Text(slot == .fix ? slot.title : "Next")
+            Text(badge.title)
         }
         .font(size: 10, weight: .bold)
-        .foregroundStyle(slot.stage.textColor)
+        .foregroundStyle(badge.stage.textColor)
         .padding(.horizontal, 6)
         .padding(.vertical, 1.5)
-        .background(Capsule().fill(slot.stage.color.opacity(0.2)))
-        .help(Self.help(slot, isPicked: isPicked))
-    }
-
-    static func help(_ slot: UpNextSlot, isPicked: Bool) -> String {
-        switch (slot, isPicked) {
-        case (.fix, true): "Fix next: you chose it, until it moves on"
-        case (.fix, false): "Fix next: it needs you first, of every column"
-        case (_, true): "Up Next: you chose it, until it moves on"
-        case (_, false): "Up Next: it comes first in its column"
-        }
+        .background(Capsule().fill(badge.stage.color.opacity(0.2)))
+        .help(badge.help)
     }
 
     private var accessibilityValue: String {
@@ -2215,10 +2204,7 @@ private struct BoardCardView: View {
         var parts = column == .completed ? [column.title] : []
         parts.append(StageWords.spoken(card.reading, order: order, now: now))
         parts += content.details
-        for slot in nexts {
-            let name = slot == .fix ? "Fix next" : "Up Next"
-            parts.append(picked.contains(slot) ? "\(name), you chose it" : name)
-        }
+        parts += badges.map(\.spoken)
         return parts.joined(separator: ", ")
     }
 
@@ -2243,6 +2229,58 @@ private struct BoardCardView: View {
                         .strokeBorder(color, lineWidth: 1.5)
                 )
         )
+    }
+}
+
+/// What a pull request's card wears on the Board, in its color, with ✎ where you chose it (`UpNextPicks`): Fix next on Fix
+/// next's pull request, wherever it is; Next on the first card in its column, where its order says what's next
+/// (`PullRequestBoard.nextInColumn`), which Up Next shows too only in Your review, as Your next review.
+package struct CardBadge: Equatable, Identifiable {
+    /// It's Fix next's, rather than its column's Next.
+    package var isFixNext: Bool
+    /// Its color's stage: In progress's for Fix next.
+    package var stage: PullRequestStage
+    /// The Up Next slot that shows its pull request too, which you can choose it for: Fix next, or Your next review for
+    /// Your review's Next; nil for Next in a column Up Next has no slot for, whose first only BriefBar's order decides.
+    package var slot: UpNextSlot?
+    /// You chose its pull request for that slot.
+    package var isPicked: Bool
+
+    package var id: Bool { isFixNext }
+
+    package var title: String {
+        isFixNext ? UpNextSlot.fix.title : "Next"
+    }
+
+    /// What its tooltip says.
+    package var help: String {
+        switch (isFixNext, isPicked) {
+        case (true, true): "Fix next: you chose it, until it moves on"
+        case (true, false): "Fix next: it needs you first, of every column"
+        case (false, true): "Up Next: you chose it, until it moves on"
+        case (false, false): slot == nil ? "Next: it comes first in its column" : "Up Next: it comes first in its column"
+        }
+    }
+
+    /// What VoiceOver says of it, after the card's stage and details.
+    package var spoken: String {
+        let name = isFixNext ? "Fix next" : slot == nil ? "Next in its column" : "Up Next"
+        return isPicked ? "\(name), you chose it" : name
+    }
+
+    /// What a card wears, as the board has it: Fix next first.
+    package static func of(_ card: BoardCard, on board: PullRequestBoard) -> [CardBadge] {
+        var badges: [CardBadge] = []
+        if board.next[.fix] == card.ref {
+            badges.append(CardBadge(isFixNext: true, stage: UpNextSlot.fix.stage, slot: .fix, isPicked: board.picked[.fix] == card.ref))
+        }
+        if board.nextInColumn[card.stage] == card.ref {
+            let slot = UpNextSlot.first(in: card.stage)
+            badges.append(CardBadge(
+                isFixNext: false, stage: card.stage, slot: slot, isPicked: slot.map { board.picked[$0] == card.ref } ?? false
+            ))
+        }
+        return badges
     }
 }
 
@@ -2367,7 +2405,7 @@ private struct BoardTaskCardView: View {
 
 /// Make Next, in a Board card's menu: chooses its pull request for its Up Next slot, which shows it, first in its column,
 /// until it moves on (`UpNextPicks`); checked once you chose it, when it gives the slot back to BriefBar's order. Nothing
-/// for a card in no slot, such as a draft, or one that merged.
+/// for a card in no slot, such as a draft, one in a column Up Next has no slot for, as Approved, or one that merged.
 package struct MakeNextToggle: View {
     let card: BoardCard
     @ObservedObject var order: PullRequestOrder

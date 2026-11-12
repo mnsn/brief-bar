@@ -938,8 +938,8 @@ public enum StageText {
     }
 
     /// What Fix next says of one that needs you: what needs you first, as its flags or why say it, then, for one in
-    /// another column than In progress, where it is: "Build failed · in Approved", "‘Cart’ asks you · in Your review";
-    /// else why it's in its stage, as `why` says it, "‘Cart’ asks you".
+    /// another column than In progress, where it is: "Build failed · in Approved", "‘Cart’ asks you · in Your review",
+    /// "Find a reviewer · in Teammate's review"; else why it's in its stage, as `why` says it, "‘Cart’ asks you".
     public static func fixWords(_ reading: StageReading, name: (ItemRef) -> String?, then separator: String = " · ") -> String {
         func needs(_ rank: Int, _ flag: StageFlag) -> Bool {
             switch (rank, flag) {
@@ -949,7 +949,7 @@ public enum StageText {
         }
         guard reading.stage != .inProgress, let rank = reading.fixRank else { return why(reading, name: name, then: separator) }
         let saysIt: Bool = switch (rank, reading.why) {
-        case (0, .asksYou), (1, .failing), (2, .changesWanted): true
+        case (0, .asksYou), (1, .failing), (2, .changesWanted), (3, .findReviewer): true
         default: false
         }
         let first = saysIt ? reason(reading, name: name) : reading.flags.first { needs(rank, $0) }.map { mark($0, name: name) }

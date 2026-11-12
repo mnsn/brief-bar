@@ -400,11 +400,10 @@ package final class PullRequestOrder: ObservableObject {
         changes = OrderChanges.load(from: defaults).merging(changesInMemory)
         yourNames = MissionNames.load(from: defaults)
         keptPicks = UpNextPicks.Kept.load(from: defaults)
-        // What it can't read goes, such as what builds from main saved before what you chose was kept for each account,
-        // each slot's reference alone, rather than keep Forget Stages… on with nothing to forget.
-        if keptPicks.isEmpty, defaults.object(forKey: UpNextPicks.Kept.defaultsKey) != nil {
-            defaults.removeObject(forKey: UpNextPicks.Kept.defaultsKey)
-        }
+        // What it can't read goes, such as a slot Up Next no longer has, as Approved next's, or what builds from main saved
+        // before what you chose was kept for each account, each slot's reference alone, rather than stay for good and keep
+        // Forget Stages… on with nothing to forget.
+        keptPicks.tidy(in: defaults)
         picks = picksNow()
         namesCounted = nil
         keptTogether = KeptTogether.load(from: defaults)

@@ -2,11 +2,11 @@ import BriefBarCore
 import SwiftUI
 
 /// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a slot
-/// for each kind of next that has something, side by side across the page, each in its stage's color, with its pull request,
-/// why, its mission and how many more. A click on one shows its details; its title's ⌄ chooses which of its pull requests it
-/// shows, remembered until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or
-/// with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no group or
-/// count: it only points.
+/// for each next step that's yours and has something, Fix next and Your next review, side by side across the page, each in
+/// its stage's color, with its pull request, why, its mission and how many more. What waits on others has none: the Board's
+/// columns keep it. A click on one shows its details; its title's ⌄ chooses which of its pull requests it shows, remembered
+/// until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or with bigger text,
+/// the slots wrap. It folds with its chevron, remembered. It changes no group or count: it only points.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -125,25 +125,16 @@ extension UpNextView {
     }
 }
 
-/// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot; for Approved next, its
-/// seal, as Approved's column title has it, so that its shape tells it from Merge next's beside it, as some see colors.
+/// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot.
 private struct UpNextSlotMark: View {
     let stage: PullRequestStage
 
     @Environment(\.textScale) private var textScale
 
     var body: some View {
-        if stage == .approved {
-            // `font(size:)` grows with the text size itself.
-            Image(systemName: PullRequestStage.approved.symbol)
-                .font(size: 9, weight: .bold)
-                .foregroundStyle(stage.color)
-                .frame(width: 7 * textScale, height: 7 * textScale)
-        } else {
-            Circle()
-                .fill(stage.color)
-                .frame(width: 7 * textScale, height: 7 * textScale)
-        }
+        Circle()
+            .fill(stage.color)
+            .frame(width: 7 * textScale, height: 7 * textScale)
     }
 }
 
