@@ -1690,13 +1690,19 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
-lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first in its column's order, which wears **Next** on the Board. Fix next has what needs you from
+lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`). Up Next has a
+slot only for a next step that's yours (`UpNextSlot`): Fix next, and Your next review, the first in Your review's order.
+What waits on others, as a teammate's review or approval, Azure DevOps or another pull request, has none: the Board's
+columns keep it, and completing a pull request is a click in Azure DevOps. Each column's first card, across the lanes,
+wears **Next** on the Board where its order says what's next (`PullRequestBoard.nextInColumn`,
+`PullRequestStage.firstWearsNext`): in Your review, Up Next's, and in Teammate's review, Approved, Can merge and Waits,
+BriefBar's order's alone; not in In progress, whose next is Fix next's, nor in Merged. Fix next has what needs you from
 every column (`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks
-you, then a build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, the
-oldest first; but none while a session writes it, which may be fixing just that. Its pull request wears **Fix next**
-wherever it is, and stays in its column's slot too, as one in Your review is still your next review, whatever its
-build. A mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
+you, then a build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants,
+then one of yours that needs a reviewer, as nobody's asked to review it yet, **Find a reviewer · in Teammate's review**,
+after them as nothing's broken, the oldest first; but none while a session writes it, which may be fixing just that. Its
+pull request wears **Fix next** wherever it is; one in Your review is still your next review too, whatever its build. A
+mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
 (`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
 (`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
 focus on comes first in each stage, but in In progress, what needs you comes before it:
@@ -1722,7 +1728,9 @@ other missions have waited, as Up Next does.
 
 **The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
 each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
-actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
+actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next has a slot for: In progress, while it
+needs you, for Fix next, and Your review (`UpNextSlot.of`); in the others, BriefBar's order alone decides which comes
+first. Only one the slot has now can be chosen (`UpNextSlot.has`). The
 one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
 (`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
 needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is, in its
@@ -1752,8 +1760,10 @@ Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let Brief
 it at once, whether the slot shows it then or waits for it to come back; so does unchecking Make Next on its card while
 the slot shows it. There's no Undo line, as for Focus. It's kept in the preferences with the Azure DevOps account you
 chose it with, as the stages you set are (`UpNextPicks.Kept`, `order.upNextPicks`): each slot's name, its pull request's
-reference, and when a list last had it, noted once a day; what BriefBar can't read there, as what builds from main saved
-before, each slot's reference alone, goes as Pull Request Order reads it. What one account chose applies only while it's
+reference, and when a list last had it, noted once a day; what BriefBar can't read there, as a slot Up Next no longer
+has, such as an earlier build's Approved next, or what builds from main saved before, each slot's reference alone, goes
+as Pull Request Order reads it, the rest saved again (`UpNextPicks.Kept.tidy`). What one account chose applies only
+while it's
 signed in, and waits, unused, while another is; one no list has had for 30 days goes, with any account, such as once its
 organization isn't watched, or its account doesn't sign in again, but, as for a stage you set, only once Azure DevOps
 has listed what it shows since Pull Request Order turned on. One of a pull request listed only because
@@ -1831,8 +1841,9 @@ flags say; or a work item you started, with no pull request or Copilot task, `Bo
 What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points the Board has in a
 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too, whose nine columns
 take 3 × 172 + 6 × 18 + 2 × 10 + 6 × 3 = 662. A strip's count is in a pill bordered in its column's color where one of
-its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or a problem Fix next ranks,
-`fixRank`, but none in Merged), which only marks it, and the strip wears its column's mark, To start's dashed ring,
+its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or what Fix next ranks,
+`fixRank`, a problem or one of yours that needs a reviewer, but none in Merged), which only marks it, and the strip
+wears its column's mark, To start's dashed ring,
 Approved's seal, Completed's checkmark or a dot: a shape as well as a color. With
 every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
 card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
@@ -4653,7 +4664,7 @@ Azure DevOps starts. The demo keeps them in memory.
 #### Stages for agents
 
 While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
-stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
+stage but Merged, what's next first, a pull request you chose in Up Next first of all, as the app keeps it in
 the preferences for the account the lists read with, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back while the session's lasts, and whether yours goes or shows again once it ends. `--mcp` works them

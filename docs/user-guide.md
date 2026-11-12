@@ -387,10 +387,10 @@ review**, **Teammate's review**, **Approved**, marked with a seal, **Can merge**
 for each mission, its header naming your next steps in it, such as **Review !4093** or **Find a reviewer: !4079**,
 then a lane for the pull requests in no mission. **Lanes: None** puts every card in one. A card shows its marks under
 why it's there, such as **✕ Build failed** or **✋ Sam wants changes**. Each column's first card wears **Next**,
-**✎ Next** where you chose it, but In progress's and Merged's; Fix next's wears **Fix next**, wherever it is.
-Right-click a card in In progress or Your review, or in To start on My Work, and choose **Make Next** to choose it for
-Fix next, Your next review or Start next; in the other columns, BriefBar's order decides. Each column puts the mission you focus on first, but In
-progress puts what needs you before it. Click a card, or press **Return** or
+**✎ Next** where you chose it, but In progress's, Merged's and Completed's; Fix next's wears **Fix next**, wherever it
+is. Right-click a card in In progress or Your review, or in To start on My Work, and choose **Make Next** to choose it
+for Fix next, Your next review or Start next; in the other columns, BriefBar's order decides. Each column puts the
+mission you focus on first, but In progress puts what needs you before it. Click a card, or press **Return** or
 **Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
 Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
 once the card leaves the board. Drag one from **Waits** onto **Can merge**, or press **⌘←** on it there, to set it as
@@ -412,8 +412,8 @@ Click a column's title to fold it to a narrow strip, and click the strip to open
 folded or opened, and folding changes no stage. A strip shows its column's mark and count, and in each lane its name and
 how many of the lane's cards it holds; a count is in a pill where something there needs you: a review waiting on you, a
 pull request you can complete, or what Fix next would show you, such as a failed build, or one of yours that needs a
-reviewer. A column with no cards
-folds by itself, and opens once a card arrives, unless you folded it. Where the window is too narrow for every open
+reviewer. A column with no cards folds by itself, and opens once a card arrives, unless you folded it. Where the window
+is too narrow for every open
 column, as with bigger text, BriefBar folds those you need least: **Completed**, **Merged**, **Waits** and **To start**
 first, then those where you wait on others, the one that needs least from you first: **Can merge** while its pull
 requests complete by themselves, **In progress** while nothing in it is yours alone, **Teammate's review**, and
