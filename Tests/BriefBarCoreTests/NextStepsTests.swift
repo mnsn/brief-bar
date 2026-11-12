@@ -234,6 +234,10 @@ import Testing
         #expect(StageText.followUpWords(waiting, name: Self.name, now: now) == "Waiting on Alex and Jordan · 2d")
         #expect(StageText.followUpWords(waiting, name: Self.name, now: now, spoken: true) == "Waiting on Alex and Jordan, for 2 days")
         #expect(StageText.followUpWords(waiting, name: Self.name, now: t(30)) == "Waiting on Alex and Jordan")
+        // As the slot shows it: the names, which a narrow slot cuts short, then how long, which it keeps.
+        let parts = StageText.followUpParts(waiting, name: Self.name, now: now)
+        #expect(parts.who == "Waiting on Alex and Jordan" && parts.waited == " · 2d")
+        #expect(StageText.followUpParts(waiting, name: Self.name, now: t(30)).waited == nil)
         waiting.pendingReviewers = nil
         #expect(StageText.followUpWords(waiting, name: Self.name, now: t(1_200)) == "0 of 2 approvals · 20m")
         // Only one that waits on teammates alone: not one that needs a reviewer, nor one Fix next has, nor one a session

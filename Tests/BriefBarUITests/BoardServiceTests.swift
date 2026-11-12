@@ -282,6 +282,10 @@ import Testing
         #expect(UpNextView.why(followUp.card, in: .teammateReview, order: order, now: now) == "1 of 2 approvals · 2h")
         #expect(UpNextView.choice(followUp.cards[1], in: .teammateReview, order: order, now: now)
             == "!4099 — Waiting on Alex and Jordan · 20m")
+        let shown = UpNextView.shownWhy(followUp.cards[1], in: .teammateReview, order: order, now: now)
+        #expect(shown.0 == "Waiting on Alex and Jordan" && shown.1 == " · 20m")
+        let fix = try #require(slots()[.fix])
+        #expect(UpNextView.shownWhy(fix.card, in: .fix, order: order, now: now).1 == nil)
 
         #expect(order.pickNext(Self.ref(4099), in: .teammateReview))
         #expect(!order.pickNext(Self.ref(4079), in: .teammateReview))

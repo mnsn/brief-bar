@@ -143,6 +143,13 @@ package struct UpNextView: View {
         }
     }
 
+    /// A slot's why as it shows, in two: Follow up next's names, then how long it has waited, which a narrow slot keeps
+    /// whole while it cuts the names short, "Waiting on Alex and Jo… · 20m" (`StageText.followUpParts`); the others' whole.
+    package static func shownWhy(_ card: BoardCard, in kind: UpNextSlot, order: PullRequestOrder, now: Date) -> (String, String?) {
+        guard kind == .teammateReview else { return (why(card, in: kind, order: order, now: now), nil) }
+        return StageText.followUpParts(card.reading, name: order.name(of:), now: now)
+    }
+
     /// Whether a slot's menu offers Let BriefBar Choose: once you chose a pull request for it, whether the slot shows it now
     /// or waits for it to come back.
     package static func offersLetBriefBarChoose(_ slot: UpNext.Slot, order: PullRequestOrder) -> Bool {
@@ -204,6 +211,7 @@ private struct UpNextSlotView: View {
     var body: some View {
         let title = order.name(of: ref)
         let why = UpNextView.why(slot.card, in: slot.kind, order: order, now: now)
+        let (shownWhy, waited) = UpNextView.shownWhy(slot.card, in: slot.kind, order: order, now: now)
         let mission = missionTitle
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
@@ -233,10 +241,17 @@ private struct UpNextSlotView: View {
                         .font(size: 13, weight: .semibold)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(why)
-                        .font(size: 12)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(shownWhy)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        if let waited {
+                            Text(waited)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    .font(size: 12)
                     Text(mission)
                         .font(size: 11.5)
                         .foregroundStyle(.secondary)

@@ -971,9 +971,19 @@ public enum StageText {
     public static func followUpWords(
         _ reading: StageReading, name: (ItemRef) -> String?, now: Date, spoken: Bool = false
     ) -> String {
+        let (who, waited) = followUpParts(reading, name: name, now: now)
+        guard spoken, waited != nil, let since = reading.since else { return who + (waited ?? "") }
+        return who + ", for " + Elapsed.spoken(since: since, now: now)
+    }
+
+    /// Follow up next's words in two, as its slot shows them, so that a narrow slot cuts the names short rather than how
+    /// long it has waited: ("Waiting on Alex and Jordan", " · 20m"); under a minute, no time.
+    public static func followUpParts(
+        _ reading: StageReading, name: (ItemRef) -> String?, now: Date
+    ) -> (who: String, waited: String?) {
         let who = reading.pendingReviewers.map { "Waiting on \($0)" } ?? reason(reading, name: name)
-        guard let since = reading.since, now.timeIntervalSince(since) >= 60 else { return who }
-        return spoken ? who + ", for " + Elapsed.spoken(since: since, now: now) : who + " · " + Elapsed.short(since: since, now: now)
+        guard let since = reading.since, now.timeIntervalSince(since) >= 60 else { return (who, nil) }
+        return (who, " · " + Elapsed.short(since: since, now: now))
     }
 
     /// What an approved pull request says when nothing tells what's left of it, nor who approved it.
