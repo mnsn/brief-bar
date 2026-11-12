@@ -153,6 +153,48 @@ public struct BoardTask: Equatable, Sendable, Identifiable {
     }
 }
 
+/// Start next, Up Next's last slot on My Work while the Board shows your sprint work: the work item of yours to start next, of
+/// those in To start. The sprint's come first, in its backlog's order, as the Sprint page has them; then, with + All My Tasks,
+/// once none of the sprint's is left to start, yours outside it, as the Board has them (`OutsideWork.yours`). The one you
+/// chose, with its ⌄ or a card's Make Next, comes first while it's there, and first in its lane's To start, until BriefBar
+/// quits; it waits while it isn't.
+public struct StartNext: Equatable, Sendable {
+    /// Its work item: the one you chose, else the first.
+    public var task: BoardTask
+    /// Every work item it has, in its order, that one first: what you can choose from.
+    public var tasks: [BoardTask]
+    /// You chose its work item, rather than the backlog's order.
+    public var isPicked: Bool
+
+    /// What To start has, in its order, with the one you chose first while it's there; nil when it has none.
+    public init?(_ toStart: [BoardTask], pick: ItemRef?) {
+        let picked = pick.flatMap { pick in toStart.first { $0.ref == pick } }
+        let tasks = picked.map { picked in [picked] + toStart.filter { $0.ref != picked.ref } } ?? toStart
+        guard let first = tasks.first else { return nil }
+        task = first
+        self.tasks = tasks
+        isPicked = picked != nil
+    }
+
+    /// How many it has, that one included.
+    public var count: Int { tasks.count }
+
+    /// "1 more", "2 more"; nil when it's the only one.
+    public var more: String? {
+        count > 1 ? "\(count - 1) more" : nil
+    }
+
+    public static let title = "Start next"
+
+    /// What it shows, for its tooltip.
+    public static let help =
+        "Your work that hasn't started: the sprint's, in its backlog's order; then, with + All My Tasks, yours outside it"
+
+    /// What its tooltip says of the work item you chose for it.
+    public static let pickedHelp =
+        "You chose it, while BriefBar runs. Let BriefBar Choose, under ⌄, gives it back to the backlog's order"
+}
+
 /// A column of the Board, from left to right: To start, while it shows your sprint work, then each stage's, then Completed,
 /// while it shows your sprint work.
 public enum BoardColumn: Hashable, Sendable {
@@ -253,8 +295,10 @@ extension PullRequestBoard {
     ///   - stories: the sprint's stories and bugs, in its order: a story with no mission has a lane only if it's there.
     ///   - isOut: whether a merged pull request of yours is out, its pipelines after the merge done, as far as its source
     ///     knows.
+    ///   - startPick: the work item you chose for Start next, first in To start while it's there (`StartNext`).
     public func withWork(
-        _ work: [SprintWork], missions: [OrderMission], stories: [ItemRef], isOut: (ItemRef) -> Bool = { _ in true }
+        _ work: [SprintWork], missions: [OrderMission], stories: [ItemRef], isOut: (ItemRef) -> Bool = { _ in true },
+        startPick: ItemRef? = nil
     ) -> PullRequestBoard {
         var board = self
         board.showsWork = true
@@ -295,6 +339,14 @@ extension PullRequestBoard {
         board.lanes.insert(contentsOf: storyLanes, at: board.lanes.firstIndex { $0.kind == .notInAMission } ?? board.lanes.endIndex)
         for kind in [BoardLane.Kind.notInAMission, .all] {
             if let rest = byLane[kind] { board.lanes.append(BoardLane(kind: kind, columns: [:], tasks: rest)) }
+        }
+        board.startNext = StartNext(tasks.filter { $0.column == .toStart }, pick: startPick)
+        if let next = board.startNext, next.isPicked {
+            for index in board.lanes.indices {
+                guard let at = board.lanes[index].tasks.firstIndex(where: { $0.ref == next.task.ref }) else { continue }
+                let task = board.lanes[index].tasks.remove(at: at)
+                board.lanes[index].tasks.insert(task, at: 0)
+            }
         }
         return board
     }
@@ -373,7 +425,8 @@ extension BoardText {
         }
     }
 
-    /// Why a work item's card doesn't move to another column: BriefBar changes no work item, and none of its stages is one.
+    /// Why a work item's card doesn't move to another column: BriefBar changes no work item's state, and none of its stages is
+    /// one.
     public static let workStays =
         "A work item's card moves by itself, as its work does in Azure DevOps: to In progress once it's started, or a Copilot task works on it; onto its pull request's card once one is linked to it; to Merged once it's resolved, and to Completed once it's done"
 

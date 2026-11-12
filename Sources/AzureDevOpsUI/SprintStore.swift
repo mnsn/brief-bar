@@ -37,6 +37,7 @@ final class SprintStore: ObservableObject {
         self.settings = settings
         self.mode = mode
         self.client = client
+        readNextSprint = { team, current in try await TeamSprints.next(of: team, after: current, client: client) }
         settings.$sprintJustMine
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -97,7 +98,8 @@ final class SprintStore: ObservableObject {
         hasLoaded = true
     }
 
-    private func receive(_ snapshot: SprintSnapshot) {
+    /// What the engine read, as it published it; a test's made-up sprint.
+    func receive(_ snapshot: SprintSnapshot) {
         if board != snapshot.board { board = snapshot.board }
         if outside != snapshot.outside {
             if let problem = snapshot.outside?.problem, problem != outside?.problem {
@@ -181,5 +183,45 @@ final class SprintStore: ObservableObject {
     func openBoard() {
         guard let board else { return }
         AzureDevOps.open(board.team.taskboardURL(sprint: board.sprint))
+    }
+
+    // MARK: Moving your work to another sprint
+
+    /// How long the team's next sprint, once read, stays known.
+    static let nextSprintLifetime: TimeInterval = 3_600
+
+    /// The team's next sprint, as last read, by team: after which sprint, and when (`nextSprint`). In memory only.
+    private var nextSprints: [String: (sprint: Sprint?, after: String, readAt: Date)] = [:]
+    /// Reads a team's sprint after the one going on, with one request (`TeamSprints.next`); a test's stand-in.
+    var readNextSprint: @MainActor (TeamRef, Sprint) async throws -> Sprint?
+
+    /// A work item of yours, in the sprint or outside it, as last read, by its key.
+    func item(_ key: WorkItemKey) -> WorkItem? {
+        board?.item(key) ?? outside?.items.first { $0.key == key }
+    }
+
+    /// Your team's sprint after the one going on (`TeamSprints.next`), for Move to Next Sprint: read with one request, only
+    /// as you ask for it, and known for an hour, in memory only; nil when Azure DevOps has none. The demo's is made up.
+    func nextSprint(now: Date = Date()) async throws -> Sprint? {
+        guard let board else { return nil }
+        if mode == .demo { return DemoData.nextSprint(now: now) }
+        let team = board.team, current = board.sprint
+        if let known = nextSprints[team.id], known.after == current.id,
+           now.timeIntervalSince(known.readAt) < Self.nextSprintLifetime {
+            return known.sprint
+        }
+        let next = try await readNextSprint(team, current)
+        nextSprints[team.id] = (next, current.id, now)
+        return next
+    }
+
+    /// A work item of yours BriefBar moved to another sprint, as Azure DevOps answered (`SprintMoves`): it shows where it went
+    /// at once, off the sprint's board when it left the sprint, among your work outside it in its new iteration; then the
+    /// engine keeps it there, over a read that started before, and reads the sprint and your work outside it again.
+    func moved(_ item: WorkItem) {
+        board = board?.moving(item)
+        outside = outside?.placing(item, board: board)
+        guard let engine else { return }
+        Task { await engine.moved(item) }
     }
 }

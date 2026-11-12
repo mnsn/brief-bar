@@ -23,6 +23,15 @@ extension DemoData {
         )
     }
 
+    /// Sprint 43, the team's next, the fourteen days after Sprint 42: where Move to Next Sprint moves a task in the demo.
+    public static func nextSprint(now: Date = Date(), calendar: Calendar = .current) -> Sprint {
+        Sprint(
+            id: "7a0c4e1d-0000-4000-8000-000000000202", name: "Sprint 43", path: "Storefront\\Sprint 43",
+            start: SprintDay.date(daysFromToday: 5, now: now, calendar: calendar),
+            finish: SprintDay.date(daysFromToday: 18, now: now, calendar: calendar)
+        )
+    }
+
     /// The sprint's task board: stories and a bug with their tasks, a story without tasks yet, a finished one,
     /// and a task without a story.
     public static func sprintBoard(now: Date = Date(), calendar: Calendar = .current) -> SprintBoard {

@@ -6,7 +6,8 @@ import SwiftUI
 /// why, its mission and how many more. A click on one shows its details; its title's ⌄ chooses which of its pull requests it
 /// shows, remembered until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or
 /// with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no group or
-/// count: it only points.
+/// count: it only points. On My Work, while the Board shows your sprint work, Start next comes last, with the work item to
+/// start next (`StartNext`): starting comes after what needs you to finish.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -14,12 +15,18 @@ package struct UpNextView: View {
     let select: (ItemRef) -> Void
     /// Shows By Mission's Board at a column.
     let showColumn: (PullRequestStage) -> Void
+    /// Start next, on My Work while the Board shows your sprint work and To start has something; nil elsewhere.
+    let startNext: StartNextContent?
 
     @Environment(\.textScale) private var textScale
 
-    package init(upNext: UpNext, order: PullRequestOrder, select: @escaping (ItemRef) -> Void, showColumn: @escaping (PullRequestStage) -> Void) {
+    package init(
+        upNext: UpNext, order: PullRequestOrder, startNext: StartNextContent? = nil, select: @escaping (ItemRef) -> Void,
+        showColumn: @escaping (PullRequestStage) -> Void
+    ) {
         self.upNext = upNext
         self.order = order
+        self.startNext = startNext
         self.select = select
         self.showColumn = showColumn
     }
@@ -28,7 +35,7 @@ package struct UpNextView: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             if !order.isUpNextFolded {
-                if upNext.isEmpty {
+                if upNext.isEmpty && startNext == nil {
                     Text(UpNext.nothingNext)
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
@@ -38,11 +45,19 @@ package struct UpNextView: View {
                         ForEach(upNext.slots) { slot in
                             UpNextSlotView(slot: slot, order: order, select: select, showColumn: showColumn)
                         }
+                        if let startNext {
+                            StartNextSlotView(content: startNext, order: order)
+                        }
                     }
                 }
             }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    /// Each slot's title and how many it has, as the folded header says them: "Fix next: 2", "Start next: 3".
+    private var counts: [(title: String, count: Int)] {
+        upNext.slots.map { ($0.kind.title, $0.count) } + (startNext.map { [(StartNext.title, $0.next.count)] } ?? [])
     }
 
     /// "Up Next", which folds it, and, folded, how many each slot has.
@@ -60,14 +75,10 @@ package struct UpNextView: View {
                     .font(size: 13, weight: .semibold)
                 if folded {
                     ForEach(upNext.slots) { slot in
-                        HStack(spacing: 3) {
-                            UpNextSlotMark(stage: slot.kind.stage)
-                            Text("\(slot.count)")
-                                .monospacedDigit()
-                        }
-                        .font(size: 11.5, weight: .medium)
-                        .foregroundStyle(.secondary)
-                        .help("\(slot.kind.title): \(slot.count)")
+                        foldedCount(UpNextSlotMark(column: .stage(slot.kind.stage)), slot.kind.title, slot.count)
+                    }
+                    if let startNext {
+                        foldedCount(UpNextSlotMark(column: .toStart), StartNext.title, startNext.next.count)
                     }
                 }
             }
@@ -77,9 +88,21 @@ package struct UpNextView: View {
         .padding(.horizontal, 4)
         .help(folded ? "Show what's next for you" : "Fold Up Next")
         .accessibilityLabel("Up Next")
-        .accessibilityValue(folded ? upNext.slots.map { "\($0.kind.title): \($0.count)" }.joined(separator: ", ") : "")
+        .accessibilityValue(folded ? counts.map { "\($0.title): \($0.count)" }.joined(separator: ", ") : "")
         .accessibilityHint(folded ? "Shows what's next for you" : "Folds it")
         .accessibilityAddTraits(.isHeader)
+    }
+
+    /// A slot's mark and how many it has, as the folded header shows them.
+    private func foldedCount(_ mark: UpNextSlotMark, _ title: String, _ count: Int) -> some View {
+        HStack(spacing: 3) {
+            mark
+            Text("\(count)")
+                .monospacedDigit()
+        }
+        .font(size: 11.5, weight: .medium)
+        .foregroundStyle(.secondary)
+        .help("\(title): \(count)")
     }
 
     /// What VoiceOver hears after a slot's title: why, a second reason after a pause, then its mission, and that you chose it
@@ -126,22 +149,28 @@ extension UpNextView {
 }
 
 /// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot; for Approved next, its
-/// seal, as Approved's column title has it, so that its shape tells it from Merge next's beside it, as some see colors.
+/// seal, as Approved's column title has it, so that its shape tells it from Merge next's beside it, as some see colors; for
+/// Start next, To start's dashed ring, which tells its gray from Waits next's beside it.
 private struct UpNextSlotMark: View {
-    let stage: PullRequestStage
+    let column: BoardColumn
 
     @Environment(\.textScale) private var textScale
 
     var body: some View {
-        if stage == .approved {
+        if column == .stage(.approved) {
             // `font(size:)` grows with the text size itself.
             Image(systemName: PullRequestStage.approved.symbol)
                 .font(size: 9, weight: .bold)
-                .foregroundStyle(stage.color)
+                .foregroundStyle(column.color)
+                .frame(width: 7 * textScale, height: 7 * textScale)
+        } else if column == .toStart {
+            Image(systemName: "circle.dashed")
+                .font(size: 8.5, weight: .heavy)
+                .foregroundStyle(column.color)
                 .frame(width: 7 * textScale, height: 7 * textScale)
         } else {
             Circle()
-                .fill(stage.color)
+                .fill(column.color)
                 .frame(width: 7 * textScale, height: 7 * textScale)
         }
     }
@@ -167,7 +196,7 @@ private struct UpNextSlotView: View {
         let mission = missionTitle
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
-                UpNextSlotMark(stage: stage)
+                UpNextSlotMark(column: .stage(stage))
                     .accessibilityHidden(true)
                 UpNextChooser(slot: slot, order: order)
                 if slot.isPicked {
@@ -315,6 +344,191 @@ private struct UpNextChooser: View {
     private func letBriefBarChoose() {
         order.letBriefBarChoose(slot.kind)
         AccessibilityNotification.Announcement("BriefBar chooses \(slot.kind.title)").post()
+    }
+}
+
+/// Start next, as My Work draws it: what Up Next's last slot says of each work item it has, and what it does with them.
+package struct StartNextContent {
+    package var next: StartNext
+    /// A work item, as the slot names it: "Task 5104 Move a saved item back to the cart".
+    package var name: (BoardTask) -> String
+    /// Why it's there, as its card says, with where it is when it's outside the sprint: "New · Sprint 41".
+    package var why: (BoardTask) -> String
+    /// Its lane: its mission's name, its story's title, or that it's in no mission.
+    package var lane: (BoardTask) -> String
+    /// Its card's menu, which the slot's own is.
+    package var menu: (BoardTask) -> AnyView
+    /// Shows a work item's details.
+    package var select: (ItemRef) -> Void
+
+    package init(
+        next: StartNext, name: @escaping (BoardTask) -> String, why: @escaping (BoardTask) -> String,
+        lane: @escaping (BoardTask) -> String, menu: @escaping (BoardTask) -> AnyView, select: @escaping (ItemRef) -> Void
+    ) {
+        self.next = next
+        self.name = name
+        self.why = why
+        self.lane = lane
+        self.menu = menu
+        self.select = select
+    }
+}
+
+/// Start next, Up Next's last slot on My Work: its title in To start's gray, whose ⌄ chooses its work item, ✎ once you chose
+/// it, and how many it has; its work item, why, and its lane, which a click shows the details of and a right-click offers its
+/// card's menu for; and "2 more ›", which shows the next on the Board, in To start.
+private struct StartNextSlotView: View {
+    let content: StartNextContent
+    @ObservedObject var order: PullRequestOrder
+
+    @LocalState private var isHovered = false
+    @Environment(\.textScale) private var textScale
+
+    private var column: BoardColumn { .toStart }
+
+    var body: some View {
+        let next = content.next
+        let task = next.task
+        let name = content.name(task), why = content.why(task), lane = content.lane(task)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                UpNextSlotMark(column: column)
+                    .accessibilityHidden(true)
+                StartNextChooser(content: content, order: order)
+                if next.isPicked {
+                    Image(systemName: "pencil")
+                        .font(size: 10, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                        .help(StartNext.pickedHelp)
+                        .accessibilityHidden(true)
+                }
+                Spacer(minLength: 4)
+                Text("\(next.count)")
+                    .font(size: 11.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize()
+                    .accessibilityHidden(true)
+            }
+            Button {
+                content.select(task.ref)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(size: 13, weight: .semibold)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(why)
+                        .font(size: 12)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(lane)
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .contextMenu { content.menu(task) }
+            .help([name, why, lane, next.isPicked ? StartNext.pickedHelp : StartNext.help, "Click to see its details"]
+                .joined(separator: "\n"))
+            .accessibilityLabel("\(StartNext.title): \(name)")
+            .accessibilityValue(SpokenText.unquoted(why.replacingOccurrences(of: " · ", with: ", ") + ", " + lane)
+                + (next.isPicked ? ", you chose it" : ""))
+            .accessibilityHint("Shows its details")
+            moreLine
+                .padding(.top, 1)
+        }
+        .padding(.horizontal, 11)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        // As tall as the tallest on its line.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(GlassCard(cornerRadius: 12, isHovered: isHovered))
+        .overlay {
+            // To start's color along its top.
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(column.color, lineWidth: 3 * textScale)
+                .mask(alignment: .top) { Rectangle().frame(height: 3 * textScale) }
+                .allowsHitTesting(false)
+        }
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+    }
+
+    /// "2 more ›", which shows the next on the Board, its column opened for the moment where it's folded; nothing for one
+    /// alone.
+    @ViewBuilder
+    private var moreLine: some View {
+        if let more = content.next.more, content.next.tasks.count > 1 {
+            let following = content.next.tasks[1]
+            Button {
+                order.revealedCard = following.ref
+            } label: {
+                HStack(spacing: 2) {
+                    Text(more)
+                    Image(systemName: "chevron.right")
+                        .font(size: 8.5, weight: .bold)
+                }
+                .font(size: 11.5, weight: .medium)
+                .foregroundStyle(.tint)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Show the next on the Board, in \(BoardText.toStart)")
+            .accessibilityLabel("\(more), the next in \(BoardText.toStart)")
+            .accessibilityHint("Shows it on the Board")
+        }
+    }
+}
+
+/// Start next's title, with ⌄: its work items in its order, the one it shows checked, to choose which it shows, first in its
+/// lane's To start too, while BriefBar runs; and Let BriefBar Choose, once you chose one, which gives it back to the
+/// backlog's order.
+private struct StartNextChooser: View {
+    let content: StartNextContent
+    @ObservedObject var order: PullRequestOrder
+
+    var body: some View {
+        let next = content.next
+        Menu {
+            ForEach(next.tasks) { task in
+                Toggle(content.name(task) + " — " + content.why(task), isOn: Binding(get: { task.ref == next.task.ref }, set: { _ in
+                    choose(task)
+                }))
+            }
+            Divider()
+            Button("Let BriefBar Choose") { letBriefBarChoose() }
+                .disabled(order.startPick == nil)
+        } label: {
+            HStack(spacing: 3) {
+                Text(StartNext.title)
+                    .font(size: 11.5, weight: .semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                MenuChevron()
+            }
+            .foregroundStyle(BoardColumn.toStart.textColor)
+            .contentShape(Rectangle())
+        }
+        .labelMenuStyle()
+        .help("Choose which of your work \(StartNext.title) shows, first in its lane's \(BoardText.toStart) too, while BriefBar runs")
+        .accessibilityLabel(StartNext.title)
+        .accessibilityValue(next.isPicked ? "You chose its work item" : "")
+        .accessibilityHint(next.count > 1 ? "Chooses which of its \(next.count) work items it shows" : "Chooses which work item it shows")
+    }
+
+    private func choose(_ task: BoardTask) {
+        order.pickStart(task.ref)
+        AccessibilityNotification.Announcement("\(StartNext.title): \(content.name(task))").post()
+    }
+
+    private func letBriefBarChoose() {
+        order.letBriefBarChooseStart()
+        AccessibilityNotification.Announcement("BriefBar chooses \(StartNext.title)").post()
     }
 }
 

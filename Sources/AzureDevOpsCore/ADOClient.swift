@@ -57,8 +57,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 /// Reads from Azure DevOps, with GET requests only, but for the changes `ADOWrite` lists, which `send(_:as:)` alone makes, when
-/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses and pull requests' tags. Each request goes
-/// only where it's sent: it follows no redirect (`RedirectGuard`).
+/// you click them with Make Changes in Azure DevOps on: replies, threads' statuses, pull requests' tags, and the sprint a work
+/// item of yours is in. Each request goes only where it's sent: it follows no redirect (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
@@ -150,6 +150,7 @@ public struct ADOClient: Sendable {
             case .reply, .editComment: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
             case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
             case .addTag: return .tag(try ADOJSON.decoder().decode(ADOTag.self, from: data))
+            case .setIteration: return .workItem(try ADOJSON.decoder().decode(ADOWorkItem.self, from: data))
             case .deleteComment, .removeTag: return .done
             }
         } catch {
@@ -342,14 +343,14 @@ public struct ADOClient: Sendable {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
     }
 
-    /// A change's request: its method, its URL and its JSON body, with a GET's sign-in and headers. One with nothing to say
-    /// but its address, as taking a tag off, has no body.
+    /// A change's request: its method, its URL and its body, JSON or a work item's JSON Patch (`ADOWrite.contentType`), with a
+    /// GET's sign-in and headers. One with nothing to say but its address, as taking a tag off, has no body.
     static func request(_ write: ADOWrite, token: String) -> URLRequest {
         var request = request(write.url, token: token)
         request.httpMethod = write.method
         let body = write.body
         if !body.isEmpty {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(write.contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }
         return request
