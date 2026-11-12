@@ -1643,7 +1643,7 @@ private final class Clock {
     }
 
     /// A waiting pull request in the mission you focus on, whose card is another mission's that holds it, still counts as
-    /// the focused mission's: first in Waits and Up Next, as the earliest of its order there.
+    /// the focused mission's: first in Waits, wearing Next, as the earliest of its order there.
     @Test func aWaitingPullRequestInTheMissionYouFocusOnStaysFirstThoughAnotherOrderHoldsIt() throws {
         // The mission to focus on: !4101, then !4105, then !4106. Another's order puts !4101 after !4100: it holds !4101.
         let order = try Self.twoOrders(
@@ -1658,10 +1658,11 @@ private final class Clock {
         #expect(StageOrder.holders(of: Self.ref(4101), in: order.missions) == [other])
 
         let board = order.board(kinds: [.pullRequest], lanes: .missions)
-        let waitsNext = try #require(board.upNext.slots.first { $0.kind == .waits }?.card)
-        #expect(waitsNext.ref == Self.ref(4101) && waitsNext.mission == other && waitsNext.isFocused)
+        #expect(board.nextInColumn[.waits] == Self.ref(4101))
         let all = order.board(kinds: [.pullRequest], lanes: BoardLanes.none)
-        #expect(all.lanes.first?.cards(in: .waits).first?.ref == Self.ref(4101))
+        let waitsNext = try #require(all.lanes.first?.cards(in: .waits).first)
+        #expect(waitsNext.ref == Self.ref(4101) && waitsNext.mission == other && waitsNext.isFocused)
+        #expect(all.nextInColumn[.waits] == Self.ref(4101))
     }
 
     /// A split's line to a pull request that holds nothing up, as one abandoned, isn't known through a change of yours to the

@@ -517,7 +517,7 @@ private struct MyWorkContent: View {
                     // "2 more ›" scrolls the Board here to its column.
                     UpNextView(
                         upNext: board.upNext, order: ordering, startNext: board.startNext.map { startNext($0, on: board) },
-                        select: showDetails(of:)
+                        startsWork: board.showsWork, select: showDetails(of:)
                     ) { stage in
                         ordering.revealedColumn = stage
                     }

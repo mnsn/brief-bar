@@ -2,12 +2,13 @@ import BriefBarCore
 import SwiftUI
 
 /// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a slot
-/// for each kind of next that has something, side by side across the page, each in its stage's color, with its pull request,
-/// why, its mission and how many more. A click on one shows its details; its title's ⌄ chooses which of its pull requests it
-/// shows, remembered until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or
-/// with bigger text, the slots wrap, two or three to a line. It folds with its chevron, remembered. It changes no group or
-/// count: it only points. On My Work, while the Board shows your sprint work, Start next comes last, with the work item to
-/// start next (`StartNext`): starting comes after what needs you to finish.
+/// for each next step that's yours and has something, Fix next and Your next review, side by side across the page, each in
+/// its stage's color, with its pull request, why, its mission and how many more. What waits on others has none: the Board's
+/// columns keep it. A click on one shows its details; its title's ⌄ chooses which of its pull requests it shows, remembered
+/// until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or with bigger text,
+/// the slots wrap. It folds with its chevron, remembered. It changes no group or count: it only points. On My Work, while
+/// the Board shows your sprint work, Start next comes last, with the work item to start next (`StartNext`): starting comes
+/// after what needs you to finish.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -17,16 +18,19 @@ package struct UpNextView: View {
     let showColumn: (PullRequestStage) -> Void
     /// Start next, on My Work while the Board shows your sprint work and To start has something; nil elsewhere.
     let startNext: StartNextContent?
+    /// Start next can show: on My Work while the Board shows your sprint work, To start empty or not.
+    let startsWork: Bool
 
     @Environment(\.textScale) private var textScale
 
     package init(
-        upNext: UpNext, order: PullRequestOrder, startNext: StartNextContent? = nil, select: @escaping (ItemRef) -> Void,
-        showColumn: @escaping (PullRequestStage) -> Void
+        upNext: UpNext, order: PullRequestOrder, startNext: StartNextContent? = nil, startsWork: Bool = false,
+        select: @escaping (ItemRef) -> Void, showColumn: @escaping (PullRequestStage) -> Void
     ) {
         self.upNext = upNext
         self.order = order
         self.startNext = startNext
+        self.startsWork = startsWork
         self.select = select
         self.showColumn = showColumn
     }
@@ -36,12 +40,13 @@ package struct UpNextView: View {
             header
             if !order.isUpNextFolded {
                 if upNext.isEmpty && startNext == nil {
-                    Text(UpNext.nothingNext)
+                    Text(UpNext.nothingNext(startsWork: startsWork))
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
                 } else {
-                    UpNextGrid(minimum: 176 * textScale, spacing: 10) {
+                    // At most as wide as the page beside the sidebar in a 946-point window.
+                    UpNextGrid(minimum: 176 * textScale, maximum: 664 * textScale, spacing: 10) {
                         ForEach(upNext.slots) { slot in
                             UpNextSlotView(slot: slot, order: order, select: select, showColumn: showColumn)
                         }
@@ -148,22 +153,15 @@ extension UpNextView {
     }
 }
 
-/// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot; for Approved next, its
-/// seal, as Approved's column title has it, so that its shape tells it from Merge next's beside it, as some see colors; for
-/// Start next, To start's dashed ring, which tells its gray from Waits next's beside it.
+/// A slot's mark, before its title, and before its count while Up Next is folded: its stage's dot; for Start next, To
+/// start's dashed ring, as its column's title has it.
 private struct UpNextSlotMark: View {
     let column: BoardColumn
 
     @Environment(\.textScale) private var textScale
 
     var body: some View {
-        if column == .stage(.approved) {
-            // `font(size:)` grows with the text size itself.
-            Image(systemName: PullRequestStage.approved.symbol)
-                .font(size: 9, weight: .bold)
-                .foregroundStyle(column.color)
-                .frame(width: 7 * textScale, height: 7 * textScale)
-        } else if column == .toStart {
+        if column == .toStart {
             Image(systemName: "circle.dashed")
                 .font(size: 8.5, weight: .heavy)
                 .foregroundStyle(column.color)
@@ -537,10 +535,13 @@ private struct StartNextChooser: View {
 package struct UpNextGrid: Layout {
     /// How narrow a slot can be.
     let minimum: CGFloat
+    /// How wide a slot can be: in a wide window, a line of them ends short, rather than each stretching across it.
+    let maximum: CGFloat
     let spacing: CGFloat
 
-    package init(minimum: CGFloat, spacing: CGFloat) {
+    package init(minimum: CGFloat, maximum: CGFloat = .infinity, spacing: CGFloat) {
         self.minimum = minimum
+        self.maximum = maximum
         self.spacing = spacing
     }
 
@@ -552,6 +553,12 @@ package struct UpNextGrid: Layout {
         let fit = min(count, max(1, Int(((width + spacing) / (minimum + spacing)).rounded(.down))))
         let lines = (count + fit - 1) / fit
         return (count + lines - 1) / lines
+    }
+
+    /// Each slot's width on a line of `columns`, this wide: an even share of it, but never wider than `maximum`.
+    package static func slotWidth(columns: Int, width: CGFloat, maximum: CGFloat, spacing: CGFloat) -> CGFloat {
+        guard columns > 0 else { return 0 }
+        return min(maximum, max(0, (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)))
     }
 
     package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -591,7 +598,7 @@ package struct UpNextGrid: Layout {
     private func arrange(width: CGFloat, subviews: Subviews) -> [Line] {
         let columns = Self.columns(count: subviews.count, width: width, minimum: minimum, spacing: spacing)
         guard columns > 0 else { return [] }
-        let slot = max(0, (width - spacing * CGFloat(columns - 1)) / CGFloat(columns))
+        let slot = Self.slotWidth(columns: columns, width: width, maximum: maximum, spacing: spacing)
         return stride(from: 0, to: subviews.count, by: columns).map { start in
             let indices = start..<min(start + columns, subviews.count)
             let height = indices.map { subviews[$0].sizeThatFits(ProposedViewSize(width: slot, height: nil)).height }.max() ?? 0
