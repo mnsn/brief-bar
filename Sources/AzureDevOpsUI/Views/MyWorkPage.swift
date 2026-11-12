@@ -101,13 +101,14 @@ enum MyWorkFacts {
     }
 
     /// Where Show Them takes the Board: the first card of its own of your work outside the sprint, lanes from the top, columns
-    /// from the left; else the first pull request's card that names one; nil with neither.
+    /// from the left, each in its order; else the first pull request's card that names one; nil with neither.
     static func card(of outside: Set<ItemRef>, on board: PullRequestBoard) -> ItemRef? {
         for lane in board.lanes {
             for column in board.columns {
-                if let task = lane.tasks.first(where: { BoardColumn($0.column) == column && outside.contains($0.ref) }) {
-                    return task.ref
+                let first = lane.items(in: column).first { item in
+                    if case .work(let task) = item { outside.contains(task.ref) } else { false }
                 }
+                if let first { return first.ref }
             }
         }
         let names = { (card: BoardCard) in !outside.isDisjoint(with: board.workOfPullRequests[card.ref] ?? []) }
@@ -471,19 +472,22 @@ private struct MyWorkContent: View {
         board(showing: shown)
     }
 
-    /// The Board as a choice of Show's has it.
+    /// The Board as a choice of Show's has it, in your order (`LaneOrders`).
     private func board(showing shown: MyWorkShows) -> PullRequestBoard? {
         guard ordering.isOn else { return nil }
         let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
-        guard shown.showsWork, links.isOn else { return board }
+        let missions = PullRequestsByMission.missions(ordering.missions)
+        guard shown.showsWork, links.isOn else { return board.inYourOrder(ordering.laneOrders, missions: missions) }
         let sprintBoard = sprint.board
         let outside = shown == .allTasks ? self.outside : nil
-        guard sprintBoard != nil || outside?.items.isEmpty == false else { return board }
+        guard sprintBoard != nil || outside?.items.isEmpty == false else {
+            return board.inYourOrder(ordering.laneOrders, missions: missions)
+        }
         let follows = settings.followMerges, now = store.now
         return board.withWork(
-            work(in: sprintBoard, outside: outside), missions: PullRequestsByMission.missions(ordering.missions),
-            stories: sprintBoard?.rows.compactMap(\.parent?.linkRef) ?? [],
-            isOut: { ref in MyWorkFacts.isOut(record(of: ref), followsMerges: follows, now: now) }, startPick: ordering.startPick
+            work(in: sprintBoard, outside: outside), missions: missions, stories: sprintBoard?.rows.compactMap(\.parent?.linkRef) ?? [],
+            isOut: { ref in MyWorkFacts.isOut(record(of: ref), followsMerges: follows, now: now) }, startPick: ordering.startPick,
+            yourOrder: ordering.laneOrders
         )
     }
 

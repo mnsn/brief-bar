@@ -372,16 +372,17 @@ you focus on comes first in each. What waits on others has no slot, as a teammat
 another pull request merging: the Board's columns keep it in their order, and completing a pull request is a click in
 Azure DevOps. To choose which one a slot shows, such as a more urgent fix, click its title, **Fix next ⌄**, and pick it
 from its pull requests, each with why it's there: it shows with ✎, as its card does on the Board, where Fix next's comes
-first in In progress and Your next review's in Your review. BriefBar remembers it, for the Azure DevOps account you're
-signed in with (one sent to you in a chat, in memory only), until that pull request moves on to another stage, or, for
-Fix next, no longer needs you, merges or closes, or leaves your lists, as a review once its author completes it, and
-stays away for half an hour while BriefBar runs with Pull Request Order on; then BriefBar chooses again. Back sooner, as
-when someone wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless
-you've since chosen another or let BriefBar choose. While it needs nothing from you, as while its build runs again, or a
-session writes it, Fix next shows the next one meanwhile, and yours once it needs you again; one of yours that nobody's
-asked to review still needs you, so it stays. **Let BriefBar Choose**, in the same list, gives the slot back to
-BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board, and Fix next's,
-the next one's column. Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
+first in In progress, but in a lane you put in your order on My Work, and Your next review's in Your review. BriefBar
+remembers it, for the Azure DevOps account you're signed in with (one sent to you in a chat, in memory only), until that
+pull request moves on to another stage, or, for Fix next, no longer needs you, merges or closes, or leaves your lists,
+as a review once its author completes it, and stays away for half an hour while BriefBar runs with Pull Request Order
+on; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and **Undo**, after
+you move its card, chooses it again, unless you've since chosen another or let BriefBar choose. While it needs nothing
+from you, as while its build runs again, or a session writes it, Fix next shows the next one meanwhile, and yours once
+it needs you again; one of yours that nobody's asked to review still needs you, so it stays. **Let BriefBar Choose**, in
+the same list, gives the slot back to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the
+rest on the Board, and Fix next's, the next one's column. Click **Up Next** to fold it, and BriefBar remembers. It
+changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Approved**, marked with a seal, **Can merge**, **Waits** and **Merged**; and a lane
@@ -391,7 +392,8 @@ why it's there, such as **✕ Build failed** or **✋ Sam wants changes**. Each 
 **✎ Next** where you chose it, but In progress's, Merged's and Completed's; Fix next's wears **Fix next**, wherever it
 is. Right-click a card in In progress or Your review, or in To start on My Work, and choose **Make Next** to choose it
 for Fix next, Your next review or Start next; in the other columns, BriefBar's order decides. Each column puts the
-mission you focus on first, but In progress puts what needs you before it. Click a card, or press **Return** or
+mission you focus on first, but In progress puts what needs you before it, and on My Work, To start and In progress keep
+the order you put them in, lane by lane. Click a card, or press **Return** or
 **Space** on it, for its details, or right-click it for its menu; drag it to another column of its lane, or click it, or
 Tab to it, and press **⌘→** or **⌘←**, to change its stage, which says so with **Undo** at the top of its lane, even
 once the card leaves the board. Drag one from **Waits** onto **Can merge**, or press **⌘←** on it there, to set it as
@@ -491,16 +493,32 @@ were. While My Work shows + Sprint Tasks or + All My Tasks, BriefBar reads your 
 and your open tasks and bugs in its team's project, through Azure DevOps' Assigned to me query; with + All My Tasks, also
 the pull requests linked to them.
 
+**Your order.** On My Work, put the work you do yourself in the order you want to do it, in each
+lane: drag a card up or down in **To start** or **In progress**, where a line shows where it goes, or click it, or Tab
+to it, and press **⌘↑** or **⌘↓**, or right-click it and choose **Move Up**, **Move Down** or **Move to Top**, dimmed
+where it's first or last already; VoiceOver offers them as actions, and says where it is then, such as **2 of 5 in To
+start**. A card moves only within its column and lane: dragging it to another column still changes its stage, as ⌘→
+and ⌘← do, and the other columns keep the Board's order. A lane has one order across both columns, so a task keeps its
+place once it starts; a story's lane keeps it once the story's first pull request makes it a mission, and **Lanes:
+None**'s one lane has its own. Until you move a card in a lane, it keeps the Board's order; your first move there puts
+all its cards in your order as they show, work that comes later goes to the bottom of its column, and work that merges
+or completes leaves it. **Reset Order**, in the same menu, puts the lane back in the backlog's order at once. BriefBar
+keeps your order in its preferences, by reference, never a title, for the 50 lanes you ordered last, and forgets it when
+you turn Azure DevOps off: nothing goes to Azure DevOps, whose backlog keeps its order.
+
 **Start next**, with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, since starting comes after
 what needs you to finish: the work item in To start to start next. Your sprint's come first, in its backlog's order, as
 the Sprint page lists them; then, with + All My Tasks, once none of the sprint's is left to start, yours outside it, in
 the Board's order, each saying where it is, such as **New · Sprint 41**, but for those in a later sprint, as one you
-moved to the next, which come last, the nearest sprint's first. It's marked with To start's dashed ring, in its gray,
-and its work item wears **Next** on the Board, on a line of its own above the card's number. Click **Start next ⌄** to
-choose another, or right-click a card in To start and choose **Make Next**: it shows with ✎, first in its lane's To
-start too, until BriefBar quits, waiting while that work item isn't in To start, and **Let BriefBar Choose** gives the
-slot back to the backlog's order. Click the slot for the work item's details, or right-click it for its card's menu; **2
-more ›** shows the next on the Board, with the keyboard on it, its column opened for the moment if it's folded.
+moved to the next, which come last, the nearest sprint's first. In a lane you put in your order, its work comes in your
+order instead, in the places the lane's work holds, so that between lanes, the backlog's order still decides, and a
+later sprint's still comes last. It's marked with To start's dashed ring, in its gray, and its work item wears **Next**
+on the Board, on a line of its own above the card's number. Click **Start next ⌄** to choose another, or right-click a
+card in To start and choose **Make Next**: it shows with ✎ until BriefBar quits, first in its lane's To start too, but
+in a lane you put in your order, where it keeps its place, as Fix next's does in In progress; it waits while that work
+item isn't in To start, and **Let BriefBar Choose** gives the slot back to that order. Click the slot for the work
+item's details, or right-click it for its card's menu; **2 more ›** shows the next on the Board, with the keyboard on
+it, its column opened for the moment if it's folded.
 
 **Move a task to a sprint.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), a task or bug of yours outside the sprint, on My Work with + All My Tasks, moves to your team's current sprint
@@ -1653,13 +1671,15 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   account, by their numbers, with only the commit and the votes that would end them, but for those only sent to you in
   a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at
   most, and the pull request you choose for each of Up Next's slots, for each account, by its number, but one only sent
-  to you in a chat, which stays in memory; the tasks you sent to Copilot, and what Copilot printed at their end; which
-  Copilot sessions you've cleared; the links you added or hid, with Show Links; with Make Changes in Azure DevOps, the
-  tags you added to pull requests, up to 20 for each project, to suggest them; with Pull Request Order, the names you give
-  missions with **Rename…**, up to 200, each forgotten once its mission hasn't shown for 14 days, and the suggested
-  splits you kept together, as digests of what their missions are made of, never a title, up to 200, each forgotten
-  once its mission has had something new in it for three hours or hasn't shown for 14 days; and its settings.
-  Turning a source off deletes what it saved, and the links you added or hid to its things.
+  to you in a chat, which stays in memory; with My Work Page, the order you put your work in there, in each lane's To
+  start and In progress, by reference, never a title, for the 50 lanes you ordered last; the tasks you sent to Copilot,
+  and what Copilot printed at their end; which Copilot sessions you've cleared; the links you added or hid, with Show
+  Links; with Make Changes in Azure DevOps, the tags you added to pull requests, up to 20 for each project, to suggest
+  them; with Pull Request Order, the names you give missions with **Rename…**, up to 200, each forgotten once its
+  mission hasn't shown for 14 days, and the suggested splits you kept together, as digests of what their missions are
+  made of, never a title, up to 200, each forgotten once its mission has had something new in it for three hours or
+  hasn't shown for 14 days; and its settings. Turning a source off deletes what it saved, and the links you added or hid
+  to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests, their comments and their work items with the story each is for,
   pipelines, sprint, a work item's description, comments, its tasks' pull requests and the pull requests linked

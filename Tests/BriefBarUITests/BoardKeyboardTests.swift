@@ -101,6 +101,8 @@ import Testing
     private struct Sprint {
         var work: [SprintWork]
         var stories: [ItemRef]
+        /// The Board is in your order, as My Work's is.
+        var inYourOrder = false
     }
 
     /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it;
@@ -119,7 +121,11 @@ import Testing
             let missions = MissionsBody.missions(order.missions, kinds: kinds)
             let board = order.board(kinds: kinds)
             OrderBoardView(
-                board: sprint.map { board.withWork($0.work, missions: missions, stories: $0.stories) } ?? board, missions: missions,
+                board: sprint.map { sprint in
+                    board.withWork(
+                        sprint.work, missions: missions, stories: sprint.stories, yourOrder: sprint.inYourOrder ? order.laneOrders : nil
+                    )
+                } ?? board, missions: missions,
                 order: order, elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
                 card: { [drawn, late] card in
                     guard card.stage != late.column else { return nil }
@@ -159,6 +165,7 @@ import Testing
                 card: { [drawn] task in
                     let label = task.ref.shortOrderLabel
                     let content = Text(label)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { drawn.frames[task.ref] = $0 }
                         .onAppear { drawn.views[task.ref, default: 0] += 1 }
                         .onDisappear { drawn.views[task.ref, default: 0] -= 1 }
                     return BoardCardContent(view: AnyView(content), menu: AnyView(EmptyView()), label: label)
@@ -366,6 +373,52 @@ import Testing
                 Self.press(.return, in: window)
                 return drawn.shown == 2
             }
+        }
+    }
+
+    /// On My Work, ⌘↑ and ⌘↓ move a card that has the keyboard up or down its column, To start or In progress, in your
+    /// order, which BriefBar keeps: it keeps the keyboard, so that the next key moves it on, and at the top, nothing moves.
+    /// A pull request's card moves within In progress so too, and keeps its stage.
+    @Test func theCommandUpAndDownArrowsPutACardInYourOrderAndItKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        let tasks = [5104, 5105, 5106].map { ItemRef.workItem(organization: "contoso", id: $0) }
+        let started = ItemRef.workItem(organization: "contoso", id: 5103)
+        let sprint = Sprint(
+            work: [SprintWork(ref: started, progress: .inProgress)] + tasks.map { SprintWork(ref: $0, progress: .toDo) },
+            stories: [], inYourOrder: true
+        )
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: sprint) { window, host, drawn in
+            try await until("the work's cards") { drawn.frames[tasks[2]] != nil && drawn.frames[started] != nil }
+            Self.click(at: try #require(drawn.frames[tasks[2]]), in: host)
+            try await until("the click to show its details") { details.shown == tasks[2] }
+            let kept = { order.laneOrders[.notInAMission] ?? [] }
+            try await Self.pressUntil("⌘↑ to move it up") {
+                Self.press(.upArrow, command: true, in: window)
+                return kept().filter(tasks.contains) == [tasks[0], tasks[2], tasks[1]]
+            }
+            try await Self.pressUntil("⌘↑ again, from its new place") {
+                Self.press(.upArrow, command: true, in: window)
+                return kept().filter(tasks.contains) == [tasks[2], tasks[0], tasks[1]]
+            }
+            Self.press(.upArrow, command: true, in: window)
+            #expect(kept().filter(tasks.contains) == [tasks[2], tasks[0], tasks[1]])
+            try await until("the Board to draw it at the top") {
+                (drawn.frames[tasks[2]]?.minY ?? .infinity) < (drawn.frames[tasks[0]]?.minY ?? 0)
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on it, which kept the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == tasks[2]
+            }
+
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click on the draft's card") { details.shown == Self.ref }
+            try await Self.pressUntil("⌘↓ on the draft, below the task started") {
+                Self.press(.downArrow, command: true, in: window)
+                return kept().filter { $0 == Self.ref || $0 == started } == [started, Self.ref]
+            }
+            #expect(order.stage(of: Self.ref)?.stage == .inProgress)
         }
     }
 
@@ -1530,11 +1583,13 @@ import Testing
         let (code, character): (UInt16, Character) = switch key {
         case .rightArrow: (124, Character(UnicodeScalar(UInt32(NSRightArrowFunctionKey))!))
         case .leftArrow: (123, Character(UnicodeScalar(UInt32(NSLeftArrowFunctionKey))!))
+        case .upArrow: (126, Character(UnicodeScalar(UInt32(NSUpArrowFunctionKey))!))
+        case .downArrow: (125, Character(UnicodeScalar(UInt32(NSDownArrowFunctionKey))!))
         default: (36, "\r")
         }
         var flags: NSEvent.ModifierFlags = command ? [.command] : []
         flags.formUnion(others)
-        if key == .rightArrow || key == .leftArrow { flags.formUnion([.numericPad, .function]) }
+        if [.rightArrow, .leftArrow, .upArrow, .downArrow].contains(key) { flags.formUnion([.numericPad, .function]) }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
