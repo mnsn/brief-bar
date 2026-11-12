@@ -3196,8 +3196,9 @@ the Copilot App** and **Run with the CLI** choose for each (`AppSettings.copilot
 `CopilotTasksStore.startsInApp`). It can start there only while **Send Prompts to Copilot Sessions** is on
 and the app is on this Mac, since BriefBar's extension in another of the app's sessions starts it with the
 app's own `create_session` ([below](#its-extension-for-the-apps-sessions)); when it can't, the composer says
-why under its choices, and runs it with the CLI. A pull request's new session still starts with the CLI, in a
-worktree of BriefBar's at its latest commit.
+why under its choices, or, without the app, where they'd be, while **New Sessions** says the app
+(`CopilotComposerView.newSessionNotes`), and runs it with the CLI. A pull request's new session still
+starts with the CLI, in a worktree of BriefBar's at its latest commit.
 
 - **Its project.** It works in the app's project for the repository you chose, read-only from the app's
   database (`projects`: its ID, name, folder, and whether it's a repository), by the repository's own
@@ -5015,7 +5016,7 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
   and says which session started, from what the tool answers: its `ghapp://sessions/<id>` link, the last one,
   else its `(id: <id>)`. The runtime records the call, with its arguments, the prompt among them, in its own
   session's history, as it does each tool call, which an extension can't keep it from; the extension itself
-  never logs or answers with the prompt, and leaves out what Copilot says went wrong when that quotes it.
+  never logs or answers with the prompt, nor with what Copilot says went wrong, which can quote it.
 - Last, it writes the result, never with the prompt: done, with the message's ID, and `reports` once it
   reports its turn, or the fork's session's, or the new session's,
   or why not: `invalid`, `expired`, `send_failed`, `fork_unavailable` where the session doesn't offer the

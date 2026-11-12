@@ -365,13 +365,13 @@ export function listen(session, options = {}) {
                 },
             });
         } catch (error) {
-            // As for a fork: only a runtime without the method surely made nothing.
-            const said = unlike(error?.message, request.prompt);
+            // As for a fork: only a runtime without the method surely made nothing. Never with what Copilot said went
+            // wrong, which can quote the prompt.
             return error?.code === METHOD_NOT_FOUND
-                ? failed("create_unavailable", because("Copilot didn't let this session start one", said), "create")
-                : failed("create_failed", because("Copilot didn't say how starting the session went", said), "create");
+                ? failed("create_unavailable", "Copilot didn't let this session start one.", "create")
+                : failed("create_failed", "Copilot didn't say how starting the session went.", "create");
         }
-        return created(answer, sessionId, request.prompt);
+        return created(answer, sessionId);
     }
 
     function result(outcome, requestId) {
@@ -870,13 +870,12 @@ function failed(code, message, kind) {
     return { ok: false, ...(kind ? { kind } : {}), error: { code, message: short(message) } };
 }
 
-/** What the app's create_session answered: the new session's ID, or why there's none. What it says went wrong is left out
- * when it holds the prompt, as an answer that quotes what it was given could. */
-export function created(answer, sessionId, prompt) {
+/** What the app's create_session answered: the new session's ID, or why there's none, never with what it says went wrong,
+ * which can quote the prompt it was given. */
+export function created(answer, sessionId) {
     const result = typeof answer === "string" ? { resultType: "success", textResultForLlm: answer } : answer;
     if (result === null || typeof result !== "object") return failed("create_failed", "Starting the session gave no answer.", "create");
     const texts = [result.textResultForLlm, result.sessionLog].filter((text) => typeof text === "string");
-    const error = unlike(typeof result.error === "string" ? result.error : undefined, prompt);
     switch (result.resultType) {
         case "success": {
             const last = (pattern) => texts.map((text) => [...text.matchAll(pattern)].at(-1)?.[1]).find(Boolean)?.toLowerCase();
@@ -886,25 +885,17 @@ export function created(answer, sessionId, prompt) {
         }
         case "rejected":
         case "denied":
-            return failed("create_unavailable", because("Copilot refused to start the session", error), "create");
+            return failed("create_unavailable", "Copilot refused to start the session.", "create");
         default:
             if ([result.error, ...texts].some((text) => typeof text === "string" && MISSING_CREATE.test(text))) {
                 return failed("create_unavailable", "This session doesn't offer create_session.", "create");
             }
-            return failed("create_failed", because("Starting the session failed", error), "create");
+            return failed("create_failed", "Starting the session failed.", "create");
     }
 }
 
-/** What the runtime said, unless it holds a line of the prompt: a create's prompt goes to the app, never back to BriefBar. */
-function unlike(text, prompt) {
-    if (typeof text !== "string" || typeof prompt !== "string") return text;
-    const said = text.replace(/\s+/g, " ");
-    const lines = prompt.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length >= 8);
-    return lines.some((line) => said.includes(line.slice(0, 40))) ? undefined : text;
-}
-
-/** A sentence, with what went wrong after it when there's something to say. Never a prompt: only a fork's errors,
- * which hold none, the runtime's own, and a create's without its prompt (`unlike`), come here. */
+/** A sentence, with what went wrong after it when there's something to say. Only a fork's: what Copilot says went wrong
+ * with a fork holds no prompt, but with a create it can quote the prompt, which never goes back to BriefBar. */
 function because(lead, detail) {
     const said = typeof detail === "string" ? short(detail) : "";
     return said ? `${lead}: ${said}` : `${lead}.`;

@@ -984,19 +984,19 @@ describe("starting a session", () => {
         const sessionId = randomUUID();
         const id = "B2D2E3F4-1A2B-4C3D-8E9F-0A1B2C3D4E5F";
         const answer = createdAnswer(id);
-        assert.deepEqual(created(answer, sessionId, PROMPT), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
-        assert.deepEqual(created(answer.textResultForLlm, sessionId, PROMPT), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
+        assert.deepEqual(created(answer, sessionId), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
+        assert.deepEqual(created(answer.textResultForLlm, sessionId), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
         // The name and the project's come before the session's link, so one that holds another's is never taken for it.
         for (const named of [randomUUID(), sessionId]) {
             const text = createdAnswer(id, `See ghapp://sessions/${named} (id: ${named})`).textResultForLlm;
-            assert.deepEqual(created({ ...answer, textResultForLlm: text }, sessionId, PROMPT), {
+            assert.deepEqual(created({ ...answer, textResultForLlm: text }, sessionId), {
                 ok: true, kind: "create", createdSessionId: id.toLowerCase(),
             });
         }
         // Without the link, as an app might answer one day: its ID.
-        assert.equal(created(`Created session 'Cart' (id: ${id}) in project 'Spectre'.`, sessionId, PROMPT).createdSessionId, id.toLowerCase());
+        assert.equal(created(`Created session 'Cart' (id: ${id}) in project 'Spectre'.`, sessionId).createdSessionId, id.toLowerCase());
 
-        const code = (value) => created(value, sessionId, PROMPT).error?.code;
+        const code = (value) => created(value, sessionId).error?.code;
         assert.equal(code({ resultType: "success", textResultForLlm: "Created a session." }), "create_failed");
         assert.equal(code({ resultType: "success", textResultForLlm: `Link to it with ghapp://sessions/${sessionId}.` }), "create_failed");
         assert.equal(code({ resultType: "failure", error: "Project not found." }), "create_failed");
@@ -1010,10 +1010,16 @@ describe("starting a session", () => {
         }), "create_unavailable");
         assert.equal(code({ resultType: "rejected", textResultForLlm: "Rejected." }), "create_unavailable");
         assert.equal(code({ resultType: "denied", textResultForLlm: "Denied." }), "create_unavailable");
-        // What it says went wrong, unless it quotes the prompt, which never goes back to BriefBar.
-        assert.equal(created({ resultType: "failure", error: "Project not found." }, sessionId, PROMPT).error.message, "Starting the session failed: Project not found.");
-        const quoting = created({ resultType: "failure", error: `Invalid kickoff: ${PROMPT}` }, sessionId, PROMPT);
-        assert.deepEqual(quoting.error, { code: "create_failed", message: "Starting the session failed." });
+        // Never with what it says went wrong, which can quote the prompt, however short, from anywhere in it: the prompt never
+        // goes back to BriefBar.
+        for (const said of ["Project not found.", "Invalid kickoff: Fix it", `Invalid kickoff: …${PROMPT.slice(-20)}`]) {
+            assert.deepEqual(created({ resultType: "failure", error: said }, sessionId).error, {
+                code: "create_failed", message: "Starting the session failed.",
+            });
+            assert.deepEqual(created({ resultType: "denied", error: said, textResultForLlm: said }, sessionId).error, {
+                code: "create_unavailable", message: "Copilot refused to start the session.",
+            });
+        }
     });
 
     test("says when the session can't run create_session", async () => {
@@ -1028,15 +1034,19 @@ describe("starting a session", () => {
         await outbox.scan();
         const result = readResult(value.requestId);
         assert.equal(result.kind, "create");
-        assert.equal(result.error.code, "create_unavailable");
+        assert.deepEqual(result.error, { code: "create_unavailable", message: "Copilot didn't let this session start one." });
         assert.equal(result.createdSessionId, undefined);
     });
 
     test("says a session may have been started when the call fails any other way, without the prompt", async () => {
-        for (const error of [
-            Object.assign(new Error("Pending response rejected since connection got disposed"), { code: -32097 }),
-            new Error(`Couldn't start '${PROMPT}'`),
-            "Thrown as text.",
+        const long = "Fix the comments on !4102 in the cart, then push the branch and reply on each thread. PROMPT-MARKER-0b9c";
+        for (const [prompt, error] of [
+            [PROMPT, Object.assign(new Error("Pending response rejected since connection got disposed"), { code: -32097 })],
+            [PROMPT, new Error(`Couldn't start '${PROMPT}'`)],
+            [PROMPT, "Thrown as text."],
+            // However short the prompt, and from wherever in it.
+            ["Fix it", new Error("Couldn't start 'Fix it'")],
+            [long, new Error(`Couldn't start '…${long.slice(50)}'`)],
         ]) {
             const { session } = fakeSession(undefined, {
                 execute() {
@@ -1044,12 +1054,14 @@ describe("starting a session", () => {
                 },
             });
             const outbox = listenTo(session);
-            const value = request(session.sessionId, { kind: "create" });
+            const value = request(session.sessionId, { kind: "create", prompt });
             writeRequest(value);
             await outbox.scan();
             const result = readResult(value.requestId);
             assert.equal(result.ok, false);
-            assert.equal(result.error.code, "create_failed", String(error?.message ?? error));
+            assert.deepEqual(result.error, {
+                code: "create_failed", message: "Copilot didn't say how starting the session went.",
+            }, String(error?.message ?? error));
             assert.ok(!JSON.stringify(result).includes("PROMPT-MARKER"));
             outbox.stop();
         }

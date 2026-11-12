@@ -914,6 +914,26 @@ private struct DatabaseError: Error {
         #expect(CopilotComposerView.newSession(subject, startsInApp: true) == .cli)
     }
 
+    /// Without the Copilot app, a work item's new session has no choice of where it starts, but the window still says why it
+    /// runs with the CLI while Settings say new sessions start in the app, and why nothing started as Send with … sent it.
+    /// With the app, it says why it can't start there, as BriefBar found it.
+    @Test func saysWhyAWorkItemsNewSessionRunsWithTheCLIWithoutTheApp() {
+        let failed = "The Copilot app didn't start the session."
+        func notes(hasApp: Bool, inAppByDefault: Bool = true, failed: String?) -> [String] {
+            CopilotComposerView.newSessionNotes(
+                hasApp: hasApp, appStartProblem: hasApp ? .noHost : nil, appProblem: hasApp ? nil : CopilotTasksStore.cantOpenInApp,
+                inAppByDefault: inAppByDefault, startingAlready: false, deliveryProblem: failed
+            )
+        }
+        #expect(notes(hasApp: false, failed: failed) == [CopilotTasksStore.cantOpenInApp, failed])
+        #expect(notes(hasApp: false, failed: nil) == [CopilotTasksStore.cantOpenInApp])
+        // Chosen in Settings, the CLI needs no reason.
+        #expect(notes(hasApp: false, inAppByDefault: false, failed: failed) == [failed])
+        #expect(notes(hasApp: false, inAppByDefault: false, failed: nil).isEmpty)
+        #expect(notes(hasApp: true, failed: failed) == [AppStartProblem.noHost.description, failed])
+        #expect(notes(hasApp: true, inAppByDefault: false, failed: failed) == [AppStartProblem.noHost.description, failed])
+    }
+
     /// While Pull Request Order is on, the prompt BriefBar writes ends asking the session to tell BriefBar the pull
     /// request's stage once it pushed, wherever Copilot works: a work item's, from Settings or BriefBar's own, and a pull
     /// request's, but a review's. While it's off, none does.

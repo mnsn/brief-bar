@@ -507,6 +507,16 @@ struct CopilotComposerView: View {
                         Divider()
                             .padding(.leading, 50)
                             .padding(.trailing, 10)
+                    } else if workItem != nil, !newSessionNotes.isEmpty {
+                        // Without the Copilot app there's nothing to choose, but the window still says why.
+                        VStack(alignment: .leading, spacing: 8) {
+                            noteList(newSessionNotes)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        Divider()
+                            .padding(.leading, 50)
+                            .padding(.trailing, 10)
                     }
                     repositoryRow
                 }
@@ -693,11 +703,25 @@ struct CopilotComposerView: View {
         .help("In the Copilot App starts a new session in the Copilot app, where you can follow and steer it. Run with the CLI starts one with the Copilot CLI, which works on its own.")
     }
 
-    /// Why a work item's new session can't start in the Copilot app, that one starts there for it already, and why nothing
-    /// started the last time you sent it.
+    /// What the window says of a work item's new session (`newSessionNotes(hasApp:…)`).
     private var newSessionNotes: [String] {
-        var notes = [appStartProblem?.description].compactMap { $0 }
-        if !isDelivering, store.isStartingInApp(subject) { notes.append(CopilotTasksStore.startingAlready) }
+        Self.newSessionNotes(
+            hasApp: hasApp, appStartProblem: appStartProblem, appProblem: appProblem, inAppByDefault: settings.copilotNewSessionsInApp,
+            startingAlready: !isDelivering && store.isStartingInApp(subject), deliveryProblem: deliveryProblem
+        )
+    }
+
+    /// What the window says of a work item's new session, under where it starts, or where that would be without the Copilot
+    /// app, whose choices aren't there then: why it can't start in the app, as BriefBar found it, or, without the app, that
+    /// the app isn't there while Settings say new sessions start in it, since it runs with the CLI instead; that one starts
+    /// there for it already; and why nothing started the last time you sent it, here or with Send with ….
+    static func newSessionNotes(
+        hasApp: Bool, appStartProblem: AppStartProblem?, appProblem: String?, inAppByDefault: Bool, startingAlready: Bool,
+        deliveryProblem: String?
+    ) -> [String] {
+        let whyNotInApp = hasApp ? appStartProblem?.description : inAppByDefault ? appProblem : nil
+        var notes = [whyNotInApp].compactMap { $0 }
+        if startingAlready { notes.append(CopilotTasksStore.startingAlready) }
         if let deliveryProblem, !notes.contains(deliveryProblem) { notes.append(deliveryProblem) }
         return notes
     }
