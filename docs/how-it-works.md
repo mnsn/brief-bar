@@ -1738,8 +1738,8 @@ actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next
 needs you, for Fix next, Your review (`UpNextSlot.of`), and, on My Work, To start, for Start next (below); in the
 others, BriefBar's order alone decides which comes first. Only one the slot has now can be chosen (`UpNextSlot.has`).
 The one you chose (`UpNextPicks`) comes first in its slot's column, Fix next's in In progress and Your next review's in
-Your review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), but a lane of My Work
-in your order, where it keeps its place (`BoardLane.items(in:)`), and first of its kind
+Your review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), but on My Work where
+your order has it, where it keeps its place (`BoardLane.items(in:)`), and first of its kind
 in its mission's next steps, but in In progress only while it needs you, so that what needs you still comes first. Fix
 next's comes first of what asks you or what to fix in its mission's next steps too, wherever it is; elsewhere it keeps
 its place: in another column, as Teammate's review for one that needs a reviewer, and among its mission's reviews or
@@ -1996,23 +1996,30 @@ BriefBar finds no team for you to read them in.
 
 **Your order** (`LaneOrders`), on My Work only, puts the cards in each lane's To start and In progress, the work you do
 yourself, in the order you put them in (`BoardColumn.takesYourOrder`): a drag within the column, with a line where it
-would go (`Dropping.reorder`), ⌘↑ and ⌘↓ on a card that has the keyboard's focus, which beep at either end, and Move Up,
-Move Down, Move to Top and Reset Order in its menu and VoiceOver's actions, which then say where it is, "2 of 5 in To
-start" (`BoardText.place`). A pull request's card there moves too, its stage staying. Each lane's order has a key
-(`LaneOrderKey`): a story's, for the story's own lane and the lane of a mission for that story, so that its work keeps
-your order once its first pull request makes it a mission; a mission's; that of the lane of what's in no mission; and
-Lanes: None's. `PullRequestBoard.inYourOrder` gives each lane its key and order, and `BoardLane.items(in:)` puts a
-column's cards in it, those it doesn't have after them, in the Board's order. A lane has no order until you move a card
-there: that move puts all its cards in To start and In progress in your order as they show, In progress's first, and
-work that comes later goes to the bottom of its column. A move only swaps places among its column's cards in the lane's
-list (`LaneOrders.moving`), so that the other column's cards, and those Show doesn't show now, keep theirs, and a task
-keeps its place as it starts; cards that merged or completed leave it. In a lane in your order, the pull request you
-chose for Fix next, and Start next's work item, keep their places rather than coming first. The order is kept in the
-preferences (`order.laneOrders`), by reference, never a title, for the 50 lanes you changed last
-(`LaneOrders.mostLanes`), with 200 cards each at most (`mostCards`): not for each account, as a reference names its
-organization. Reset Order takes a lane's away, at once, and turning Azure DevOps off forgets them
-(`PullRequestOrder.forget`). Nothing goes to Azure DevOps, whose backlog keeps its order, and no stage, slot, count or
-agent's answer changes; only Start next follows it (below). The Pull Requests page's Board keeps the Board's order.
+would go (`Dropping.reorder`), in an open column with another card in it, as a strip shows no cards to go between; ⌘↑
+and ⌘↓ on a card that has the keyboard's focus, which beep at either end, and after which the page scrolls only as far
+as it takes to show the card where it moved out of sight, just under the column titles (`FollowAnchor`); and Move Up,
+Move Down, Move to Top and Reset Order, under a Your Order header in its menu, Reset Order apart, and in VoiceOver's
+actions, which then say where it is, "2 of 5 in To start" (`BoardText.place`). A menu doesn't scroll the page, which
+stays where you are as you move one card after another to the top. A pull request's card there moves too, its stage
+staying. Each lane's order has a key (`LaneOrderKey`): a story's, for the story's own lane and the lane of a mission for
+that story, so that its work keeps your order once its first pull request makes it a mission; a mission's; that of the
+lane of what's in no mission; and Lanes: None's. `PullRequestBoard.inYourOrder` gives each lane its key and order, and
+`BoardLane.items(in:)` puts a column's cards in it, those it doesn't have after them, in the Board's order; the Board
+works out each card's place from that once a column. A lane has no order until you move a card there: that move puts all
+its cards in To start and In progress in your order as they show, In progress's first, and work that comes later goes to
+the bottom of its column. A move only swaps places among its column's cards in the lane's list (`LaneOrders.moving`), so
+that the other column's cards, and those Show doesn't show now, keep theirs, and a task keeps its place as it starts;
+cards that merged or completed leave it. The pull request you chose for Fix next, and Start next's work item, keep their
+places where your order has them, rather than coming first; where it doesn't, they come first of the rest. The order is
+kept in the preferences (`order.laneOrders`), by reference, never a title, for the 50 lanes you changed last
+(`LaneOrders.mostLanes`), each with the cards it shows, however many, and as many of the rest as fit in 200
+(`mostCards`), those you'd do last going first: not for each account, as a reference names its organization. Reset Order
+takes a lane's away, at once, back to the Board's order, the backlog's for work items and BriefBar's for pull requests;
+Forget All Orders… forgets them all (`PullRequestOrder.forgetAll`), which it counts as something it keeps
+(`keepsAnything`), and so does turning Azure DevOps off (`PullRequestOrder.forget`). Nothing goes to Azure DevOps, whose
+backlog keeps its order, and no stage, slot, count or agent's answer changes; only Start next follows it (below). The
+Pull Requests page's Board keeps the Board's order.
 
 **Start next** (`StartNext`), with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, after the pull
 requests' (`UpNextView`'s `startNext`), as starting comes after what needs you to finish: what's in To start, in the
@@ -2027,9 +2034,9 @@ isn't an `UpNextSlot`: `UpNextPicks`, `needs_me` and agents keep to pull request
 in To start's gray, as To start's column title has it; its lines are the work item's type, number and title, its card's
 why, with where it is for one outside the sprint, "New · Sprint 41", and its lane, as My Work words them
 (`StartNextContent`). Its ⌄, or Make Next on a card in To start, in its menu or VoiceOver's actions, chooses another
-(`PullRequestOrder.startPick`), in memory only: it's first in Start next, with ✎, and in its lane's To start, but in a
-lane in your order, while it's in To start, and waits otherwise; Let BriefBar Choose forgets it. The card it shows wears
-Next, ✎ Next where you chose it, on a line of its own above the card's content, as a pull request's two badges are
+(`PullRequestOrder.startPick`), in memory only: it's first in Start next, with ✎, and in its lane's To start, unless
+your order has it there, while it's in To start, and waits otherwise; Let BriefBar Choose forgets it. The card it shows
+wears Next, ✎ Next where you chose it, on a line of its own above the card's content, as a pull request's two badges are
 (`BoardTaskCardView.withNextLine`): in the corner, it would cover a work item's number, which may be eight digits. A
 click shows its details; a right-click, its card's menu; "2 more ›" shows the next one's card
 (`PullRequestOrder.revealedCard`), as Show Them does. Up Next shows on My Work once your pull requests are read, with

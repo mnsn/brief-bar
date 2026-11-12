@@ -162,8 +162,8 @@ public struct BoardTask: Equatable, Sendable, Identifiable {
 /// those in To start. The sprint's come first, in its backlog's order, as the Sprint page has them; then, with + All My Tasks,
 /// once none of the sprint's is left to start, yours outside it, as the Board has them (`OutsideWork.yours`); but where you
 /// put a lane's work in your order (`LaneOrders`), its work comes in that order, in the places it holds in the backlog's. The
-/// one you chose, with its ⌄ or a card's Make Next, comes first while it's there, and first in its lane's To start, unless
-/// that lane is in your order, until BriefBar quits; it waits while it isn't.
+/// one you chose, with its ⌄ or a card's Make Next, comes first while it's there, and first in its lane's To start, but
+/// where your order has it, which keeps its place (`BoardLane.items(in:)`), until BriefBar quits; it waits while it isn't.
 public struct StartNext: Equatable, Sendable {
     /// Its work item: the one you chose, else the first.
     public var task: BoardTask
@@ -311,7 +311,7 @@ extension PullRequestBoard {
     ///   - isOut: whether a merged pull request of yours is out, its pipelines after the merge done, as far as its source
     ///     knows.
     ///   - startPick: the work item you chose for Start next, first in To start while it's there (`StartNext`), and first in
-    ///     its lane's To start, unless that lane is in your order, where it stays where your order puts it.
+    ///     its lane's To start, but where your order has it, which keeps its place there.
     ///   - yourOrder: your order of each lane's To start and In progress, on My Work (`inYourOrder`), which Start next
     ///     follows; nil for the Board's own.
     public func withWork(
@@ -362,7 +362,7 @@ extension PullRequestBoard {
         let toStart = tasks.filter { $0.column == .toStart }
         board.startNext = StartNext(yourOrder == nil ? toStart : board.inLanesOrder(toStart), pick: startPick)
         if let next = board.startNext, next.isPicked {
-            for index in board.lanes.indices where board.lanes[index].yourOrder == nil {
+            for index in board.lanes.indices {
                 guard let at = board.lanes[index].tasks.firstIndex(where: { $0.ref == next.task.ref }) else { continue }
                 let task = board.lanes[index].tasks.remove(at: at)
                 board.lanes[index].tasks.insert(task, at: 0)

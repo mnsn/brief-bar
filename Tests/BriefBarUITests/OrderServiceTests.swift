@@ -358,6 +358,19 @@ private final class Clock {
         #expect(order.keepsAnything)
     }
 
+    /// The order you put your work in on My Work is something it keeps too, on or off: Forget All Orders… forgets it.
+    @Test func forgetAllOrdersForgetsYourOrderOnMyWork() {
+        let defaults = MemoryDefaults()
+        LaneOrders([(.notInAMission, [Self.ref(4101), .workItem(organization: "contoso", id: 5104)])]).save(to: defaults)
+        let order = Self.service(defaults)
+        #expect(order.keepsAnything && order.laneOrders[.notInAMission] != nil)
+
+        order.forgetAll()
+
+        #expect(order.laneOrders.isEmpty && defaults.object(forKey: LaneOrders.defaultsKey) == nil)
+        #expect(!order.keepsAnything)
+    }
+
     @Test func itNamesWhatTheSourcesDescribe() throws {
         let order = Self.service(try Self.defaults(on: true))
         let item = LinkedItem(

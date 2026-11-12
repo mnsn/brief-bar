@@ -372,17 +372,17 @@ you focus on comes first in each. What waits on others has no slot, as a teammat
 another pull request merging: the Board's columns keep it in their order, and completing a pull request is a click in
 Azure DevOps. To choose which one a slot shows, such as a more urgent fix, click its title, **Fix next ⌄**, and pick it
 from its pull requests, each with why it's there: it shows with ✎, as its card does on the Board, where Fix next's comes
-first in In progress, but in a lane you put in your order on My Work, and Your next review's in Your review. BriefBar
-remembers it, for the Azure DevOps account you're signed in with (one sent to you in a chat, in memory only), until that
-pull request moves on to another stage, or, for Fix next, no longer needs you, merges or closes, or leaves your lists,
-as a review once its author completes it, and stays away for half an hour while BriefBar runs with Pull Request Order
-on; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and **Undo**, after
-you move its card, chooses it again, unless you've since chosen another or let BriefBar choose. While it needs nothing
-from you, as while its build runs again, or a session writes it, Fix next shows the next one meanwhile, and yours once
-it needs you again; one of yours that nobody's asked to review still needs you, so it stays. **Let BriefBar Choose**, in
-the same list, gives the slot back to BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the
-rest on the Board, and Fix next's, the next one's column. Click **Up Next** to fold it, and BriefBar remembers. It
-changes no group or count.
+first in In progress, unless it's in your order on My Work, where it keeps its place, and Your next review's in Your
+review. BriefBar remembers it, for the Azure DevOps account you're signed in with (one sent to you in a chat, in memory
+only), until that pull request moves on to another stage, or, for Fix next, no longer needs you, merges or closes, or
+leaves your lists, as a review once its author completes it, and stays away for half an hour while BriefBar runs with
+Pull Request Order on; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours,
+and **Undo**, after you move its card, chooses it again, unless you've since chosen another or let BriefBar choose.
+While it needs nothing from you, as while its build runs again, or a session writes it, Fix next shows the next one
+meanwhile, and yours once it needs you again; one of yours that nobody's asked to review still needs you, so it stays.
+**Let BriefBar Choose**, in the same list, gives the slot back to BriefBar's order, meanwhile too. Click one for its
+details; **2 more ›** shows the rest on the Board, and Fix next's, the next one's column. Click **Up Next** to fold it,
+and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Approved**, marked with a seal, **Can merge**, **Waits** and **Merged**; and a lane
@@ -493,18 +493,20 @@ were. While My Work shows + Sprint Tasks or + All My Tasks, BriefBar reads your 
 and your open tasks and bugs in its team's project, through Azure DevOps' Assigned to me query; with + All My Tasks, also
 the pull requests linked to them.
 
-**Your order.** On My Work, put the work you do yourself in the order you want to do it, in each
-lane: drag a card up or down in **To start** or **In progress**, where a line shows where it goes, or click it, or Tab
-to it, and press **⌘↑** or **⌘↓**, or right-click it and choose **Move Up**, **Move Down** or **Move to Top**, dimmed
-where it's first or last already; VoiceOver offers them as actions, and says where it is then, such as **2 of 5 in To
-start**. A card moves only within its column and lane: dragging it to another column still changes its stage, as ⌘→
-and ⌘← do, and the other columns keep the Board's order. A lane has one order across both columns, so a task keeps its
-place once it starts; a story's lane keeps it once the story's first pull request makes it a mission, and **Lanes:
-None**'s one lane has its own. Until you move a card in a lane, it keeps the Board's order; your first move there puts
-all its cards in your order as they show, work that comes later goes to the bottom of its column, and work that merges
-or completes leaves it. **Reset Order**, in the same menu, puts the lane back in the backlog's order at once. BriefBar
-keeps your order in its preferences, by reference, never a title, for the 50 lanes you ordered last, and forgets it when
-you turn Azure DevOps off: nothing goes to Azure DevOps, whose backlog keeps its order.
+**Your order.** On My Work, put the work you do yourself in the order you want to do it, in each lane: drag a card up or
+down in **To start** or **In progress**, where a line shows where it goes; or click it, or Tab to it, and press **⌘↑**
+or **⌘↓**, the page following it; or right-click it and choose **Move Up**, **Move Down** or **Move to Top**, under
+**Your Order**, dimmed where it's first or last already. VoiceOver offers them as actions, and says where it is then,
+such as **2 of 5 in To start**. A card moves only within its column and lane: dragging a pull request's card to another
+column still changes its stage, as ⌘→ and ⌘← do, and the other columns keep the Board's order. A lane has one order
+across both columns, so a task keeps its place once it starts; a story's lane keeps it once the story's first pull
+request makes it a mission, and **Lanes: None**'s one lane has its own. Until you move a card in a lane, it keeps the
+Board's order; your first move there puts all its cards in your order as they show, work that comes later goes to the
+bottom of its column, and work that merges or completes leaves it. **Reset Order**, in the same menu, puts the lane back
+in the Board's order at once: the backlog's for work items, BriefBar's for pull requests. BriefBar keeps your order in
+its preferences, by reference, never a title, for the 50 lanes you ordered last, and forgets it when you choose **Forget
+All Orders…** in [Settings › Pull Requests](#settings) or turn Azure DevOps off: nothing goes to Azure DevOps, whose
+backlog keeps its order.
 
 **Start next**, with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, since starting comes after
 what needs you to finish: the work item in To start to start next. Your sprint's come first, in its backlog's order, as
@@ -514,8 +516,8 @@ moved to the next, which come last, the nearest sprint's first. In a lane you pu
 order instead, in the places the lane's work holds, so that between lanes, the backlog's order still decides, and a
 later sprint's still comes last. It's marked with To start's dashed ring, in its gray, and its work item wears **Next**
 on the Board, on a line of its own above the card's number. Click **Start next ⌄** to choose another, or right-click a
-card in To start and choose **Make Next**: it shows with ✎ until BriefBar quits, first in its lane's To start too, but
-in a lane you put in your order, where it keeps its place, as Fix next's does in In progress; it waits while that work
+card in To start and choose **Make Next**: it shows with ✎ until BriefBar quits, first in its lane's To start too,
+unless it's in your order there, where it keeps its place, as Fix next's does in In progress; it waits while that work
 item isn't in To start, and **Let BriefBar Choose** gives the slot back to that order. Click the slot for the work
 item's details, or right-click it for its card's menu; **2 more ›** shows the next on the Board, with the keyboard on
 it, its column opened for the moment if it's folded.
@@ -1516,7 +1518,7 @@ DevOps' gear menu has its own too, all but My Work Page, which goes with Pull Re
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, and the suggested splits you kept together; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, the suggested splits you kept together, and the order you put your work in on My Work; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
 | Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, and **+ All My Tasks** your tasks and bugs outside the sprint as well, with Show Links (see [Azure DevOps](#azure-devops)) |
 | | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |

@@ -310,18 +310,20 @@ import Testing
     ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
     ///     app.
     ///   - sprint: your sprint work, on the Board as on My Work; nil for only the pull requests.
+    ///   - page: the Board scrolls down a page this tall, which the window is, as the window's pages do; nil for none.
     private static func showing(
         _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
-        sprint: Sprint? = nil, _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
+        sprint: Sprint? = nil, page: CGFloat? = nil,
+        _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let host = NSHostingView(
-            rootView: Board(order: order, details: details, late: late, drawn: drawn, waits: waits, sprint: sprint)
-        )
+        let board = Board(order: order, details: details, late: late, drawn: drawn, waits: waits, sprint: sprint)
+        // A scroller that shows as the page first scrolls would narrow it: in a window off screen, one does.
+        let host = NSHostingView(rootView: page == nil ? AnyView(board) : AnyView(ScrollView { board }.scrollIndicators(.never)))
         // Wide enough for every column, so that the Board doesn't scroll sideways: its scroller, which shows only while the
         // details don't cover the Board, would change its height as they close.
-        let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: 500), styleMask: .borderless,
+        let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: page ?? 500), styleMask: .borderless,
                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
@@ -419,6 +421,57 @@ import Testing
                 return kept().filter { $0 == Self.ref || $0 == started } == [started, Self.ref]
             }
             #expect(order.stage(of: Self.ref)?.stage == .inProgress)
+        }
+    }
+
+    /// A card ⌘↑ moves above the page's top has the page follow it, just under the column titles, which stay there: it keeps
+    /// the keyboard where you can see it.
+    @Test func aCardTheCommandUpArrowMovesOutOfSightHasThePageFollowIt() async throws {
+        let order = Self.order()
+        let tasks = (5101...5114).map { ItemRef.workItem(organization: "contoso", id: $0) }
+        let sprint = Sprint(work: tasks.map { SprintWork(ref: $0, progress: .toDo) }, stories: [], inYourOrder: true)
+        let details = Details()
+        let page: CGFloat = 300
+        try await Self.showing(order, details: details, sprint: sprint, page: page) { window, host, drawn in
+            let last = try #require(tasks.last)
+            let first = try #require(tasks.first)
+            try await until("the work's cards") { drawn.frames[last] != nil && drawn.frames[first] != nil }
+            // Down the page to the last card, which a click gives the keyboard.
+            let scroller = try #require(Self.first(NSScrollView.self, in: host))
+            let clip = scroller.contentView
+            let height = scroller.documentView?.frame.height ?? 0
+            clip.scroll(to: CGPoint(x: 0, y: scroller.documentView?.isFlipped == false ? 0 : max(0, height - clip.bounds.height)))
+            scroller.reflectScrolledClipView(clip)
+            try await until("the last card in sight") {
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                guard let frame = drawn.frames[last] else { return false }
+                return frame.minY >= 0 && frame.maxY <= page
+            }
+            #expect((drawn.frames[first]?.maxY ?? 0) < 0, "The first card was in sight: the page didn't scroll")
+            Self.click(at: try #require(drawn.frames[last]), in: host)
+            try await until("the click to show its details") { details.shown == last }
+
+            // Up to the top of To start, above the page's top.
+            let kept = { (order.laneOrders[.notInAMission] ?? []).filter(tasks.contains) }
+            for place in stride(from: tasks.count - 2, through: 0, by: -1) {
+                try await Self.pressUntil("⌘↑ to move it up to \(place + 1)") {
+                    Self.press(.upArrow, command: true, in: window)
+                    return kept().firstIndex(of: last) == place
+                }
+            }
+            try await until("the page to follow it") {
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                guard let frame = drawn.frames[last], let next = drawn.frames[first] else { return false }
+                return frame.maxY < next.minY && frame.minY >= 0 && frame.maxY <= page
+            }
+            // Just under the column titles, which stay at the page's top over it, rather than under them.
+            try await until("the page to keep still") {
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                return (drawn.frames[last]?.minY ?? 0) >= 20
+            }
         }
     }
 

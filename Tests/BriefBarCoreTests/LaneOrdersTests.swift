@@ -84,8 +84,8 @@ import Testing
     }
 
     /// Start next follows each lane's order in the places its work holds in the backlog: between lanes, the backlog's order
-    /// still decides. In a lane in your order, the one you chose for it stays where your order puts it, and so does Fix
-    /// next's in In progress; in a lane you haven't ordered, each still comes first, as before.
+    /// still decides. Where your order has it, the one you chose for it stays where your order puts it, and so does Fix
+    /// next's in In progress; where it doesn't, each still comes first of the rest, as before.
     @Test func startNextFollowsEachLanesOrderAndPicksStayInTheirPlaces() throws {
         let work = [
             Steps.work(5104, .toDo, story: 5001), Steps.work(5150, .toDo), Steps.work(5105, .toDo, story: 5001),
@@ -110,6 +110,9 @@ import Testing
         #expect(Self.refs(try #require(picked.lanes.first), .toStart) == ["5108", "5104", "5105"])
         let unordered = Self.board(work, startPick: Steps.task(5105))
         #expect(Self.refs(try #require(unordered.lanes.first), .toStart) == ["5105", "5104", "5108"])
+        // An order that doesn't have the lane's work yet, as one made while To start showed none: there it comes first too.
+        let inProgressOnly = Self.board(work, orders: LaneOrders([(.story(Self.story), [Steps.pr(4101)])]), startPick: Steps.task(5105))
+        #expect(Self.refs(try #require(inProgressOnly.lanes.first), .toStart) == ["5105", "5104", "5108"])
 
         let stages: [Int: StageReading] = [
             4101: Steps.reading(.inProgress, .draft, at: 1), 4102: Steps.reading(.inProgress, .failing("Build failed"), at: 2),
@@ -120,6 +123,25 @@ import Testing
         #expect(fixing.next[.fix] == Steps.pr(4102))
         #expect(Self.refs(try #require(fixing.lanes.first), .stage(.inProgress)) == ["!4101", "!4102"])
         #expect(Self.refs(try #require(Self.board([], picks: fix, stages: stages).lanes.first), .stage(.inProgress)) == ["!4102", "!4101"])
+    }
+
+    /// Past `mostCards`, what a lane doesn't show goes, from the bottom, what you'd do last first; what it shows all stays,
+    /// however many, the card you moved too.
+    @Test func theCapNeverDropsWhatALaneShows() throws {
+        let many = (1...(LaneOrders.mostCards + 30)).map { Steps.task(6000 + $0) }
+        let last = try #require(many.last)
+        let moved = try #require(LaneOrders.moving(last, .toTop, column: many, shown: many, kept: [Steps.task(5901)] + many))
+        #expect(moved.count == many.count && moved.first == last)
+        var orders = LaneOrders()
+        orders.set(moved, for: .all)
+        #expect(orders[.all] == moved)
+
+        let few = Array(many.prefix(LaneOrders.mostCards - 1))
+        let trimmed = try #require(
+            LaneOrders.moving(few[1], .up, column: few, shown: few, kept: [Steps.task(5901)] + few + [Steps.task(5902)])
+        )
+        #expect(trimmed.count == LaneOrders.mostCards)
+        #expect(trimmed.contains(Steps.task(5901)) && !trimmed.contains(Steps.task(5902)))
     }
 
     /// A story's lane and the lane of a mission for that story have one order, so that its work keeps your order as its

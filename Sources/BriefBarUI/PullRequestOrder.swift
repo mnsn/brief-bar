@@ -347,11 +347,12 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, the mission you focus on, a change of yours, a name you gave a mission, or a suggestion you kept together.
+    /// requests, the mission you focus on, a change of yours, a name you gave a mission, a suggestion you kept together, or
+    /// the order you put your work in on My Work.
     package var keepsAnything: Bool {
         let keys = [
             DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
-            KeptTogether.defaultsKey,
+            KeptTogether.defaultsKey, LaneOrders.defaultsKey,
         ]
         return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
@@ -729,7 +730,8 @@ package final class PullRequestOrder: ObservableObject {
         return moved.place
     }
 
-    /// Reset Order: a lane's To start and In progress go back to the Board's own order, the backlog's for your work.
+    /// Reset Order: a lane's To start and In progress go back to the Board's own order: the backlog's for your work, BriefBar's
+    /// for pull requests.
     package func resetOrder(of lane: BoardLane) {
         guard let key = lane.orderKey, laneOrders[key] != nil else { return }
         laneOrders.reset(key)
@@ -822,8 +824,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your changes
-    /// to missions, the names you gave missions and the suggestions you kept together, whether Pull Request Order is on or
-    /// not.
+    /// to missions, the names you gave missions, the suggestions you kept together and the order you put your work in on My
+    /// Work, whether Pull Request Order is on or not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
@@ -838,6 +840,8 @@ package final class PullRequestOrder: ObservableObject {
         yourNames = MissionNames()
         keptTogether = KeptTogether()
         splitsShownAgain = []
+        laneOrders = LaneOrders()
+        laneOrders.save(to: defaults)
         rebuild()
     }
 

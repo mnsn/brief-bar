@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
 /// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
-/// pull requests, the mission you focus on, your changes to missions, the names you gave missions and the suggested splits
-/// you kept together; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
+/// pull requests, the mission you focus on, your changes to missions, the names you gave missions, the suggested splits
+/// you kept together and the order you put your work in on My Work; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
 /// got, and the pull requests you chose in Up Next.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
@@ -68,8 +68,8 @@ package struct PullRequestOrderSettingView: View {
             } message: {
                 Text("""
                     BriefBar forgets every order sessions told it, what it saw become of their pull requests, the mission you \
-                    focus on, your changes to missions, the names you gave missions, and the suggested splits you kept \
-                    together. Sessions that name an order are told it's forgotten.
+                    focus on, your changes to missions, the names you gave missions, the suggested splits you kept together, \
+                    and the order you put your work in on My Work. Sessions that name an order are told it's forgotten.
                     """)
             }
         Button("Forget Stages…") { confirmsForgetStages = true }
@@ -103,7 +103,9 @@ package struct MyWorkPageSettingView: View {
         Board shows your sprint work too: what hasn't started in To start, a column before In progress, and what has, \
         without a pull request, in In progress. Work items and their pull requests go together only through Show Links' \
         links, which it needs. While My Work shows your sprint tasks, BriefBar reads your team's current sprint, as while \
-        its Sprint page is on screen, and the pull requests linked to its work items. A preview: it may still change.
+        its Sprint page is on screen, and the pull requests linked to its work items. BriefBar keeps the order you put your \
+        work in on My Work, in To start and In progress, by reference, and none of it goes to Azure DevOps. A preview: it \
+        may still change.
         """
     package static let needsOrder = "It needs Pull Request Order, above: turn that on first."
 

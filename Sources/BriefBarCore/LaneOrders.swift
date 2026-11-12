@@ -83,15 +83,15 @@ public enum LaneMove: Equatable, Sendable {
 
 /// Your order of the work in the Board's lanes, on My Work: for each lane you put in your order, its cards in To start and
 /// In progress, by reference, as you put them, and those it showed that you didn't move, around them. Kept in the
-/// preferences (`order.laneOrders`), never a title: the lanes you changed last, `mostLanes` of them, each with `mostCards`
-/// cards at most.
+/// preferences (`order.laneOrders`), never a title: the lanes you changed last, `mostLanes` of them, each with the cards it
+/// showed and as many of the rest as fit in `mostCards`.
 public struct LaneOrders: Equatable, Sendable {
     /// Where it's kept: a list of lanes, the one you changed last first, each a dictionary of its key ("lane") and its cards'
     /// references ("refs").
     public static let defaultsKey = "order.laneOrders"
     /// How many lanes it keeps, those you changed last.
     public static let mostLanes = 50
-    /// How many cards it keeps of a lane: those it shows, then as many of the rest as fit.
+    /// How many cards it keeps of a lane: those it shows, however many, then as many of the rest as fit.
     public static let mostCards = 200
 
     private struct Lane: Equatable, Sendable {
@@ -129,13 +129,14 @@ public struct LaneOrders: Equatable, Sendable {
     }
 
     /// A lane's order, as you changed it last: each card once, and the lanes you changed least lately go past
-    /// `mostLanes`. None for a lane takes its order away.
+    /// `mostLanes`. None for a lane takes its order away. It keeps every card it's given, which `moving` keeps to
+    /// `mostCards`, but for those the lane shows.
     public mutating func set(_ refs: [ItemRef], for key: LaneOrderKey) {
         lanes.removeAll { $0.key == key }
         var seen: Set<ItemRef> = []
         let refs = refs.filter { seen.insert($0).inserted }
         guard !refs.isEmpty else { return }
-        lanes.insert(Lane(key: key, refs: Array(refs.prefix(Self.mostCards))), at: 0)
+        lanes.insert(Lane(key: key, refs: refs), at: 0)
         if lanes.count > Self.mostLanes { lanes.removeLast(lanes.count - Self.mostLanes) }
     }
 
@@ -185,8 +186,8 @@ public struct LaneOrders: Equatable, Sendable {
     /// A lane's order once you move a card within its column: what it kept, but for cards that merged or completed, then
     /// those it shows that it didn't have, as they show, which places them all; then the column's cards take its places
     /// among them in their new order, so that no other card moves: the other column's, nor those Show doesn't show now.
-    /// Past `mostCards`, those it doesn't show go. Nil where the card doesn't move, as at the top for Move Up, or isn't in
-    /// the column.
+    /// Past `mostCards`, those it doesn't show go, from the bottom, what you'd do last first; those it shows all stay. Nil
+    /// where the card doesn't move, as at the top for Move Up, or isn't in the column.
     /// - Parameters:
     ///   - column: the cards of its column in that lane, as they show.
     ///   - shown: the lane's cards in To start and In progress, as they show: In progress's, then To start's.
@@ -218,10 +219,9 @@ public struct LaneOrders: Equatable, Sendable {
         if order.count > mostCards {
             let showing = Set(shown)
             var over = order.count - mostCards
-            order.removeAll { ref in
-                guard over > 0, !showing.contains(ref) else { return false }
+            for index in order.indices.reversed() where over > 0 && !showing.contains(order[index]) {
+                order.remove(at: index)
                 over -= 1
-                return true
             }
         }
         return order
@@ -292,13 +292,6 @@ extension BoardLane {
         return [BoardColumn.stage(.inProgress), .toStart].first { column in items(in: column).contains { $0.ref == ref } }
     }
 
-    /// Where a card is in its column, To start or In progress, for its moves: nil for one in neither.
-    public func place(of ref: ItemRef) -> LanePlace? {
-        guard let column = orderColumn(of: ref) else { return nil }
-        let refs = items(in: column).map(\.ref)
-        return refs.firstIndex(of: ref).map { LanePlace(position: $0 + 1, count: refs.count) }
-    }
-
     /// Its order once you move one of its cards within its column, To start or In progress, with where it is then: nil
     /// where it doesn't move, as at the top for Move Up, or for a card in no such column.
     public func moving(_ ref: ItemRef, _ move: LaneMove) -> (order: [ItemRef], place: LanePlace)? {
@@ -365,15 +358,18 @@ extension BoardText {
     public static let moveToTop = "Move to Top"
     /// Takes a lane's order away, back to the Board's own.
     public static let resetOrder = "Reset Order"
+    /// The header of those in a card's menu.
+    public static let yourOrder = "Your Order"
 
     /// Where a card is in its column once you moved it, as VoiceOver says it: "2 of 5 in To start".
     public static func place(_ place: LanePlace, in column: BoardColumn) -> String {
         "\(place.position) of \(place.count) in \(column.spokenTitle)"
     }
 
-    /// What VoiceOver says once a lane's order is reset.
-    public static let orderReset = "Back in the backlog's order"
+    /// What VoiceOver says once a lane's order is reset: the whole lane's, In progress's too, whose pull requests go back to
+    /// BriefBar's order rather than the backlog's.
+    public static let orderReset = "The lane is back in the Board's order"
 
     /// How to move a card within its column, for its tooltip on My Work's To start and In progress.
-    public static let reorderHelp = "Drag it up or down in its column, or press ⌘↑ or ⌘↓, to put your work in your order"
+    public static let reorderHelp = "Drag it up or down in its column, or click it and press ⌘↑ or ⌘↓, to put your work in your order"
 }
