@@ -2131,6 +2131,190 @@ private final class TakenAt: Sendable {
         #expect(await store.stopTurn(in: session) == CopilotTasksStore.cantSendNow)
     }
 
+    // MARK: Starting a session
+
+    /// One of the app's projects, by its ID, and the session BriefBar has it start.
+    private let project = "c6666666-6666-4666-8666-66666666666d"
+    private let started = "d7777777-7777-4777-8777-77777777777c"
+
+    private var workItem: TaskWorkItem {
+        TaskWorkItem(
+            organization: "Contoso", project: "Storefront", id: 4217, type: "Task", title: "Show the total",
+            url: URL(string: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217")!
+        )
+    }
+
+    /// The app's database for a new session in `repository`: its project there, as a repository, with a folder's for the
+    /// same checkout, which no session starts in, and another; and the sessions, each in its project, with its name and
+    /// when it started.
+    private func appDatabase(at home: URL, repository: URL, sessions: [(id: String, project: String, name: String, created: String)]) throws {
+        let statements = """
+            CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, main_repo_path TEXT, container_kind TEXT);
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
+                is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0, interruption_reason TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+            CREATE TABLE workspaces (id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
+                name TEXT NOT NULL, creator_session_id TEXT, archived_at TEXT, updated_at TEXT NOT NULL);
+            INSERT INTO projects (id, name, main_repo_path, container_kind) VALUES
+                ('\(project)', 'shop-web', '\(repository.path)', 'repository'),
+                ('folder', 'shop-web', '\(repository.path)', 'folder'),
+                ('elsewhere', 'docs', '/Users/robin/dev/docs', 'repository');
+            """ + sessions.enumerated().map { index, session in """
+                INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                    VALUES ('\(session.id)', '\(session.name)', 'project', '\(session.created)', '\(session.created)');
+                INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+                    VALUES ('w\(index)', '\(session.project)', '\(session.id)', 'branch-\(index)', '\(session.name)', '\(session.created)');
+                """ }.joined()
+        try write(statements, home: home)
+    }
+
+    /// A work item's new session starts in the Copilot app, in its repository's project there, through BriefBar's
+    /// extension in another of the app's sessions, which gets no message: then it shows in the app. Nothing runs with the
+    /// CLI, and the work item's project goes in that repository from now on, as with a task.
+    @Test func startsAWorkItemsNewSessionInTheCopilotApp() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var shown: [String] = []
+        store.showForTests = { shown.append($0); return true }
+        let repository = home.appendingPathComponent("shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        try appDatabase(at: home, repository: repository, sessions: [
+            (session, project, "Fix the totals", "2026-10-01T09:00:00.000Z"),
+            (started, project, NewSession.name(CopilotCommand.sessionName(for: workItem)), afterTheRequest()),
+        ])
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen(kinds: ["send", "fork", "create"])
+        ext.start { [started] kind in kind == "create" ? ["ok": true, "createdSessionId": started] : nil }
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        #expect(store.startsInApp)
+        #expect(await store.appStart(in: repository) == .success(AppStartPlan(project: .init(id: project, name: "shop-web"), host: session, hostListens: true)))
+        let outcome = await store.startInApp(
+            .workItem(workItem), prompt: "Fix work item 4217", options: CopilotRunOptions(model: "claude-opus-5.5", effort: "max"),
+            repository: repository
+        )
+        #expect(outcome == .started(started))
+        #expect(ext.received == ["create"])
+        #expect(shown == [started])
+        #expect(store.pending.isEmpty)
+        #expect(store.startingInApp.isEmpty)
+        #expect(store.repository(for: workItem)?.path == repository.path)
+    }
+
+    /// A new session starts from one of the app's own sessions, never a CLI's, which has no `create_session`: one the app
+    /// has open whose extension can start it, in the same project first; else one that nothing has open, which loads with
+    /// the extension as it is now as BriefBar opens it; else none.
+    @Test func choosesTheSessionANewSessionStartsFrom() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let repository = home.appendingPathComponent("shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        let idle = "e8888888-8888-4888-8888-88888888888b"
+        try appDatabase(at: home, repository: repository, sessions: [
+            (session, project, "Fix the totals", "2026-10-01T09:00:00.000Z"),
+            (fork, "elsewhere", "Write the docs", "2026-10-02T09:00:00.000Z"),
+            (idle, "elsewhere", "Old work", "2026-09-01T09:00:00.000Z"),
+        ])
+        let outbox = home.appendingPathComponent("Outbox")
+        let inProject = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let elsewhere = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        try inProject.listen(kinds: ["send", "fork", "create"])
+        try elsewhere.listen(kinds: ["send", "fork", "create"])
+        try hold(session, home: home)
+        try hold(fork, home: home)
+        func plan(_ host: String, listens: Bool = true) -> Result<AppStartPlan, AppStartProblem> {
+            .success(AppStartPlan(project: .init(id: project, name: "shop-web"), host: host, hostListens: listens))
+        }
+
+        // The one in the same project, though the other is newer.
+        #expect(await store.appStart(in: repository) == plan(session))
+        // Its extension is from before BriefBar started sessions.
+        try inProject.listen(kinds: ["send", "fork"])
+        #expect(await store.appStart(in: repository) == plan(fork))
+        // A CLI has them open.
+        store.appHoldsForTests = { _ in false }
+        #expect(await store.appStart(in: repository) == plan(idle, listens: false))
+        try hold(idle, home: home)
+        #expect(await store.appStart(in: repository) == .failure(.noHost))
+    }
+
+    /// Nothing starts in the app without its database, a project there that's the repository's own, as a repository, the
+    /// app itself, or Send Prompts to Copilot Sessions: each says why. Nor does a new session start there by default, then,
+    /// or once you chose the CLI for new sessions in Settings.
+    @Test func saysWhyANewSessionCantStartInTheApp() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let repository = home.appendingPathComponent("shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        #expect(await store.appStart(in: repository) == .failure(.unreadable))
+        try appDatabase(at: home, repository: home.appendingPathComponent("docs"), sessions: [(session, project, "Fix the totals", "2026-10-01T09:00:00.000Z")])
+        try hold(session, home: home)
+        #expect(await store.appStart(in: repository) == .failure(.noProject("shop-web")))
+        #expect(AppStartProblem.noProject("shop-web").description.hasPrefix("The Copilot app doesn't have shop-web as a repository."))
+        // Only as a folder, whose sessions would work in the checkout itself.
+        try write("UPDATE projects SET main_repo_path = '\(repository.path)', container_kind = 'folder';", home: home)
+        #expect(await store.appStart(in: repository) == .failure(.noProject("shop-web")))
+
+        #expect(store.startsInApp)
+        store.opensLinksForTests = false
+        #expect(await store.appStart(in: repository) == .failure(.noApp))
+        #expect(!store.startsInApp)
+        store.opensLinksForTests = true
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await store.appStart(in: repository) == .failure(.off))
+        #expect(!store.startsInApp)
+        let outcome = await store.startInApp(.workItem(workItem), prompt: "Fix it", options: CopilotModel.standard, repository: repository)
+        #expect(outcome == .notStarted(AppStartProblem.off.description))
+        #expect(requests(home).isEmpty)
+
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        #expect(store.startsInApp)
+        store.settings.copilotNewSessionsInApp = false
+        #expect(!store.startsInApp)
+    }
+
+    /// One new session at a time for each work item: sent again while one is on its way, it starts no other. When
+    /// BriefBar can't tell which session started, if any, it says to look in the app before sending it again.
+    @Test func startsOneSessionAtATimeForAWorkItem() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.showForTests = { _ in true }
+        let repository = home.appendingPathComponent("shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        try appDatabase(at: home, repository: repository, sessions: [
+            (session, project, "Fix the totals", "2026-10-01T09:00:00.000Z"),
+            (started, project, NewSession.name(CopilotCommand.sessionName(for: workItem)), afterTheRequest()),
+        ])
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen(kinds: ["send", "fork", "create"])
+        ext.start(after: .milliseconds(300)) { [started] _ in ["ok": true, "createdSessionId": started] }
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        let subject = TaskSubject.workItem(workItem)
+        let first = Task { await store.startInApp(subject, prompt: "Fix it", options: CopilotModel.standard, repository: repository) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while !store.isStartingInApp(subject), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let again = await store.startInApp(subject, prompt: "Fix it", options: CopilotModel.standard, repository: repository)
+        #expect(again == .notStarted(CopilotTasksStore.startingAlready))
+        #expect(await first.value == .started(started))
+        #expect(!store.isStartingInApp(subject))
+        #expect(ext.received == ["create"])
+
+        // It couldn't name the new session, and none started with its name.
+        store.deliveryTimingForTests?.confirm = 0.3
+        ext.start { _ in ["ok": false, "error": ["code": "create_failed", "message": "It gave no session ID"]] }
+        var other = workItem
+        other.id = 4218
+        let outcome = await store.startInApp(.workItem(other), prompt: "Fix it", options: CopilotModel.standard, repository: repository)
+        #expect(outcome == .mayHaveStarted(
+            "The Copilot app didn't start the session: It gave no session ID. It may have started all the same: look in the Copilot app before you send it again."
+        ))
+    }
+
     /// The demo sends nothing, and reads nothing of yours.
     @Test func theDemoSendsNothing() async {
         let store = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)

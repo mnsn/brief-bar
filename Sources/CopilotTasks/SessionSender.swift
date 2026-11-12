@@ -17,6 +17,8 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
     case failed(OutboxResult.Failure, String?)
     /// The app doesn't record the session the extension says it forked as a fork of it.
     case unconfirmedFork
+    /// The app doesn't list the session the extension says it started, in the project it was to start in.
+    case unconfirmedSession
     /// BriefBar's outbox can't be used: why.
     case outbox(String)
     /// BriefBar stopped it, as when its window closed.
@@ -45,10 +47,13 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
             case .forkUnavailable: return "The session can't be forked this way, as chats can't."
             case .forkFailed: return "The Copilot app didn't fork the session" + detail
             case .stopFailed: return "The session didn't stop" + detail
+            case .createUnavailable: return "The Copilot app didn't let BriefBar's extension start a session" + detail
+            case .createFailed: return "The Copilot app didn't start the session" + detail
             case .unknown: return "BriefBar's extension in the session couldn't do it" + detail
             case .unreadable: return "BriefBar couldn't read what its extension in the session said."
             }
         case .unconfirmedFork: return "The Copilot app doesn't record the fork that BriefBar's extension made."
+        case .unconfirmedSession: return "The Copilot app doesn't list the session that BriefBar's extension started."
         case .outbox(let why): return why
         case .cancelled: return "BriefBar stopped sending it."
         case .turnedOff: return "BriefBar can't send anything now."
@@ -61,10 +66,13 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
 extension SendFailure {
     /// It may have happened all the same: the extension took it but didn't say how it went, or said what BriefBar couldn't
     /// read; it said the session didn't take the prompt, as after a connection dropped once the session had it, or didn't
-    /// fork, as when it couldn't read the fork's ID; or it named a fork that the app doesn't record.
+    /// fork or start a session, as when it couldn't read the new one's ID; or it named a fork, or a new session, that the
+    /// app doesn't record.
     public var mayHaveGone: Bool {
         switch self {
-        case .lost, .failed(.sendFailed, _), .failed(.forkFailed, _), .failed(.unreadable, _), .unconfirmedFork: return true
+        case .lost, .failed(.sendFailed, _), .failed(.forkFailed, _), .failed(.createFailed, _), .failed(.unreadable, _),
+             .unconfirmedFork, .unconfirmedSession:
+            return true
         default: return false
         }
     }
@@ -96,16 +104,27 @@ public struct SendReceipt: Sendable, Equatable {
     }
 }
 
-/// Sends a prompt to one of the Copilot app's sessions, or forks the session and sends the fork the prompt, through
-/// BriefBar's extension in it (`CopilotOutbox`), and waits for the extension to say how it went: only as you ask, never
-/// in the demo. It waits without blocking a thread, looking at the outbox every `Timing.poll`.
+/// What became of a new session of the Copilot app's that BriefBar asked its extension in another to start
+/// (`SessionSender.create`).
+public enum CreateOutcome: Sendable, Equatable {
+    /// The app started it, with the prompt as its first message: its ID.
+    case started(String)
+    /// It didn't, or BriefBar can't tell which session it is: why. It may have, when that says so (`mayHaveGone`).
+    case notStarted(SendFailure)
+}
+
+/// Sends a prompt to one of the Copilot app's sessions, or forks the session and sends the fork the prompt, or starts a new
+/// session of the app's with the prompt, through BriefBar's extension in a session (`CopilotOutbox`), and waits for the
+/// extension to say how it went: only as you ask, never in the demo. It waits without blocking a thread, looking at the
+/// outbox every `Timing.poll`.
 ///
 /// A request goes to the session's extension when one listens; to a session that nothing holds, which opening it in the
 /// app loads, with its extension; or, given time, to one that a program has just loaded. An extension claims a request
 /// within moments, or BriefBar withdraws it; once claimed, it's finished, however long that takes, and its result says
 /// how it went. A fork is the app's own: the session's extension runs `fork_session`, then the fork's own extension,
 /// which runs by the time the fork is made, sends it the prompt, once the app's database records it as a fork of the
-/// session.
+/// session. A new session is the app's own too: the extension in another session runs `create_session`, with the prompt
+/// as the new session's first message, which the app lists in its project by the time it answers.
 public struct SessionSender: Sendable {
     /// What a send does beyond the outbox, which tests stand in for.
     public struct Effects: Sendable {
@@ -119,6 +138,9 @@ public struct SessionSender: Sendable {
         /// The forks the app records of a session, made at a given time or later (`AppSessions.forks`): nil when it can't
         /// tell now.
         public var forks: @Sendable (_ original: String, _ since: Date) -> [String]?
+        /// The sessions the app lists in a project, started at a given time or later (`AppSessions.started`): nil when it
+        /// can't tell now.
+        public var started: @Sendable (_ project: String, _ since: Date) -> [AppSession]?
         /// Whether an extension that says it listens still runs (`CopilotOutbox.isLive`).
         public var isLive: @Sendable (OutboxListener) -> Bool
         /// Whether BriefBar may still send, as you turned it on: asked before each request, and while one waits for an
@@ -134,6 +156,7 @@ public struct SessionSender: Sendable {
             open: @escaping @Sendable (String) async -> Bool, isHeld: @escaping @Sendable (String) -> Bool,
             forkRecord: @escaping @Sendable (String) -> ForkRecord,
             forks: @escaping @Sendable (_ original: String, _ since: Date) -> [String]? = { _, _ in nil },
+            started: @escaping @Sendable (_ project: String, _ since: Date) -> [AppSession]? = { _, _ in nil },
             isLive: @escaping @Sendable (OutboxListener) -> Bool = { CopilotOutbox.isLive($0) },
             mayGoOn: @escaping @Sendable () async -> Bool = { true },
             reserve: @escaping @Sendable (String) async -> SendFailure? = { _ in nil },
@@ -143,6 +166,7 @@ public struct SessionSender: Sendable {
             self.isHeld = isHeld
             self.forkRecord = forkRecord
             self.forks = forks
+            self.started = started
             self.isLive = isLive
             self.mayGoOn = mayGoOn
             self.reserve = reserve
@@ -152,7 +176,8 @@ public struct SessionSender: Sendable {
 
     /// How long each step may take. As measured, an extension takes a request at once, a send is taken at once, and a
     /// fork takes about 22 seconds, the app recording it as the session's well before it's done; a session that the app
-    /// hadn't loaded loads as it opens, and its extension listens about 11 seconds later.
+    /// hadn't loaded loads as it opens, and its extension listens about 11 seconds later. A new session takes as long as
+    /// git takes to make its worktree, about 10 seconds for BriefBar's own repository, which the app does before it answers.
     public struct Timing: Sendable {
         /// How often BriefBar looks at the outbox, and the app's database, while it waits.
         public var poll: Duration = .milliseconds(150)
@@ -166,7 +191,9 @@ public struct SessionSender: Sendable {
         public var sent: TimeInterval = 60
         /// How long a claimed fork has to say how it went.
         public var forked: TimeInterval = 120
-        /// How long the app has to record a fork as the session's.
+        /// How long a claimed create has to say how it went: a large repository's worktree takes a while.
+        public var created: TimeInterval = 300
+        /// How long the app has to record a fork as the session's, or to list a new session in its project.
         public var confirm: TimeInterval = 10
 
         public init() {}
@@ -244,6 +271,37 @@ public struct SessionSender: Sendable {
         }
     }
 
+    /// Starts a new session of the Copilot app's with the prompt as its first message, through BriefBar's extension in
+    /// `host`, another of the app's sessions, which runs the app's own `create_session`: the host itself gets no message.
+    /// The new session is the one that the app lists in its project, started since the request: the one the extension
+    /// names; or, when it named none, or one that isn't, or didn't say how it went, the one started since with its name, if
+    /// there's just one. Otherwise there's no telling which, if any.
+    public func create(_ prompt: String, _ session: NewSession, from host: String) async -> CreateOutcome {
+        // When it starts, to the instant, as a fork's: the request's own times are whole seconds.
+        let started = effects.now()
+        let unnamed: SendFailure
+        switch await request(.create(prompt, session, from: host, now: started)) {
+        case .success(let result):
+            guard let id = result.createdSessionId else {
+                unnamed = .failed(.createFailed, nil)
+                break
+            }
+            switch await confirm(id, startedIn: session.projectId, since: started) {
+            case nil: return .started(id)
+            case .unconfirmedSession?: unnamed = .unconfirmedSession
+            case let stopped?: return .notStarted(stopped)
+            }
+        case .failure(let why):
+            guard why.mayHaveGone else { return .notStarted(why) }
+            unnamed = why
+        }
+        switch await theStartedSession(session, since: started) {
+        case .success(let found?): return .started(found)
+        case .success(nil): return .notStarted(unnamed)
+        case .failure(let stopped): return .notStarted(stopped)
+        }
+    }
+
     /// Sends the fork the prompt, once no other is on its way to it, or to its checkout.
     private func sendFork(_ prompt: String, to fork: String, report: Bool) async -> SendReceipt {
         if let busy = await effects.reserve(fork) { return SendReceipt(.forkedNotSent(fork: fork, busy)) }
@@ -318,7 +376,11 @@ public struct SessionSender: Sendable {
         }
         // Claimed: it goes on, whatever BriefBar does, so BriefBar waits for how it went, even once it's stopped.
         let claimed = effects.now()
-        let wait = request.kind == .fork ? timing.forked : timing.sent
+        let wait = switch request.kind {
+        case .fork: timing.forked
+        case .create: timing.created
+        case .send, .stop: timing.sent
+        }
         while true {
             if let result = outbox.takeResult(of: request) { return Self.outcome(result) }
             if effects.now().timeIntervalSince(claimed) > wait { return .failure(.lost) }
@@ -352,6 +414,39 @@ public struct SessionSender: Sendable {
         let mayGoOn = await effects.mayGoOn()
         if Task.isCancelled { return .cancelled }
         return mayGoOn ? nil : .turnedOff
+    }
+
+    /// Why the app's database doesn't list the session in the project, started since `since`, or nil once it does: it's
+    /// waited for while it can't be read, until it says so in time (`unconfirmedSession`). One it lists elsewhere, or from
+    /// before the request, is none that this request started, as when a name misled the extension. Nothing's read once
+    /// it's stopped, or turned off.
+    func confirm(_ id: String, startedIn project: String, since: Date) async -> SendFailure? {
+        let start = effects.now()
+        while true {
+            if let stopped = await stopped() { return stopped }
+            if effects.started(project, since)?.contains(where: { $0.id == id }) == true { return nil }
+            if effects.now().timeIntervalSince(start) > timing.confirm { return .unconfirmedSession }
+            await pause()
+        }
+    }
+
+    /// The one session the app's database lists in the new session's project, with its name, started since `since`, read
+    /// again while it can't be read, for one its extension didn't name: nil when there's none, or more than one, or the
+    /// database can't be read in time; why not, once it's stopped or turned off, when nothing more is read.
+    func theStartedSession(_ session: NewSession, since: Date) async -> Result<String?, SendFailure> {
+        let start = effects.now()
+        while true {
+            if let stopped = await stopped() { return .failure(stopped) }
+            if let found = effects.started(session.projectId, since) {
+                let named = found.filter { $0.name == session.name }
+                if named.count == 1 { return .success(named[0].id) }
+                // More than one: there's no telling which.
+                if named.count > 1 { return .success(nil) }
+            }
+            // None yet, perhaps: the app may list it a moment after it answers.
+            if effects.now().timeIntervalSince(start) > timing.confirm { return .success(nil) }
+            await pause()
+        }
     }
 
     /// The app may have forked the session all the same: the extension couldn't read the fork's ID from what the app's

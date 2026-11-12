@@ -14,6 +14,8 @@ public struct AppSession: Sendable, Equatable, Identifiable {
     /// Its project's folder's name, and its GitHub repository, `owner/name`: what its branch is in.
     public var folder: String?
     public var gitHubRepository: String?
+    /// The app's project it works in, by its ID; nil for a chat, and when the app doesn't say.
+    public var projectId: String?
     /// The pull requests the app records it started from or opened.
     public var pullRequests: [ItemRef]
     public var isChat: Bool
@@ -25,8 +27,8 @@ public struct AppSession: Sendable, Equatable, Identifiable {
 
     public init(
         id: String, name: String, projectName: String? = nil, branch: String? = nil, folder: String? = nil,
-        gitHubRepository: String? = nil, pullRequests: [ItemRef] = [], isChat: Bool = false, isRunning: Bool = false,
-        createdAt: Date? = nil, lastActive: Date? = nil
+        gitHubRepository: String? = nil, projectId: String? = nil, pullRequests: [ItemRef] = [], isChat: Bool = false,
+        isRunning: Bool = false, createdAt: Date? = nil, lastActive: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -34,6 +36,7 @@ public struct AppSession: Sendable, Equatable, Identifiable {
         self.branch = branch
         self.folder = folder
         self.gitHubRepository = gitHubRepository
+        self.projectId = projectId
         self.pullRequests = pullRequests
         self.isChat = isChat
         self.isRunning = isRunning
@@ -46,8 +49,9 @@ public struct AppSession: Sendable, Equatable, Identifiable {
         self.init(
             id: meta.id, name: meta.name.isEmpty ? "Untitled session" : PlainText.singleLine(meta.name), projectName: meta.projectName,
             branch: meta.branch.flatMap { $0.isEmpty ? nil : $0 }, folder: meta.links?.folder,
-            gitHubRepository: meta.links?.gitHubRepository, pullRequests: meta.links?.pullRequests.compactMap(\.ref) ?? [],
-            isChat: meta.isChat, isRunning: meta.isRunning == true, createdAt: meta.createdAt, lastActive: activity
+            gitHubRepository: meta.links?.gitHubRepository, projectId: meta.projectId,
+            pullRequests: meta.links?.pullRequests.compactMap(\.ref) ?? [], isChat: meta.isChat, isRunning: meta.isRunning == true,
+            createdAt: meta.createdAt, lastActive: activity
         )
     }
 
@@ -233,6 +237,35 @@ public enum AppSessions {
 }
 
 extension AppSessions {
+    /// One of the app's projects that's a repository: what a new session of the app's works in, in a worktree of its own.
+    public struct Project: Sendable, Equatable {
+        public var id: String
+        public var name: String
+
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    /// The app's project for a repository, by its own checkout's folder, read-only: one that's a repository, whose sessions
+    /// can work in worktrees of their own, never a folder, whose sessions would work in your checkout itself. Nil when the
+    /// app has none for it; throws when its database can't be read.
+    public static func project(for repository: URL, home: URL) throws -> Project? {
+        let key = folderKey(repository)
+        return try AppDatabase.projects(at: CopilotPaths(root: home).database).first { project in
+            project.isRepository && folderKey(URL(fileURLWithPath: project.folder, isDirectory: true)) == key
+        }.map { Project(id: $0.id, name: $0.name) }
+    }
+
+    /// The sessions the app lists in a project, started at `since` or later, read-only, the newest first; nil when its
+    /// database can't be read.
+    public static func started(inProject project: String, since: Date, home: URL) -> [AppSession]? {
+        guard let sessions = try? load(home: home) else { return nil }
+        return sessions.filter { $0.projectId == project && ($0.createdAt.map { $0 >= since } ?? false) }
+            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+    }
+
     /// The forks the app's database records of a session, made at `since` or later, read-only: their IDs, the newest
     /// first; nil when it can't be read now, or records no forks.
     public static func forks(of original: String, since: Date, home: URL) -> [String]? {

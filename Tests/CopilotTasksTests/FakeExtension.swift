@@ -16,8 +16,8 @@ final class FakeExtension: Sendable {
 
     /// How it answers a request it claimed.
     enum Answer: Sendable {
-        /// It's done: a send's message ID, or a fork's session.
-        case done(fork: String? = nil)
+        /// It's done: a send's message ID, a fork's session, or a create's new session.
+        case done(fork: String? = nil, created: String? = nil)
         /// It isn't: the contract's code, and a message.
         case failed(String, String)
         /// After a while.
@@ -30,10 +30,20 @@ final class FakeExtension: Sendable {
     }
 
     struct Received: Sendable, Equatable {
+        /// The session a create starts, as its request has it.
+        struct Started: Sendable, Equatable {
+            var projectId: String
+            var name: String
+            var mode: String
+            var model: String?
+            var effort: String?
+        }
+
         var kind: String
         var prompt: String?
         /// A send asked it to report how its turn goes.
         var report = false
+        var started: Started?
     }
 
     let outbox: URL
@@ -150,9 +160,15 @@ final class FakeExtension: Sendable {
         case .once(let ready, let then):
             while !ready() { try? await Task.sleep(for: Self.lookEvery) }
             return await respond(then, to: request, requestId: requestId, reports: reports)
-        case .done(let fork):
+        case .done(let fork, let created):
             fields["ok"] = true
-            if let fork { fields["forkSessionId"] = fork } else { fields["messageId"] = "message-1" }
+            if let fork {
+                fields["forkSessionId"] = fork
+            } else if let created {
+                fields["createdSessionId"] = created
+            } else {
+                fields["messageId"] = "message-1"
+            }
             // Its first report, written before the result that says it reports.
             if reports, request.report, (try? report(requestId, state: "working")) != nil { fields["reports"] = true }
         case .failed(let code, let message):
@@ -163,8 +179,8 @@ final class FakeExtension: Sendable {
     }
 
     /// A request it may act on: a regular file that's yours, only yours to read, of 256 KiB or less, at version 1, for its
-    /// own session, with a prompt only for a send, and a report asked for only by a send, that hasn't expired and was given
-    /// at most 120 seconds.
+    /// own session, with a prompt only for a send or a create, a report asked for only by a send, and a session to start,
+    /// in a project, with a name and a mode, only for a create, that hasn't expired and was given at most 120 seconds.
     static func check(_ file: URL, requestId: String, sessionId: String) -> Received? {
         var info = stat()
         guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_mode & 0o7777 == 0o600,
@@ -173,19 +189,30 @@ final class FakeExtension: Sendable {
               let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               fields["version"] as? Int == 1, fields["requestId"] as? String == requestId,
               fields["sessionId"] as? String == sessionId,
-              let kind = fields["kind"] as? String, ["send", "fork"].contains(kind),
+              let kind = fields["kind"] as? String, ["send", "fork", "create"].contains(kind),
               let created = (fields["createdAt"] as? String).flatMap({ try? Date($0, strategy: .iso8601) }),
               let expires = (fields["expiresAt"] as? String).flatMap({ try? Date($0, strategy: .iso8601) }),
               Date() < expires, expires.timeIntervalSince(created) <= 120
         else { return nil }
         let prompt = fields["prompt"] as? String
-        guard (kind == "send") == (prompt != nil) else { return nil }
+        guard (kind == "send" || kind == "create") == (prompt != nil) else { return nil }
         var report = false
         if let asked = fields["report"] {
             guard kind == "send", let flag = asked as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return nil }
             report = flag.boolValue
         }
-        return Received(kind: kind, prompt: prompt, report: report)
+        var started: Received.Started?
+        if kind == "create" {
+            guard let projectId = fields["projectId"] as? String, AppSessions.isSessionID(projectId),
+                  let name = fields["name"] as? String, !name.isEmpty, name.utf16.count <= 40,
+                  let mode = fields["mode"] as? String, ["interactive", "plan", "autopilot"].contains(mode),
+                  fields["model"].map({ $0 is String }) != false, fields["effort"].map({ $0 is String }) != false
+            else { return nil }
+            started = .init(projectId: projectId, name: name, mode: mode, model: fields["model"] as? String, effort: fields["effort"] as? String)
+        } else if ["projectId", "name", "mode", "model", "effort"].contains(where: { fields[$0] != nil }) {
+            return nil
+        }
+        return Received(kind: kind, prompt: prompt, report: report, started: started)
     }
 
     /// Writes a file atomically, only yours to read, as the extension does: under a name starting with `.`, then renamed.

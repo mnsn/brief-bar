@@ -261,6 +261,9 @@ final class CopilotTasksStore: ObservableObject {
     var deliveryTimingForTests: SessionSender.Timing?
     /// The sessions BriefBar sends a prompt to now, through its extension in them (`deliver`): one at a time, each.
     @Published var delivering: Set<String> = []
+    /// What BriefBar starts a new session in the Copilot app for now, by `startKey`: one at a time, each, so that sending it
+    /// again meanwhile doesn't start another (`startInApp`).
+    @Published var startingInApp: Set<String> = []
     /// Where each session that BriefBar sends a prompt to now works, by the session's ID: no task starts there, and git
     /// removes no worktree there, until the prompt has gone or been taken back (`busyFolders`).
     var deliveringFolders: [String: URL] = [:]
@@ -528,20 +531,52 @@ final class CopilotTasksStore: ObservableObject {
     // MARK: Sending
 
     /// Opens the composer, to check the prompt, the model and the repository, or a session to go on with, before sending.
-    func compose(_ item: WorkItem, options: CopilotRunOptions? = nil) {
-        CopilotComposer.shared.show(item: item.copilotTask, options: options ?? settings.copilotOptions, store: self)
+    /// - Parameter problem: why what you sent didn't start, for the composer to say.
+    func compose(_ item: WorkItem, options: CopilotRunOptions? = nil, problem: String? = nil) {
+        CopilotComposer.shared.show(item: item.copilotTask, options: options ?? settings.copilotOptions, problem: problem, store: self)
     }
 
-    /// Sends with these options and the standard prompt, to the repository its project went in last; without one yet,
-    /// the composer asks.
+    /// Sends with these options and the prompt in Settings, to the repository its project went in last: in a new session of
+    /// the Copilot app's while new sessions start there (`startsInApp`, `quickStartInApp`), else with the CLI. Without a
+    /// repository yet, the composer asks; and it opens to say why when the session doesn't start in the app, where you can
+    /// run it with the CLI instead.
     func quickSend(_ item: WorkItem, options: CopilotRunOptions) {
         let task = item.copilotTask
         guard canSend, let repository = repository(for: task) else {
             compose(item, options: options)
             return
         }
-        let prompt = PromptTemplate.ending(PromptTemplate.render(settings.copilotPromptTemplate, item: task), asksForStage: asksForStage)
-        send(task, prompt: prompt, options: options, repository: repository)
+        guard startsInApp else {
+            let prompt = PromptTemplate.ending(PromptTemplate.render(settings.copilotPromptTemplate, item: task), asksForStage: asksForStage)
+            send(task, prompt: prompt, options: options, repository: repository)
+            return
+        }
+        // Sent again while its session is on its way: that one goes on.
+        guard !isStartingInApp(.workItem(task)) else { return }
+        Task {
+            guard let problem = await quickStartInApp(task, options: options, repository: repository) else { return }
+            // Not once Azure DevOps stopped meanwhile, or Send Work to Copilot was turned off.
+            guard canSend, isOn, !hasStopped else { return }
+            compose(item, options: options, problem: problem)
+        }
+    }
+
+    /// Starts a work item's new session in the Copilot app (`startInApp`), with the prompt in Settings as it goes there
+    /// (`PromptTemplate.forAppSession`), its base branch filled in as the repository says: nil once it started; else why
+    /// not.
+    func quickStartInApp(_ task: TaskWorkItem, options: CopilotRunOptions, repository: URL) async -> String? {
+        let found: GitRepository
+        do {
+            found = try await git().repository(at: repository)
+        } catch {
+            return String(describing: error)
+        }
+        let template = PromptTemplate.forAppSession(settings.copilotPromptTemplate)
+        let prompt = PromptTemplate.ending(PromptTemplate.render(template, item: task, baseBranch: found.baseBranch), asksForStage: asksForStage)
+        switch await startInApp(.workItem(task), prompt: prompt, options: options, repository: found.root) {
+        case .started: return nil
+        case .notStarted(let why), .mayHaveStarted(let why): return why
+        }
     }
 
     func send(_ item: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL) {

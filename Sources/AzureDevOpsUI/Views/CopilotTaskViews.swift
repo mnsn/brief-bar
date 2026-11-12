@@ -433,9 +433,10 @@ struct CopilotSetting: View {
 
     nonisolated static let title = "Send Work to Copilot"
     static let explanation = """
-        Adds a button to the sprint's work items that sends one to the Copilot CLI on this Mac, with a prompt you can \
-        change and the model you choose. Copilot works on its own, in a new worktree of the repository you pick, with \
-        your sign-in, tools, MCP servers and instructions, then pushes a branch and opens a pull request, as you. Your \
+        Adds a button to the sprint's work items that sends one to Copilot on this Mac, with a prompt you can change and \
+        the model you choose: to a new session in the Copilot app, where you can follow and steer it, or to the Copilot \
+        CLI. Copilot works on its own, in a new worktree of the repository you pick, with your sign-in, tools, MCP \
+        servers and instructions, then pushes a branch and opens a pull request, as you. Your \
         pull requests' Actions menus in the window send their comments, failed builds and conflicts the same way, to be fixed without \
         pushing, then pushed and answered with Push & Reply; and the menus of those you review, to be read and reviewed \
         for you. Choose a pull request repository's local clone once; BriefBar remembers it. BriefBar starts Copilot \
@@ -461,11 +462,18 @@ struct CopilotSetting: View {
     }
 }
 
-/// The models, the prompt and where worktrees go, in Settings.
+/// Where new sessions start, the models, the prompt and where worktrees go, in Settings.
 private struct CopilotOptionsForm: View {
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
+        Picker(selection: $settings.copilotNewSessionsInApp) {
+            Text("In the Copilot App").tag(true)
+            Text("With the Copilot CLI").tag(false)
+        } label: {
+            Text("New Sessions")
+            Text("Where a work item's new session starts, unless you choose otherwise as you send it. In the Copilot app, where you can follow and steer it, it starts while \(CopilotSessionPrompts.title) is on, in Agents, and the app has the repository; with the CLI, it works on its own, in a worktree of BriefBar's.")
+        }
         LabeledContent("Model") {
             HStack(spacing: 8) {
                 CopilotModelMenu(model: $settings.copilotOptions.model)
@@ -491,7 +499,7 @@ private struct CopilotOptionsForm: View {
             ))
             .font(size: 12)
             .frame(height: 190)
-            Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from.")
+            Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from. Until you change it, a new session in the Copilot app gets BriefBar's take on it for the app, whose worktree is on a branch of the app's.")
                 .font(style: .caption)
                 .foregroundStyle(.secondary)
         }

@@ -25,6 +25,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var parentSessionId: String?
     /// The app's workspace for project sessions (its unread markers are keyed by this).
     public var workspaceId: String?
+    /// The app's project it works in, by its ID; nil for a chat, and when the app doesn't say.
+    public var projectId: String?
     /// Latest entry in the app's activity feed for this session.
     public var lastActivity: ActivityPreview?
     /// How full the session's context window was when the app last measured it.
@@ -37,7 +39,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
         branch: String? = nil, creatorSessionId: String? = nil, coordinatorSessionId: String? = nil,
-        parentSessionId: String? = nil, workspaceId: String? = nil, lastActivity: ActivityPreview? = nil,
+        parentSessionId: String? = nil, workspaceId: String? = nil, projectId: String? = nil, lastActivity: ActivityPreview? = nil,
         contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
     ) {
         self.id = id
@@ -55,6 +57,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.coordinatorSessionId = coordinatorSessionId
         self.parentSessionId = parentSessionId
         self.workspaceId = workspaceId
+        self.projectId = projectId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
         self.links = links
@@ -214,6 +217,24 @@ public struct SessionFork: Sendable, Equatable {
     }
 }
 
+/// One of the app's projects, as its database records it: what its sessions work in.
+public struct AppProject: Sendable, Equatable {
+    public var id: String
+    public var name: String
+    /// Its folder's path: for a repository, its own checkout, which the app makes its sessions' worktrees of.
+    public var folder: String
+    /// A repository, whose sessions can work in worktrees of their own; not a folder, or a collection of them, whose
+    /// sessions work in the folder itself.
+    public var isRepository: Bool
+
+    public init(id: String, name: String, folder: String, isRepository: Bool) {
+        self.id = id
+        self.name = name
+        self.folder = folder
+        self.isRepository = isRepository
+    }
+}
+
 /// Read-only access to the Copilot app's SQLite database.
 public enum AppDatabase {
     /// Sessions the app shows: unarchived chats, plus project sessions with a live workspace.
@@ -222,7 +243,7 @@ public enum AppDatabase {
         SELECT s.id,
                COALESCE(NULLIF(TRIM(w.name), ''), NULLIF(TRIM(s.title), ''), '') AS name,
                s.session_type, s.mode, s.is_running, s.was_interrupted, s.interruption_reason,
-               s.created_at, s.updated_at, p.name, w.branch, w.creator_session_id, w.id
+               s.created_at, s.updated_at, p.name, w.branch, w.creator_session_id, w.id, p.id
         FROM sessions s
         LEFT JOIN workspaces w ON w.id = (
             SELECT w2.id FROM workspaces w2
@@ -304,6 +325,33 @@ public enum AppDatabase {
         FROM sessions
         WHERE forked_from_session_id IS NOT NULL
         """
+
+    /// The app's projects, with what kind each is: a repository, a folder, or a collection of them.
+    static let projectsQuery = "SELECT id, name, main_repo_path, container_kind FROM projects"
+
+    /// The same, for an app that doesn't record what kind each is, as older versions, which had only repositories, don't.
+    static let projectsWithoutKindsQuery = "SELECT id, name, main_repo_path, NULL FROM projects"
+
+    /// The app's projects that have a folder of their own, read-only: none when it doesn't record them as BriefBar reads
+    /// them. Throws when the database can't be read, as `load` does.
+    public static func projects(at url: URL) throws -> [AppProject] {
+        try read(at: url, afterClosedRead: nil) { connection in
+            for sql in [projectsQuery, projectsWithoutKindsQuery] {
+                do {
+                    return try connection.rows(sql) { row in
+                        AppProject(
+                            id: row.string(0) ?? "", name: row.string(1) ?? "", folder: row.string(2) ?? "",
+                            isRepository: (row.string(3) ?? "repository") == "repository"
+                        )
+                    }.filter { !$0.id.isEmpty && $0.folder.hasPrefix("/") }
+                } catch let error as SQLiteError where error.primaryCode == SQLITE_ERROR {
+                    // No such table or column, as BriefBar reads them: the next query, if any.
+                    continue
+                }
+            }
+            return []
+        }
+    }
 
     /// The session that started each chat that another session started.
     static let chatParentsQuery = """
@@ -504,7 +552,8 @@ public enum AppDatabase {
                     projectName: row.string(9),
                     branch: row.string(10),
                     creatorSessionId: row.string(11),
-                    workspaceId: row.string(12)
+                    workspaceId: row.string(12),
+                    projectId: row.string(13)
                 )
             }.filter { !$0.id.isEmpty }
         } catch {

@@ -28,6 +28,31 @@ public enum PromptTemplate {
         request's link.
         """
 
+    /// For a new session in the Copilot app: the app makes its worktree, on a branch of its own, from the repository's own
+    /// checkout, which may be behind origin, so it starts from the latest base branch first.
+    public static let appSession = """
+        Fix Azure DevOps {type} {id}: {title}
+        {url}
+
+        1. Read the work item with your Azure DevOps tools: its description, acceptance criteria, comments and \
+        attachments, and its parent's.
+        2. You're in a new git worktree of this repository, on a branch the Copilot app made for this session. Before you \
+        change anything, fetch origin and bring the branch up to date with origin/{baseBranch}.
+        3. Make the change, following the repository's instructions and conventions. Build, and run the tests that \
+        cover what you changed.
+        4. Commit, push the branch, and open a pull request into {baseBranch} in Azure DevOps that's published, ready \
+        for review, and linked to work item {id}.
+
+        Work on your own, without asking questions. If something stops you, say what and why. End with the pull \
+        request's link.
+        """
+
+    /// The template for a new session in the Copilot app: yours, if you changed the one in Settings; BriefBar's own for the
+    /// app otherwise, since the standard one says the worktree is BriefBar's, detached at the base branch.
+    public static func forAppSession(_ template: String) -> String {
+        template == standard ? appSession : template
+    }
+
     /// For a session that's there already, such as one of the Copilot app's: it works where that session does, which
     /// may be another repository or hold other work, so it checks first, and asks rather than mixing work up.
     public static let existingSession = """

@@ -231,6 +231,38 @@ import Testing
         }
     }
 
+    /// The app's project for a repository is the one whose own checkout it is, as a repository, never a folder, whose
+    /// sessions would work in that checkout itself; in an app that doesn't record what kind each is, which had only
+    /// repositories, too. Its sessions say which project they're in, and those started there since a time are listed.
+    @Test func findsTheAppsProjectForARepository() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let checkout = URL(fileURLWithPath: "/Users/robin/dev/checkout", isDirectory: true)
+        #expect(try AppSessions.project(for: checkout, home: home) == AppSessions.Project(id: "p1", name: "checkout"))
+        #expect(try AppSessions.project(for: URL(fileURLWithPath: "/Users/robin/dev/tools/../checkout/"), home: home)?.id == "p1")
+        #expect(try AppSessions.project(for: URL(fileURLWithPath: "/Users/robin/dev/checkout-2"), home: home) == nil)
+        #expect(try AppSessions.load(home: home).first { $0.id == opener }?.projectId == "p1")
+
+        let created = try Date("2026-10-20T09:00:00Z", strategy: .iso8601)
+        #expect(AppSessions.started(inProject: "p1", since: created, home: home)?.map(\.id) == [opener])
+        #expect(AppSessions.started(inProject: "p1", since: created.addingTimeInterval(1), home: home)?.isEmpty == true)
+        #expect(AppSessions.started(inProject: "p2", since: .distantPast, home: home)?.isEmpty == true)
+
+        // An app that records what kind each project is: a folder's is none, a repository's for the same checkout is.
+        try sql("ALTER TABLE projects ADD COLUMN container_kind TEXT; UPDATE projects SET container_kind = 'folder';", home: home)
+        #expect(try AppSessions.project(for: checkout, home: home) == nil)
+        try sql("""
+            INSERT INTO projects (id, name, main_repo_path, container_kind)
+                VALUES ('p2', 'checkout', '/Users/robin/dev/checkout', 'repository');
+            """, home: home)
+        #expect(try AppSessions.project(for: checkout, home: home)?.id == "p2")
+
+        let nowhere = home.appendingPathComponent("nowhere")
+        #expect(throws: (any Error).self) { try AppSessions.project(for: checkout, home: nowhere) }
+        #expect(AppSessions.started(inProject: "p1", since: .distantPast, home: nowhere) == nil)
+    }
+
     /// Which of the app's sessions run a turn, by its own flag. Strictly, for a check that mustn't take what it can't tell
     /// for none, it reads the flag alone: whatever else the app changes of what the session list reads, the flag is read as
     /// the app keeps it. It can't tell when the database can't be read, even one that's there but out of reach, or doesn't

@@ -4,7 +4,7 @@ import Darwin
 import Foundation
 
 /// What BriefBar asks its extension in one of the Copilot app's sessions to do (`CopilotOutbox`): send that session a
-/// prompt, fork it, or stop its turn.
+/// prompt, fork it, stop its turn, or start a new session of the app's with a prompt.
 public struct OutboxRequest: Sendable, Equatable {
     public enum Kind: String, Sendable, CaseIterable {
         /// Send the session the prompt, as your own message.
@@ -13,6 +13,9 @@ public struct OutboxRequest: Sendable, Equatable {
         case fork
         /// Stop the turn that runs in the session, as the app's own Stop does. It sends nothing.
         case stop
+        /// Start a new session of the app's with its own `create_session`, the prompt as its first message, and say the new
+        /// session's ID. The session whose extension takes it gets nothing, and the new one is no child of it.
+        case create
     }
 
     /// A lowercase UUID, which names its result.
@@ -20,10 +23,12 @@ public struct OutboxRequest: Sendable, Equatable {
     /// The session whose extension takes it: a lowercase UUID.
     public let sessionId: String
     public let kind: Kind
-    /// For a send; nil for a fork or a stop.
+    /// For a send, and a create's first message; nil for a fork or a stop.
     public let prompt: String?
     /// For a send: its extension reports how the message's turn goes (`CopilotOutbox.report(of:sentTo:)`), when it can.
     public let report: Bool
+    /// For a create: the session it starts.
+    public let newSession: NewSession?
     public let createdAt: Date
     /// After this, no extension takes it.
     public let expiresAt: Date
@@ -48,14 +53,22 @@ public struct OutboxRequest: Sendable, Equatable {
         OutboxRequest(sessionId: sessionId, kind: .stop, prompt: nil, now: now)
     }
 
+    /// Asks the extension in `host`, one of the app's sessions, to start a new session of the app's with the prompt as its
+    /// first message.
+    public static func create(_ prompt: String, _ session: NewSession, from host: String, now: Date = Date()) -> OutboxRequest {
+        OutboxRequest(sessionId: host, kind: .create, prompt: prompt, newSession: session, now: now)
+    }
+
     init(
-        sessionId: String, kind: Kind, prompt: String?, report: Bool = false, now: Date, requestId: String = UUID().uuidString.lowercased()
+        sessionId: String, kind: Kind, prompt: String?, report: Bool = false, newSession: NewSession? = nil, now: Date,
+        requestId: String = UUID().uuidString.lowercased()
     ) {
         self.requestId = requestId
         self.sessionId = sessionId
         self.kind = kind
         self.prompt = prompt
         self.report = report
+        self.newSession = newSession
         // In whole seconds, so that the times it's written with are exactly its lifetime apart.
         createdAt = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         expiresAt = createdAt.addingTimeInterval(Self.lifetime)
@@ -64,11 +77,13 @@ public struct OutboxRequest: Sendable, Equatable {
     /// `<sessionId>.<requestId>.json`, in `requests`.
     public var fileName: String { "\(sessionId).\(requestId).json" }
 
-    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send and none for a fork or a
-    /// stop, and asking for a report only for a send.
+    /// It as the contract has it, version 1: only for a session's ID, with a prompt for a send or a create and none for a
+    /// fork or a stop, asking for a report only for a send, and starting a session, a valid one, only for a create.
     func encoded() throws -> Data {
+        let hasPrompt = kind == .send || kind == .create
         guard AppSessions.isSessionID(sessionId), AppSessions.isSessionID(requestId),
-              (kind == .send) == (prompt != nil), prompt?.isEmpty != true, !report || kind == .send,
+              hasPrompt == (prompt != nil), prompt?.isEmpty != true, !report || kind == .send,
+              (kind == .create) == (newSession != nil), newSession?.isValid != false,
               expiresAt > createdAt, expiresAt.timeIntervalSince(createdAt) <= Self.lifetime
         else { throw OutboxError.invalidRequest }
         var fields: [String: Any] = [
@@ -77,7 +92,75 @@ public struct OutboxRequest: Sendable, Equatable {
         ]
         if let prompt { fields["prompt"] = prompt }
         if report { fields["report"] = true }
+        if let newSession {
+            fields["projectId"] = newSession.projectId
+            fields["name"] = newSession.name
+            fields["mode"] = newSession.mode.rawValue
+            if let model = newSession.model { fields["model"] = model }
+            if let effort = newSession.effort { fields["effort"] = effort }
+        }
         return try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
+    }
+}
+
+/// A new session of the Copilot app's that a create starts (`OutboxRequest.create`): in a worktree of one of the app's
+/// projects, named as the app's sidebar shows it, in a mode, with a model and a reasoning effort, or the app's own.
+public struct NewSession: Sendable, Equatable {
+    /// How it starts, as the app's own modes are named.
+    public enum Mode: String, Sendable, Equatable {
+        case interactive
+        case plan
+        /// It works on its own until it calls the task done, as a task BriefBar runs with the Copilot CLI does.
+        case autopilot
+    }
+
+    /// The app's project it works in, by its ID: a lowercase UUID.
+    public var projectId: String
+    /// One line, at most `longestName` characters as the app counts them.
+    public var name: String
+    public var mode: Mode
+    /// Such as `claude-opus-5.5`; nil for the app's own.
+    public var model: String?
+    /// Such as `max`; nil for the model's own.
+    public var effort: String?
+
+    /// The longest name the app's `create_session` takes, in UTF-16 code units, as JavaScript counts a string.
+    public static let longestName = 40
+
+    public init(projectId: String, name: String, mode: Mode, model: String? = nil, effort: String? = nil) {
+        self.projectId = projectId
+        self.name = name
+        self.mode = mode
+        self.model = model
+        self.effort = effort
+    }
+
+    /// A name for it, from a longer one: on one line, without control characters or what could be taken for a session's
+    /// link or ID in what the app answers, such as parentheses, and cut short to what the app takes. "Untitled" for none.
+    public static func name(_ text: String) -> String {
+        let visible = String(String.UnicodeScalarView(text.unicodeScalars.map { isHidden($0) ? " " : $0 }))
+        let plain = PlainText.singleLine(visible.replacingOccurrences(of: "[()]", with: "", options: .regularExpression))
+        guard !plain.isEmpty else { return "Untitled" }
+        guard plain.utf16.count > longestName else { return plain }
+        var short = ""
+        for character in plain {
+            guard (short + String(character) + "…").utf16.count <= longestName else { break }
+            short.append(character)
+        }
+        return short.trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// A control or format character, which the app's sidebar wouldn't show, and the extension turns down in a name.
+    private static func isHidden(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format
+    }
+
+    /// As the contract has it: a project's ID, a name the app takes, and a model and an effort that are their IDs.
+    var isValid: Bool {
+        AppSessions.isSessionID(projectId) && !name.trimmingCharacters(in: .whitespaces).isEmpty && name.utf16.count <= Self.longestName
+            && !name.unicodeScalars.contains(where: Self.isHidden)
+            && model.map { $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$"#, options: .regularExpression) != nil } != false
+            && effort.map { $0.range(of: #"^[a-z]{1,20}$"#, options: .regularExpression) != nil } != false
     }
 }
 
@@ -97,6 +180,11 @@ public struct OutboxResult: Sendable, Equatable {
         case forkFailed = "fork_failed"
         /// The session didn't stop its turn.
         case stopFailed = "stop_failed"
+        /// The session doesn't offer the app's `create_session`, as one the Copilot CLI has open doesn't, or Copilot refused
+        /// it: no session was started.
+        case createUnavailable = "create_unavailable"
+        /// Starting the session failed, or gave no session ID: it may have been started.
+        case createFailed = "create_failed"
         /// A code this version of BriefBar doesn't know.
         case unknown
         /// BriefBar couldn't read what the extension said: not as the contract has it.
@@ -118,11 +206,14 @@ public struct OutboxResult: Sendable, Equatable {
     public var reports: Bool
     /// The new session, for a fork: a lowercase UUID, the app's ID for it.
     public var forkSessionId: String?
+    /// The new session, for a create: a lowercase UUID, the app's ID for it.
+    public var createdSessionId: String?
     public var finishedAt: Date?
 
     public init(
         requestId: String, sessionId: String, kind: OutboxRequest.Kind, failure: Failure? = nil, message: String? = nil,
-        messageId: String? = nil, reports: Bool = false, forkSessionId: String? = nil, finishedAt: Date? = nil
+        messageId: String? = nil, reports: Bool = false, forkSessionId: String? = nil, createdSessionId: String? = nil,
+        finishedAt: Date? = nil
     ) {
         self.requestId = requestId
         self.sessionId = sessionId
@@ -132,6 +223,7 @@ public struct OutboxResult: Sendable, Equatable {
         self.messageId = messageId
         self.reports = reports
         self.forkSessionId = forkSessionId
+        self.createdSessionId = createdSessionId
         self.finishedAt = finishedAt
     }
 
@@ -141,7 +233,8 @@ public struct OutboxResult: Sendable, Equatable {
     static let longestMessage = 300
 
     /// A result the extension wrote for `request`, as version 1 of the contract has it; or one that says BriefBar couldn't
-    /// read it (`unreadable`), when it's for another request, or a fork's says no session that BriefBar can send to.
+    /// read it (`unreadable`), when it's for another request, or a fork's or a create's says no session that BriefBar can
+    /// send to or show.
     init(_ data: Data, for request: OutboxRequest) {
         self.init(requestId: request.requestId, sessionId: request.sessionId, kind: request.kind, failure: .unreadable)
         guard let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -168,6 +261,9 @@ public struct OutboxResult: Sendable, Equatable {
         case .fork:
             guard let fork = fields["forkSessionId"] as? String, AppSessions.isSessionID(fork), fork != request.sessionId else { return }
             forkSessionId = fork
+        case .create:
+            guard let made = fields["createdSessionId"] as? String, AppSessions.isSessionID(made), made != request.sessionId else { return }
+            createdSessionId = made
         case .stop:
             break
         }
@@ -454,6 +550,17 @@ public struct CopilotOutbox: Sendable {
         guard AppSessions.isSessionID(sessionId), let folder = try? openFolder(.listening, create: false) else { return nil }
         defer { close(folder) }
         return Self.listener(named: "\(sessionId).json", in: folder)
+    }
+
+    /// Every extension that says it listens, in a session of its own, whether or not it still runs (`isLive`): none when
+    /// the outbox can't be read.
+    public func listeners() -> [OutboxListener] {
+        guard let folder = try? openFolder(.listening, create: false) else { return [] }
+        defer { close(folder) }
+        return Self.names(in: folder).compactMap { name in
+            guard name.hasSuffix(".json"), AppSessions.isSessionID(String(name.dropLast(".json".count))) else { return nil }
+            return Self.listener(named: name, in: folder)
+        }
     }
 
     /// Whether the extension still runs: its process does, and started no later than the extension says it did, give or

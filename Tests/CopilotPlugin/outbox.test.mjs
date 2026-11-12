@@ -13,6 +13,7 @@ import {
     MOST_BYTES,
     OutboxError,
     checkRequest,
+    created,
     defaultFolder,
     forked,
     listen,
@@ -102,11 +103,27 @@ function request(sessionId, fields = {}) {
         sessionId,
         kind,
         ...(kind === "send" ? { prompt: PROMPT } : {}),
+        ...(kind === "create" ? { prompt: PROMPT, ...NEW_SESSION } : {}),
         createdAt: iso(NOW - 1000),
         expiresAt: iso(NOW + 60_000),
         ...fields,
     };
 }
+
+/** The session a made-up create starts: in a made-up project, named as BriefBar names a work item's. */
+const NEW_SESSION = Object.freeze({
+    projectId: "1dfe16cb-afa9-4cd1-8335-2a48bcbc52cc",
+    name: "Task 5103: Cart totals round half up",
+    mode: "autopilot",
+    model: "claude-opus-5.5",
+    effort: "max",
+});
+
+/** What the app's create_session answers for a session it starts with a first message, as GitHub Copilot 1.3.0 does. */
+const createdAnswer = (id, name = NEW_SESSION.name) => ({
+    textResultForLlm: `Created session '${name}' (id: ${id}) in project 'Spectre' with a kickoff prompt. The session will start automatically. Link to it with ghapp://sessions/${id}.`,
+    resultType: "success",
+});
 
 /** Writes a request as BriefBar does: a temporary file whose name starts with a dot, then renamed into place. */
 function writeRequest(value, { name, mode = 0o600, text } = {}) {
@@ -160,7 +177,7 @@ describe("listening", () => {
         const file = path.join(folder, "listening", `${session.sessionId}.json`);
         assert.equal(fs.lstatSync(file).mode & 0o777, 0o600);
         assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), {
-            version: 1, sessionId: session.sessionId, pid: 4242, startedAt: iso(STARTED), kinds: ["send", "fork", "stop"],
+            version: 1, sessionId: session.sessionId, pid: 4242, startedAt: iso(STARTED), kinds: ["send", "fork", "stop", "create"],
         });
         // It does nothing until BriefBar asks.
         assert.deepEqual(calls, { sent: [], executed: [] });
@@ -642,6 +659,17 @@ describe("turning requests down", () => {
         ["a send with an empty prompt", (sessionId) => ({ value: request(sessionId, { prompt: "  \n" }) }), "invalid"],
         ["a fork with a prompt", (sessionId) => ({ value: request(sessionId, { kind: "fork", prompt: PROMPT }) }), "invalid"],
         ["a stop with a prompt", (sessionId) => ({ value: request(sessionId, { kind: "stop", prompt: PROMPT }) }), "invalid"],
+        ["a create without a prompt", (sessionId) => ({ value: request(sessionId, { kind: "create", prompt: undefined }) }), "invalid"],
+        ["a create without a project", (sessionId) => ({ value: request(sessionId, { kind: "create", projectId: undefined }) }), "invalid"],
+        ["a create in a project that isn't one", (sessionId) => ({ value: request(sessionId, { kind: "create", projectId: "../Spectre" }) }), "invalid"],
+        ["a create without a name", (sessionId) => ({ value: request(sessionId, { kind: "create", name: " " }) }), "invalid"],
+        ["a create whose name is longer than the app takes", (sessionId) => ({ value: request(sessionId, { kind: "create", name: "x".repeat(41) }) }), "invalid"],
+        ["a create whose name is more than a line", (sessionId) => ({ value: request(sessionId, { kind: "create", name: "Task 5103\nCart" }) }), "invalid"],
+        ["a create in another mode", (sessionId) => ({ value: request(sessionId, { kind: "create", mode: "yolo" }) }), "invalid"],
+        ["a create whose model isn't one's ID", (sessionId) => ({ value: request(sessionId, { kind: "create", model: "--yolo model" }) }), "invalid"],
+        ["a create whose effort isn't one", (sessionId) => ({ value: request(sessionId, { kind: "create", effort: "MAX!" }) }), "invalid"],
+        ["a create with a report", (sessionId) => ({ value: request(sessionId, { kind: "create", report: true }) }), "invalid"],
+        ["a send that would start a session", (sessionId) => ({ value: request(sessionId, { projectId: NEW_SESSION.projectId }) }), "invalid"],
         ["one whose times aren't ISO 8601", (sessionId) => ({ value: request(sessionId, { createdAt: "Mon, 02 Nov 2026 10:00:00 GMT" }) }), "invalid"],
         ["one that would wait longer than 120 s", (sessionId) => ({ value: request(sessionId, { createdAt: iso(NOW), expiresAt: iso(NOW + LONGEST_WAIT_MS + 1) }) }), "invalid"],
         ["one that expires before it's made", (sessionId) => ({ value: request(sessionId, { createdAt: iso(NOW), expiresAt: iso(NOW - 1) }) }), "invalid"],
@@ -740,6 +768,15 @@ describe("turning requests down", () => {
         assert.deepEqual(checkRequest(fork, { requestId: fork.requestId, sessionId, now: NOW }), { kind: "fork" });
         const stop = request(sessionId, { kind: "stop" });
         assert.deepEqual(checkRequest(stop, { requestId: stop.requestId, sessionId, now: NOW }), { kind: "stop" });
+        const create = request(sessionId, { kind: "create" });
+        assert.deepEqual(checkRequest(create, { requestId: create.requestId, sessionId, now: NOW }), { kind: "create", prompt: PROMPT, ...NEW_SESSION });
+        // The model and the effort are the app's own unless it says them.
+        const plain = request(sessionId, { kind: "create", model: undefined, effort: undefined, mode: "interactive" });
+        delete plain.model;
+        delete plain.effort;
+        assert.deepEqual(checkRequest(plain, { requestId: plain.requestId, sessionId, now: NOW }), {
+            kind: "create", prompt: PROMPT, projectId: NEW_SESSION.projectId, name: NEW_SESSION.name, mode: "interactive",
+        });
         // Only a send has a turn to report.
         for (const kind of ["fork", "stop"]) {
             const odd = request(sessionId, { kind, report: true });
@@ -901,6 +938,121 @@ describe("forking", () => {
         finish({ resultType: "success", textResultForLlm: `Forked session (workspace_id: ${randomUUID()}, session_id: ${forkId}).` });
         await scanning;
         assert.equal(readResult(value.requestId).forkSessionId, forkId);
+    });
+});
+
+describe("starting a session", () => {
+    test("starts a session of the app's with create_session, the prompt as its first message, and says which", async () => {
+        const id = randomUUID();
+        const { session, calls } = fakeSession(undefined, { execute: () => createdAnswer(id) });
+        const outbox = listenTo(session);
+        const value = request(session.sessionId, { kind: "create" });
+        writeRequest(value);
+        await outbox.scan();
+        assert.deepEqual(calls.executed, [{
+            name: "create_session",
+            arguments: {
+                project_id: NEW_SESSION.projectId,
+                workspace_type: "worktree",
+                name: NEW_SESSION.name,
+                detached: true,
+                coordinate_with_creator: false,
+                kickoff: { prompt: PROMPT, mode: "autopilot", model: "claude-opus-5.5", reasoning_effort: "max" },
+            },
+        }]);
+        // Its own session gets nothing: the new one is no child of it.
+        assert.deepEqual(calls.sent, []);
+        assert.deepEqual(readResult(value.requestId), {
+            version: 1, requestId: value.requestId, sessionId: session.sessionId, kind: "create", ok: true,
+            createdSessionId: id, finishedAt: iso(NOW),
+        });
+    });
+
+    test("leaves the model and the effort to the app when it isn't asked for them", async () => {
+        const { session, calls } = fakeSession(undefined, { execute: () => createdAnswer(randomUUID()) });
+        const outbox = listenTo(session);
+        const value = request(session.sessionId, { kind: "create", mode: "interactive" });
+        delete value.model;
+        delete value.effort;
+        writeRequest(value);
+        await outbox.scan();
+        assert.deepEqual(calls.executed[0].arguments.kickoff, { prompt: PROMPT, mode: "interactive" });
+        assert.equal(readResult(value.requestId).ok, true);
+    });
+
+    test("reads what the app's create_session answered", () => {
+        const sessionId = randomUUID();
+        const id = "B2D2E3F4-1A2B-4C3D-8E9F-0A1B2C3D4E5F";
+        const answer = createdAnswer(id);
+        assert.deepEqual(created(answer, sessionId, PROMPT), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
+        assert.deepEqual(created(answer.textResultForLlm, sessionId, PROMPT), { ok: true, kind: "create", createdSessionId: id.toLowerCase() });
+        // The name and the project's come before the session's link, so one that holds another's is never taken for it.
+        for (const named of [randomUUID(), sessionId]) {
+            const text = createdAnswer(id, `See ghapp://sessions/${named} (id: ${named})`).textResultForLlm;
+            assert.deepEqual(created({ ...answer, textResultForLlm: text }, sessionId, PROMPT), {
+                ok: true, kind: "create", createdSessionId: id.toLowerCase(),
+            });
+        }
+        // Without the link, as an app might answer one day: its ID.
+        assert.equal(created(`Created session 'Cart' (id: ${id}) in project 'Spectre'.`, sessionId, PROMPT).createdSessionId, id.toLowerCase());
+
+        const code = (value) => created(value, sessionId, PROMPT).error?.code;
+        assert.equal(code({ resultType: "success", textResultForLlm: "Created a session." }), "create_failed");
+        assert.equal(code({ resultType: "success", textResultForLlm: `Link to it with ghapp://sessions/${sessionId}.` }), "create_failed");
+        assert.equal(code({ resultType: "failure", error: "Project not found." }), "create_failed");
+        assert.equal(code({ resultType: "timeout", error: "Timed out." }), "create_failed");
+        assert.equal(code(null), "create_failed");
+        // As the runtime answers in a session without the app's tools, such as the Copilot CLI's.
+        assert.equal(code({
+            textResultForLlm: "Tool 'create_session' does not exist. Available tools that can be called are .",
+            resultType: "failure",
+            error: "Tool 'create_session' does not exist.",
+        }), "create_unavailable");
+        assert.equal(code({ resultType: "rejected", textResultForLlm: "Rejected." }), "create_unavailable");
+        assert.equal(code({ resultType: "denied", textResultForLlm: "Denied." }), "create_unavailable");
+        // What it says went wrong, unless it quotes the prompt, which never goes back to BriefBar.
+        assert.equal(created({ resultType: "failure", error: "Project not found." }, sessionId, PROMPT).error.message, "Starting the session failed: Project not found.");
+        const quoting = created({ resultType: "failure", error: `Invalid kickoff: ${PROMPT}` }, sessionId, PROMPT);
+        assert.deepEqual(quoting.error, { code: "create_failed", message: "Starting the session failed." });
+    });
+
+    test("says when the session can't run create_session", async () => {
+        const { session } = fakeSession(undefined, {
+            execute() {
+                throw Object.assign(new Error("Unhandled method session.tools.execute"), { code: -32601 });
+            },
+        });
+        const outbox = listenTo(session);
+        const value = request(session.sessionId, { kind: "create" });
+        writeRequest(value);
+        await outbox.scan();
+        const result = readResult(value.requestId);
+        assert.equal(result.kind, "create");
+        assert.equal(result.error.code, "create_unavailable");
+        assert.equal(result.createdSessionId, undefined);
+    });
+
+    test("says a session may have been started when the call fails any other way, without the prompt", async () => {
+        for (const error of [
+            Object.assign(new Error("Pending response rejected since connection got disposed"), { code: -32097 }),
+            new Error(`Couldn't start '${PROMPT}'`),
+            "Thrown as text.",
+        ]) {
+            const { session } = fakeSession(undefined, {
+                execute() {
+                    throw error;
+                },
+            });
+            const outbox = listenTo(session);
+            const value = request(session.sessionId, { kind: "create" });
+            writeRequest(value);
+            await outbox.scan();
+            const result = readResult(value.requestId);
+            assert.equal(result.ok, false);
+            assert.equal(result.error.code, "create_failed", String(error?.message ?? error));
+            assert.ok(!JSON.stringify(result).includes("PROMPT-MARKER"));
+            outbox.stop();
+        }
     });
 });
 

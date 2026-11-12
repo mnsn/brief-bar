@@ -158,6 +158,12 @@ final class AppSettings: ObservableObject {
     @Published var copilotWorktreesFolder: String? {
         didSet { defaults.set(copilotWorktreesFolder, forKey: Key.copilotWorktreesFolder) }
     }
+    /// Where a work item's new session starts, unless you choose otherwise as you send it: in the Copilot app, where you
+    /// can follow and steer it, or with the Copilot CLI, on its own. The app, until you choose; it can start there only
+    /// while Send Prompts to Copilot Sessions is on and the app is on this Mac (`CopilotTasksStore.startsInApp`).
+    @Published var copilotNewSessionsInApp: Bool {
+        didSet { defaults.set(copilotNewSessionsInApp, forKey: Key.copilotNewSessionsInApp) }
+    }
     /// Push and Reply, in a comment's Fix and in Fix All, as you last left it: on, a fix then commits, pushes and replies on
     /// the threads it fixed, as Push & Reply does (`CopilotSending.commentFix`); off, as it starts, it leaves its changes
     /// for you to check, then push with Push & Reply.
@@ -253,6 +259,7 @@ final class AppSettings: ObservableObject {
         copilotPullRequestSessions = pullRequestSessions
         copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
         copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
+        copilotNewSessionsInApp = defaults.object(forKey: Key.copilotNewSessionsInApp) as? Bool ?? true
         copilotFixesPushAndReply = defaults.bool(forKey: Key.copilotFixesPushAndReply)
         // Any program running as you can write the preferences: a run whose ID isn't a session's is left out, and so is a
         // fork's.
@@ -693,6 +700,8 @@ enum SettingsKey {
     static let copilotPullRequestSessions = "ado.copilot.pullRequestSessions"
     static let copilotRepositories = "ado.copilot.repositories"
     static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
+    /// Where a new session starts, unless you choose otherwise (`AppSettings.copilotNewSessionsInApp`).
+    static let copilotNewSessionsInApp = "ado.copilot.newSessionsInApp"
     /// Push and Reply in a comment's Fix and in Fix All, as you last left it (`AppSettings.copilotFixesPushAndReply`).
     static let copilotFixesPushAndReply = "ado.copilot.fixesPushAndReply"
     static let copilotRuns = "ado.copilot.runs"
