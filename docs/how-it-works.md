@@ -1695,13 +1695,15 @@ slot only for a next step that's yours (`UpNextSlot`): Fix next; Your next revie
 Follow up next, the first in Teammate's review's of those that wait on teammates alone
 (`StageReading.waitsOnTeammates`), whose reviewers haven't finished, needing nothing else of you: Fix next has one that
 needs a reviewer, a fix or an answer, never both, and one a session writes is in neither while it does, as it may be
-fixing just that. Follow up next says who hasn't voted yet, those it requires first, a team by its name
-(`StageFacts.pendingReviewers`), and how long it has waited, since anything last happened on it, a push, a comment or a
-vote, or since you set it there, "Waiting on Alex and Jordan · 20m" (`StageText.followUpWords`); with nobody left to
-vote, as when a policy wants another approval, why it waits, "1 of 2 approvals · 2h". BriefBar reads nothing more for
-it: the reviewers and their votes come with the lists, and the time with the details it reads. What waits on Azure
-DevOps or another pull request has none: the Board's columns keep it, and completing a pull request is a click in Azure
-DevOps. Each column's first card, across the lanes, wears **Next** on the Board where its order says what's next
+fixing just that. Follow up next says who hasn't voted yet, those it requires first, a team by its name, but not a
+service account, which never votes (`StageFacts.pendingReviewers`), and how long it has waited, since anything last
+happened on it, a push, a comment or a vote (`StageFacts.lastActivity`), not since a comment that waits on you came, or
+since you set it there, whichever came later (`StageReading.followUpSince`), "Waiting on Alex and Jordan · 20m"
+(`StageText.followUpWords`); a narrow slot cuts the names short and keeps the time; with nobody left to vote, as when a
+policy wants another approval, why it waits, "1 of 2 approvals · 2h". BriefBar reads nothing more for it: the reviewers
+and their votes come with the lists, and the time with the details it reads. What waits on Azure DevOps or another pull
+request has none: the Board's columns keep it, and completing a pull request is a click in Azure DevOps. Each column's
+first card, across the lanes, wears **Next** on the Board where its order says what's next
 (`PullRequestBoard.nextInColumn`, `PullRequestStage.firstWearsNext`): in Your review, Up Next's; in Teammate's review,
 Follow up next's, the first card in its order that the slot has, even below others, such as those Fix next has or a
 session writes, and none while it has none; in Approved, Can merge and Waits, BriefBar's order's alone; not in In

@@ -245,10 +245,10 @@ import Testing
         #expect(try badges(4131).map(\.stage) == [.inProgress])
         let followUp = try #require(try badges(4079).first)
         #expect(try badges(4079).count == 1 && followUp.title == "Next" && followUp.slot == .teammateReview && !followUp.isPicked)
-        #expect(followUp.help == "Up Next: Follow up next" && followUp.spoken == "Up Next" && followUp.stage == .teammateReview)
+        #expect(followUp.help == "Up Next: Follow up next" && followUp.spoken == "Up Next: Follow up next" && followUp.stage == .teammateReview)
         let review = try #require(try badges(4088).first)
         #expect(try badges(4088).count == 1 && review.title == "Next" && review.slot == .yourReview && review.isPicked)
-        #expect(review.help == "Up Next: you chose it, until it moves on" && review.spoken == "Up Next, you chose it")
+        #expect(review.help == "Up Next: you chose it, until it moves on" && review.spoken == "Up Next: Your next review, you chose it")
         let merge = try #require(try badges(4120).first)
         #expect(merge.title == "Next" && merge.slot == nil && !merge.isPicked)
         #expect(merge.help == "Next: it comes first in its column" && merge.spoken == "Next in its column")
@@ -310,6 +310,14 @@ import Testing
         Self.tell(order, facts)
         #expect(slots()[.teammateReview]?.card.ref == Self.ref(4099))
         #expect(slots()[.teammateReview]?.isPicked == true)
+
+        // A push five minutes ago, after a comment from two hours ago that waits on you, which the list's time is: it has
+        // waited five minutes.
+        facts[4099]?.since = now - 2 * 3_600
+        facts[4099]?.lastActivity = now - 5 * 60
+        Self.tell(order, facts)
+        let pushed = try #require(slots()[.teammateReview])
+        #expect(UpNextView.why(pushed.card, in: .teammateReview, order: order, now: now) == "Waiting on Alex and Jordan · 5m")
     }
 
     /// What an earlier build kept for slots Up Next no longer has, as Approved next's, goes as Pull Request Order reads what's

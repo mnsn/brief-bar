@@ -2597,9 +2597,9 @@ package struct CardBadge: Equatable, Identifiable {
         }
     }
 
-    /// What VoiceOver says of it, after the card's stage and details.
+    /// What VoiceOver says of it, after the card's stage and details: as its tooltip, which slot it's Next for.
     package var spoken: String {
-        let name = isFixNext ? "Fix next" : slot == nil ? "Next in its column" : "Up Next"
+        let name = isFixNext ? "Fix next" : slot.map { "Up Next: \($0.title)" } ?? "Next in its column"
         return isPicked ? "\(name), you chose it" : name
     }
 

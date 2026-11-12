@@ -261,6 +261,9 @@ final class PullRequestOrderFacts {
                 ?? (pr.hasConflicts ? "Merge conflicts" : pr.mergeProblem?.headline)
             facts.changesWanted = left.first { $0.kind == .changesRequested }?.label ?? Self.changesWanted(by: others)
             facts.isReady = readiness?.isReady ?? (item?.group == .ready)
+            // When anything last happened on it, a push, a comment or a vote: Follow up next counts from it, whatever waits on
+            // you there, where the list's time is when that came.
+            facts.lastActivity = max(pr.createdAt, record.details?.lastActivity ?? .distantPast)
             // Its reviews: approvals, the reviewers it requires, and any other reviewer policy, by its name. Without a
             // reviewer policy, What's Left wants someone's approval; with one that doesn't apply, nobody's review holds it up.
             let reviewerPolicies = Set((record.details?.checks ?? []).filter { $0.kind == .reviewers }.map(\.name))
@@ -330,9 +333,10 @@ final class PullRequestOrderFacts {
 
     /// Who's asked to review one of yours and hasn't voted yet, as Follow up next names them (`StageFacts.pendingReviewers`):
     /// people by their first names, a team by its name, those it requires first: "Alex and Jordan"; nil with none. Not one
-    /// who declined, nor one who voted, whose vote says the rest.
+    /// who declined, nor one who voted, whose vote says the rest, nor a service account, as a build service, which never
+    /// votes.
     static func pending(_ reviewers: [Reviewer]) -> String? {
-        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined }
+        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined && !$0.person.isBot }
         return listed((pending.filter(\.isRequired) + pending.filter { !$0.isRequired }).map(PRReadiness.shortName))
     }
 

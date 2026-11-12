@@ -238,6 +238,18 @@ import Testing
         let parts = StageText.followUpParts(waiting, name: Self.name, now: now)
         #expect(parts.who == "Waiting on Alex and Jordan" && parts.waited == " · 2d")
         #expect(StageText.followUpParts(waiting, name: Self.name, now: t(30)).waited == nil)
+        // It counts from the latest that happened on it, as a push after a comment that waits on you, or from when you set
+        // it there, whichever came later.
+        let facts = StageFacts(
+            role: .author, waitingFor: "0 of 2 approvals", pendingReviewers: "Alex and Jordan", since: t(0), lastActivity: t(5_400)
+        )
+        let worked = StageRules.reading(facts: facts, sessions: [], marks: [], order: .free)
+        #expect(worked?.stage == .teammateReview && worked?.followUpSince == t(5_400))
+        let set = StageRules.reading(facts: facts, sessions: [], marks: [StageMark(stage: .teammateReview, at: t(6_000))], order: .free)
+        #expect(set?.mark != nil && set?.followUpSince == t(6_000))
+        #expect(set.map { StageText.followUpWords($0, name: Self.name, now: t(7_200)) } == "Waiting on Alex and Jordan · 20m")
+        let setBefore = StageRules.reading(facts: facts, sessions: [], marks: [StageMark(stage: .teammateReview, at: t(60))], order: .free)
+        #expect(setBefore?.followUpSince == t(5_400))
         waiting.pendingReviewers = nil
         #expect(StageText.followUpWords(waiting, name: Self.name, now: t(1_200)) == "0 of 2 approvals · 20m")
         // Only one that waits on teammates alone: not one that needs a reviewer, nor one Fix next has, nor one a session
