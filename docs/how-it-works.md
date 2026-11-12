@@ -1729,14 +1729,18 @@ other missions have waited, as Up Next does.
 **The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
 each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
 actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next has a slot for: In progress, while it
-needs you, for Fix next, and Your review (`UpNextSlot.of`); in the others, BriefBar's order alone decides which comes
-first. Only one the slot has now can be chosen (`UpNextSlot.has`). The
-one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
-(`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
-needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is, in its
-mission's next steps too;
-the slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on
-your board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
+needs you, for Fix next, Your review (`UpNextSlot.of`), and, on My Work, To start, for Start next (below); in the
+others, BriefBar's order alone decides which comes first. Only one the slot has now can be chosen (`UpNextSlot.has`).
+The one you chose (`UpNextPicks`) comes first in its slot's column, Fix next's in In progress and Your next review's in
+Your review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), and first of its kind
+in its mission's next steps, but in In progress only while it needs you, so that what needs you still comes first. Fix
+next's comes first of what asks you or what to fix in its mission's next steps too, wherever it is; elsewhere it keeps
+its place: in another column, as Teammate's review for one that needs a reviewer, and among its mission's reviews or
+reviewers to find. The slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull
+request is on your board in that stage, or, for Fix next, while it needs you, in any stage but Merged
+(`UpNextSlot.keeps`), a reviewer to find included: one you chose as its build failed stays once it passes, while
+nobody's asked to review it. Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is
+once
 it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull
 requests and Done only yours, or once you're taken off it: the lists Azure DevOps has read of its organization since
 BriefBar started, as the account signed in now (`PRStore.listedOrganizations`), don't have it. Once it's been away for

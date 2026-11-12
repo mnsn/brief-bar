@@ -371,16 +371,17 @@ waited longest, one that others build on counting as long as they've waited, as 
 you focus on comes first in each. What waits on others has no slot, as a teammate's review or approval, Azure DevOps or
 another pull request merging: the Board's columns keep it in their order, and completing a pull request is a click in
 Azure DevOps. To choose which one a slot shows, such as a more urgent fix, click its title, **Fix next ⌄**, and pick it
-from its pull requests, each with why it's there: it shows with ✎, first in its column on the Board too, and BriefBar
-remembers it, for the Azure DevOps account you're signed in with (one sent to you in a chat, in memory only), until that
-pull request moves on to another stage, or, for Fix next, no longer needs you, merges or closes, or leaves your lists,
-as a review once its author completes it, and stays away for half an hour while BriefBar runs with Pull Request Order
-on; then BriefBar chooses again. Back sooner, as when someone wants more changes, it's still yours, and **Undo**, after
-you move its card, chooses it again, unless you've since chosen another or let BriefBar choose. While its build runs
-again, or a session writes it, Fix next shows the next one meanwhile, and yours once it needs you again.
-**Let BriefBar Choose**, in the same list, gives the slot back to BriefBar's order, meanwhile too. Click one for its
-details; **2 more ›** shows the rest on the Board, and Fix next's, the next one's column. Click **Up Next** to fold it,
-and BriefBar remembers. It changes no group or count.
+from its pull requests, each with why it's there: it shows with ✎, as its card does on the Board, where Fix next's comes
+first in In progress and Your next review's in Your review. BriefBar remembers it, for the Azure DevOps account you're
+signed in with (one sent to you in a chat, in memory only), until that pull request moves on to another stage, or, for
+Fix next, no longer needs you, merges or closes, or leaves your lists, as a review once its author completes it, and
+stays away for half an hour while BriefBar runs with Pull Request Order on; then BriefBar chooses again. Back sooner, as
+when someone wants more changes, it's still yours, and **Undo**, after you move its card, chooses it again, unless
+you've since chosen another or let BriefBar choose. While it needs nothing from you, as while its build runs again, or a
+session writes it, Fix next shows the next one meanwhile, and yours once it needs you again; one of yours that nobody's
+asked to review still needs you, so it stays. **Let BriefBar Choose**, in the same list, gives the slot back to
+BriefBar's order, meanwhile too. Click one for its details; **2 more ›** shows the rest on the Board, and Fix next's,
+the next one's column. Click **Up Next** to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your
 review**, **Teammate's review**, **Approved**, marked with a seal, **Can merge**, **Waits** and **Merged**; and a lane

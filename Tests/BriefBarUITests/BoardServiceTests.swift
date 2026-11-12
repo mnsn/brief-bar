@@ -518,6 +518,32 @@ import Testing
         #expect(Self.fixNext(order)?.isPicked == false)
     }
 
+    /// Fix next's choice stands while it needs you, a reviewer to find included: one you chose as it failed stays first
+    /// once its build runs again, while nobody's asked to review it, ahead of one whose build failed. Once someone is, it
+    /// waits, and half an hour later BriefBar's order chooses.
+    @Test func aChoiceStandsWhileItsPullRequestNeedsAReviewer() throws {
+        var now = Date(timeIntervalSince1970: 1_792_000_000)
+        let order = Self.service(MemoryDefaults(), now: { now })
+        Self.tell(order, Self.fixes)
+        #expect(order.pickNext(Self.ref(4132), in: .fix))
+
+        var running = Self.fixes
+        running[4132] = StageFacts(role: .author)
+        Self.tell(order, running)
+        let stays = try #require(Self.fixNext(order))
+        #expect(stays.card.ref == Self.ref(4132) && stays.isPicked)
+        #expect(UpNextView.why(stays.card, in: .fix, order: order) == "Find a reviewer · in Teammate's review")
+        #expect(stays.cards.map(\.ref) == [Self.ref(4132), Self.ref(4131), Self.ref(4133)])
+
+        running[4132] = StageFacts(role: .author, waitingFor: "Waiting on Priya")
+        Self.tell(order, running)
+        #expect(Self.fixNext(order)?.card.ref == Self.ref(4131))
+        #expect(Self.fixNext(order)?.isPicked == false)
+        now += UpNextPicks.awayFor
+        order.timePassed()
+        #expect(order.picks.isEmpty)
+    }
+
     /// Fix next's choice waits while its build runs again, not needing you, and comes first once it fails again. It waits
     /// too until Azure DevOps' lists are read, and while Pull Request Order is off, unused.
     @Test func aChoiceWaitsWhileItsPullRequestCantSayWhereItIs() {

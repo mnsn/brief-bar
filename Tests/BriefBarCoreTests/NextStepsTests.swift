@@ -658,8 +658,9 @@ import Testing
     @Test func aChoiceStandsUntilItsPullRequestMovesOn() {
         var picks = UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)])
         let known = Set(picks.refs.values)
+        let writing = Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(0))))
         var readings: [ItemRef: StageReading] = [
-            Self.pr(4101): Self.reading(.merged, .merged),
+            Self.pr(4101): writing,
             Self.pr(4202): Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
         ]
         var away: [UpNextSlot: UpNextPicks.Away] = [:]
@@ -669,24 +670,29 @@ import Testing
             return moved
         }
         #expect(moved(at: 0).isEmpty)
-        #expect(away.mapValues(\.since) == [.fix: t(0), .yourReview: t(0)])
+        #expect(away.mapValues(\.since) == [.yourReview: t(0)])
         #expect(away[.yourReview]?.ref == Self.pr(4202))
 
         readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
         #expect(moved(at: UpNextPicks.awayFor - 1).isEmpty)
-        #expect(away[.yourReview] == nil && away[.fix]?.since == t(0))
-        #expect(moved(at: UpNextPicks.awayFor) == [.fix])
         #expect(away.isEmpty)
-        #expect(picks == UpNextPicks([.yourReview: Self.pr(4202)]))
+        #expect(moved(at: UpNextPicks.awayFor).isEmpty)
+        #expect(picks == UpNextPicks([.fix: Self.pr(4101), .yourReview: Self.pr(4202)]))
 
         // You finish it again, and it's back only an hour later.
         readings[Self.pr(4202)] = Self.reading(.teammateReview, .finishedReview, isOnBoard: false)
         #expect(moved(at: 2_000).isEmpty)
         readings[Self.pr(4202)] = Self.reading(.yourReview, .asked("New commits by Sam"))
         #expect(moved(at: 5_600) == [.yourReview])
-        #expect(picks.isEmpty)
+        #expect(picks == UpNextPicks([.fix: Self.pr(4101)]))
 
-        let writing = Self.reading(.inProgress, .working(StageSession(ref: Self.cart, activity: .working, since: t(0))))
+        // Fix next's, once its pull request merged, as any once it's away for half an hour.
+        readings[Self.pr(4101)] = Self.reading(.merged, .merged)
+        #expect(moved(at: 6_000).isEmpty)
+        #expect(away.mapValues(\.since) == [.fix: t(6_000)])
+        #expect(moved(at: 6_000 + UpNextPicks.awayFor) == [.fix])
+        #expect(picks.isEmpty && away.isEmpty)
+
         #expect(UpNextSlot.fix.keeps(writing))
         #expect(!UpNextSlot.fix.has(writing))
         #expect(UpNextSlot.fix.has(Self.fixes[4101]))
