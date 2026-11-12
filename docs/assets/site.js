@@ -186,6 +186,10 @@
                 new IntersectionObserver(([entry]) => showcase.classList.toggle('is-offscreen', !entry.isIntersecting))
                     .observe(showcase);
             }
+            // If Reduce Motion is turned on later, they stop, as they would have from the start.
+            reduceMotion.addEventListener('change', () => {
+                if (reduceMotion.matches) stopAutoplay();
+            });
         }
     }
 
@@ -197,6 +201,7 @@
         if (!stages.length || !card || !status) continue;
         let index = 0;
         let timer = null;
+        let reset = null;
 
         const show = (next) => {
             index = next;
@@ -215,7 +220,8 @@
                 return;
             }
             card.classList.add('is-leaving');
-            setTimeout(() => {
+            reset = setTimeout(() => {
+                reset = null;
                 card.classList.add('is-jumping');
                 show(0);
                 void card.offsetWidth;
@@ -229,13 +235,22 @@
         }
         show(0);
         new IntersectionObserver(([entry]) => {
-            if (entry.isIntersecting && !timer) {
+            if (entry.isIntersecting && !timer && !reduceMotion.matches) {
                 timer = setInterval(step, 2200);
             } else if (!entry.isIntersecting && timer) {
                 clearInterval(timer);
                 timer = null;
             }
         }, { threshold: 0.4 }).observe(flow);
+        // If Reduce Motion is turned on later, it stops where it would have stood from the start.
+        reduceMotion.addEventListener('change', () => {
+            if (!reduceMotion.matches) return;
+            clearInterval(timer);
+            clearTimeout(reset);
+            timer = reset = null;
+            card.classList.remove('is-leaving', 'is-jumping');
+            show(1);
+        });
     }
 
     // Privacy's switches only show what each setting says; the real ones are in BriefBar's Settings.
