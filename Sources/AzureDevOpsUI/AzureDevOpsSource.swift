@@ -95,7 +95,13 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// the branch it merges into and whether it's still active.
     /// 29: only with My Work Page, while My Work shows + Sprint Tasks with Show Links on, your team's current sprint,
     /// as while its Sprint section is on screen, and the pull requests linked to its work items.
-    nonisolated package static let descriptionVersion = 29
+    /// 30: with Pull Request Order on, how far each of your own pull requests got, Your review, Teammate's review,
+    /// Approved or Can merge, kept in BriefBar's preferences for each account you sign in with, by reference, until it
+    /// merges or closes, is a draft again, or no list has had it for 30 days. Only with My Work Page, while My Work
+    /// shows + Sprint Tasks or + All My Tasks with Show Links on, your open tasks and bugs in your team's project, in
+    /// any sprint or none, with the iteration each is in, through Azure DevOps' Assigned to me query; and, with + All
+    /// My Tasks, the pull requests linked to them.
+    nonisolated package static let descriptionVersion = 30
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"

@@ -1849,9 +1849,38 @@ springs end: one that stays folded, with the card in it, as one you folded, coun
 flashes (`PullRequestBoard.foldsOnceMoved`: the board before the drop with each of its pull requests at its stage
 once moved, so the column the card left no longer counts it, Set as Next to Merge's wait for the one you set counts,
 and a session at work on it leaves it not your move there). Folding changes no stage, count or Up Next slot. The
-Board, its lanes, the columns you folded or opened, and whether Up Next is folded are kept as choices only:
+Board, its lanes, the columns you folded, opened, joined or hid, and whether Up Next is folded are kept as choices only:
 `order.view`, which GitHub's page reads as List where it's the Board, without saving that, `order.boardLanes`,
-`order.boardColumns` and `order.upNextFolded`.
+`order.boardColumns`, `order.boardJoins`, `order.boardHidden` and `order.upNextFolded`.
+
+You lay the columns out from their titles, without Settings, the same on both pages (`BoardLayout`): neighbors joined
+into one column, and Merged and Completed hidden. It only maps the Board's columns (`BoardColumn`) to those it shows
+(`ShownColumn`), so it can't disagree with the stages: a joined column's cards keep their own stage and color, a drop or
+a key still sets one stage, and Up Next, counts, notifications and what agents are told don't change. The flow's order
+is fixed: a column joins only the one beside it, kept as the gap between them (`order.boardJoins`, such as
+`yourReview+teammateReview`), and joins side by side make one column, which never spans a hidden one. Only Merged and
+Completed hide (`order.boardHidden`): what's merged but not out yet, as a pull request whose task is still open, and
+what's done, none of which needs you (`BoardCard.needsYou`), so nothing that needs you leaves the Board; hidden while
+joined, they come back as Done. A joined column is named for what it holds (`ShownColumn.title`): In review, Ready,
+Done, Teammate's review for it with Approved, whose cards wear Approved's seal there, or else the names of what you
+joined, the longest that has a name first, from the left: "Approved + Can merge", "In progress + In review". It folds as
+one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it holds only where
+each of its columns would; otherwise as late as the latest of them in that order, so In review only after every other,
+as Your review; and never while any of them holds your move. Your fold or open of it is kept by its key,
+`canMerge+waits` in `order.boardColumns`, for each column the joins make on either page, whichever of Merged and
+Completed you hide (`BoardLayout.joined`), until you split it; a column's own stays through joins. The tab of hidden
+columns, at the end of the titles, counts the cards they hold, as every number in that row counts cards, and takes a
+strip's room (`BoardWidths.reserved`), so three columns still open at 946 points. Tab reaches it, as it does a strip,
+whatever the Mac's keyboard navigation, as nothing else leads the keyboard to what it hides; Return or Space there shows
+them all, as SwiftUI can't open its menu from a key. A joined column that a card you drag hovers for 0.6 seconds springs
+open into its columns until the drag ends, as a strip does, where one of them takes the card, though the card is in
+another, so that it goes from Waits to Can merge in Ready as between any two; those that take it open, with the one it's
+in. Dropped on it before, the card stays where one of them holds it already, or goes to the only one that takes it, and
+where more than one would, the column says to hold it there until it opens. ⌘→ and ⌘← move a card a stage at a time,
+within a joined column too, which stays open while a card in any of its columns has the keyboard. Show Them shows the
+hidden column that holds its card, Done where you hid that, for the moment: until you hide it again or the board goes.
+Simple Columns joins Your review, Teammate's review and Approved; Can merge and Waits; and Merged and Completed. It and
+Reset Columns forget your folds too, as Let BriefBar Decide would for each.
 
 #### My Work
 

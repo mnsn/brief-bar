@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.20.0 - 2026-11-12
+
+- **A session's end shows within seconds, not a minute later.** On a busy Mac, BriefBar could read the Copilot app's
+  database just before the app's last change of a while, such as a session ending, could be read there, and then
+  showed what it had read until it looked again a minute later. It now reads once more a second later. A new Teams
+  message, and with **Pull Requests Sent in Chats** on, a pull request sent in a chat, could wait the same way, and
+  no longer do.
+- **Approved, a stage of its own.** With **Pull Request Order** on, a pull request of yours whose required reviewers
+  approved it, but that Azure DevOps can't complete yet, is **Approved**, between Teammate's review and Can merge,
+  saying what it still waits for, such as **Build running**, or who approved it, rather than going back to In progress.
+  The Board has an **Approved** column, its title marked with a seal, Up Next an **Approved next** slot, marked with it
+  too, and its details' track an Approved step. Like Can merge, only Azure DevOps puts a pull request there: nobody can
+  set it.
+- **BriefBar never moves your pull requests back on its own.** A failed or expired build, conflicts, a merge Azure
+  DevOps couldn't make, changes someone wants and a Copilot session that writes it or asks you something now mark it
+  where it is, after its row's words, **Maria approved it · build failed**, and on its Board card, **✕ Build failed**,
+  **✋ Sam wants changes**, rather than putting it in progress. It goes back only once it loses what its stage stands
+  for: its approval, as when a push resets the votes, back to Teammate's review; Azure DevOps' readiness while it's
+  still approved, from Can merge back to Approved. In progress is for drafts, and for one the session that opened it
+  still writes. Your own moves, and the stages sessions set, still move it either way.
+- **Fix next, from every column.** Up Next's **Fix next** has what needs you wherever it is, saying what and where,
+  **Build failed · in Approved**, while one in Your review is still your next review too. Its card wears **Fix next**
+  on the Board. Where Up Next's slots wrap, they spread evenly over their lines.
+- **The Board's columns fold, so what's your move stays in sight.** Click a column's title to fold it to a narrow
+  strip, which shows its count, in a pill when something in it needs you, and click the strip to open it again;
+  BriefBar remembers. A column with no cards folds by itself until a card arrives. Where the window is too narrow, as
+  with bigger text, BriefBar folds what you need least first, **Merged**, **Waits** and **To start**, then the columns
+  where you wait on others, the one that needs least from you first, and keeps the columns where it's your move open,
+  before it scrolls: in a 946-point window, the Board shows three open columns and the rest as strips, rather than
+  cutting off the fourth. Right-click a title or strip for why it's folded, and **Let BriefBar Decide**. While you drag
+  a card, a folded column springs open as you hold the card over it, and **⌘→** and **⌘←** move a card into a folded
+  column too. **Tab** reaches a folded column's strips as it does cards, and **Return** opens one. Merged, which showed
+  only its count until you clicked it, opens by itself when there's room.
+- **Merged and Completed for your sprint work on My Work.** With **+ Sprint Tasks**, your sprint work that's resolved is
+  in **Merged**, and what's done in **Completed**, a new column after Merged, marked with the Sprint page's Done
+  checkmark, for the rest of the sprint. A pull request of yours that merged stays in Merged until it's out, its
+  pipelines after the merge finished, and your work on it is done, its card saying what it waits for, such as
+  **Production waits for approval** or **Task 5112 still open**; then it's in Completed too. Where the window is too
+  narrow, Completed folds first, and the strips are a little thinner, so that a 946-point window still shows three open
+  columns. A story's lane whose work is all resolved or done folds to its header, as a finished mission's does, saying
+  what it holds, such as **1 merged · 2 completed**, and a finished mission's lane folds once your work in it is
+  resolved or done too. With **Pull Requests**, the Board is as it was.
+- **All your tasks on My Work, not only the sprint's.** With **My Work Page (preview)** on, My Work's **Show** offers
+  **+ All My Tasks** too: your open tasks and bugs from older sprints, from iterations outside your team's sprints and from
+  none, on the Board beside the sprint's, each card saying where it is, such as **Sprint 38** or **No sprint**, and each
+  pull request's card naming those it's for, such as **Task 5181 (Sprint 41)**. Under the header, a line counts yours
+  outside the sprint, such as **5 tasks and 1 bug of yours aren't in Sprint 42**, with + Sprint Tasks too, where **Show
+  Them** shows them, taking you and the keyboard to the first, its column opened for the moment if it's folded, or says
+  **All your open tasks and bugs are in Sprint 42**. Show has a row of its own under My Work's title now, so that the
+  title and what it counts keep their room in a narrow window.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Pull
+  Request Order on, Azure DevOps keeps how far each of your pull requests got, so that BriefBar never moves one back on
+  its own. Only with My Work Page on, Azure DevOps reads your open tasks and bugs in every sprint, and with + All My
+  Tasks the pull requests linked to them, while My Work shows your tasks.
+
 ## 0.19.3 - 2026-11-11
 
 - **Your sprint tasks and your pull requests on one board, as a preview.** Turn on **My Work Page (preview)** in

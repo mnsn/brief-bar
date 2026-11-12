@@ -72,6 +72,8 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var isUpNextFolded: Bool
     /// The Board's columns you opened or folded yourself, on either page: BriefBar decides the rest (`BoardFolding`).
     @Published package private(set) var boardFolds: BoardFolds
+    /// The Board's columns as you laid them out from their titles, on either page: those you joined, and hid.
+    @Published package private(set) var boardLayout: BoardLayout
     /// My Work Page, in Settings: Up Next and the Board on a window page of their own, My Work, rather than on Azure DevOps'
     /// Pull Requests page. Off until you turn it on; it shows only while Pull Request Order is on too (`showsMyWork`).
     @Published package private(set) var myWorkPage: Bool
@@ -224,6 +226,7 @@ package final class PullRequestOrder: ObservableObject {
         lanes = BoardLanes.load(from: defaults)
         isUpNextFolded = UpNext.isFolded(in: defaults)
         boardFolds = BoardFolds.load(from: defaults)
+        boardLayout = BoardLayout.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -284,6 +287,37 @@ package final class PullRequestOrder: ObservableObject {
         guard folds != boardFolds else { return }
         boardFolds = folds
         folds.save(to: defaults)
+    }
+
+    /// The Board's columns as you laid them out, remembered, with what you folded or opened of the joined columns it still
+    /// makes: one you split, or joined to another, starts as BriefBar decides should you join it again.
+    package func setBoardLayout(_ layout: BoardLayout) {
+        guard layout != boardLayout else { return }
+        boardLayout = layout
+        layout.save(to: defaults)
+        setBoardFolds(boardFolds.keeping(layout))
+    }
+
+    /// Simple Columns: To start, In progress, In review, Ready and Done, nothing hidden, each folding as BriefBar decides.
+    package func simpleColumns() {
+        setBoardLayout(.simple)
+        setBoardFolds(BoardFolds())
+    }
+
+    /// Reset Columns: the Board's columns as they come, none joined or hidden, each folding as BriefBar decides.
+    package func resetColumns() {
+        setBoardLayout(BoardLayout())
+        setBoardFolds(BoardFolds())
+    }
+
+    /// Whether the Board's columns are as Simple Columns lays them out.
+    package var hasSimpleColumns: Bool {
+        boardLayout == .simple && boardFolds.isEmpty
+    }
+
+    /// Whether the Board's columns are as they come.
+    package var hasDefaultColumns: Bool {
+        boardLayout.isDefault && boardFolds.isEmpty
     }
 
     /// Shows the Board at a column, as Up Next's "2 more ›" does: By Mission's Board, remembered, scrolled to it.
