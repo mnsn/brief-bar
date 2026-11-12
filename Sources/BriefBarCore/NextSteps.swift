@@ -917,6 +917,9 @@ public struct PullRequestBoard: Equatable, Sendable {
     /// Of its merged pull requests, those in Completed rather than Merged, with your work on it (`withWork`): out, with no
     /// work item of yours that its card names still open. Only where they show: their stage is still Merged.
     public var completed: Set<ItemRef> = []
+    /// Start next, Up Next's last slot while it shows your sprint work (`withWork`): what's in To start, to start next; nil
+    /// with nothing there.
+    public var startNext: StartNext?
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],
