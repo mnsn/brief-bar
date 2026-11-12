@@ -101,7 +101,11 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// shows + Sprint Tasks or + All My Tasks with Show Links on, your open tasks and bugs in your team's project, in
     /// any sprint or none, with the iteration each is in, through Azure DevOps' Assigned to me query; and, with + All
     /// My Tasks, the pull requests linked to them.
-    nonisolated package static let descriptionVersion = 30
+    /// 31: only with Make Changes in Azure DevOps, on My Work, a task or bug of yours moved to your team's current
+    /// sprint or its next, a PATCH of its iteration, when you click it and confirm, after which BriefBar reads the
+    /// sprint and your work outside it again; and, as you move one to the next sprint, your team's sprints, with their
+    /// dates, kept in memory only, for an hour.
+    nonisolated package static let descriptionVersion = 31
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
