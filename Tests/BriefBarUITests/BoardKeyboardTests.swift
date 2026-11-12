@@ -822,6 +822,25 @@ import Testing
         }
     }
 
+    /// Tab reaches the tab of the columns you hid as it does a strip, whatever the Mac's keyboard navigation, as nothing else
+    /// leads the keyboard to the cards they hold: Return there shows them again.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesTheTabOfTheColumnsYouHidWhereReturnShowsThem() async throws {
+        let order = Self.withAMergedPullRequest()
+        order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)]))
+        try await Self.showing(order) { window, _, drawn in
+            #expect(!drawn.isDrawn(Self.merged))
+            // Tab to the card, then on.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the tab, which Tab went to, to show Merged") {
+                Self.press(.return, in: window)
+                return order.boardLayout.hidden.isEmpty
+            }
+            try await until("the merged pull request's card") { drawn.isDrawn(Self.merged) }
+        }
+    }
+
     /// On My Work, with your sprint work on the Board, a pull request that's out is in Completed, its stage still Merged:
     /// Return on Completed's strip, which Tab reaches as it does a card, opens the column for the moment on that pull
     /// request, which has the keyboard and keeps it open.

@@ -978,6 +978,15 @@ package struct OrderBoardView: View {
         }
         .labelMenuStyle()
         .fixedSize()
+        // Its ring inside it, where the titles' row would cut one drawn outside, as a strip's.
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 7, style: .continuous).inset(by: 3))
+        // Tab reaches it as it does a strip, whatever the Mac's keyboard navigation, as it's the only way to the cards it
+        // hides: Return or Space shows them all, as SwiftUI can't open its menu from a key.
+        .focusable(interactions: .edit)
+        .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+            show(hidden)
+            return .handled
+        }
         .help(BoardText.hiddenHelp(hidden, count: board.count(of:)))
         .accessibilityLabel(BoardText.hiddenWords(hidden, count: board.count(of:)))
         .accessibilityHint("Shows them again")

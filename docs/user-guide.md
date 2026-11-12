@@ -436,9 +436,10 @@ review** for In progress joined to In review. A joined column holds each
 stage's cards in turn, in their own colors, and folds and opens as one column, which stays open while it holds your move.
 Its **←|→**, over its title's marks, or **Split** in the title's menu, splits it again. Right-click **Merged** or
 **Completed**, which hold only history, to **Hide** it: a tab at the end of the titles, an eye over how many cards they
-hold, shows them again. The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In
-review**, with Approved, **Ready** and **Done**, or four on Pull Requests; and **Reset Columns**, each column back as it
-came. Both let BriefBar decide which fold again. While you drag a card, a joined column springs open into its stages as
+hold, shows them again. **Tab** goes to it as it goes to a strip, and **Return** or **Space** there shows them all.
+The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In review**, with
+Approved, **Ready** and **Done**, or four on Pull Requests; and **Reset Columns**, each column back as it came. Both
+let BriefBar decide which fold again. While you drag a card, a joined column springs open into its stages as
 you hold the card over it, as a strip does, so that you drop it on one stage, the column the card is in too, so that it
 can go from **Waits** to **Can merge** in **Ready**; ⌘→ and ⌘← still move a card a stage at a time. **Show Them** shows a
 hidden column for the moment where its card is in one. Joining and hiding change no stage, count or Up Next slot, and
