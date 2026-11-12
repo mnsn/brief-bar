@@ -2029,8 +2029,9 @@ left to start; but yours in a sprint after the current one, by its name (`Outsid
 `SprintWork.laterSprint`), as one you moved to the next, goes last, the nearest sprint's first, by the number in its
 name, where that order would offer the latest first; the Board's lanes keep it. In a lane in your order, its work comes
 in your order instead, in the places the lane's work holds (`PullRequestBoard.inLanesOrder`), so that between lanes,
-that order still decides; a later sprint's swaps places only with the lane's other work of that sprint, which still goes
-last, the nearest sprint's first, so that each sprint keeps the backlog's order between lanes. It isn't an `UpNextSlot`:
+that order still decides. Work swaps places only with the lane's other work of its part: the sprint's, yours outside it
+(`SprintWork.isOutside`), or a later sprint's. So, wherever you put them, the sprint's still comes first and a later
+sprint's last, the nearest first, and each part keeps the backlog's order between lanes. It isn't an `UpNextSlot`:
 `UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To start's dashed ring, in To start's gray, as
 To start's column title has it; its lines are the work item's type, number and title, its card's why, with where it is
 for one outside the sprint, "New · Sprint 41", and its lane, as My Work words them (`StartNextContent`). Its ⌄, or Make

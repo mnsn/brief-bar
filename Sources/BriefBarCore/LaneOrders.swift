@@ -322,29 +322,45 @@ extension PullRequestBoard {
     }
 
     /// Work items in To start, in the backlog's order, each lane's in your order instead, in the places its work holds:
-    /// between lanes, the backlog's order still decides. A later sprint's work, which Start next puts last however you put
-    /// it, the nearest sprint's first, swaps places only with the lane's other work of that sprint, so that it takes none of
-    /// the rest's places, nor another sprint's, which would put it ahead of another lane's work of its own sprint.
+    /// between lanes, the backlog's order still decides. Work swaps places only with the lane's other work of its part of
+    /// Start next, whatever your order: the sprint's, which comes first; yours outside it (`SprintWork.isOutside`), once none
+    /// of the sprint's is left; and each later sprint's, last, the nearest sprint's first. So none takes another part's
+    /// place, which would put it ahead of another lane's work that comes before it, as the sprint's before yours outside it.
     func inLanesOrder(_ toStart: [BoardTask]) -> [BoardTask] {
+        enum Part: Hashable {
+            case sprint
+            case outside
+            case later(String)
+
+            init(_ work: SprintWork) {
+                if let later = work.laterSprint {
+                    self = .later(later)
+                } else {
+                    self = work.isOutside ? .outside : .sprint
+                }
+            }
+        }
         struct Queue: Hashable {
             var lane: Int
-            /// The later sprint its work is in; nil for the rest.
-            var laterSprint: String?
+            var part: Part
         }
         var queueOf: [ItemRef: Queue] = [:]
         var queues: [Queue: [BoardTask]] = [:]
         for (index, lane) in lanes.enumerated() {
             for item in lane.items(in: .toStart) {
                 guard case .work(let task) = item else { continue }
-                let queue = Queue(lane: index, laterSprint: task.work.laterSprint)
+                let queue = Queue(lane: index, part: Part(task.work))
                 queueOf[task.ref] = queue
                 queues[queue, default: []].append(task)
             }
         }
+        var taken: [Queue: Int] = [:]
         return toStart.map { task in
-            guard let queue = queueOf[task.ref], let next = queues[queue]?.first else { return task }
-            queues[queue]?.removeFirst()
-            return next
+            guard let queue = queueOf[task.ref], let tasks = queues[queue] else { return task }
+            let next = taken[queue, default: 0]
+            guard next < tasks.count else { return task }
+            taken[queue] = next + 1
+            return tasks[next]
         }
     }
 }

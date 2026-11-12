@@ -38,19 +38,23 @@ public struct SprintWork: Equatable, Sendable, Identifiable {
     public var pullRequests: [LinkedPullRequest]
     /// A task you sent to Copilot works on it now.
     public var copilotWorks: Bool
+    /// One of yours outside the sprint, with + All My Tasks (`OutsideWork`): Start next offers it once none of the sprint's
+    /// is left to start, wherever your order puts it.
+    public var isOutside: Bool
     /// For one of yours outside the sprint in a sprint after it, as one you moved to the next: that sprint's iteration path.
     /// Start next offers it after the rest, the nearest sprint's first. Nil for the rest.
     public var laterSprint: String?
 
     public init(
         ref: ItemRef, story: ItemRef? = nil, progress: Progress, pullRequests: [LinkedPullRequest] = [], copilotWorks: Bool = false,
-        laterSprint: String? = nil
+        isOutside: Bool = false, laterSprint: String? = nil
     ) {
         self.ref = ref
         self.story = story
         self.progress = progress
         self.pullRequests = pullRequests
         self.copilotWorks = copilotWorks
+        self.isOutside = isOutside
         self.laterSprint = laterSprint
     }
 
@@ -161,7 +165,8 @@ public struct BoardTask: Equatable, Sendable, Identifiable {
 /// Start next, Up Next's last slot on My Work while the Board shows your sprint work: the work item of yours to start next, of
 /// those in To start. The sprint's come first, in its backlog's order, as the Sprint page has them; then, with + All My Tasks,
 /// once none of the sprint's is left to start, yours outside it, as the Board has them (`OutsideWork.yours`); but where you
-/// put a lane's work in your order (`LaneOrders`), its work comes in that order, in the places it holds in the backlog's. The
+/// put a lane's work in your order (`LaneOrders`), its work comes in that order, in the places it holds in the backlog's:
+/// the sprint's in the sprint's places, and yours outside it in theirs (`PullRequestBoard.inLanesOrder`). The
 /// one you chose, with its ⌄ or a card's Make Next, comes first while it's there, and first in its lane's To start, but
 /// where your order has it, which keeps its place (`BoardLane.items(in:)`), until BriefBar quits; it waits while it isn't.
 public struct StartNext: Equatable, Sendable {
@@ -202,8 +207,8 @@ public struct StartNext: Equatable, Sendable {
 
     /// What it shows, for its tooltip.
     public static let help =
-        "Your work that hasn't started: the sprint's, in its backlog's order, each lane's in the order you put it in; then, "
-            + "with + All My Tasks, yours outside it, a later sprint's last"
+        "Your work that hasn't started: the sprint's, in its backlog's order; then, with + All My Tasks, yours outside it, "
+            + "a later sprint's last; in each, a lane's in the order you put it in"
 
     /// What its tooltip says of the work item you chose for it.
     public static let pickedHelp =

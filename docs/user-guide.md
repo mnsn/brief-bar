@@ -513,14 +513,14 @@ what needs you to finish: the work item in To start to start next. Your sprint's
 the Sprint page lists them; then, with + All My Tasks, once none of the sprint's is left to start, yours outside it, in
 the Board's order, each saying where it is, such as **New · Sprint 41**, but for those in a later sprint, as one you
 moved to the next, which come last, the nearest sprint's first. In a lane you put in your order, its work comes in your
-order instead, in the places the lane's work holds, so that between lanes, the backlog's order still decides, and a
-later sprint's still comes last. It's marked with To start's dashed ring, in its gray, and its work item wears **Next**
-on the Board, on a line of its own above the card's number. Click **Start next ⌄** to choose another, or right-click a
-card in To start and choose **Make Next**: it shows with ✎ until BriefBar quits, first in its lane's To start too,
-unless it's in your order there, where it keeps its place, as Fix next's does in In progress; it waits while that work
-item isn't in To start, and **Let BriefBar Choose** gives the slot back to that order. Click the slot for the work
-item's details, or right-click it for its card's menu; **2 more ›** shows the next on the Board, with the keyboard on
-it, its column opened for the moment if it's folded.
+order instead, in the places the lane's work holds, so that between lanes, the backlog's order still decides, and the
+sprint's still comes before yours outside it, a later sprint's last, wherever you put them. It's marked with To start's
+dashed ring, in its gray, and its work item wears **Next** on the Board, on a line of its own above the card's number.
+Click **Start next ⌄** to choose another, or right-click a card in To start and choose **Make Next**: it shows with ✎
+until BriefBar quits, first in its lane's To start too, unless it's in your order there, where it keeps its place, as
+Fix next's does in In progress; it waits while that work item isn't in To start, and **Let BriefBar Choose** gives the
+slot back to that order. Click the slot for the work item's details, or right-click it for its card's menu; **2 more ›**
+shows the next on the Board, with the keyboard on it, its column opened for the moment if it's folded.
 
 **Move a task to a sprint.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), a task or bug of yours outside the sprint, on My Work with + All My Tasks, moves to your team's current sprint

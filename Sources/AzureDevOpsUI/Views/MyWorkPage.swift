@@ -81,6 +81,7 @@ enum MyWorkFacts {
     ) -> [SprintWork] {
         outside.items.map { item in
             var mine = work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+            mine.isOutside = true
             mine.laterSprint = outside.isLater(item) ? item.iteration : nil
             return mine
         }

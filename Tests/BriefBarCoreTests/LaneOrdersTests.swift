@@ -113,6 +113,21 @@ import Testing
         let sprints = [inSprint(5191, 44, story: 5001), inSprint(5192, 43, story: nil), inSprint(5193, 43, story: 5001)]
         let above = LaneOrders([(.story(Self.story), [Steps.task(5193), Steps.task(5191)])])
         #expect(Self.board(sprints, orders: above).startNext?.tasks.map(\.ref.shortOrderLabel) == ["5192", "5193", "5191"])
+        // Your work outside the sprint, with + All My Tasks, still comes once none of the sprint's is left, wherever you put
+        // it: 4871, put first, takes no place of the sprint's, and 5104 none of the rest's, after 4990, another lane's.
+        func outside(_ id: Int, story: Int?) -> SprintWork {
+            var work = Steps.work(id, .toDo, story: story)
+            work.isOutside = true
+            return work
+        }
+        let all = [
+            Steps.work(5104, .toDo, story: 5001), Steps.work(5150, .toDo), Steps.work(5105, .toDo, story: 5001),
+            outside(4990, story: nil), outside(4870, story: 5001), outside(4871, story: 5001),
+        ]
+        let outsideOrder = LaneOrders([(.story(Self.story), [Steps.task(4871), Steps.task(5105), Steps.task(4870), Steps.task(5104)])])
+        let outsideFirst = Self.board(all, orders: outsideOrder)
+        #expect(outsideFirst.startNext?.tasks.map(\.ref.shortOrderLabel) == ["5105", "5150", "5104", "4990", "4871", "4870"])
+        #expect(Self.refs(try #require(outsideFirst.lanes.first), .toStart) == ["4871", "5105", "4870", "5104"])
 
         let picked = Self.board(work, orders: orders, startPick: Steps.task(5105))
         #expect(picked.startNext?.task.ref == Steps.task(5105))
