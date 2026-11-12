@@ -323,18 +323,20 @@ extension PullRequestBoard {
 
     /// Work items in To start, in the backlog's order, each lane's in your order instead, in the places its work holds:
     /// between lanes, the backlog's order still decides. A later sprint's work, which Start next puts last however you put
-    /// it, swaps places only with the lane's other later work, so that it takes none of the rest's.
+    /// it, the nearest sprint's first, swaps places only with the lane's other work of that sprint, so that it takes none of
+    /// the rest's places, nor another sprint's, which would put it ahead of another lane's work of its own sprint.
     func inLanesOrder(_ toStart: [BoardTask]) -> [BoardTask] {
         struct Queue: Hashable {
             var lane: Int
-            var isLater: Bool
+            /// The later sprint its work is in; nil for the rest.
+            var laterSprint: String?
         }
         var queueOf: [ItemRef: Queue] = [:]
         var queues: [Queue: [BoardTask]] = [:]
         for (index, lane) in lanes.enumerated() {
             for item in lane.items(in: .toStart) {
                 guard case .work(let task) = item else { continue }
-                let queue = Queue(lane: index, isLater: task.work.laterSprint != nil)
+                let queue = Queue(lane: index, laterSprint: task.work.laterSprint)
                 queueOf[task.ref] = queue
                 queues[queue, default: []].append(task)
             }

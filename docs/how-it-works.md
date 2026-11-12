@@ -2029,18 +2029,18 @@ left to start; but yours in a sprint after the current one, by its name (`Outsid
 `SprintWork.laterSprint`), as one you moved to the next, goes last, the nearest sprint's first, by the number in its
 name, where that order would offer the latest first; the Board's lanes keep it. In a lane in your order, its work comes
 in your order instead, in the places the lane's work holds (`PullRequestBoard.inLanesOrder`), so that between lanes,
-that order still decides; a later sprint's swaps places only with the lane's other later work, which still goes last. It
-isn't an `UpNextSlot`: `UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To start's dashed ring,
-in To start's gray, as To start's column title has it; its lines are the work item's type, number and title, its card's
-why, with where it is for one outside the sprint, "New · Sprint 41", and its lane, as My Work words them
-(`StartNextContent`). Its ⌄, or Make Next on a card in To start, in its menu or VoiceOver's actions, chooses another
-(`PullRequestOrder.startPick`), in memory only: it's first in Start next, with ✎, and in its lane's To start, unless
-your order has it there, while it's in To start, and waits otherwise; Let BriefBar Choose forgets it. The card it shows
-wears Next, ✎ Next where you chose it, on a line of its own above the card's content, as a pull request's two badges are
-(`BoardTaskCardView.withNextLine`): in the corner, it would cover a work item's number, which may be eight digits. A
-click shows its details; a right-click, its card's menu; "2 more ›" shows the next one's card
-(`PullRequestOrder.revealedCard`), as Show Them does. Up Next shows on My Work once your pull requests are read, with
-Start next even when you have none.
+that order still decides; a later sprint's swaps places only with the lane's other work of that sprint, which still goes
+last, the nearest sprint's first, so that each sprint keeps the backlog's order between lanes. It isn't an `UpNextSlot`:
+`UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To start's dashed ring, in To start's gray, as
+To start's column title has it; its lines are the work item's type, number and title, its card's why, with where it is
+for one outside the sprint, "New · Sprint 41", and its lane, as My Work words them (`StartNextContent`). Its ⌄, or Make
+Next on a card in To start, in its menu or VoiceOver's actions, chooses another (`PullRequestOrder.startPick`), in
+memory only: it's first in Start next, with ✎, and in its lane's To start, unless your order has it there, while it's in
+To start, and waits otherwise; Let BriefBar Choose forgets it. The card it shows wears Next, ✎ Next where you chose it,
+on a line of its own above the card's content, as a pull request's two badges are (`BoardTaskCardView.withNextLine`): in
+the corner, it would cover a work item's number, which may be eight digits. A click shows its details; a right-click,
+its card's menu; "2 more ›" shows the next one's card (`PullRequestOrder.revealedCard`), as Show Them does. Up Next
+shows on My Work once your pull requests are read, with Start next even when you have none.
 
 While a window shows My Work with + Sprint Tasks or + All My Tasks and Show Links on, the sprint is read as while its
 Sprint page is on screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull

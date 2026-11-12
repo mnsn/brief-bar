@@ -103,6 +103,16 @@ import Testing
         let later = Self.board(work + [nextSprint], orders: first)
         #expect(later.startNext?.tasks.map(\.ref.shortOrderLabel) == ["5108", "5150", "5104", "5105", "5190"])
         #expect(Self.refs(try #require(later.lanes.first), .toStart) == ["5190", "5108", "5104", "5105"])
+        // In each later sprint, the backlog's order still decides between lanes: 5193, put above 5191 of a sprint after its
+        // own, doesn't go ahead of 5192, another lane's in its sprint.
+        func inSprint(_ id: Int, _ sprint: Int, story: Int?) -> SprintWork {
+            var work = Steps.work(id, .toDo, story: story)
+            work.laterSprint = "Shop\\Sprint \(sprint)"
+            return work
+        }
+        let sprints = [inSprint(5191, 44, story: 5001), inSprint(5192, 43, story: nil), inSprint(5193, 43, story: 5001)]
+        let above = LaneOrders([(.story(Self.story), [Steps.task(5193), Steps.task(5191)])])
+        #expect(Self.board(sprints, orders: above).startNext?.tasks.map(\.ref.shortOrderLabel) == ["5192", "5193", "5191"])
 
         let picked = Self.board(work, orders: orders, startPick: Steps.task(5105))
         #expect(picked.startNext?.task.ref == Steps.task(5105))
