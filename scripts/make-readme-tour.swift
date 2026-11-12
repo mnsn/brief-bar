@@ -415,7 +415,7 @@ for appearance in ["light", "dark"] {
               isDesktop: true),
         Scene(image: shot("desktop-azureDevOps.pullRequests"), caption: "Pull requests that need your review, a reply or a fix",
               isDesktop: true),
-        Scene(image: shot("window-azureDevOps.pullRequests"), caption: "Up Next: what to fix and review next"),
+        Scene(image: shot("window-azureDevOps.pullRequests"), caption: "Up Next: what to fix, review and follow up next"),
         Scene(image: shot("azureDevOps-pull-requests-board-window"), caption: "Every pull request's stage, on a Board"),
     ]
     try encode(tour(tourScenes), scenes: tourScenes, desktop: desktop, dark: dark, name: "readme-tour-\(appearance)")

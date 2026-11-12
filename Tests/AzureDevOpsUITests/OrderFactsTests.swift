@@ -488,6 +488,26 @@ import Testing
         #expect(alone.waitingFor == nil && !alone.othersVoted && alone.votes == "")
     }
 
+    /// Who hasn't reviewed one of yours yet, for Follow up next to name: those it requires first, a team by its name; not
+    /// one who voted, nor one who declined.
+    @Test func yoursNamesWhoHasntReviewedItYet() throws {
+        let build = Check(name: "shop-web CI", kind: .build, state: .passed)
+        let team = Person(id: "5A1B0000-0000-4000-8000-0000000000CC", name: "[Storefront]\\Payments")
+        let maria = Person(id: "5A1B0000-0000-4000-8000-0000000000DD", name: "Maria Lopez")
+        let chen = Person(id: "5A1B0000-0000-4000-8000-0000000000EE", name: "Chen Wei")
+        let facts = try #require(Self.stageFacts(4102, reviewers: [
+            Reviewer(person: Self.priya, vote: .none),
+            Reviewer(person: team, vote: .none, isRequired: true, isGroup: true),
+            Reviewer(person: Self.sam, vote: .none, isRequired: true),
+            Reviewer(person: maria, vote: .approved),
+            Reviewer(person: chen, vote: .none, hasDeclined: true),
+        ], checks: [build]))
+        #expect(facts.pendingReviewers == "Payments, Sam and Priya")
+        let voted = try #require(Self.stageFacts(4103, reviewers: [Reviewer(person: maria, vote: .approved)], checks: [build]))
+        #expect(voted.pendingReviewers == nil)
+        #expect(try #require(Self.stageFacts(4105, checks: [build])).pendingReviewers == nil)
+    }
+
     /// One you watch keeps what you set on it, as what you've seen of it is kept; one only sent to you doesn't.
     @Test func oneYouWatchIsWatchedRatherThanSentToYou() {
         let watched = PRKey("contoso", 4113)

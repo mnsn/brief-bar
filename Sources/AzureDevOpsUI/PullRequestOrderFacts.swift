@@ -284,6 +284,7 @@ final class PullRequestOrderFacts {
             if others.contains(where: { $0.person.id != pr.author.id }) {
                 let waiting = reviews.filter { !$0.isDone }
                 facts.waitingFor = (waiting.first { $0.kind == .requiredReviewers } ?? waiting.first)?.label ?? "Waiting for reviewers"
+                facts.pendingReviewers = Self.pending(others.filter { $0.person.id != pr.author.id })
             }
         case .reviewer:
             let mine = pr.reviewer(me)
@@ -324,7 +325,19 @@ final class PullRequestOrderFacts {
     /// "Maria", "Maria and Priya", "Maria, Priya and Sam"; past three, "and 2 more": who approved it, by their first names;
     /// nil for nobody.
     static func approvers(_ reviewers: [Reviewer]) -> String? {
-        let names = reviewers.map(\.person.firstName)
+        listed(reviewers.map(\.person.firstName))
+    }
+
+    /// Who's asked to review one of yours and hasn't voted yet, as Follow up next names them (`StageFacts.pendingReviewers`):
+    /// people by their first names, a team by its name, those it requires first: "Alex and Jordan"; nil with none. Not one
+    /// who declined, nor one who voted, whose vote says the rest.
+    static func pending(_ reviewers: [Reviewer]) -> String? {
+        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined }
+        return listed((pending.filter(\.isRequired) + pending.filter { !$0.isRequired }).map(PRReadiness.shortName))
+    }
+
+    /// "Maria", "Maria and Priya", "Maria, Priya and Sam", "Maria, Priya, Sam and 2 more".
+    private static func listed(_ names: [String]) -> String? {
         guard let last = names.last else { return nil }
         if names.count > 3 { return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" }
         return names.count == 1 ? last : names.dropLast().joined(separator: ", ") + " and " + last

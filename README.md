@@ -35,8 +35,8 @@
 - **See what needs you at a glance.** Live counts for your pull requests and Copilot sessions in the menu bar; one
   click for a brief and a single list across Azure DevOps, GitHub, Copilot and Teams. Or a widget on your desktop, or
   the full window.
-- **Know what's next.** Every pull request's stage, Up Next's pick of what to fix and review next, and a Board to move
-  them along.
+- **Know what's next.** Every pull request's stage, Up Next's pick of what to fix, review and follow up next, and a
+  Board to move them along.
 - **Follow the work, not the notifications.** Open a story to see its tasks, pull requests, builds and the Copilot
   sessions working on them, and who it's waiting on.
 - **Get the short version.** AI summaries of a work item, pull request or session: where it stands, what's left and
@@ -87,14 +87,15 @@ stage to change it, or **Finished My Review** to pass a pull request on to your 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-pull-requests-board-window-dark.jpg">
-    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next and your next review, then the Board, with a column for each stage, its first card marked Next, and a lane for each mission, naming your next steps in it">
+    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review and the next to follow up on, then the Board, with a column for each stage, its first card marked Next, and a lane for each mission, naming your next steps in it">
   </picture>
 </p>
 
 - **Up Next**, at the top of the Pull Requests page, picks your next steps: the pull request to fix next, from any
-  stage, such as one of yours that needs a reviewer, and your next review. Choose another yourself, and BriefBar keeps
-  it until that pull request moves on. What waits on a teammate or Azure DevOps stays on the Board, each column's first
-  card marked **Next**.
+  stage, such as one of yours that needs a reviewer; your next review; and the next of yours to follow up on in a
+  teammate's review, saying who hasn't reviewed it yet and for how long. Choose another yourself, and BriefBar keeps it
+  until that pull request moves on. What waits on Azure DevOps or another pull request stays on the Board, each column's
+  first card marked **Next**.
 - **The Board** has a column for each stage and a lane for each mission. Drag a card to another column, or press
   **⌘→** or **⌘←**, to change its stage. Click a column's title to fold it to a strip; in a narrow window, BriefBar
   folds the columns you need least, so those where it's your move stay in sight.
