@@ -113,6 +113,13 @@ import Testing
         // An order that doesn't have the lane's work yet, as one made while To start showed none: there it comes first too.
         let inProgressOnly = Self.board(work, orders: LaneOrders([(.story(Self.story), [Steps.pr(4101)])]), startPick: Steps.task(5105))
         #expect(Self.refs(try #require(inProgressOnly.lanes.first), .toStart) == ["5105", "5104", "5108"])
+        // With work your order has and work that came since, the one you chose of that work comes first of it, under the work
+        // your order has: your order still beats it.
+        let since = work + [Steps.work(5109, .toDo, story: 5001)]
+        let mixed = LaneOrders([(.story(Self.story), [Steps.task(5108), Steps.task(5104)])])
+        #expect(Self.refs(try #require(Self.board(since, orders: mixed).lanes.first), .toStart) == ["5108", "5104", "5105", "5109"])
+        let newPick = Self.board(since, orders: mixed, startPick: Steps.task(5109))
+        #expect(Self.refs(try #require(newPick.lanes.first), .toStart) == ["5108", "5104", "5109", "5105"])
 
         let stages: [Int: StageReading] = [
             4101: Steps.reading(.inProgress, .draft, at: 1), 4102: Steps.reading(.inProgress, .failing("Build failed"), at: 2),
@@ -123,6 +130,13 @@ import Testing
         #expect(fixing.next[.fix] == Steps.pr(4102))
         #expect(Self.refs(try #require(fixing.lanes.first), .stage(.inProgress)) == ["!4101", "!4102"])
         #expect(Self.refs(try #require(Self.board([], picks: fix, stages: stages).lanes.first), .stage(.inProgress)) == ["!4102", "!4101"])
+        // So does Fix next's: of the pull requests your order doesn't have yet, it comes first, under !4101, which it has.
+        let failing = stages.merging([4103: Steps.reading(.inProgress, .failing("Build failed"), at: 3)]) { $1 }
+        let newFix = Self.board(
+            [], orders: LaneOrders([(.story(Self.story), [Steps.pr(4101)])]), picks: UpNextPicks([.fix: Steps.pr(4103)]), stages: failing
+        )
+        #expect(newFix.next[.fix] == Steps.pr(4103))
+        #expect(Self.refs(try #require(newFix.lanes.first), .stage(.inProgress)) == ["!4101", "!4103", "!4102"])
     }
 
     /// Past `mostCards`, what a lane doesn't show goes, from the bottom, what you'd do last first; what it shows all stays,
