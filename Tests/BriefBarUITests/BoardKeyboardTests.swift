@@ -369,6 +369,25 @@ import Testing
         }
     }
 
+    /// In a joined column, ⌘→ and ⌘← still move a card stage by stage: drawn anew among the next stage's cards there, in
+    /// the same column, it keeps the keyboard, so that the next key moves it on.
+    @Test func theKeysMoveACardStageByStageInAJoinedColumnWhereItKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        order.setBoardLayout(.simple)
+        try await Self.showing(order) { window, host, drawn in
+            Self.click(at: try #require(drawn.frame), in: host)
+            try await until("the click to show its details") { drawn.shown == 1 }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ to move the card into In review", order: order, drawn: drawn, in: window)
+            for (arrow, stage) in [(KeyEquivalent.rightArrow, PullRequestStage.teammateReview), (.leftArrow, .yourReview)] {
+                try await Self.pressUntil("⌘ and an arrow to move it to \(stage.title) in In review") {
+                    Self.press(arrow, command: true, in: window)
+                    return order.stage(of: Self.ref)?.stage == stage
+                }
+                try await until("the Board to draw it among \(stage.title)'s cards") { drawn.columns[Self.ref] == stage }
+            }
+        }
+    }
+
     /// However long the Board takes to draw a card a key moved in its new column, as on a busy Mac, the card takes the
     /// keyboard back once it's drawn there, so that the next key moves it on.
     @Test func aMovedCardTakesTheKeyboardBackHoweverLongTheBoardTakesToDrawIt() async throws {
@@ -566,6 +585,30 @@ import Testing
         }
     }
 
+    /// Show Them asks for a card in a column you hid, a merged pull request's that names your work still to do: the column
+    /// shows for the moment, so that the card is drawn there and takes the keyboard. What you hid stays hidden.
+    @Test func aCardShowThemAsksForInAColumnYouHidShowsForTheMomentAndTakesTheKeyboard() async throws {
+        let order = try Self.finishedMission()
+        order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)]))
+        let merged = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        let task = ItemRef.workItem(organization: "contoso", id: 5181)
+        let work = [SprintWork(
+            ref: task, story: nil, progress: .inProgress, pullRequests: [LinkedPullRequest(ref: merged, state: .merged)],
+            copilotWorks: false
+        )]
+        let details = Details()
+        try await Self.showing(order, details: details, sprint: Sprint(work: work, stories: [])) { window, _, drawn in
+            #expect(!drawn.isDrawn(merged))
+            order.revealedCard = merged
+            try await until("Merged to show for it") { drawn.isDrawn(merged) }
+            try await Self.pressUntil("Return to show its details") {
+                Self.press(.return, in: window)
+                return details.shown == merged
+            }
+            #expect(order.boardLayout == BoardLayout(hidden: [.stage(.merged)]))
+        }
+    }
+
     /// The column a key moved a card to stays open while a card in it has the keyboard: click another card there, and it
     /// stays open for that one, rather than fold under it.
     @Test func aColumnAKeyOpenedStaysOpenForAnotherCardInItYouGoTo() async throws {
@@ -598,6 +641,49 @@ import Testing
                 return details.shown == Self.review
             }
             #expect(order.boardFolds == BoardFolds([.stage(.yourReview): .folded]))
+        }
+    }
+
+    /// A joined column a key opened stays open for a card in another of its columns that you go to: it's the same column.
+    @Test func aJoinedColumnAKeyOpenedStaysOpenForACardInAnotherOfItsColumnsYouGoTo() async throws {
+        let order = Self.withAReview()
+        let inReview = try #require(ShownColumn(parts: [.stage(.yourReview), .stage(.teammateReview)]))
+        order.setBoardLayout(BoardLayout(joins: [.stage(.yourReview)]))
+        order.setBoardFolds(BoardFolds(shown: [inReview: .folded]))
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            #expect(!drawn.isDrawn(Self.review))
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click to show its details") { details.shown == Self.ref }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ into In review, folded", order: order, drawn: drawn, in: window)
+            try await Self.pressUntil("⌘→ on to Teammate's review, in In review") {
+                Self.press(.rightArrow, command: true, in: window)
+                return order.stage(of: Self.ref)?.stage == .teammateReview
+            }
+            try await until("the card drawn among Teammate's review's") {
+                drawn.columns[Self.ref] == .teammateReview && drawn.isDrawn(Self.review)
+            }
+            // The moved card takes the keyboard back on the main queue's next turn once it's drawn, as you'd find it before
+            // you clicked another: a click before then, which only a test is quick enough for, would lose the keyboard to it.
+            details.shown = nil
+            try await Self.pressUntil("Return on the moved card, which has the keyboard back") {
+                Self.press(.return, in: window)
+                return details.shown == Self.ref
+            }
+            await Self.queuedWorkDone()
+            let review = try #require(drawn.frames[Self.review])
+            try await Self.pressUntil("a click on the review, in Your review, to show its details") {
+                Self.click(at: drawn.frames[Self.review] ?? review, in: host)
+                return details.shown == Self.review
+            }
+            try await Task.sleep(for: .milliseconds(800))
+            #expect(drawn.isDrawn(Self.review), "In review folded under the card you went to")
+            details.shown = nil
+            try await Self.pressUntil("Return on the review, which has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown == Self.review
+            }
+            #expect(order.boardFolds == BoardFolds(shown: [inReview: .folded]))
         }
     }
 
@@ -733,6 +819,25 @@ import Testing
                 return details.shown == Self.ref
             }
             try await until("Your review to fold back once the keyboard left it") { !drawn.isDrawn(Self.review) }
+        }
+    }
+
+    /// Tab reaches the tab of the columns you hid as it does a strip, whatever the Mac's keyboard navigation, as nothing else
+    /// leads the keyboard to the cards they hold: Return there shows them again.
+    @Test(.enabled(if: UserDefaults.standard.integer(forKey: "AppleKeyboardUIMode") & 2 == 0))
+    func tabReachesTheTabOfTheColumnsYouHidWhereReturnShowsThem() async throws {
+        let order = Self.withAMergedPullRequest()
+        order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)]))
+        try await Self.showing(order) { window, _, drawn in
+            #expect(!drawn.isDrawn(Self.merged))
+            // Tab to the card, then on.
+            window.selectNextKeyView(nil)
+            window.selectNextKeyView(nil)
+            try await Self.pressUntil("Return on the tab, which Tab went to, to show Merged") {
+                Self.press(.return, in: window)
+                return order.boardLayout.hidden.isEmpty
+            }
+            try await until("the merged pull request's card") { drawn.isDrawn(Self.merged) }
         }
     }
 
@@ -1362,6 +1467,14 @@ import Testing
     }
 
     /// A click in the middle of this rectangle of the window's content view.
+    /// Returns once the main queue has done what's on it now: the work a card drawn anew put there, such as taking the
+    /// keyboard back.
+    private static func queuedWorkDone() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
     private static func click(at frame: CGRect, in host: NSView) {
         guard let window = host.window else { return }
         let point = host.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil)

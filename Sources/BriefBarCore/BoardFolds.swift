@@ -14,30 +14,44 @@ public enum ColumnChoice: String, Sendable {
     case folded
 }
 
-/// The Board's columns you opened or folded yourself, remembered (`order.boardColumns`): BriefBar decides the rest.
+/// The Board's columns you opened or folded yourself, remembered (`order.boardColumns`): BriefBar decides the rest. A joined
+/// column's is its own, kept while you keep it joined; each of its columns keeps yours for when you split it.
 public struct BoardFolds: Equatable, Sendable {
-    /// Where they're kept: each column's key (`BoardColumn.key`), with "open" or "folded".
+    /// Where they're kept: each column's key (`ShownColumn.key`), with "open" or "folded".
     public static let defaultsKey = "order.boardColumns"
 
-    private var choices: [BoardColumn: ColumnChoice]
+    private var choices: [ShownColumn: ColumnChoice]
 
     public init(_ choices: [BoardColumn: ColumnChoice] = [:]) {
+        self.choices = Dictionary(uniqueKeysWithValues: choices.map { (ShownColumn($0.key), $0.value) })
+    }
+
+    public init(shown choices: [ShownColumn: ColumnChoice]) {
         self.choices = choices
     }
 
-    public subscript(column: BoardColumn) -> ColumnChoice? {
+    public subscript(column: ShownColumn) -> ColumnChoice? {
         get { choices[column] }
         set { choices[column] = newValue }
+    }
+
+    public subscript(column: BoardColumn) -> ColumnChoice? {
+        get { choices[ShownColumn(column)] }
+        set { choices[ShownColumn(column)] = newValue }
+    }
+
+    public var isEmpty: Bool {
+        choices.isEmpty
     }
 
     /// What you chose, as the preferences keep it; what they hold that this build doesn't know, it leaves out.
     public static func load(from defaults: some SettingsStorage) -> BoardFolds {
         guard let kept = defaults.object(forKey: defaultsKey) as? [String: String] else { return BoardFolds() }
-        var choices: [BoardColumn: ColumnChoice] = [:]
+        var choices: [ShownColumn: ColumnChoice] = [:]
         for (key, value) in kept {
-            if let column = BoardColumn(key: key), let choice = ColumnChoice(rawValue: value) { choices[column] = choice }
+            if let column = ShownColumn(key: key), let choice = ColumnChoice(rawValue: value) { choices[column] = choice }
         }
-        return BoardFolds(choices)
+        return BoardFolds(shown: choices)
     }
 
     public func save(to defaults: some SettingsStorage) {
@@ -51,10 +65,17 @@ public struct BoardFolds: Equatable, Sendable {
     /// Your choices once you open or fold a column with a click: none for it where that's what BriefBar would do by itself
     /// then, so that a second click goes back to BriefBar's way, as Let BriefBar Decide does.
     /// - Parameter byItself: whether BriefBar would fold it by itself, as the Board is now.
-    public func choosing(_ choice: ColumnChoice, for column: BoardColumn, byItself folds: Bool) -> BoardFolds {
+    public func choosing(_ choice: ColumnChoice, for column: ShownColumn, byItself folds: Bool) -> BoardFolds {
         var chosen = self
         chosen[column] = (choice == .folded) == folds ? nil : choice
         return chosen
+    }
+
+    /// Your choices for the columns a layout can show: each column's own, and a joined column's only while it joins those
+    /// columns, so that one you split, or joined to another, starts as BriefBar decides should you join it again.
+    public func keeping(_ layout: BoardLayout) -> BoardFolds {
+        let joined = layout.joined
+        return BoardFolds(shown: choices.filter { !$0.key.isJoined || joined.contains($0.key) })
     }
 }
 
@@ -131,9 +152,19 @@ extension BoardLane {
         cards(in: column).count + tasks.filter { BoardColumn($0.column) == column }.count
     }
 
+    /// How many it has in a column as it shows, each of its columns'.
+    public func count(of column: ShownColumn) -> Int {
+        column.parts.reduce(0) { $0 + count(of: $1) }
+    }
+
     /// Its cards in a column that need you.
     public func needingYou(in column: BoardColumn) -> [BoardCard] {
         column.stage.map { cards(in: $0).filter(\.needsYou) } ?? []
+    }
+
+    /// Its cards in a column as it shows that need you, column by column.
+    public func needingYou(in column: ShownColumn) -> [BoardCard] {
+        column.parts.flatMap(needingYou(in:))
     }
 }
 
@@ -141,6 +172,21 @@ extension PullRequestBoard {
     /// How many cards in a column need you, each once, whatever lanes show it.
     public func needingYou(in column: BoardColumn) -> Int {
         Set(lanes.flatMap { $0.needingYou(in: column) }.map(\.ref)).count
+    }
+
+    /// How many in a column as it shows need you: in each of its columns.
+    public func needingYou(in column: ShownColumn) -> Int {
+        column.parts.reduce(0) { $0 + needingYou(in: $1) }
+    }
+
+    /// How many cards a column as it shows has: each of its columns'.
+    public func count(of column: ShownColumn) -> Int {
+        column.parts.reduce(0) { $0 + count(of: $1) }
+    }
+
+    /// Whether it's your move on a card in a column as it shows: in any of its columns, which keeps a joined column open.
+    public func hasYourMove(in column: ShownColumn) -> Bool {
+        column.parts.contains(where: hasYourMove(in:))
     }
 
     /// Whether it's your move on a card in a column, a pull request's or a work item's, in any lane.
@@ -156,39 +202,48 @@ extension PullRequestBoard {
         }
     }
 
-    /// Whether a column shows folded once a card moved, as BriefBar folds it (`BoardFolding`): this Board, from before the
-    /// move, with each of its pull requests in the column its stage takes it to now, and none that left the board. So the
-    /// column a card left counts it no more, and what a move did to the others counts too, as Set as Next to Merge has the
-    /// rest of its mission wait for the one you set. Its work items' cards stay as they are.
-    /// - Parameter stages: each pull request's stage once moved, with the sessions at work on it in its flags.
+    /// Whether the column a card moved to shows folded once it moved, as BriefBar folds it (`BoardFolding`): this Board, from
+    /// before the move, with each of its pull requests in the column its stage takes it to now, and none that left the
+    /// board. So the column a card left counts it no more, and what a move did to the others counts too, as Set as Next to
+    /// Merge has the rest of its mission wait for the one you set. Its work items' cards stay as they are.
+    /// - Parameters:
+    ///   - column: the column it moved to, which shows in the column of `shown` that holds it.
+    ///   - stages: each pull request's stage once moved, with the sessions at work on it in its flags.
+    ///   - shown: the columns the Board shows, as you laid them out.
     public func foldsOnceMoved(
-        to column: BoardColumn, stages: [ItemRef: StageReading], choices: BoardFolds, open: Set<BoardColumn>, widths: BoardWidths
+        to column: BoardColumn, stages: [ItemRef: StageReading], shown: [ShownColumn], choices: BoardFolds,
+        open: Set<ShownColumn>, widths: BoardWidths
     ) -> Bool {
         let cards = refs.compactMap { ref in stages[ref].flatMap { $0.isOnBoard ? BoardCard(ref: ref, reading: $0) : nil } }
         let byStage = Dictionary(grouping: cards, by: \.stage)
         var moved = self
         moved.lanes = [BoardLane(kind: .all, columns: byStage, tasks: lanes.flatMap(\.tasks))]
         moved.counts = byStage.mapValues(\.count)
+        let target = shown.first { $0.contains(column) } ?? ShownColumn(column)
         return BoardFolding.make(
-            columns: columns, count: moved.count(of:), yourMove: moved.hasYourMove(in:), choices: choices, open: open,
+            columns: shown, count: moved.count(of:), yourMove: moved.hasYourMove(in:), choices: choices, open: open,
             widths: widths
-        ).isFolded(column)
+        ).isFolded(target)
     }
 }
 
 // MARK: - Widths
 
 /// How wide the Board's columns are, in points: an open one as wide as the page lets the open ones share, never narrower
-/// than its cards need, and a folded one a thin strip, with less room beside it; all of it growing with the text.
+/// than its cards need, and a folded one a thin strip, with less room beside it; all of it growing with the text. A joined
+/// column is one column, open or folded.
 public struct BoardWidths: Equatable, Sendable {
     /// The text's scale on windows' pages: 1 at 100%.
     public var scale: Double
     /// The page's width: 0 until it's known.
     public var available: Double
+    /// The column titles end with the tab of the columns you hid, a strip's width beside the last column.
+    public var endsWithHidden: Bool
 
-    public init(scale: Double, available: Double) {
+    public init(scale: Double, available: Double, endsWithHidden: Bool = false) {
         self.scale = scale
         self.available = available
+        self.endsWithHidden = endsWithHidden
     }
 
     /// An open column's narrowest.
@@ -201,35 +256,38 @@ public struct BoardWidths: Equatable, Sendable {
     public var gap: Double { 10 * scale }
     /// Beside a folded one.
     public var stripGap: Double { 3 * scale }
+    /// The room the hidden columns' tab takes, with its gap: no more than the strip of one of them would.
+    public var reserved: Double { endsWithHidden ? strip + stripGap : 0 }
 
     /// The room between a column and the next.
-    public func gap(after column: BoardColumn, in columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {
+    public func gap<Column: Hashable>(after column: Column, in columns: [Column], folded: Set<Column>) -> Double {
         guard let index = columns.firstIndex(of: column), index + 1 < columns.count else { return 0 }
         return folded.contains(column) || folded.contains(columns[index + 1]) ? stripGap : gap
     }
 
     /// The room all the gaps take.
-    public func gaps(_ columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {
+    public func gaps<Column: Hashable>(_ columns: [Column], folded: Set<Column>) -> Double {
         columns.dropLast().reduce(0) { $0 + gap(after: $1, in: columns, folded: folded) }
     }
 
     /// How wide the Board is with these of its columns folded, the open ones at their narrowest.
-    public func narrowest(_ columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {
+    public func narrowest<Column: Hashable>(_ columns: [Column], folded: Set<Column>) -> Double {
         let strips = columns.filter(folded.contains).count
-        return Double(columns.count - strips) * minimum + Double(strips) * strip + gaps(columns, folded: folded)
+        return Double(columns.count - strips) * minimum + Double(strips) * strip + gaps(columns, folded: folded) + reserved
     }
 
     /// Whether the page has room for them: always, until its width is known.
-    public func fits(_ columns: [BoardColumn], folded: Set<BoardColumn>) -> Bool {
+    public func fits<Column: Hashable>(_ columns: [Column], folded: Set<Column>) -> Bool {
         available <= 0 || narrowest(columns, folded: folded) <= available + 0.5
     }
 
-    /// An open column's width: the room the strips and gaps leave, shared, never under the minimum.
-    public func open(_ columns: [BoardColumn], folded: Set<BoardColumn>) -> Double {
+    /// An open column's width: the room the strips, the gaps and the hidden columns' tab leave, shared, never under the
+    /// minimum.
+    public func open<Column: Hashable>(_ columns: [Column], folded: Set<Column>) -> Double {
         let strips = columns.filter(folded.contains).count
         let open = columns.count - strips
         guard available > 0, open > 0 else { return minimum }
-        let room = available - Double(strips) * strip - gaps(columns, folded: folded)
+        let room = available - Double(strips) * strip - gaps(columns, folded: folded) - reserved
         return max(minimum, room / Double(open))
     }
 }
@@ -241,7 +299,9 @@ public struct BoardWidths: Equatable, Sendable {
 /// BriefBar decides the rest: one with no cards folds; and where the Board is too narrow for its open columns at their
 /// narrowest, the least needed of those it opened fold: first Completed, Merged, Waits and To start, whatever's in them;
 /// then those where you wait, where it isn't your move (`BoardCard.isYourMove`), the one that needs least from you first,
-/// as what needs you otherwise only marks a strip. Whatever's still too wide scrolls sideways.
+/// as what needs you otherwise only marks a strip. Whatever's still too wide scrolls sideways. A joined column folds as one,
+/// as late as the latest of its columns in that order, whatever's in it only where all its columns would, and never where
+/// it's your move in any of them.
 public struct BoardFolding: Equatable, Sendable {
     /// Why a column shows folded.
     public enum Why: Equatable, Sendable {
@@ -254,18 +314,18 @@ public struct BoardFolding: Equatable, Sendable {
     }
 
     /// The columns that show folded, and why.
-    public var folded: [BoardColumn: Why]
+    public var folded: [ShownColumn: Why]
 
-    public init(folded: [BoardColumn: Why] = [:]) {
+    public init(folded: [ShownColumn: Why] = [:]) {
         self.folded = folded
     }
 
-    public func isFolded(_ column: BoardColumn) -> Bool {
+    public func isFolded(_ column: ShownColumn) -> Bool {
         folded[column] != nil
     }
 
     /// - Parameters:
-    ///   - columns: the Board's columns, from left to right.
+    ///   - columns: the columns the Board shows, from left to right.
     ///   - count: how many cards a column has.
     ///   - yourMove: whether it's your move on a card in a column (`BoardCard.isYourMove`), which keeps it open.
     ///   - choices: what you chose.
@@ -273,10 +333,10 @@ public struct BoardFolding: Equatable, Sendable {
     ///     moved with a key is in while it has the keyboard's focus, one Up Next's "2 more ›" or My Work's Show Them shows.
     ///   - widths: the page's room.
     public static func make(
-        columns: [BoardColumn], count: (BoardColumn) -> Int, yourMove: (BoardColumn) -> Bool, choices: BoardFolds,
-        open: Set<BoardColumn> = [], widths: BoardWidths
+        columns: [ShownColumn], count: (ShownColumn) -> Int, yourMove: (ShownColumn) -> Bool, choices: BoardFolds,
+        open: Set<ShownColumn> = [], widths: BoardWidths
     ) -> BoardFolding {
-        var folded: [BoardColumn: Why] = [:]
+        var folded: [ShownColumn: Why] = [:]
         for column in columns where !open.contains(column) {
             switch choices[column] {
             case .folded: folded[column] = .yours
@@ -286,7 +346,7 @@ public struct BoardFolding: Equatable, Sendable {
         }
         for column in foldOrder(columns) where folded[column] == nil {
             if widths.fits(columns, folded: Set(folded.keys)) { break }
-            guard !open.contains(column), choices[column] == nil, foldsFirst.contains(column) || !yourMove(column) else { continue }
+            guard !open.contains(column), choices[column] == nil, foldsFirst(column) || !yourMove(column) else { continue }
             folded[column] = .narrow
         }
         return BoardFolding(folded: folded)
@@ -303,11 +363,22 @@ public struct BoardFolding: Equatable, Sendable {
         .stage(.canMerge), .stage(.inProgress), .stage(.teammateReview), .stage(.approved),
     ]
 
+    /// Whether a column folds first, whatever's in it: each of its columns does.
+    static func foldsFirst(_ column: ShownColumn) -> Bool {
+        column.parts.allSatisfy(foldsFirst.contains)
+    }
+
     /// The order BriefBar folds columns in where the Board is too narrow: those it folds first, then those where you wait,
-    /// then any other, from the left. Your review, whose every card is your move, never folds for room.
-    static func foldOrder(_ columns: [BoardColumn]) -> [BoardColumn] {
+    /// then any other, from the left; a joined column where the latest of its columns comes. Your review, whose every card
+    /// is your move, never folds for room.
+    static func foldOrder(_ columns: [ShownColumn]) -> [ShownColumn] {
         let listed = foldsFirst + thenWhereYouWait
-        return listed.filter(columns.contains) + columns.filter { !listed.contains($0) }
+        let unlisted = BoardColumn.all.filter { !listed.contains($0) }
+        let rank = { (column: BoardColumn) in listed.firstIndex(of: column) ?? listed.count + (unlisted.firstIndex(of: column) ?? 0) }
+        return columns.enumerated().sorted { lhs, rhs in
+            let left = lhs.element.parts.map(rank).max() ?? 0, right = rhs.element.parts.map(rank).max() ?? 0
+            return left != right ? left < right : lhs.offset < rhs.offset
+        }.map(\.element)
     }
 }
 
