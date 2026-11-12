@@ -202,12 +202,13 @@ h1, h2, h3 { margin: 0; color: var(--text); }
 .button:active { transform: translateY(0); }
 .button svg { flex: none; width: 1.15em; height: 1.15em; }
 
+/* Blues dark enough for white text, at 4.5:1 or more, throughout. */
 .button--primary {
     color: #fff;
-    background: linear-gradient(180deg, #2b8cff, #0a6cff);
-    box-shadow: 0 10px 26px -10px rgb(10 108 255 / .75), inset 0 1px 0 rgb(255 255 255 / .25);
+    background: linear-gradient(180deg, #1268f0, #0052cc);
+    box-shadow: 0 10px 26px -10px rgb(18 104 240 / .75), inset 0 1px 0 rgb(255 255 255 / .25);
 }
-.button--primary:hover { box-shadow: 0 14px 32px -10px rgb(10 108 255 / .85), inset 0 1px 0 rgb(255 255 255 / .25); }
+.button--primary:hover { box-shadow: 0 14px 32px -10px rgb(18 104 240 / .85), inset 0 1px 0 rgb(255 255 255 / .25); }
 
 .button--secondary {
     color: var(--text);
@@ -1013,8 +1014,8 @@ h3 {
     margin-bottom: 16px;
     border-radius: 50%;
     color: #fff;
-    background: linear-gradient(160deg, #4f9dff, #0a64e8);
-    box-shadow: 0 8px 16px -8px #0a64e8;
+    background: linear-gradient(160deg, #1268f0, #0052cc);
+    box-shadow: 0 8px 16px -8px #0052cc;
     font-weight: 700;
 }
 
