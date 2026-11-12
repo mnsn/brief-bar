@@ -273,8 +273,8 @@ Teams content never goes to Copilot summaries or BriefBar's agent tools.
 
 ## Learn more and contribute
 
-[User guide and FAQ](docs/user-guide.md) · [How it works](docs/how-it-works.md) ·
-[Contributing and demo mode](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) ·
+[Website](https://mnsn.github.io/brief-bar/) · [User guide and FAQ](docs/user-guide.md) ·
+[How it works](docs/how-it-works.md) · [Contributing and demo mode](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) ·
 [Report a bug or suggest a feature](https://github.com/mnsn/brief-bar/issues)
 
 On Windows? [BriefBar for Windows](windows/README.md) is in development, with the same four sources in a bar docked to

@@ -1,0 +1,87 @@
+name: Website
+
+# The website on GitHub Pages: docs/index.html, with its styles and script in docs/assets and the README's pictures in
+# docs/images. A pull request that changes it checks that every file the page names is there; a push to main that
+# changes it publishes it, and so does starting the workflow by hand on main. Publishing needs Pages' source to be
+# GitHub Actions (Settings › Pages). CI skips these pushes, as it does any change to docs/.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/index.html'
+      - 'docs/assets/**'
+      - 'docs/images/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/assets/**'
+      - 'docs/images/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run cancels the one in progress on the same pull request. On main, each publish runs to its end, so the site
+# is never left halfway, and a newer one waits for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build the website
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The page, its assets and the pictures, without the Markdown beside them, which GitHub shows in the repository.
+      - name: Put the website together
+        run: |
+          mkdir -p build/site
+          cp docs/index.html build/site/
+          cp -R docs/assets docs/images build/site/
+
+      # Every file the page names, in src, srcset and href, and the social card it names by the site's address, such
+      # as a picture that make screenshots no longer draws. Other sites and the page's own sections aren't files.
+      - name: Check the page's files
+        run: |
+          names='((src|srcset|href)="[^"]*"|content="https://mnsn\.github\.io/brief-bar/[^"]*")'
+          missing=0
+          while IFS= read -r file; do
+            if [[ ! -f "build/site/$file" ]]; then
+              echo "::error file=docs/index.html::docs/index.html names $file, which isn't in docs/"
+              missing=1
+            fi
+          done < <(grep -oE "$names" docs/index.html \
+            | sed -E 's/^[a-z]+="//; s/"$//; s#^https://mnsn\.github\.io/brief-bar/##' \
+            | grep -vE '^(https?:|mailto:|#|$)' | sort -u)
+          exit "$missing"
+
+      - name: Upload the website
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/site
+
+  # Only this job can publish, with the permissions Pages needs, and only from main.
+  publish:
+    name: Publish the website
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish the website
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
