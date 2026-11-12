@@ -946,8 +946,8 @@ package struct OrderBoardView: View {
         .frame(height: 3 * textScale)
     }
 
-    /// The tab at the titles' end that holds the columns you hid, a strip's width, as theirs were: their number under an
-    /// eye struck through, and a click lists them, each to show again.
+    /// The tab at the titles' end that holds the columns you hid, a strip's width, as theirs were: how many cards they hold
+    /// under an eye struck through, and a click lists them, each to show again.
     private func hiddenTab(_ metrics: BoardMetrics) -> some View {
         let hidden = metrics.hidden
         return Menu {
@@ -963,9 +963,12 @@ package struct OrderBoardView: View {
                 Image(systemName: "eye.slash")
                     .font(size: 8.5, weight: .semibold)
                     .frame(height: 8 * textScale)
-                Text(String(hidden.count))
+                // How many cards they hold, as every number in the titles' row counts cards.
+                Text(String(hidden.reduce(0) { $0 + board.count(of: $1) }))
                     .font(size: 10.5, weight: .medium)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             .foregroundStyle(.secondary)
             .padding(.top, 4)
@@ -976,7 +979,7 @@ package struct OrderBoardView: View {
         .labelMenuStyle()
         .fixedSize()
         .help(BoardText.hiddenHelp(hidden, count: board.count(of:)))
-        .accessibilityLabel(BoardText.hiddenWords(hidden))
+        .accessibilityLabel(BoardText.hiddenWords(hidden, count: board.count(of:)))
         .accessibilityHint("Shows them again")
     }
 

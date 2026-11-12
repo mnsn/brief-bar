@@ -1860,14 +1860,14 @@ is fixed: a column joins only the one beside it, kept as the gap between them (`
 Completed hide (`order.boardHidden`): what's merged but not out yet, as a pull request whose task is still open, and
 what's done, none of which needs you (`BoardCard.needsYou`), so nothing that needs you leaves the Board; hidden while
 joined, they come back as Done. A joined column is named for what it holds (`ShownColumn.title`): In review, Ready, Done,
-Teammate's review for it with Approved, whose cards wear Approved's seal there, or else both names, "Approved + Can
-merge". It folds as one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it
+Teammate's review for it with Approved, whose cards wear Approved's seal there, or else the names of what you joined,
+the longest that has a name first, from the left: "Approved + Can merge", "In progress + In review". It folds as one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it
 holds only where each of its columns would; otherwise as late as the latest of them in that order, so In review only
 after every other, as Your review; and never while any of them holds your move. Your fold or open of it is kept by its
 key, `canMerge+waits` in `order.boardColumns`, for each column the joins make on either page, whichever of Merged and
 Completed you hide (`BoardLayout.joined`), until you split it; a column's own stays through joins. The tab of hidden
-columns, at the end of the titles, takes a strip's room (`BoardWidths.reserved`), so three columns still open at 946
-points. A joined column that a card you drag hovers for 0.6 seconds springs open into its columns until the drag ends,
+columns, at the end of the titles, counts the cards they hold, as every number in that row counts cards, and takes a
+strip's room (`BoardWidths.reserved`), so three columns still open at 946 points. A joined column that a card you drag hovers for 0.6 seconds springs open into its columns until the drag ends,
 as a strip does, where one of them takes the card, though the card is in another, so that it goes from Waits to Can
 merge in Ready as between any two; those that take it open, with the one it's in. Dropped on it before, the card stays
 where one of them holds it already, or goes to the only one that takes it, and where more than one would, the column

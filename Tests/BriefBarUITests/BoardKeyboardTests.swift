@@ -663,6 +663,14 @@ import Testing
             try await until("the card drawn among Teammate's review's") {
                 drawn.columns[Self.ref] == .teammateReview && drawn.isDrawn(Self.review)
             }
+            // The moved card takes the keyboard back on the main queue's next turn once it's drawn, as you'd find it before
+            // you clicked another: a click before then, which only a test is quick enough for, would lose the keyboard to it.
+            details.shown = nil
+            try await Self.pressUntil("Return on the moved card, which has the keyboard back") {
+                Self.press(.return, in: window)
+                return details.shown == Self.ref
+            }
+            await Self.queuedWorkDone()
             let review = try #require(drawn.frames[Self.review])
             try await Self.pressUntil("a click on the review, in Your review, to show its details") {
                 Self.click(at: drawn.frames[Self.review] ?? review, in: host)
@@ -1440,6 +1448,14 @@ import Testing
     }
 
     /// A click in the middle of this rectangle of the window's content view.
+    /// Returns once the main queue has done what's on it now: the work a card drawn anew put there, such as taking the
+    /// keyboard back.
+    private static func queuedWorkDone() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
     private static func click(at frame: CGRect, in host: NSView) {
         guard let window = host.window else { return }
         let point = host.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil)

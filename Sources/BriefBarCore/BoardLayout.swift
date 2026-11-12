@@ -87,15 +87,15 @@ public struct ShownColumn: Hashable, Sendable {
 
     /// Its title on the Board: its column's; for neighbors joined, what they hold together, as Simple Columns names them:
     /// In review for Your review and Teammate's review, with Approved or not; Ready for Can merge and Waits; Done for
-    /// Merged and Completed; Teammate's review where Approved joins it, as before Approved was a column; else their
-    /// titles, "Approved + Can merge".
+    /// Merged and Completed; Teammate's review where Approved joins it, as before Approved was a column; else the names of
+    /// what you joined, "Approved + Can merge", or "In progress + In review" for In progress joined to In review.
     public var title: String {
-        Self.names[parts]?.title ?? parts.map(\.title).joined(separator: " + ")
+        named.map { Self.names[$0]?.title ?? $0[0].title }.joined(separator: " + ")
     }
 
     /// As a menu names it: "In Review", "Approved + Can Merge".
     public var menuTitle: String {
-        Self.names[parts]?.menu ?? parts.map(\.menuTitle).joined(separator: " + ")
+        named.map { Self.names[$0]?.menu ?? $0[0].menuTitle }.joined(separator: " + ")
     }
 
     /// As VoiceOver says it: its title, and for one joined, what it joins, "In review: Your review and Teammate's review".
@@ -107,6 +107,19 @@ public struct ShownColumn: Hashable, Sendable {
     /// Its columns' titles, as words: "Your review and Teammate's review".
     public var partTitles: String {
         OrderText.join(parts.map(\.title))
+    }
+
+    /// Its columns in runs, from the left, each the longest that has a name of its own, else one column: In progress, then
+    /// Your review, Teammate's review and Approved, for In progress joined to In review.
+    private var named: [[BoardColumn]] {
+        var runs: [[BoardColumn]] = []
+        var start = 0
+        while start < parts.count {
+            let end = (start + 1 ... parts.count).last { Self.names[Array(parts[start ..< $0])] != nil } ?? start + 1
+            runs.append(Array(parts[start ..< end]))
+            start = end
+        }
+        return runs
     }
 
     private static let names: [[BoardColumn]: (title: String, menu: String)] = [
@@ -263,8 +276,8 @@ extension BoardText {
         "Hidden: " + OrderText.join(columns.map { "\($0.title) (\(count($0)))" }) + "\nClick to show them"
     }
 
-    /// What that tab says to VoiceOver: "2 hidden columns: Merged and Completed".
-    public static func hiddenWords(_ columns: [ShownColumn]) -> String {
-        (columns.count == 1 ? "1 hidden column: " : "\(columns.count) hidden columns: ") + OrderText.join(columns.map(\.spokenTitle))
+    /// What that tab says to VoiceOver, as its number and tooltip do: "15 hidden: Merged, 3 and Completed, 12".
+    public static func hiddenWords(_ columns: [ShownColumn], count: (ShownColumn) -> Int) -> String {
+        "\(columns.reduce(0) { $0 + count($1) }) hidden: " + OrderText.join(columns.map { "\($0.title), \(count($0))" })
     }
 }

@@ -1379,6 +1379,17 @@ import Testing
         #expect(Self.shown(.stage(.approved), .stage(.canMerge)).menuTitle == "Approved + Can Merge")
         #expect(Self.shown(.stage(.canMerge), .stage(.waits)).spokenTitle == "Ready: Can merge and Waits for another PR")
         #expect(ShownColumn(parts: [.stage(.yourReview), .stage(.approved)]) == nil)
+        // Joined to a column that has a name, by its name rather than each of its columns', as you joined them; VoiceOver
+        // still hears each.
+        let inProgressAndInReview = Self.shown(.stage(.inProgress), .stage(.yourReview), .stage(.teammateReview), .stage(.approved))
+        #expect(inProgressAndInReview.title == "In progress + In review")
+        #expect(inProgressAndInReview.menuTitle == "In Progress + In Review")
+        #expect(inProgressAndInReview.spokenTitle
+            == "In progress + In review: In progress, Your review, Teammate's review and Approved")
+        #expect(Self.shown(.stage(.teammateReview), .stage(.approved), .stage(.canMerge), .stage(.waits)).title
+            == "Teammate's review + Ready")
+        #expect(Self.shown(.stage(.approved), .stage(.canMerge), .stage(.waits), .stage(.merged), .completed).title
+            == "Approved + Ready + Done")
 
         // Simple Columns: five, four without your sprint work, Done there only Merged.
         let simple = BoardLayout.simple
@@ -1398,6 +1409,12 @@ import Testing
         #expect(hidden.shown(Self.allColumns).map(\.title) == ["To start", "In progress", "In review", "Ready"])
         #expect(hidden.hiddenColumns(Self.allColumns) == [done])
         #expect(hidden.showing(done) == simple)
+        // The tab counts the cards they hold, as every number in the titles' row counts cards; VoiceOver hears each column's.
+        let counts = [ShownColumn(.stage(.merged)): 3, ShownColumn(.completed): 12, done: 15]
+        let count = { (column: ShownColumn) in counts[column] ?? 0 }
+        #expect(BoardText.hiddenWords([ShownColumn(.stage(.merged)), ShownColumn(.completed)], count: count)
+            == "15 hidden: Merged, 3 and Completed, 12")
+        #expect(BoardText.hiddenWords([done], count: count) == "15 hidden: Done, 15")
         // Hidden on the Pull Requests page, where Merged has no Completed beside it: on My Work, Completed shows alone, and
         // Waits, joined to Merged, doesn't reach across it.
         let mergedHidden = BoardLayout(joins: [.stage(.waits), .stage(.merged)], hidden: [.stage(.merged)])

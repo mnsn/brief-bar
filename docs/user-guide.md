@@ -431,11 +431,12 @@ Hover between two column titles and click the **→|←** there, or choose **Joi
 those neighbors into one column, which saves room: the gap you click is the one that joins. BriefBar names the pairs it knows:
 **Your review** and **Teammate's review** make **In review**; **Can merge** and **Waits**, **Ready**; **Merged** and
 **Completed**, **Done**; and **Teammate's review** keeps its name with **Approved** joined to it, its approved pull
-requests wearing Approved's seal. Others show both names, such as **Approved + Can merge**. A joined column holds each
+requests wearing Approved's seal. Others are named for what you joined: **Approved + Can merge**, or **In progress + In
+review** for In progress joined to In review. A joined column holds each
 stage's cards in turn, in their own colors, and folds and opens as one column, which stays open while it holds your move.
 Its **←|→**, over its title's marks, or **Split** in the title's menu, splits it again. Right-click **Merged** or
-**Completed**, which hold only history, to **Hide** it: a tab at the end of the titles, an eye over how many are hidden,
-shows them again. The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In
+**Completed**, which hold only history, to **Hide** it: a tab at the end of the titles, an eye over how many cards they
+hold, shows them again. The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In
 review**, with Approved, **Ready** and **Done**, or four on Pull Requests; and **Reset Columns**, each column back as it
 came. Both let BriefBar decide which fold again. While you drag a card, a joined column springs open into its stages as
 you hold the card over it, as a strip does, so that you drop it on one stage, the column the card is in too, so that it
