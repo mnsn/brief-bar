@@ -406,8 +406,11 @@ public struct UpNext: Equatable, Sendable {
 
     public var isEmpty: Bool { slots.isEmpty }
 
-    /// What it says when nothing's next.
-    public static let nothingNext = "Nothing's next for you"
+    /// What it says when nothing's next: what its slots are for, "Nothing to fix or review", and, where Start next can
+    /// show, "Nothing to fix, review or start". Not "nothing's next": what waits on others has its Next on the Board.
+    public static func nothingNext(startsWork: Bool) -> String {
+        startsWork ? "Nothing to fix, review or start" : "Nothing to fix or review"
+    }
 
     /// What a slot's tooltip says of the pull request you chose for it.
     public static let pickedHelp = "You chose it, until it moves on. Let BriefBar Choose, under ⌄, gives it back to BriefBar's order"

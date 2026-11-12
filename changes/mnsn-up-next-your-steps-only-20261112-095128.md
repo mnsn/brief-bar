@@ -4,4 +4,5 @@
   in their columns, each column's first card marked **Next**. A pull request of yours that nobody's asked to review
   joins Fix next, as **Find a reviewer · in Teammate's review**, after builds that failed and changes someone wants, and
   a folded Teammate's review marks it as needing you. **Make Next**, in a card's menu, is now only in In progress, Your
-  review and To start; what you chose for the slots that went is forgotten.
+  review and To start; what you chose for the slots that went is forgotten. In a wide window, the slots no longer
+  stretch across the whole page, and with nothing in them, Up Next says **Nothing to fix or review**.

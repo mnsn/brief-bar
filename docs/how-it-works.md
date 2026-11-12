@@ -1726,6 +1726,12 @@ wait for each other. It's only between open pull requests: nothing waits through
 then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
 other missions have waited, as Up Next does.
 
+Up Next's slots go as many to a line as fit, each at least 176 points wide and at most 664, both times Text Size in
+Windows, spread evenly over the lines (`UpNextGrid`). 664 is the page's width beside the sidebar in a 946-point window:
+in a wider one, a line ends short rather than each slot stretching across it. With nothing in them, it says what they're
+for: "Nothing to fix or review", or, on My Work with + Sprint Tasks or + All My Tasks, "Nothing to fix, review or start"
+(`UpNext.nothingNext`).
+
 **The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
 each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
 actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next has a slot for: In progress, while it

@@ -67,4 +67,16 @@ import Testing
         #expect(columns(5, fitting: 4) == 3)
         #expect(columns(3, fitting: 1) == 1)
     }
+
+    /// In a wide window, slots stop at their widest, and their line ends short; up to there, each takes an even share.
+    @Test func slotsStopAtTheirWidest() {
+        func width(_ columns: Int, in width: CGFloat) -> CGFloat {
+            UpNextGrid.slotWidth(columns: columns, width: width, maximum: 664, spacing: 10)
+        }
+        #expect(width(2, in: 664) == 327)
+        #expect(width(1, in: 664) == 664)
+        #expect(width(2, in: 1_918) == 664)
+        #expect(width(1, in: 1_918) == 664)
+        #expect(width(3, in: 1_916) == 632)
+    }
 }

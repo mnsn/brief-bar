@@ -108,7 +108,8 @@ import Testing
         let board = Self.board([4102: writing, 4104: Self.reading(.inProgress, .draft), 4105: Self.reading(.inProgress, .left("Build running"))])
         #expect(board.upNext.isEmpty)
         #expect(board.next[.fix] == nil)
-        #expect(UpNext.nothingNext == "Nothing's next for you")
+        #expect(UpNext.nothingNext(startsWork: false) == "Nothing to fix or review")
+        #expect(UpNext.nothingNext(startsWork: true) == "Nothing to fix, review or start")
     }
 
     // MARK: Which comes first in a stage
