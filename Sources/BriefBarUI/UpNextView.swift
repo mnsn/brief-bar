@@ -1,14 +1,15 @@
 import BriefBarCore
 import SwiftUI
 
-/// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a slot
-/// for each next step that's yours and has something, Fix next and Your next review, side by side across the page, each in
-/// its stage's color, with its pull request, why, its mission and how many more. What waits on others has none: the Board's
-/// columns keep it. A click on one shows its details; its title's ⌄ chooses which of its pull requests it shows, remembered
-/// until that one moves on (`UpNextPicks`); "2 more ›" shows By Mission's Board at that column. Narrow, or with bigger text,
-/// the slots wrap. It folds with its chevron, remembered. It changes no group or count: it only points. On My Work, while
-/// the Board shows your sprint work, Start next comes last, with the work item to start next (`StartNext`): starting comes
-/// after what needs you to finish.
+/// Up Next, at the top of Azure DevOps' Pull Requests page while Pull Request Order is on, whatever the page's order: a
+/// slot for each next step that's yours and has something, Fix next, Your next review and Follow up next, side by side
+/// across the page, each in its stage's color, with its pull request, why, its mission and how many more. What waits on
+/// Azure DevOps or another pull request has none: the Board's columns keep it. A click on one shows its details; its
+/// title's ⌄ chooses which of its pull requests it shows, remembered until that one moves on (`UpNextPicks`);
+/// "2 more ›" shows By Mission's Board at that column. Narrow, or with bigger text, the slots wrap. It folds with its
+/// chevron, remembered. It changes no group or count: it only points. On My Work, while the Board shows your sprint
+/// work, Start next comes last, with the work item to start next (`StartNext`): starting comes after what needs you to
+/// finish.
 package struct UpNextView: View {
     let upNext: UpNext
     @ObservedObject var order: PullRequestOrder
@@ -20,17 +21,20 @@ package struct UpNextView: View {
     let startNext: StartNextContent?
     /// Start next can show: on My Work while the Board shows your sprint work, To start empty or not.
     let startsWork: Bool
+    /// Now, as the page's source keeps it, for how long Follow up next's pull request has waited.
+    let now: Date
 
     @Environment(\.textScale) private var textScale
 
     package init(
-        upNext: UpNext, order: PullRequestOrder, startNext: StartNextContent? = nil, startsWork: Bool = false,
+        upNext: UpNext, order: PullRequestOrder, startNext: StartNextContent? = nil, startsWork: Bool = false, now: Date,
         select: @escaping (ItemRef) -> Void, showColumn: @escaping (PullRequestStage) -> Void
     ) {
         self.upNext = upNext
         self.order = order
         self.startNext = startNext
         self.startsWork = startsWork
+        self.now = now
         self.select = select
         self.showColumn = showColumn
     }
@@ -48,7 +52,7 @@ package struct UpNextView: View {
                     // At most as wide as the page beside the sidebar in a 946-point window.
                     UpNextGrid(minimum: 176 * textScale, maximum: 664 * textScale, spacing: 10) {
                         ForEach(upNext.slots) { slot in
-                            UpNextSlotView(slot: slot, order: order, select: select, showColumn: showColumn)
+                            UpNextSlotView(slot: slot, order: order, now: now, select: select, showColumn: showColumn)
                         }
                         if let startNext {
                             StartNextSlotView(content: startNext, order: order)
@@ -112,23 +116,38 @@ package struct UpNextView: View {
 
     /// What VoiceOver hears after a slot's title: why, a second reason after a pause, then its mission, and that you chose it
     /// where you did: "Cart asks you, build failed, Not in a mission", where its tooltip says "‘Cart’ asks you · build
-    /// failed".
-    package static func spoken(_ slot: UpNext.Slot, mission: String, order: PullRequestOrder) -> String {
-        let spoken = SpokenText.unquoted(why(slot.card, in: slot.kind, order: order, then: ", ") + ", " + mission)
+    /// failed"; for Follow up next, "Waiting on Alex and Jordan, for 20 minutes, Build agents on .NET 9".
+    package static func spoken(_ slot: UpNext.Slot, mission: String, order: PullRequestOrder, now: Date) -> String {
+        let why = why(slot.card, in: slot.kind, order: order, now: now, then: ", ", spoken: true)
+        let spoken = SpokenText.unquoted(why + ", " + mission)
         return slot.isPicked ? spoken + ", you chose it" : spoken
     }
 
     /// A pull request as a slot's ⌄ lists it, with why it's there: "!4131 Fix the coupon rounding error — Build failed".
-    package static func choice(_ card: BoardCard, in kind: UpNextSlot? = nil, order: PullRequestOrder) -> String {
+    package static func choice(_ card: BoardCard, in kind: UpNextSlot? = nil, order: PullRequestOrder, now: Date) -> String {
         [card.ref.shortOrderLabel, order.name(of: card.ref)].compactMap { $0 }.joined(separator: " ") + " — "
-            + why(card, in: kind, order: order)
+            + why(card, in: kind, order: order, now: now)
     }
 
     /// Why a slot has a pull request: in Fix next, what needs you first, and where it is, "Build failed · in Approved"
-    /// (`StageText.fixWords`); else why it's in its stage.
-    package static func why(_ card: BoardCard, in kind: UpNextSlot?, order: PullRequestOrder, then separator: String = " · ") -> String {
-        kind == .fix ? StageText.fixWords(card.reading, name: order.name(of:), then: separator)
-            : StageText.why(card.reading, name: order.name(of:), then: separator)
+    /// (`StageText.fixWords`); in Follow up next, who hasn't reviewed it and how long it has waited, "Waiting on Alex and
+    /// Jordan · 20m" (`StageText.followUpWords`); else why it's in its stage. `spoken`, as VoiceOver hears it.
+    package static func why(
+        _ card: BoardCard, in kind: UpNextSlot?, order: PullRequestOrder, now: Date, then separator: String = " · ",
+        spoken: Bool = false
+    ) -> String {
+        switch kind {
+        case .fix: StageText.fixWords(card.reading, name: order.name(of:), then: separator)
+        case .teammateReview: StageText.followUpWords(card.reading, name: order.name(of:), now: now, spoken: spoken)
+        case .yourReview, nil: StageText.why(card.reading, name: order.name(of:), then: separator)
+        }
+    }
+
+    /// A slot's why as it shows, in two: Follow up next's names, then how long it has waited, which a narrow slot keeps
+    /// whole while it cuts the names short, "Waiting on Alex and Jo… · 20m" (`StageText.followUpParts`); the others' whole.
+    package static func shownWhy(_ card: BoardCard, in kind: UpNextSlot, order: PullRequestOrder, now: Date) -> (String, String?) {
+        guard kind == .teammateReview else { return (why(card, in: kind, order: order, now: now), nil) }
+        return StageText.followUpParts(card.reading, name: order.name(of:), now: now)
     }
 
     /// Whether a slot's menu offers Let BriefBar Choose: once you chose a pull request for it, whether the slot shows it now
@@ -179,6 +198,7 @@ private struct UpNextSlotMark: View {
 private struct UpNextSlotView: View {
     let slot: UpNext.Slot
     @ObservedObject var order: PullRequestOrder
+    let now: Date
     let select: (ItemRef) -> Void
     let showColumn: (PullRequestStage) -> Void
 
@@ -190,13 +210,14 @@ private struct UpNextSlotView: View {
 
     var body: some View {
         let title = order.name(of: ref)
-        let why = UpNextView.why(slot.card, in: slot.kind, order: order)
+        let why = UpNextView.why(slot.card, in: slot.kind, order: order, now: now)
+        let (shownWhy, waited) = UpNextView.shownWhy(slot.card, in: slot.kind, order: order, now: now)
         let mission = missionTitle
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 UpNextSlotMark(column: .stage(stage))
                     .accessibilityHidden(true)
-                UpNextChooser(slot: slot, order: order)
+                UpNextChooser(slot: slot, order: order, now: now)
                 if slot.isPicked {
                     Image(systemName: "pencil")
                         .font(size: 10, weight: .semibold)
@@ -220,10 +241,17 @@ private struct UpNextSlotView: View {
                         .font(size: 13, weight: .semibold)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(why)
-                        .font(size: 12)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(shownWhy)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        if let waited {
+                            Text(waited)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    .font(size: 12)
                     Text(mission)
                         .font(size: 11.5)
                         .foregroundStyle(.secondary)
@@ -239,7 +267,7 @@ private struct UpNextSlotView: View {
                 slot.isPicked ? UpNext.pickedHelp : slot.kind.help, "Click to see its details",
             ].joined(separator: "\n"))
             .accessibilityLabel("\(slot.kind.title): \([ref.shortOrderLabel, title].compactMap { $0 }.joined(separator: " "))")
-            .accessibilityValue(UpNextView.spoken(slot, mission: mission, order: order))
+            .accessibilityValue(UpNextView.spoken(slot, mission: mission, order: order, now: now))
             .accessibilityHint("Shows its details")
             moreLine
                 .padding(.top, 1)
@@ -304,12 +332,13 @@ private struct UpNextSlotView: View {
 private struct UpNextChooser: View {
     let slot: UpNext.Slot
     @ObservedObject var order: PullRequestOrder
+    let now: Date
 
     var body: some View {
         let textColor = slot.kind.stage.textColor
         Menu {
             ForEach(slot.cards) { card in
-                Toggle(UpNextView.choice(card, in: slot.kind, order: order), isOn: Binding(get: { card.ref == slot.card.ref }, set: { _ in
+                Toggle(UpNextView.choice(card, in: slot.kind, order: order, now: now), isOn: Binding(get: { card.ref == slot.card.ref }, set: { _ in
                     choose(card.ref)
                 }))
             }

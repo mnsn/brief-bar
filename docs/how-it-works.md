@@ -1691,17 +1691,28 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
 lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`). Up Next has a
-slot only for a next step that's yours (`UpNextSlot`): Fix next, and Your next review, the first in Your review's order.
-What waits on others, as a teammate's review or approval, Azure DevOps or another pull request, has none: the Board's
-columns keep it, and completing a pull request is a click in Azure DevOps. Each column's first card, across the lanes,
-wears **Next** on the Board where its order says what's next (`PullRequestBoard.nextInColumn`,
-`PullRequestStage.firstWearsNext`): in Your review, Up Next's, and in Teammate's review, Approved, Can merge and Waits,
-BriefBar's order's alone; not in In progress, whose next is Fix next's, nor in Merged. Fix next has what needs you from
-every column (`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks
-you, then a build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants,
-then one of yours that needs a reviewer, as nobody's asked to review it yet, **Find a reviewer · in Teammate's review**,
-after them as nothing's broken, the oldest first; but none while a session writes it, which may be fixing just that. Its
-pull request wears **Fix next** wherever it is; one in Your review is still your next review too, whatever its build. A
+slot only for a next step that's yours (`UpNextSlot`): Fix next; Your next review, the first in Your review's order; and
+Follow up next, the first in Teammate's review's of those that wait on teammates alone
+(`StageReading.waitsOnTeammates`), whose reviewers haven't finished, needing nothing else of you: Fix next has one that
+needs a reviewer, a fix or an answer, never both, and one a session writes is in neither while it does, as it may be
+fixing just that. Follow up next says who hasn't voted yet, those it requires first, a team by its name, but not a
+service account, which never votes (`StageFacts.pendingReviewers`), and how long it has waited, since anything last
+happened on it, a push, a comment or a vote (`StageFacts.lastActivity`), not since a comment that waits on you came, or
+since you set it there, whichever came later (`StageReading.followUpSince`), "Waiting on Alex and Jordan · 20m"
+(`StageText.followUpWords`); a narrow slot cuts the names short and keeps the time; with nobody left to vote, as when a
+policy wants another approval, why it waits, "1 of 2 approvals · 2h". BriefBar reads nothing more for it: the reviewers
+and their votes come with the lists, and the time with the details it reads. What waits on Azure DevOps or another pull
+request has none: the Board's columns keep it, and completing a pull request is a click in Azure DevOps. Each column's
+first card, across the lanes, wears **Next** on the Board where its order says what's next
+(`PullRequestBoard.nextInColumn`, `PullRequestStage.firstWearsNext`): in Your review, Up Next's; in Teammate's review,
+Follow up next's, the first card in its order that the slot has, even below others, such as those Fix next has or a
+session writes, and none while it has none; in Approved, Can merge and Waits, BriefBar's order's alone; not in In
+progress, whose next is Fix next's, nor in Merged. Fix next has what needs you from every column
+(`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks you, then a
+build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, then one of
+yours that needs a reviewer, as nobody's asked to review it yet, **Find a reviewer · in Teammate's review**, after them
+as nothing's broken, the oldest first; but none while a session writes it, which may be fixing just that. Its pull
+request wears **Fix next** wherever it is; one in Your review is still your next review too, whatever its build. A
 mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
 (`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
 (`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
@@ -1729,25 +1740,26 @@ other missions have waited, as Up Next does.
 Up Next's slots go as many to a line as fit, each at least 176 points wide and at most 664, both times Text Size in
 Windows, spread evenly over the lines (`UpNextGrid`). 664 is the page's width beside the sidebar in a 946-point window:
 in a wider one, a line ends short rather than each slot stretching across it. With nothing in them, it says what they're
-for: "Nothing to fix or review", or, on My Work with + Sprint Tasks or + All My Tasks, "Nothing to fix, review or start"
-(`UpNext.nothingNext`).
+for: "Nothing to fix, review or follow up", or, on My Work with + Sprint Tasks or + All My Tasks, "Nothing to fix,
+review, follow up or start" (`UpNext.nothingNext`).
 
 **The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
 each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
 actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next has a slot for: In progress, while it
-needs you, for Fix next, Your review (`UpNextSlot.of`), and, on My Work, To start, for Start next (below); in the
-others, BriefBar's order alone decides which comes first. Only one the slot has now can be chosen (`UpNextSlot.has`).
-The one you chose (`UpNextPicks`) comes first in its slot's column, Fix next's in In progress and Your next review's in
-Your review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), but on My Work where
-your order has it, where it keeps its place (`BoardLane.items(in:)`), and first of its kind
-in its mission's next steps, but in In progress only while it needs you, so that what needs you still comes first. Fix
-next's comes first of what asks you or what to fix in its mission's next steps too, wherever it is; elsewhere it keeps
-its place: in another column, as Teammate's review for one that needs a reviewer, and among its mission's reviews or
-reviewers to find. The slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull
-request is on your board in that stage, or, for Fix next, while it needs you, in any stage but Merged
-(`UpNextSlot.keeps`), a reviewer to find included: one you chose as its build failed stays once it passes, while
-nobody's asked to review it. Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is
-once
+needs you, for Fix next, Your review, Teammate's review, while it waits on teammates alone, for Follow up next
+(`UpNextSlot.of`), and, on My Work, To start, for Start next (below); in the others, BriefBar's order alone decides
+which comes first. Only one the slot has now can be chosen (`UpNextSlot.has`). The one you chose (`UpNextPicks`) comes
+first in its slot's column, Fix next's in In progress, Your next review's in Your review and Follow up next's in
+Teammate's review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), but on My Work
+where your order has it, where it keeps its place (`BoardLane.items(in:)`), and first of its kind in its mission's next
+steps, but in In progress only while it needs you, so that what needs you still comes first. Fix next's comes first of
+what asks you or what to fix in its mission's next steps too, wherever it is; elsewhere it keeps its place: in another
+column, as Teammate's review for one that needs a reviewer, and among its mission's reviews or reviewers to find. The
+slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on your
+board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`), a reviewer to
+find included: one you chose as its build failed stays once it passes, while nobody's asked to review it; Follow up
+next's waits while Fix next has it, as when its build fails, or a session writes it, and comes first again once it waits
+on teammates alone. Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
 it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull
 requests and Done only yours, or once you're taken off it: the lists Azure DevOps has read of its organization since
 BriefBar started, as the account signed in now (`PRStore.listedOrganizations`), don't have it. Once it's been away for

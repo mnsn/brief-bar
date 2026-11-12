@@ -261,6 +261,9 @@ final class PullRequestOrderFacts {
                 ?? (pr.hasConflicts ? "Merge conflicts" : pr.mergeProblem?.headline)
             facts.changesWanted = left.first { $0.kind == .changesRequested }?.label ?? Self.changesWanted(by: others)
             facts.isReady = readiness?.isReady ?? (item?.group == .ready)
+            // When anything last happened on it, a push, a comment or a vote: Follow up next counts from it, whatever waits on
+            // you there, where the list's time is when that came.
+            facts.lastActivity = max(pr.createdAt, record.details?.lastActivity ?? .distantPast)
             // Its reviews: approvals, the reviewers it requires, and any other reviewer policy, by its name. Without a
             // reviewer policy, What's Left wants someone's approval; with one that doesn't apply, nobody's review holds it up.
             let reviewerPolicies = Set((record.details?.checks ?? []).filter { $0.kind == .reviewers }.map(\.name))
@@ -284,6 +287,7 @@ final class PullRequestOrderFacts {
             if others.contains(where: { $0.person.id != pr.author.id }) {
                 let waiting = reviews.filter { !$0.isDone }
                 facts.waitingFor = (waiting.first { $0.kind == .requiredReviewers } ?? waiting.first)?.label ?? "Waiting for reviewers"
+                facts.pendingReviewers = Self.pending(others.filter { $0.person.id != pr.author.id })
             }
         case .reviewer:
             let mine = pr.reviewer(me)
@@ -324,7 +328,20 @@ final class PullRequestOrderFacts {
     /// "Maria", "Maria and Priya", "Maria, Priya and Sam"; past three, "and 2 more": who approved it, by their first names;
     /// nil for nobody.
     static func approvers(_ reviewers: [Reviewer]) -> String? {
-        let names = reviewers.map(\.person.firstName)
+        listed(reviewers.map(\.person.firstName))
+    }
+
+    /// Who's asked to review one of yours and hasn't voted yet, as Follow up next names them (`StageFacts.pendingReviewers`):
+    /// people by their first names, a team by its name, those it requires first: "Alex and Jordan"; nil with none. Not one
+    /// who declined, nor one who voted, whose vote says the rest, nor a service account, as a build service, which never
+    /// votes. A team is one, as Azure DevOps reads it (`Person.isBot`), but its members vote for it.
+    static func pending(_ reviewers: [Reviewer]) -> String? {
+        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined && ($0.isGroup || !$0.person.isBot) }
+        return listed((pending.filter(\.isRequired) + pending.filter { !$0.isRequired }).map(PRReadiness.shortName))
+    }
+
+    /// "Maria", "Maria and Priya", "Maria, Priya and Sam", "Maria, Priya, Sam and 2 more".
+    private static func listed(_ names: [String]) -> String? {
         guard let last = names.last else { return nil }
         if names.count > 3 { return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" }
         return names.count == 1 ? last : names.dropLast().joined(separator: ", ") + " and " + last

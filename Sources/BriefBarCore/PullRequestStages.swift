@@ -170,6 +170,9 @@ public struct StageFacts: Equatable, Sendable {
     /// Yours: who it waits for, such as "Waiting on Priya" or "1 of 2 approvals"; nil while nobody but you is asked to
     /// review it, people or teams.
     public var waitingFor: String?
+    /// Yours: who's asked to review it and hasn't voted yet, by their first names, a team by its name, those it requires
+    /// first: "Alex and Jordan", "Priya, Sam, Payments and 2 more"; nil while nobody is.
+    public var pendingReviewers: String?
     /// Yours: someone but you voted on it.
     public var othersVoted: Bool
     /// Someone else's that you asked for changes, or rejected: "Waiting for Sam's changes".
@@ -184,6 +187,9 @@ public struct StageFacts: Equatable, Sendable {
     public var sessions: [StageSession]
     /// Since when it stands as its source shows it, for a stage that says nothing else of its time.
     public var since: Date?
+    /// Yours: when anything last happened on it, a push, a comment or a vote, as its details say, or when it was opened:
+    /// what Follow up next counts from, not when a comment that waits on you came, as `since` may be.
+    public var lastActivity: Date?
     /// Whether one of its source's lists has it now. One it still reads that no list has, such as one sent to you in a chat
     /// once you answered it, has no stage to show, but what was set on it still ends as it moves on.
     public var isListed: Bool
@@ -196,9 +202,9 @@ public struct StageFacts: Equatable, Sendable {
     public init(
         role: Role, state: PullRequestState = .open, failure: String? = nil, changesWanted: String? = nil, asksYou: String? = nil,
         isReady: Bool = false, autoComplete: Bool = false, isApproved: Bool? = false, approvedBy: String? = nil,
-        leftAfterReviews: String? = nil, waitingFor: String? = nil, othersVoted: Bool = false, youWantChanges: String? = nil,
-        votes: String = "", commit: String? = nil, sessions: [StageSession] = [], since: Date? = nil, isListed: Bool = true,
-        author: String? = nil, readAt: Date? = nil
+        leftAfterReviews: String? = nil, waitingFor: String? = nil, pendingReviewers: String? = nil, othersVoted: Bool = false,
+        youWantChanges: String? = nil, votes: String = "", commit: String? = nil, sessions: [StageSession] = [], since: Date? = nil,
+        lastActivity: Date? = nil, isListed: Bool = true, author: String? = nil, readAt: Date? = nil
     ) {
         self.role = role
         self.state = state
@@ -211,12 +217,14 @@ public struct StageFacts: Equatable, Sendable {
         self.approvedBy = approvedBy
         self.leftAfterReviews = leftAfterReviews
         self.waitingFor = waitingFor
+        self.pendingReviewers = pendingReviewers
         self.othersVoted = othersVoted
         self.youWantChanges = youWantChanges
         self.votes = votes
         self.commit = commit
         self.sessions = sessions
         self.since = since
+        self.lastActivity = lastActivity
         self.isListed = isListed
         self.author = author
         self.readAt = readAt
@@ -392,6 +400,11 @@ public struct StageReading: Equatable, Sendable {
     /// order puts !4102 after it: check the order", as agents read it. Whether it reads the same goes by that
     /// (`readTheSame`).
     public var unnamedWhy: StageWhy?
+    /// Yours, in Teammate's review: who hasn't reviewed it yet (`StageFacts.pendingReviewers`), whom Follow up next names.
+    public var pendingReviewers: String?
+    /// Yours, in Teammate's review: since when it has waited, as Follow up next counts it, since anything last happened on
+    /// it (`StageFacts.lastActivity`) or since you set it there, whichever came later.
+    public var followUpSince: Date?
 
     public init(
         stage: PullRequestStage, why: StageWhy, since: Date? = nil, mark: StageMark? = nil, replaced: StageMark? = nil,
@@ -562,6 +575,10 @@ public enum StageRules {
         ) else { return nil }
         if facts.isYours, facts.state.isOpen {
             reading.flags = flags(facts: facts, sessions: sessions, for: reading, setters: setters)
+            if reading.stage == .teammateReview {
+                reading.pendingReviewers = facts.pendingReviewers
+                reading.followUpSince = [facts.lastActivity, reading.mark?.at].compactMap { $0 }.max() ?? reading.since
+            }
         }
         return reading
     }
@@ -955,6 +972,29 @@ public enum StageText {
         let first = saysIt ? reason(reading, name: name) : reading.flags.first { needs(rank, $0) }.map { mark($0, name: name) }
         guard let first else { return why(reading, name: name, then: separator) }
         return first + separator + "in " + reading.stage.columnTitle
+    }
+
+    /// What Follow up next says of one of yours waiting on teammates: who hasn't reviewed it yet, and how long it has waited,
+    /// since anything last happened on it, a push, a comment or a vote, or since you set it there, whichever came later
+    /// (`StageReading.followUpSince`): "Waiting on Alex and Jordan · 20m", as VoiceOver hears it, "Waiting on Alex and
+    /// Jordan, for 20 minutes". With nobody left to vote, as when a policy wants another approval, why it's there: "1 of 2
+    /// approvals · 2d". Under a minute, no time.
+    public static func followUpWords(
+        _ reading: StageReading, name: (ItemRef) -> String?, now: Date, spoken: Bool = false
+    ) -> String {
+        let (who, waited) = followUpParts(reading, name: name, now: now)
+        guard spoken, waited != nil, let since = reading.followUpSince ?? reading.since else { return who + (waited ?? "") }
+        return who + ", for " + Elapsed.spoken(since: since, now: now)
+    }
+
+    /// Follow up next's words in two, as its slot shows them, so that a narrow slot cuts the names short rather than how
+    /// long it has waited: ("Waiting on Alex and Jordan", " · 20m"); under a minute, no time.
+    public static func followUpParts(
+        _ reading: StageReading, name: (ItemRef) -> String?, now: Date
+    ) -> (who: String, waited: String?) {
+        let who = reading.pendingReviewers.map { "Waiting on \($0)" } ?? reason(reading, name: name)
+        guard let since = reading.followUpSince ?? reading.since, now.timeIntervalSince(since) >= 60 else { return (who, nil) }
+        return (who, " · " + Elapsed.short(since: since, now: now))
     }
 
     /// What an approved pull request says when nothing tells what's left of it, nor who approved it.

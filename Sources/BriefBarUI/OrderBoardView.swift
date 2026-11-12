@@ -2574,8 +2574,9 @@ package struct CardBadge: Equatable, Identifiable {
     package var isFixNext: Bool
     /// Its color's stage: In progress's for Fix next.
     package var stage: PullRequestStage
-    /// The Up Next slot that shows its pull request too, which you can choose it for: Fix next, or Your next review for
-    /// Your review's Next; nil for Next in a column Up Next has no slot for, whose first only BriefBar's order decides.
+    /// The Up Next slot that shows its pull request too, which you can choose it for: Fix next, or, for its column's Next,
+    /// Your next review in Your review, Follow up next in Teammate's review; nil for Next in a column Up Next has no slot
+    /// for, whose first only BriefBar's order decides.
     package var slot: UpNextSlot?
     /// You chose its pull request for that slot.
     package var isPicked: Bool
@@ -2592,13 +2593,13 @@ package struct CardBadge: Equatable, Identifiable {
         case (true, true): "Fix next: you chose it, until it moves on"
         case (true, false): "Fix next: it needs you first, of every column"
         case (false, true): "Up Next: you chose it, until it moves on"
-        case (false, false): slot == nil ? "Next: it comes first in its column" : "Up Next: it comes first in its column"
+        case (false, false): slot.map { "Up Next: \($0.title)" } ?? "Next: it comes first in its column"
         }
     }
 
-    /// What VoiceOver says of it, after the card's stage and details.
+    /// What VoiceOver says of it, after the card's stage and details: as its tooltip, which slot it's Next for.
     package var spoken: String {
-        let name = isFixNext ? "Fix next" : slot == nil ? "Next in its column" : "Up Next"
+        let name = isFixNext ? "Fix next" : slot.map { "Up Next: \($0.title)" } ?? "Next in its column"
         return isPicked ? "\(name), you chose it" : name
     }
 
