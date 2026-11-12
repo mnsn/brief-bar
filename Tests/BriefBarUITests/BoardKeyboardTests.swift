@@ -120,12 +120,12 @@ import Testing
             let covered = details.covers && details.shown != nil
             let missions = MissionsBody.missions(order.missions, kinds: kinds)
             let board = order.board(kinds: kinds)
+            let yourOrder: LaneOrders? = sprint?.inYourOrder == true ? order.laneOrders : nil
+            let shown: PullRequestBoard = sprint.map { sprint in
+                board.withWork(sprint.work, missions: missions, stories: sprint.stories, yourOrder: yourOrder)
+            } ?? board
             OrderBoardView(
-                board: sprint.map { sprint in
-                    board.withWork(
-                        sprint.work, missions: missions, stories: sprint.stories, yourOrder: sprint.inYourOrder ? order.laneOrders : nil
-                    )
-                } ?? board, missions: missions,
+                board: shown, missions: missions,
                 order: order, elsewhere: "GitHub", openElsewhere: nil, place: { _ in nil },
                 card: { [drawn, late] card in
                     guard card.stage != late.column else { return nil }
@@ -320,7 +320,8 @@ import Testing
         let drawn = Drawn()
         let board = Board(order: order, details: details, late: late, drawn: drawn, waits: waits, sprint: sprint)
         // A scroller that shows as the page first scrolls would narrow it: in a window off screen, one does.
-        let host = NSHostingView(rootView: page == nil ? AnyView(board) : AnyView(ScrollView { board }.scrollIndicators(.never)))
+        let root: AnyView = page == nil ? AnyView(board) : AnyView(ScrollView { board }.scrollIndicators(.never))
+        let host = NSHostingView(rootView: root)
         // Wide enough for every column, so that the Board doesn't scroll sideways: its scroller, which shows only while the
         // details don't cover the Board, would change its height as they close.
         let window = KeyWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1_400, height: page ?? 500), styleMask: .borderless,
@@ -406,7 +407,8 @@ import Testing
             Self.press(.upArrow, command: true, in: window)
             #expect(kept().filter(tasks.contains) == [tasks[2], tasks[0], tasks[1]])
             try await until("the Board to draw it at the top") {
-                (drawn.frames[tasks[2]]?.minY ?? .infinity) < (drawn.frames[tasks[0]]?.minY ?? 0)
+                guard let moved = drawn.frames[tasks[2]], let above = drawn.frames[tasks[0]] else { return false }
+                return moved.minY < above.minY
             }
             details.shown = nil
             try await Self.pressUntil("Return on it, which kept the keyboard") {
@@ -439,8 +441,10 @@ import Testing
             // Down the page to the last card, which a click gives the keyboard.
             let scroller = try #require(Self.first(NSScrollView.self, in: host))
             let clip = scroller.contentView
-            let height = scroller.documentView?.frame.height ?? 0
-            clip.scroll(to: CGPoint(x: 0, y: scroller.documentView?.isFlipped == false ? 0 : max(0, height - clip.bounds.height)))
+            let height: CGFloat = scroller.documentView?.frame.height ?? 0
+            let bottom: CGFloat = max(0, height - clip.bounds.height)
+            let isFlipped: Bool = scroller.documentView?.isFlipped ?? true
+            clip.scroll(to: CGPoint(x: 0, y: isFlipped ? bottom : 0))
             scroller.reflectScrolledClipView(clip)
             try await until("the last card in sight") {
                 host.layoutSubtreeIfNeeded()
@@ -464,7 +468,8 @@ import Testing
                 host.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
                 guard let frame = drawn.frames[last], let next = drawn.frames[first] else { return false }
-                return frame.maxY < next.minY && frame.minY >= 0 && frame.maxY <= page
+                let inSight = frame.minY >= 0 && frame.maxY <= page
+                return inSight && frame.maxY < next.minY
             }
             // Just under the column titles, which stay at the page's top over it, rather than under them.
             try await until("the page to keep still") {

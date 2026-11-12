@@ -1660,20 +1660,8 @@ package struct OrderBoardView: View {
         let takes = dropping?.takes == true
         let isHovered = hovered == target
         return VStack(alignment: .leading, spacing: 8 * textScale) {
-            // Column by column, its cards as they show: in To start and In progress on My Work, in your order.
             ForEach(column.parts, id: \.self) { part in
-                let ordered = board.isInYourOrder && lane.takesYourOrder(in: part)
-                let items = lane.items(in: part)
-                // Where each is in its column, for its moves: worked out once for them all.
-                let places = ordered ? Dictionary(items.enumerated().map { ($0.element.ref, $0.offset) }, uniquingKeysWith: min) : [:]
-                ForEach(items) { item in
-                    let spot = CardSpot(lane: lane.kind, ref: item.ref)
-                    let reorder = places[item.ref].map { reorder(item.ref, at: $0, of: items.count, in: lane) }
-                    itemView(item, in: lane, column: part, isJoined: column.isJoined, reorder: reorder, moves: moves)
-                        .modifier(KeepsFrame(spot: spot, in: target, frames: ordered ? frames : nil) { frame in
-                            if followed?.spot == spot { followedFrame = frame }
-                        })
-                }
+                cellCards(part, of: column, in: lane, cell: target, moves: moves)
             }
         }
         // Those that don't take the card dim while you drag it.
@@ -1689,6 +1677,45 @@ package struct OrderBoardView: View {
                     .padding(6)
             }
         }
+    }
+
+    /// A column's cards in an open cell, as they show: in To start and In progress on My Work, in your order. Each card's
+    /// view has a function of its own, each value its own statement: in one closure, Xcode 26's compiler gives up on them.
+    private func cellCards(
+        _ part: BoardColumn, of column: ShownColumn, in lane: BoardLane, cell: BoardCell, moves: BoardMoves
+    ) -> some View {
+        let items: [BoardItem] = lane.items(in: part)
+        let ordered: Bool = board.isInYourOrder && lane.takesYourOrder(in: part)
+        let places: [ItemRef: Int]? = ordered ? Self.places(of: items) : nil
+        return ForEach(items) { item in
+            cellCard(item, column: part, of: column, in: lane, cell: cell, places: places, count: items.count, moves: moves)
+        }
+    }
+
+    /// Where each card is in its column, for its moves: worked out once for them all.
+    private static func places(of items: [BoardItem]) -> [ItemRef: Int] {
+        var places: [ItemRef: Int] = [:]
+        for (offset, item) in items.enumerated() where places[item.ref] == nil {
+            places[item.ref] = offset
+        }
+        return places
+    }
+
+    /// One of an open cell's cards, with its moves within its column where it's in your order: `places` has where each of
+    /// the column's cards is there; nil for a column that isn't in your order.
+    private func cellCard(
+        _ item: BoardItem, column part: BoardColumn, of column: ShownColumn, in lane: BoardLane, cell: BoardCell,
+        places: [ItemRef: Int]?, count: Int, moves: BoardMoves
+    ) -> some View {
+        let spot = CardSpot(lane: lane.kind, ref: item.ref)
+        let place: Int? = places?[item.ref]
+        let cardReorder: CardReorder? = place.map { index in reorder(item.ref, at: index, of: count, in: lane) }
+        let kept: CardFrames? = places == nil ? nil : frames
+        let moved: (CGRect) -> Void = { frame in
+            if followed?.spot == spot { followedFrame = frame }
+        }
+        return itemView(item, in: lane, column: part, isJoined: column.isJoined, reorder: cardReorder, moves: moves)
+            .modifier(KeepsFrame(spot: spot, in: cell, frames: kept, moved: moved))
     }
 
     /// A folded column's strip in a lane: how many cards it has there, in a pill where one needs you, and its name, cut
