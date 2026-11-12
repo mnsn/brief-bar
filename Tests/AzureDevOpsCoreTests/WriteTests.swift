@@ -622,6 +622,25 @@ import Testing
         #expect(expired.requests.count == 1)
     }
 
+    /// A change called off while it's asked whether it's still wanted never goes, even when the answer is yes, as when
+    /// Make Changes in Azure DevOps was turned off and on again meanwhile.
+    @Test func aChangeCalledOffWhileItsAskedIfWantedNeverGoes() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie", iteration: "Storefront\\Sprint 42"))
+        }
+        let client = server.client()
+        let write = sample(.setIteration)
+        let task = Task {
+            try await client.send(write, as: nil, while: {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return true
+            })
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(server.requests.isEmpty)
+    }
+
     /// Why a move didn't happen: someone moved it meanwhile, which fails its test, as Azure DevOps says; no permission; a work
     /// item that isn't there, or you can't see. Each sent once.
     @Test func saysWhyAMoveDidntHappen() async throws {

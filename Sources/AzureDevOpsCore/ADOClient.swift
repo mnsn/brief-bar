@@ -224,6 +224,9 @@ public struct ADOClient: Sendable {
             if isChange {
                 try Task.checkCancellation()
                 if let wanted, !(await wanted()) { throw CancellationError() }
+                // Called off while `wanted` was asked, which may say yes all the same, as when the setting was turned off
+                // and on again meanwhile: once it's sent, nothing calls it off.
+                try Task.checkCancellation()
             }
             let redirects = RedirectGuard()
             let (data, response, isComplete): (Data, URLResponse, Bool)
