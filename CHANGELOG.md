@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.22.0 - 2026-11-12
+
+- **Your order, on My Work.** Put the work you do yourself in the order you want to do it, in each lane of the Board:
+  drag a card up or down in **To start** or **In progress**, where a line shows where it goes; press **⌘↑** or **⌘↓**
+  on it, and the page follows it; or right-click it and choose **Move Up**, **Move Down** or **Move to Top**, under
+  **Your Order**. VoiceOver offers them too. A lane has one order across both columns, so a task keeps its place once it
+  starts, and work that comes later goes to the bottom of its column. **Reset Order**, in the same menu, puts the lane
+  back in the Board's order. **Start next** follows your order in each lane, and what you chose for Fix next or Start
+  next keeps its place in your order rather than going first. BriefBar keeps the order for you only, until you reset it,
+  choose **Forget All Orders…** or turn Azure DevOps off: nothing changes in Azure DevOps, whose backlog keeps its
+  order.
+- **Follow up next is back in Up Next.** Next for a teammate, which 0.21.0 took out, is back as **Follow up next**,
+  after **Your next review**: the next pull request of yours in a teammate's review, saying who hasn't reviewed it yet,
+  required reviewers first, and how long it has waited, such as **Waiting on Alex and Jordan · 20m**, so you know whom
+  to follow up with. One that nobody's asked to review stays in **Fix next**, as **Find a reviewer**, and no pull
+  request is in both. **Make Next** works in Teammate's review again, BriefBar keeps what you choose there, and **Next**
+  in that column marks Follow up next's pull request, even where others come before it, such as those Fix next has. With
+  nothing in its slots, Up Next says **Nothing to fix, review or follow up**.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** On My Work,
+  BriefBar keeps the order you put your work in, in its preferences, and sends none of it to Azure DevOps.
+
 ## 0.21.0 - 2026-11-12
 
 - **Join the Board's columns, and hide what's done, right from their titles.** Hover between two column titles and

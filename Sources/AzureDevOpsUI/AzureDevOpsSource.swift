@@ -105,7 +105,10 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// sprint or its next, a PATCH of its iteration, when you click it and confirm, after which BriefBar reads the
     /// sprint and your work outside it again; and, as you move one to the next sprint, your team's sprints, with their
     /// dates, kept in memory only, for an hour.
-    nonisolated package static let descriptionVersion = 31
+    /// 32: only with My Work Page, the order you put your work in on My Work, in each lane's To start and In progress,
+    /// kept in BriefBar's preferences, by reference, never a title, for the 50 lanes you ordered last, until you reset
+    /// a lane's order, forget all orders or turn Azure DevOps off; none of it goes to Azure DevOps.
+    nonisolated package static let descriptionVersion = 32
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
