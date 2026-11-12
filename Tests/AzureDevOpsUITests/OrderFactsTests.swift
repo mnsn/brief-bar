@@ -496,7 +496,8 @@ import Testing
     /// it, which it counts from.
     @Test func yoursNamesWhoHasntReviewedItYet() throws {
         let build = Check(name: "shop-web CI", kind: .build, state: .passed)
-        let team = Person(id: "5A1B0000-0000-4000-8000-0000000000CC", name: "[Storefront]\\Payments")
+        // As Azure DevOps' reviewers decode a team: a service identity too.
+        let team = Person(id: "5A1B0000-0000-4000-8000-0000000000CC", name: "[Storefront]\\Payments", isBot: true)
         let maria = Person(id: "5A1B0000-0000-4000-8000-0000000000DD", name: "Maria Lopez")
         let chen = Person(id: "5A1B0000-0000-4000-8000-0000000000EE", name: "Chen Wei")
         let service = Person(id: "5A1B0000-0000-4000-8000-0000000000FF", name: "Storefront Build Service", isBot: true)

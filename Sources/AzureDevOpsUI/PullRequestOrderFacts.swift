@@ -334,9 +334,9 @@ final class PullRequestOrderFacts {
     /// Who's asked to review one of yours and hasn't voted yet, as Follow up next names them (`StageFacts.pendingReviewers`):
     /// people by their first names, a team by its name, those it requires first: "Alex and Jordan"; nil with none. Not one
     /// who declined, nor one who voted, whose vote says the rest, nor a service account, as a build service, which never
-    /// votes.
+    /// votes. A team is one, as Azure DevOps reads it (`Person.isBot`), but its members vote for it.
     static func pending(_ reviewers: [Reviewer]) -> String? {
-        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined && !$0.person.isBot }
+        let pending = reviewers.filter { $0.vote == .none && !$0.hasDeclined && ($0.isGroup || !$0.person.isBot) }
         return listed((pending.filter(\.isRequired) + pending.filter { !$0.isRequired }).map(PRReadiness.shortName))
     }
 
