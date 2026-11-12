@@ -1,11 +1,12 @@
 import Foundation
 
 /// The only changes BriefBar makes in Azure DevOps, each when you click it, with **Make Changes in Azure DevOps** on: your
-/// reply in a pull request's comment thread, a thread's status, a comment of yours edited or deleted, and a tag you add to a
-/// pull request or take off it. Every other request BriefBar sends Azure DevOps is a GET
-/// (`ADOClient.get`); these go only through `ADOClient.send(_:as:)`, which sends nothing else, with the same sign-in, to the same
-/// host, following no redirect. Each is on a pull request (`pullRequest`), and a thread's on one of its threads (`thread`).
-/// A change BriefBar comes to make later is another case here, and a kind of its own (`Kind`), which the tests go through.
+/// reply in a pull request's comment thread, a thread's status, a comment of yours edited or deleted, a tag you add to a
+/// pull request or take off it, and, on My Work, a task or bug of yours moved to another sprint. Every other request
+/// BriefBar sends Azure DevOps is a GET (`ADOClient.get`); these go only through `ADOClient.send(_:as:)`, which sends nothing
+/// else, with the same sign-in, to the same host, following no redirect. Each is on a pull request (`pullRequest`), and a
+/// thread's on one of its threads (`thread`), but a move, which is on a work item (`workItem`). A change BriefBar comes to
+/// make later is another case here, and a kind of its own (`Kind`), which the tests go through.
 public enum ADOWrite: Sendable, Equatable {
     /// Your comment in a thread, in reply to its first, in Markdown: `POST …/pullRequests/{id}/threads/{thread}/comments`.
     case reply(ThreadAddress, markdown: String, parentCommentId: Int)
@@ -24,17 +25,25 @@ public enum ADOWrite: Sendable, Equatable {
     /// A tag off the pull request, by the project's tag's ID, or else its name: `DELETE …/pullRequests/{id}/labels/{tag}`.
     /// The project keeps the tag.
     case removeTag(PullRequestAddress, tag: String)
+    /// A work item moved to another iteration, such as your team's next sprint, and nothing else of it:
+    /// `PATCH {organization}/_apis/wit/workitems/{id}`, a JSON Patch that sets `System.IterationPath` to `to`, but only while
+    /// it's still `from`, as BriefBar last read it: when someone moved it meanwhile, Azure DevOps refuses it, rather than
+    /// BriefBar moving it again over theirs. Azure DevOps answers with the work item as it keeps it now.
+    case setIteration(WorkItemKey, from: String, to: String)
 
     /// Each change BriefBar can make, apart from what it says: tests go through all of them, so a new one comes with its
     /// own.
     public enum Kind: String, Sendable, CaseIterable {
-        case reply, setStatus, editComment, deleteComment, addTag, removeTag
+        case reply, setStatus, editComment, deleteComment, addTag, removeTag, setIteration
 
         /// A change to a pull request's tags, rather than to one of its threads.
         public var isTags: Bool { self == .addTag || self == .removeTag }
 
         /// A change to one of your comments, rather than to its thread or the pull request's tags.
         public var isComment: Bool { self == .editComment || self == .deleteComment }
+
+        /// A change to a work item, rather than to a pull request.
+        public var isWorkItem: Bool { self == .setIteration }
     }
 
     public var kind: Kind {
@@ -45,28 +54,37 @@ public enum ADOWrite: Sendable, Equatable {
         case .deleteComment: .deleteComment
         case .addTag: .addTag
         case .removeTag: .removeTag
+        case .setIteration: .setIteration
         }
     }
 
-    /// The pull request it changes, or one of whose threads it changes: every change is on one.
-    public var pullRequest: PullRequestAddress {
+    /// The pull request it changes, or one of whose threads it changes; nil for a change to a work item.
+    public var pullRequest: PullRequestAddress? {
         switch self {
         case .reply(let thread, _, _), .setStatus(let thread, _), .editComment(let thread, _, _), .deleteComment(let thread, _):
             thread.pullRequest
         case .addTag(let pullRequest, _), .removeTag(let pullRequest, _): pullRequest
+        case .setIteration: nil
         }
     }
 
-    /// The thread it changes; nil for a change to the pull request itself.
+    /// The thread it changes; nil for a change to the pull request itself, or to a work item.
     public var thread: ThreadAddress? {
         switch self {
         case .reply(let thread, _, _), .setStatus(let thread, _), .editComment(let thread, _, _), .deleteComment(let thread, _): thread
-        case .addTag, .removeTag: nil
+        case .addTag, .removeTag, .setIteration: nil
         }
     }
 
+    /// The work item it changes; nil for a change to a pull request.
+    public var workItem: WorkItemKey? {
+        if case .setIteration(let key, _, _) = self { return key }
+        return nil
+    }
+
     /// POST for a reply, which adds a comment; PATCH for a status, which changes only that of the thread, and for a comment
-    /// edited, only what it says; DELETE for a comment deleted; POST for a tag added, and DELETE for one taken off.
+    /// edited, only what it says; DELETE for a comment deleted; POST for a tag added, and DELETE for one taken off; PATCH
+    /// for a work item moved, which changes only its iteration.
     public var method: String {
         switch kind {
         case .reply: "POST"
@@ -75,25 +93,34 @@ public enum ADOWrite: Sendable, Equatable {
         case .deleteComment: "DELETE"
         case .addTag: "POST"
         case .removeTag: "DELETE"
+        case .setIteration: "PATCH"
         }
     }
 
     public var url: URL {
-        let path = switch self {
-        case .reply(let thread, _, _): pullRequest.path + ["threads", String(thread.id), "comments"]
-        case .setStatus(let thread, _): pullRequest.path + ["threads", String(thread.id)]
+        let path: [String]
+        switch self {
+        case .reply(let thread, _, _): path = thread.pullRequest.path + ["threads", String(thread.id), "comments"]
+        case .setStatus(let thread, _): path = thread.pullRequest.path + ["threads", String(thread.id)]
         case .editComment(let thread, let comment, _), .deleteComment(let thread, let comment):
-            pullRequest.path + ["threads", String(thread.id), "comments", String(comment)]
-        case .addTag: pullRequest.path + ["labels"]
-        case .removeTag(_, let tag): pullRequest.path + ["labels", tag]
+            path = thread.pullRequest.path + ["threads", String(thread.id), "comments", String(comment)]
+        case .addTag(let pullRequest, _): path = pullRequest.path + ["labels"]
+        case .removeTag(let pullRequest, let tag): path = pullRequest.path + ["labels", tag]
+        case .setIteration(let key, _, _): path = [key.organization, "_apis", "wit", "workitems", String(key.id)]
         }
         return ADOEndpoint.url("https://dev.azure.com", path, [("api-version", ADOEndpoint.apiVersion)])
+    }
+
+    /// What its body is: JSON, or, for a work item's change, a JSON Patch, which Azure DevOps takes only as that.
+    public var contentType: String {
+        kind.isWorkItem ? "application/json-patch+json" : "application/json"
     }
 
     /// Its JSON body, as Azure DevOps' own samples send them: a reply's text, the comment it replies to, and that it's text
     /// (`commentType` 1); only a status, by the number Azure DevOps takes for it, though it answers with its name; only what
     /// a comment edited says now; or a tag's name. Deleting a comment, or taking a tag off, says nothing more than its
-    /// address: it's empty, and sent as no body.
+    /// address: it's empty, and sent as no body. A move is a JSON Patch: a test that the work item is still in the iteration
+    /// it was read in, then its new one.
     public var body: Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -111,9 +138,23 @@ public enum ADOWrite: Sendable, Equatable {
             encoded = try? encoder.encode(TagBody(name: name))
         case .removeTag:
             encoded = Data()
+        case .setIteration(_, let from, let to):
+            encoded = try? encoder.encode([
+                PatchOperation(op: "test", path: Self.iterationField, value: from),
+                PatchOperation(op: "add", path: Self.iterationField, value: to),
+            ])
         }
         // Strings and numbers always encode.
         return encoded ?? Data()
+    }
+
+    /// Where a work item's iteration is, in a JSON Patch.
+    static let iterationField = "/fields/System.IterationPath"
+
+    private struct PatchOperation: Encodable {
+        var op: String
+        var path: String
+        var value: String
     }
 
     private struct ReplyBody: Encodable {
@@ -135,13 +176,14 @@ public enum ADOWrite: Sendable, Equatable {
     }
 
     /// What Azure DevOps answers a change with: the comment a reply added, or that you edited, as it keeps it now; the thread
-    /// whose status changed, with its comments as it has them now; the tag added, as the project has it; that a comment was
-    /// deleted, or a tag taken off, which it says nothing more of; or, when the change was made but its answer can't be read,
-    /// why, for the pull request to be read again instead.
+    /// whose status changed, with its comments as it has them now; the tag added, as the project has it; the work item moved,
+    /// as it keeps it now; that a comment was deleted, or a tag taken off, which it says nothing more of; or, when the change
+    /// was made but its answer can't be read, why, for what it changed to be read again instead.
     public enum Answer: Sendable {
         case comment(ADOComment)
         case thread(ADOThread)
         case tag(ADOTag)
+        case workItem(ADOWorkItem)
         case done
         case unreadable(String)
     }
@@ -302,7 +344,7 @@ public struct ThreadChange: Sendable, Equatable {
             self.init(thread: thread.id, comments: read?.comments ?? [], status: thread.status)
         case (.done, .deleteComment(_, let id)):
             self.init(thread: address.id, deleted: [id])
-        case (.unreadable, _), (.tag, _), (.done, _):
+        case (.unreadable, _), (.tag, _), (.workItem, _), (.done, _):
             return nil
         }
     }
@@ -347,13 +389,15 @@ extension PRDetails {
     }
 }
 
-/// Why a change BriefBar sent Azure DevOps didn't happen, or may not have, in a sentence for its thread, or by the tags.
+/// Why a change BriefBar sent Azure DevOps didn't happen, or may not have, in a sentence for its thread, by the tags, or, for
+/// a work item moved, on My Work.
 public enum ADOWriteProblem: Sendable, Equatable {
-    /// You may not reply there, or change the thread, the comment or the tags.
+    /// You may not reply there, or change the thread, the comment, the tags or the work item.
     case notAllowed
     /// Azure DevOps takes no change to the pull request anymore: it's completed or abandoned.
     case closed
-    /// The thread, the comment, or its pull request, isn't there anymore; or the tag taken off isn't on the pull request.
+    /// The thread, the comment, or its pull request, isn't there anymore; or the tag taken off isn't on the pull request; or
+    /// the work item isn't there anymore, or you can't see it.
     case gone
     case offline
     /// The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in.
@@ -369,7 +413,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
     case refused(String?)
     /// Someone else signed in to the Azure CLI since you asked for it: nothing went as them.
     case otherAccount
-    /// The pull request isn't in your lists anymore, though its details still show it: nothing went.
+    /// The pull request isn't in your lists anymore, though its details still show it; or the work item isn't among yours
+    /// that BriefBar reads anymore: nothing went.
     case notListed
     /// Anything else, as BriefBar says it.
     case failed(String)
@@ -406,6 +451,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
 
     /// What happened, in a sentence for the thread: "Azure DevOps says you may not reply here."
     public func sentence(_ kind: ADOWrite.Kind) -> String {
+        if kind.isWorkItem { return moveSentence() }
         if kind.isTags { return tagSentence(kind) }
         if kind.isComment { return commentSentence(kind) }
         let change = kind == .reply ? "reply here" : "change this thread's status"
@@ -517,6 +563,39 @@ public enum ADOWriteProblem: Sendable, Equatable {
             "This pull request is no longer in your lists, so its tags didn't change."
         case .failed(let why):
             (kind == .addTag ? "Couldn't add the tag: " : "Couldn't remove the tag: ") + why
+        }
+    }
+
+    /// What happened to a work item you moved to another sprint, in a sentence for My Work: "Azure DevOps says you may not
+    /// change this work item." Refused, as when someone moved it meanwhile, it says what Azure DevOps said.
+    private func moveSentence() -> String {
+        switch self {
+        case .notAllowed:
+            "Azure DevOps says you may not change this work item."
+        case .closed:
+            "Azure DevOps takes no change to this work item anymore."
+        case .gone:
+            "Azure DevOps doesn't have this work item anymore, or you can't see it now."
+        case .offline:
+            "You're offline: try again once you're back."
+        case .signedOut:
+            "The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in: sign in, then try again."
+        case .slowedDown(let until):
+            "Azure DevOps asked BriefBar to slow down, until \(Self.time(until)): try again then."
+        case .unanswered:
+            "Azure DevOps didn't answer in time, so it may have moved: BriefBar reads your work again, to show where it is."
+        case .unconfirmed:
+            "BriefBar couldn't read your work again to tell where it is: try again in a moment."
+        case .refused(let said?):
+            "Azure DevOps refused it: \(said)"
+        case .refused(nil):
+            "Azure DevOps refused it."
+        case .otherAccount:
+            "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
+        case .notListed:
+            "As BriefBar reads your work now, it isn't where it was when you chose to move it, so it didn't move."
+        case .failed(let why):
+            "Couldn't move it: " + why
         }
     }
 }

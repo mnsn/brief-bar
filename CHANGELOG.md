@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.21.0 - 2026-11-12
+
+- **Join the Board's columns, and hide what's done, right from their titles.** Hover between two column titles and
+  click **→|←** to join those neighbors into one column, which saves room: **Your review** and **Teammate's review**
+  make **In review**, **Can merge** and **Waits** make **Ready**, and **Merged** and **Completed** make **Done**, while
+  each card keeps its stage and its color. **←|→** on a joined title splits it again. Right-click **Merged** or
+  **Completed** to hide it, and the tab at the end of the titles brings it back. A title's menu also has **Simple
+  Columns**, five in one click: To start, In progress, In review, Ready and Done; and **Reset Columns**. While you drag a
+  card, a joined column springs open into its stages, so that you drop it on one, and **⌘→** and **⌘←** still move a
+  card a stage at a time. BriefBar remembers how you laid them out, and Up Next and the counts stay as they were.
+- **Start next, on My Work.** With **+ Sprint Tasks** or **+ All My Tasks**, Up Next ends with **Start next**: the task
+  in To start to start next, your sprint's first, in its backlog's order, then, with + All My Tasks, once none of the
+  sprint's is left, yours from older sprints or none, each saying where it is, such as **New · Sprint 41**, and last,
+  those in a later sprint, as one you moved to the next. It's marked
+  with To start's dashed ring, and its task wears **Next** on the Board. Choose another with **Start next ⌄**, or
+  **Make Next** on a card in To start: it's first in its lane too, until BriefBar quits. Click it for its details, or
+  right-click it for its card's menu; **2 more ›** shows the next on the Board.
+- **Move a task to this sprint or the next.** With **Make Changes in Azure DevOps** on, a task or bug of yours outside
+  the sprint, on My Work with + All My Tasks, moves to your team's current sprint or its next: click where its card says
+  it is, such as **Sprint 41 ⌄**, or right-click it, and choose **Move to Sprint 42…** or **Move to Next Sprint…**.
+  BriefBar asks first, then sets its iteration in Azure DevOps, as you, and nothing else; **Undo**, on a line under
+  **Show** that stays in sight as you scroll, moves it back. If someone moved it meanwhile, Azure DevOps refuses it, and
+  BriefBar says so.
+- **Up Next shows only your next steps.** It keeps **Fix next** and **Your next review**, and on My Work with
+  **+ Sprint Tasks** or **+ All My Tasks**, **Start next**. Next for a teammate, Approved next, Merge next and Waits next
+  go: they wait on a teammate, Azure DevOps or another pull request, or just a click to complete. The Board keeps them
+  in their columns, each column's first card marked **Next**. A pull request of yours that nobody's asked to review
+  joins Fix next, as **Find a reviewer · in Teammate's review**, after builds that failed and changes someone wants, and
+  a folded Teammate's review marks it as needing you. **Make Next**, in a card's menu, is now only in In progress, Your
+  review and To start; what you chose for the slots that went is forgotten. In a wide window, the slots no longer
+  stretch across the whole page, and with nothing in them, Up Next says **Nothing to fix or review**.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Make
+  Changes in Azure DevOps on, Azure DevOps moves a task of yours to your team's current or next sprint when you confirm
+  it on My Work, reading your team's sprints for the next.
+
 ## 0.20.0 - 2026-11-12
 
 - **A session's end shows within seconds, not a minute later.** On a busy Mac, BriefBar could read the Copilot app's

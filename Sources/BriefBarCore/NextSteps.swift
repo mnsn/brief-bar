@@ -52,8 +52,9 @@ public struct BoardCard: Equatable, Sendable, Identifiable {
 
 extension StageReading {
     /// It needs you, whatever its column, as why it's there or its flags say: a session that asks you something, then a
-    /// build or check that failed, or its merge, then changes someone wants; but nothing while a session writes it, which
-    /// may be fixing just that. Nil for the rest, such as a draft, or one that merged.
+    /// build or check that failed, or its merge, then changes someone wants, then one of yours that needs a reviewer, as
+    /// nobody but you is asked to review it; but nothing while a session writes it, which may be fixing just that. Nil for
+    /// the rest, such as a draft, or one that merged.
     public var fixRank: Int? {
         guard stage != .merged else { return nil }
         var asks = false, writing = false, failing = false, changes = false
@@ -75,13 +76,30 @@ extension StageReading {
         if asks { return 0 }
         if writing { return nil }
         if failing { return 1 }
-        return changes ? 2 : nil
+        if changes { return 2 }
+        // Nothing's broken: after what failed or someone wants changed.
+        return why == .findReviewer ? 3 : nil
+    }
+
+    /// Yours, in Teammate's review, waiting on the reviewers asked, who haven't finished, and needing nothing else of you:
+    /// what Follow up next has. Not one that needs a reviewer, nor one Fix next has, as a build that failed, which is no
+    /// review to follow up yet, nor one a session writes, which may be fixing just that.
+    public var waitsOnTeammates: Bool {
+        guard stage == .teammateReview, isOnBoard, case .waitingFor = why else { return false }
+        return fixRank == nil && writer == nil
     }
 }
 
 extension PullRequestStage {
     /// The Board's columns, from left to right.
     public static let columns: [PullRequestStage] = [.inProgress, .yourReview, .teammateReview, .approved, .canMerge, .waits, .merged]
+
+    /// Whether a card in its column wears Next on the Board, as its order says what's next there
+    /// (`PullRequestBoard.nextInColumn`): every column's but In progress's, where what's next is Fix next's, from every
+    /// column, which wears Fix next wherever it is, and Merged's, which only has what merged, the latest first.
+    public var firstWearsNext: Bool {
+        self != .inProgress && self != .merged
+    }
 
     /// Its column's title on the Board: "Waits", short for Waits for another PR.
     public var columnTitle: String {
@@ -92,8 +110,9 @@ extension PullRequestStage {
 // MARK: - Which comes first
 
 /// Which comes first in a stage: on the Board, in Up Next and in a mission's next steps. The pull request you chose for Up
-/// Next's slot in its column, while the slot has it (`UpNextPicks`); then BriefBar's own order: the mission you focus on
-/// first, in every stage but In progress, where what needs you comes before it; then, in each:
+/// Next's slot in its column, In progress's Fix next or Your review's Your next review, while the slot has it
+/// (`UpNextPicks`); then BriefBar's own order: the mission you focus on first, in every stage but In progress, where what
+/// needs you comes before it; then, in each:
 /// - **In progress:** what needs you first, as Fix next has it (`fixOrder`), the mission you focus on first among it: a
 ///   session that asks you, then what failed, then changes someone wants, the oldest first; then the rest, the mission you
 ///   focus on first, as By Mission lists them.
@@ -112,7 +131,8 @@ public enum BoardOrder {
     ///   - stages: every pull request's stage, for what a card in Waits waits for, and how long those that build on one in
     ///     Your review have waited, whatever their lane.
     ///   - picked: the pull request you chose for Up Next's slot in this column, which comes first where the slot has it:
-    ///     in In progress, only while it needs you, so that what needs you still comes first.
+    ///     in In progress, only while it needs you, so that what needs you still comes first. Nothing in a column with no
+    ///     slot, such as Approved: BriefBar's order alone decides there.
     public static func sorted(
         _ cards: [BoardCard], in stage: PullRequestStage, stages: [ItemRef: StageReading], first picked: ItemRef? = nil
     ) -> [BoardCard] {
@@ -125,7 +145,8 @@ public enum BoardOrder {
     }
 
     /// What needs you, from every column, as Fix next has it: the one you chose for it first, while it needs you; then the
-    /// mission you focus on, then a session that asks you, then what failed, then changes someone wants, the oldest first.
+    /// mission you focus on, then a session that asks you, then what failed, then changes someone wants, then one of yours
+    /// that needs a reviewer, the oldest first.
     public static func fixOrder(_ cards: [BoardCard], first picked: ItemRef? = nil) -> [BoardCard] {
         var sorted = cards.filter { $0.reading.fixRank != nil }.sorted(by: isFixedFirst)
         if let picked, let index = sorted.firstIndex(where: { $0.ref == picked }) {
@@ -290,15 +311,17 @@ public enum BoardOrder {
 
 // MARK: - Up Next
 
-/// One of Up Next's slots: a kind of next, each in its stage's color.
+/// One of Up Next's slots: a next step that's yours, each in its stage's color, Follow up next's too, as you follow up with
+/// teammates who haven't reviewed one of yours. What waits on Azure DevOps or another pull request has none: the Board's
+/// columns keep it, in their order, their first card wearing Next (`PullRequestBoard.nextInColumn`); and completing one is
+/// a click in Azure DevOps.
 public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
     /// What needs you, in any column: what Fix next shows, in In progress's color.
     case fix
+    /// The review that waits on you: Your next review.
     case yourReview
+    /// One of yours that waits on teammates' reviews, to follow up with them: Follow up next.
     case teammateReview
-    case approved
-    case canMerge
-    case waits
 
     public var id: String { rawValue }
 
@@ -306,10 +329,7 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
         switch self {
         case .fix: "Fix next"
         case .yourReview: "Your next review"
-        case .teammateReview: "Next for a teammate"
-        case .approved: "Approved next"
-        case .canMerge: "Merge next"
-        case .waits: "Waits next"
+        case .teammateReview: "Follow up next"
         }
     }
 
@@ -320,9 +340,6 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
         case .fix: .inProgress
         case .yourReview: .yourReview
         case .teammateReview: .teammateReview
-        case .approved: .approved
-        case .canMerge: .canMerge
-        case .waits: .waits
         }
     }
 
@@ -330,51 +347,58 @@ public enum UpNextSlot: String, CaseIterable, Sendable, Identifiable {
     public var help: String {
         switch self {
         case .fix:
-            "What needs you to fix or answer, in any column: a session that asks you, then a build that failed, then changes someone wants"
+            "What needs you, in any column: a session that asks you, then a build that failed, then changes someone wants, then one of yours that needs a reviewer"
         case .yourReview: "The review that has waited longest; in a mission, the earlier one first, as later ones build on it"
-        case .teammateReview: "A pull request of yours that needs a reviewer first; then the earliest in its mission"
-        case .approved: "Approved, but Azure DevOps can't complete it yet, as it says why: the earliest in its mission first"
-        case .canMerge: "What Azure DevOps says is ready to complete: next to merge first, then any time"
-        case .waits: "Ready to complete, but its order puts it after another: the one closest to merging"
+        case .teammateReview:
+            "Yours in a teammate's review: follow up with whoever hasn't reviewed it. The earliest in its mission first, as later ones build on it"
         }
     }
 
-    /// Whether a card is in it: every one of its stage's, but Fix next's, which has what needs you, in any column.
+    /// Whether a card is in it: every one of Your review's; Fix next's, what needs you, in any column; Follow up next's, those
+    /// of Teammate's review that wait on teammates alone.
     func takes(_ card: BoardCard) -> Bool {
         has(card.reading)
     }
 
     /// Whether a pull request is in it, as its stage reads now: what you can choose for it. On your board, in its stage,
-    /// but for Fix next, needing you, whatever its stage.
+    /// but for Fix next, needing you, whatever its stage; for Follow up next, waiting on teammates alone
+    /// (`StageReading.waitsOnTeammates`), so that one Fix next has is never in both.
     public func has(_ reading: StageReading?) -> Bool {
         guard let reading, keeps(reading) else { return false }
-        return self != .fix || reading.fixRank != nil
+        switch self {
+        case .fix: return reading.fixRank != nil
+        case .yourReview: return true
+        case .teammateReview: return reading.waitsOnTeammates
+        }
     }
 
     /// Whether the pull request you chose for it still stands there, as its stage reads now: on your board, in its stage.
     /// Fix next's, in any stage but Merged, while it needs you, and waits while a session writes it, which may be fixing
-    /// just that: it comes first again once it needs you.
+    /// just that: it comes first again once it needs you. Follow up next's waits too while Fix next has it, as when its build
+    /// fails, or a session writes it: it comes first again once it waits on teammates alone.
     public func keeps(_ reading: StageReading?) -> Bool {
         guard let reading, reading.isOnBoard else { return false }
         guard self == .fix else { return reading.stage == stage }
         return reading.fixRank != nil || (reading.stage != .merged && reading.writer != nil)
     }
 
-    /// The slot a card is in by its column, which Make Next chooses it for: its column's, but In progress's, Fix next, only
-    /// while it needs you; nil for one in none, such as a draft, or one that merged. One that needs you in another column
-    /// is in Fix next too, which Up Next's ⌄ chooses it for.
+    /// The slot a card is in by its column, which Make Next chooses it for: Your review's, Your next review; In progress's,
+    /// Fix next, only while it needs you; Teammate's review's, Follow up next, while it waits on teammates alone; nil for
+    /// one in none, such as a draft, one in a column Up Next has no slot for, as Approved, or one that merged. One that
+    /// needs you in another column is in Fix next, which Up Next's ⌄ chooses it for.
     public static func of(_ card: BoardCard) -> UpNextSlot? {
         allCases.first { $0.stage == card.stage && $0.takes(card) }
     }
 
-    /// The slot whose pull request comes first in a column: Fix next's in In progress; nil for Merged.
+    /// The slot whose pull request comes first in a column: Fix next's in In progress, Your next review's in Your review,
+    /// Follow up next's in Teammate's review; nil for the rest, which Up Next has no slot for.
     public static func first(in stage: PullRequestStage) -> UpNextSlot? {
         allCases.first { $0.stage == stage }
     }
 }
 
-/// Up Next, at the top of Azure DevOps' Pull Requests page: a slot for each kind of next, with how many more, and only those
-/// that have something.
+/// Up Next, at the top of Azure DevOps' Pull Requests page: a slot for each next step that's yours, with how many more, and
+/// only those that have something.
 public struct UpNext: Equatable, Sendable {
     public struct Slot: Equatable, Sendable, Identifiable {
         public var kind: UpNextSlot
@@ -404,8 +428,12 @@ public struct UpNext: Equatable, Sendable {
 
     public var isEmpty: Bool { slots.isEmpty }
 
-    /// What it says when nothing's next.
-    public static let nothingNext = "Nothing's next for you"
+    /// What it says when nothing's next: what its slots are for, "Nothing to fix, review or follow up", and, where Start
+    /// next can show, "Nothing to fix, review, follow up or start". Not "nothing's next": what waits on others has its Next
+    /// on the Board.
+    public static func nothingNext(startsWork: Bool) -> String {
+        startsWork ? "Nothing to fix, review, follow up or start" : "Nothing to fix, review or follow up"
+    }
 
     /// What a slot's tooltip says of the pull request you chose for it.
     public static let pickedHelp = "You chose it, until it moves on. Let BriefBar Choose, under ⌄, gives it back to BriefBar's order"
@@ -626,7 +654,8 @@ extension UpNextPicks {
             var listedAt: Date
         }
 
-        /// One that can be read, or none, so that one BriefBar can't read, such as a slot of a later version's, drops alone.
+        /// One that can be read, or none, so that one BriefBar can't read, such as a slot of a later version's, or of an
+        /// earlier one's that Up Next no longer has, as Approved next's, drops alone.
         private struct Lossy: Decodable {
             var value: Saved?
 
@@ -657,6 +686,29 @@ extension UpNextPicks {
                 defaults.removeObject(forKey: Self.defaultsKey)
                 return
             }
+            if let data = encoded() {
+                defaults.set(data, forKey: Self.defaultsKey)
+            }
+        }
+
+        /// Saves what `load` read from the preferences in place of what they have, where they have more than it could
+        /// read, such as the slots Up Next no longer has, as Approved next's, or what builds from main saved before what
+        /// you chose was kept for each account, each slot's reference alone; none removes the key. So nothing stays
+        /// there that nothing uses, nor keeps Forget Stages… on with nothing to forget. True when it changed them.
+        @discardableResult
+        public func tidy(in defaults: some SettingsStorage) -> Bool {
+            guard defaults.object(forKey: Self.defaultsKey) != nil else { return false }
+            guard !isEmpty else {
+                defaults.removeObject(forKey: Self.defaultsKey)
+                return true
+            }
+            guard let data = encoded(), defaults.data(forKey: Self.defaultsKey) != data else { return false }
+            defaults.set(data, forKey: Self.defaultsKey)
+            return true
+        }
+
+        /// What `save` writes: the same for the same choices, its accounts and slots in order.
+        private func encoded() -> Data? {
             var saved: [Saved] = []
             for account in accounts.keys.sorted() {
                 let entries = accounts[account] ?? [:]
@@ -667,9 +719,7 @@ extension UpNextPicks {
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            if let data = try? encoder.encode(saved) {
-                defaults.set(data, forKey: Self.defaultsKey)
-            }
+            return try? encoder.encode(saved)
         }
     }
 }
@@ -802,6 +852,12 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     /// Whether a pull request's card in it names work of yours not resolved yet, on My Work with your work
     /// (`PullRequestBoard.withWork`): with its work items' own cards, what keeps a finished mission's lane open.
     public var namesWorkToDo = false
+    /// Whose order it has in To start and In progress, on My Work, where you put its cards in your order
+    /// (`PullRequestBoard.inYourOrder`); nil elsewhere.
+    public var orderKey: LaneOrderKey?
+    /// Your order of its cards in To start and In progress, as kept (`LaneOrders`): nil until you move one, as it keeps the
+    /// Board's own order till then.
+    public var yourOrder: [ItemRef]?
 
     public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
@@ -867,11 +923,17 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var lanes: [BoardLane]
     /// How many pull requests each column has, each once, whatever lanes show it.
     public var counts: [PullRequestStage: Int]
-    /// Up Next's pull request in each slot, which wears Next on the Board: the first in its column's order, across the
-    /// lanes; and Fix next's, the first of what needs you, wherever it is, which wears Fix next.
+    /// Up Next's pull request in each slot: Fix next's, the first of what needs you, wherever it is, which wears Fix next on
+    /// the Board; and Your next review's, the first in Your review's order, across the lanes.
     public var next: [UpNextSlot: ItemRef]
     /// Of those, the ones you chose for Up Next's slots (`UpNextPicks`), which wear theirs as yours.
     public var picked: [UpNextSlot: ItemRef]
+    /// The card that wears Next in each column, across the lanes, where its order says what's next
+    /// (`PullRequestStage.firstWearsNext`): in a column with an Up Next slot, the slot's, Your next review's or Follow up
+    /// next's, the first of the column's cards it has, none while it has none, as when none of Teammate's review's waits on
+    /// teammates alone; in each column Up Next has no slot for, as it waits on others, its first card:
+    /// Approved's, Can merge's and Waits'.
+    public var nextInColumn: [PullRequestStage: ItemRef]
     public var upNext: UpNext
     /// Each pull request on the board, once.
     public var refs: Set<ItemRef>
@@ -889,16 +951,23 @@ public struct PullRequestBoard: Equatable, Sendable {
     /// Of its merged pull requests, those in Completed rather than Merged, with your work on it (`withWork`): out, with no
     /// work item of yours that its card names still open. Only where they show: their stage is still Merged.
     public var completed: Set<ItemRef> = []
+    /// Start next, Up Next's last slot while it shows your sprint work (`withWork`): what's in To start, to start next; nil
+    /// with nothing there.
+    public var startNext: StartNext?
+    /// It's in your order, on My Work (`inYourOrder`): you can move the cards of its To start and In progress within their
+    /// columns of a lane.
+    public var isInYourOrder = false
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],
-        picked: [UpNextSlot: ItemRef] = [:], upNext: UpNext = UpNext(), refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [],
-        mode: BoardLanes = .missions
+        picked: [UpNextSlot: ItemRef] = [:], nextInColumn: [PullRequestStage: ItemRef] = [:], upNext: UpNext = UpNext(),
+        refs: Set<ItemRef> = [], kinds: Set<ItemRef.Kind> = [], mode: BoardLanes = .missions
     ) {
         self.lanes = lanes
         self.counts = counts
         self.next = next
         self.picked = picked
+        self.nextInColumn = nextInColumn
         self.upNext = upNext
         self.refs = refs
         self.kinds = kinds
@@ -955,20 +1024,23 @@ public struct PullRequestBoard: Equatable, Sendable {
         var counts: [PullRequestStage: Int] = [:]
         var next: [UpNextSlot: ItemRef] = [:]
         var picked: [UpNextSlot: ItemRef] = [:]
+        var nextInColumn: [PullRequestStage: ItemRef] = [:]
         var slots: [UpNext.Slot] = []
         let sorted = columns(all, stages: stages, picks: picks)
         for stage in PullRequestStage.columns {
             let cards = sorted[stage] ?? []
             if !cards.isEmpty { counts[stage] = cards.count }
+            if stage.firstWearsNext, UpNextSlot.first(in: stage) == nil, let first = cards.first { nextInColumn[stage] = first.ref }
         }
         for kind in UpNextSlot.allCases {
-            // Fix next has what needs you from every column; the others, their column's cards.
+            // Fix next has what needs you from every column; the others, their column's cards they take.
             let taken = kind == .fix ? BoardOrder.fixOrder(all, first: picks[.fix]) : (sorted[kind.stage] ?? []).filter(kind.takes)
             guard let card = taken.first else { continue }
             let isPicked = picks[kind] == card.ref
             slots.append(UpNext.Slot(kind: kind, card: card, cards: taken, isPicked: isPicked))
             next[kind] = card.ref
             if isPicked { picked[kind] = card.ref }
+            if kind != .fix, kind.stage.firstWearsNext { nextInColumn[kind.stage] = card.ref }
         }
 
         var boardLanes: [BoardLane] = []
@@ -988,8 +1060,8 @@ public struct PullRequestBoard: Equatable, Sendable {
             if !all.isEmpty { boardLanes.append(BoardLane(kind: .all, columns: sorted, fixFirst: picked[.fix])) }
         }
         return PullRequestBoard(
-            lanes: boardLanes, counts: counts, next: next, picked: picked, upNext: UpNext(slots: slots), refs: Set(onBoard.keys),
-            kinds: kinds, mode: lanes
+            lanes: boardLanes, counts: counts, next: next, picked: picked, nextInColumn: nextInColumn, upNext: UpNext(slots: slots),
+            refs: Set(onBoard.keys), kinds: kinds, mode: lanes
         )
     }
 

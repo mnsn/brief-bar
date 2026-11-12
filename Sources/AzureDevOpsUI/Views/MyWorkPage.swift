@@ -74,13 +74,16 @@ enum MyWorkFacts {
     }
 
     /// Your open tasks and bugs outside the sprint (`OutsideWork`), in their order, as the sprint's: each with the story it's
-    /// for, its parent for a task and itself for a bug, how far along it is, the pull requests Show Links links it to, and
-    /// whether a task you sent to Copilot works on it.
+    /// for, its parent for a task and itself for a bug, how far along it is, the pull requests Show Links links it to,
+    /// whether a task you sent to Copilot works on it, and its sprint, when that's after the current one.
     static func work(
         outside: OutsideWork, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?, copilotWorks: (WorkItem) -> Bool
     ) -> [SprintWork] {
         outside.items.map { item in
-            work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+            var mine = work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+            mine.isOutside = true
+            mine.laterSprint = outside.isLater(item) ? item.iteration : nil
+            return mine
         }
     }
 
@@ -99,13 +102,14 @@ enum MyWorkFacts {
     }
 
     /// Where Show Them takes the Board: the first card of its own of your work outside the sprint, lanes from the top, columns
-    /// from the left; else the first pull request's card that names one; nil with neither.
+    /// from the left, each in its order; else the first pull request's card that names one; nil with neither.
     static func card(of outside: Set<ItemRef>, on board: PullRequestBoard) -> ItemRef? {
         for lane in board.lanes {
             for column in board.columns {
-                if let task = lane.tasks.first(where: { BoardColumn($0.column) == column && outside.contains($0.ref) }) {
-                    return task.ref
+                let first = lane.items(in: column).first { item in
+                    if case .work(let task) = item { outside.contains(task.ref) } else { false }
                 }
+                if let first { return first.ref }
             }
         }
         let names = { (card: BoardCard) in !outside.isDisjoint(with: board.workOfPullRequests[card.ref] ?? []) }
@@ -251,6 +255,41 @@ extension MyWorkPage {
     }
 }
 
+extension MyWorkPage {
+    /// My Work's pictures with Make Changes in Azure DevOps on, at the width of a 946-point window, with + All My Tasks: as
+    /// it is, Start next last in Up Next and where each card outside the sprint is a menu; once Task 5052 moved to Sprint 42,
+    /// with Undo; and what the line under the header says otherwise. Each has a sprint and moves of its own.
+    static func moveRenderings(
+        services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
+        pages: [(name: String, sprint: SprintStore, moves: SprintMoves)], lines: [SprintMoves],
+        environment: (AnyView) -> AnyView
+    ) -> [(name: String, view: AnyView)] {
+        guard services.pullRequestOrder.isOn else { return [] }
+        var renderings = pages.map { name, sprint, moves in
+            let page = MyWorkPage(linkedPullRequest: linkedPullRequest, shows: .allTasks, lanes: .missions)
+                .environmentObject(sprint)
+                .environmentObject(moves)
+                .environment(\.panelStyle, .page)
+                .textSize(from: services)
+                .frame(width: 946, height: 2_400)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            return (name: name, view: environment(AnyView(page)))
+        }
+        let shown = VStack(alignment: .leading, spacing: 14) {
+            ForEach(lines.indices, id: \.self) { index in
+                SprintMoveLine(moves: lines[index]) {}
+            }
+        }
+        .padding(16)
+        .frame(width: 946, alignment: .leading)
+        .background(WindowBackdrop())
+        .environment(\.isRendering, true)
+        renderings.append((name: "my-work-move-lines", view: environment(AnyView(shown))))
+        return renderings
+    }
+}
+
 /// Whose details show beside My Work's Board, a work item's or a pull request's, of those the source's stores hold, which its
 /// other pages and windows show theirs in too: the work item's while you clicked one last here, or while no pull request's
 /// show; else the pull request's. The Board marks the card of whichever show; and while they cover the Board, its ⌘→ and ⌘←
@@ -297,9 +336,12 @@ private struct MyWorkContent: View {
     @EnvironmentObject private var workItemDetails: WorkItemDetailsStore
     @EnvironmentObject private var pullRequestDetails: PullRequestDetailsStore
     @EnvironmentObject private var ordering: PullRequestOrder
+    @EnvironmentObject private var moves: SprintMoves
 
     /// The work item's details show rather than a pull request's: you clicked a work item's card last.
     @LocalState private var showsWorkItem = false
+    /// A move of a work item of yours to another sprint that waits for you to confirm it, in this window only.
+    @LocalState private var proposal: SprintMoves.Proposal?
 
     /// What the Board shows: your pull requests, or your sprint work with them, and your work outside the sprint too.
     private var shown: MyWorkShows {
@@ -331,6 +373,19 @@ private struct MyWorkContent: View {
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             showPicker
+            // What a move to another sprint is doing, or did, under Show, with the header: in sight wherever the page is
+            // scrolled, as the cards you move from are far below the header.
+            if moves.state != nil || moves.finding != nil {
+                SprintMoveLine(moves: moves) {
+                    Task {
+                        if let found = await moves.retryFinding() { proposal = found }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 14)
+                .padding(.trailing, 20)
+                .padding(.bottom, 10)
+            }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
             let detailsShown = shownDetails
             DetailsSplit(
@@ -350,6 +405,15 @@ private struct MyWorkContent: View {
                 }
                 .environment(\.isOnMyWork, true)
             }
+        }
+        .confirmationDialog(
+            proposal.map(SprintMoveText.title) ?? "", isPresented: Binding(get: { proposal != nil }, set: { if !$0 { proposal = nil } }),
+            presenting: proposal
+        ) { proposal in
+            Button(SprintMoveText.confirm(proposal)) { Task { await moves.move(proposal) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { proposal in
+            Text(SprintMoveText.message(proposal))
         }
     }
 
@@ -409,19 +473,22 @@ private struct MyWorkContent: View {
         board(showing: shown)
     }
 
-    /// The Board as a choice of Show's has it.
+    /// The Board as a choice of Show's has it, in your order (`LaneOrders`).
     private func board(showing shown: MyWorkShows) -> PullRequestBoard? {
         guard ordering.isOn else { return nil }
         let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
-        guard shown.showsWork, links.isOn else { return board }
+        let missions = PullRequestsByMission.missions(ordering.missions)
+        guard shown.showsWork, links.isOn else { return board.inYourOrder(ordering.laneOrders, missions: missions) }
         let sprintBoard = sprint.board
         let outside = shown == .allTasks ? self.outside : nil
-        guard sprintBoard != nil || outside?.items.isEmpty == false else { return board }
+        guard sprintBoard != nil || outside?.items.isEmpty == false else {
+            return board.inYourOrder(ordering.laneOrders, missions: missions)
+        }
         let follows = settings.followMerges, now = store.now
         return board.withWork(
-            work(in: sprintBoard, outside: outside), missions: PullRequestsByMission.missions(ordering.missions),
-            stories: sprintBoard?.rows.compactMap(\.parent?.linkRef) ?? [],
-            isOut: { ref in MyWorkFacts.isOut(record(of: ref), followsMerges: follows, now: now) }
+            work(in: sprintBoard, outside: outside), missions: missions, stories: sprintBoard?.rows.compactMap(\.parent?.linkRef) ?? [],
+            isOut: { ref in MyWorkFacts.isOut(record(of: ref), followsMerges: follows, now: now) }, startPick: ordering.startPick,
+            yourOrder: ordering.laneOrders
         )
     }
 
@@ -451,9 +518,12 @@ private struct MyWorkContent: View {
         return PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
-                if let board, store.hasLoaded, !store.items.isEmpty {
+                if let board, store.hasLoaded, !store.items.isEmpty || board.startNext != nil {
                     // "2 more ›" scrolls the Board here to its column.
-                    UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
+                    UpNextView(
+                        upNext: board.upNext, order: ordering, startNext: board.startNext.map { startNext($0, on: board) },
+                        startsWork: board.showsWork, now: store.now, select: showDetails(of:)
+                    ) { stage in
                         ordering.revealedColumn = stage
                     }
                 }
@@ -516,20 +586,112 @@ private struct MyWorkContent: View {
         sprintItem(ref) ?? outside?.items.first { $0.linkRef == ref }
     }
 
-    /// A work item's card: its menu as on the Sprint page. One outside the sprint says where it is.
+    /// A work item's card: its menu as on the Sprint page, with Make Next in To start. One outside the sprint says where it
+    /// is, which, with Make Changes in Azure DevOps on, is a menu that moves it to the sprint going on or the next, as its
+    /// own menu does.
     private func taskCard(_ task: BoardTask, item: WorkItem) -> BoardCardContent {
         let place = outside?.place(of: item)
+        let movable = moves.canMove(item) || moves.undoable?.key == item.key
+        let placeHelp: String? = if movable, let place {
+            SprintMoveText.placeHelp(place, inNextSprint: moves.isInNextSprint(item))
+        } else if sprint.board != nil, !settings.makesChanges {
+            SprintMoveText.turnOnHelp
+        } else {
+            nil
+        }
         return BoardCardContent(
-            view: AnyView(MyWorkTaskCard(item: item, task: task, place: place)),
+            view: AnyView(MyWorkTaskCard(
+                item: item, task: task, place: place, moveMenu: movable ? AnyView(moveItems(item)) : nil, placeHelp: placeHelp
+            )),
             menu: AnyView(Group {
                 Button("Show Details") { showDetails(of: item) }
                 Button("Open in Azure DevOps") { sprint.open(item) }
+                if task.column == .toStart {
+                    startPickItem(task)
+                }
                 CopilotSendMenuItems(item: item)
+                if movable {
+                    Divider()
+                    moveItems(item)
+                }
                 LinkMenuItems(item.linkRef)
             }),
             label: "\(item.type) \(item.id) \(item.title)",
-            details: [BoardText.why(task, state: item.state, type: item.type)] + (place.map { [$0] } ?? [])
+            details: [BoardText.why(task, state: item.state, type: item.type)] + (place.map { [$0] } ?? []),
+            actions: movable ? AnyView(moveItems(item)) : nil
         )
+    }
+
+    /// Make Next, for a work item in To start, or Let BriefBar Choose Next, for the one you chose for Start next.
+    @ViewBuilder
+    private func startPickItem(_ task: BoardTask) -> some View {
+        if ordering.startPick == task.ref {
+            Button("Let BriefBar Choose Next") { ordering.letBriefBarChooseStart() }
+        } else {
+            Button("Make Next") { ordering.pickStart(task.ref) }
+        }
+    }
+
+    /// What moves a work item of yours to another sprint, as its place line's menu, its card's and Start next's have it:
+    /// Undo, while it's the one you moved last; then Move to the sprint going on, and to the next, but for one in it already,
+    /// as BriefBar read it within the hour, which ask first.
+    @ViewBuilder
+    private func moveItems(_ item: WorkItem) -> some View {
+        if let undo = moves.undoable, undo.key == item.key {
+            Button("Undo: Move Back to \(SprintMoveText.menuPlace(undo.fromName))") { Task { await moves.undo() } }
+                .disabled(moves.isBusy)
+        }
+        if moves.canMove(item) {
+            if let current = moves.currentSprint {
+                Button("Move to \(current)…") { proposal = moves.propose(item) }
+                    .disabled(moves.isBusy)
+            }
+            if !moves.isInNextSprint(item) {
+                Button("Move to Next Sprint…") { proposeNext(item) }
+                    .disabled(moves.isBusy)
+            }
+        }
+    }
+
+    /// Move to Next Sprint…: asks you to confirm once your team's next sprint is known, which is read now unless it was
+    /// within the hour.
+    private func proposeNext(_ item: WorkItem) {
+        Task {
+            if let found = await moves.proposeNext(item) { proposal = found }
+        }
+    }
+
+    /// Start next's slot, with what it says of each work item it has, and its card's menu.
+    private func startNext(_ next: StartNext, on board: PullRequestBoard) -> StartNextContent {
+        StartNextContent(
+            next: next,
+            name: { task in workItem(task.ref).map { "\($0.type) \($0.id) \($0.title)" } ?? task.ref.shortOrderLabel },
+            why: { task in
+                guard let item = workItem(task.ref) else { return "" }
+                let why = BoardText.why(task, state: item.state, type: item.type)
+                return outside?.place(of: item).map { "\(why) · \($0)" } ?? why
+            },
+            lane: { task in laneTitle(of: task, on: board) },
+            menu: { task in workItem(task.ref).map { taskCard(task, item: $0).menu } ?? AnyView(EmptyView()) },
+            select: { ref in if let item = workItem(ref) { showDetails(of: item) } }
+        )
+    }
+
+    /// Where a work item's card is, as Start next says: its mission's name, its story's title, or that it's in no mission.
+    private func laneTitle(of task: BoardTask, on board: PullRequestBoard) -> String {
+        if let lane = board.lanes.first(where: { $0.tasks.contains { $0.ref == task.ref } }) {
+            switch lane.kind {
+            case .mission(let key): return UpNextView.missionTitle(key, order: ordering)
+            case .story(let ref): return sprintItem(ref)?.title ?? ref.shortOrderLabel
+            case .notInAMission, .all: break
+            }
+        }
+        // With Lanes: None, where its mission or story would be.
+        if let story = task.work.story, story != task.ref {
+            if let mission = ordering.missions.first(where: { $0.story?.ref == story }) { return ordering.title(of: mission) }
+            if let item = sprintItem(story) { return item.title }
+        }
+        return "Not in a mission"
     }
 
     /// A story's lane's header, for a story with no mission: its type, title and number, which show its details, and, until
@@ -744,6 +906,102 @@ private struct OutsideSprintLine: View {
     }
 }
 
+/// What became of moving a work item of yours to another sprint, or of looking for your team's next sprint for it, under My
+/// Work's header, under Show, where it stays as the page scrolls: while it's on its way; once it moved, with Undo, while
+/// it's where it went; why it didn't, with Try Again where it may help; each with ✕, but while it's on its way.
+private struct SprintMoveLine: View {
+    @ObservedObject var moves: SprintMoves
+    /// Try Again, for your team's sprints that couldn't be read: they're read again, and the move asks you to confirm it.
+    let findAgain: () -> Void
+
+    var body: some View {
+        if let finding = moves.finding {
+            line {
+                switch finding {
+                case .reading(let name):
+                    ProgressView().controlSize(.small)
+                    words(SprintMoveText.finding(name))
+                case .failed(let name, _, let problem):
+                    symbol("exclamationmark.triangle")
+                    words(SprintMoveText.findFailed(name, problem))
+                    Button("Try Again", action: findAgain)
+                        .buttonStyle(.borderless)
+                    dismiss
+                case .none(let current):
+                    symbol("calendar.badge.exclamationmark")
+                    words(SprintMoveText.noNextSprint(after: current))
+                    dismiss
+                case .already(let name, let sprint):
+                    symbol("calendar.badge.checkmark")
+                    words(SprintMoveText.already(name, in: sprint))
+                    dismiss
+                }
+            }
+        } else if let state = moves.state {
+            line {
+                switch state {
+                case .sending(let move):
+                    ProgressView().controlSize(.small)
+                    words(SprintMoveText.sending(move))
+                case .moved(let move):
+                    symbol("checkmark.circle")
+                    words(SprintMoveText.moved(move))
+                    if moves.undoable == move {
+                        Button("Undo") { Task { await moves.undo() } }
+                            .buttonStyle(.borderless)
+                            .help("Move \(move.name) back to \(SprintMoveText.place(move.fromName))")
+                    }
+                    dismiss
+                case .failed(let move, let problem):
+                    symbol("exclamationmark.triangle")
+                    words(SprintMoveText.failed(move) + " " + problem.sentence(.setIteration))
+                    if SprintMoves.retries(problem) {
+                        Button("Try Again") { Task { await moves.retry() } }
+                            .buttonStyle(.borderless)
+                    }
+                    dismiss
+                case .outdated(let move):
+                    symbol("exclamationmark.triangle")
+                    words(SprintMoveText.outdated(move))
+                    dismiss
+                }
+            }
+        }
+    }
+
+    private func line(@ViewBuilder _ content: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            content()
+        }
+        .font(size: 12)
+        .padding(.horizontal, 4)
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+    }
+
+    private func words(_ text: String) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var dismiss: some View {
+        Button {
+            moves.dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(size: 9, weight: .bold)
+        }
+        .buttonStyle(.borderless)
+        .help("Dismiss")
+        .accessibilityLabel("Dismiss")
+    }
+}
+
 /// What My Work says of your work outside the sprint.
 enum MyWorkText {
     /// Show's tooltip.
@@ -792,14 +1050,20 @@ enum MyWorkText {
 }
 
 /// A work item's card on My Work's Board: its type and number, its title, on two lines at most, why it's where it is, where it
-/// is when it's outside the sprint, and the task you sent to Copilot on it.
+/// is when it's outside the sprint, which can be a menu that moves it to another sprint, and the task you sent to Copilot on
+/// it.
 struct MyWorkTaskCard: View {
     let item: WorkItem
     let task: BoardTask
     /// Its iteration, such as "Sprint 38", or "No sprint", for one of yours outside the sprint (`OutsideWork.place`).
     var place: String? = nil
+    /// What its place's menu offers, which moves it to another sprint (`SprintMoves`); nil where it can't move.
+    var moveMenu: AnyView? = nil
+    /// Its place's tooltip: where it's a menu, where it is and what the menu does; otherwise how to turn on what moves it.
+    var placeHelp: String? = nil
 
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -821,13 +1085,40 @@ struct MyWorkTaskCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let place {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Image(systemName: "calendar")
-                    Text(place)
-                        .fixedSize(horizontal: false, vertical: true)
+                if let moveMenu {
+                    // Rounded as a capsule is on one line; a long iteration's name wraps in it, which keeps its number, rather
+                    // than widening the card.
+                    let shape = RoundedRectangle(cornerRadius: 8.5 * textScale, style: .continuous)
+                    Menu {
+                        moveMenu
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: "calendar")
+                            Text(place)
+                                .fixedSize(horizontal: false, vertical: true)
+                            MenuChevron()
+                        }
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(shape.fill(Color.secondary.opacity(0.12)))
+                        .overlay(shape.strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1))
+                        .contentShape(shape)
+                    }
+                    .labelMenuStyle()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(placeHelp ?? "")
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: "calendar")
+                        Text(place)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .help(placeHelp ?? "")
                 }
-                .font(size: 11.5)
-                .foregroundStyle(.secondary)
             }
             // The send that works on it, which its why line names, else the latest.
             if copilot.isOn, let entry = copilot.working(on: item) ?? copilot.latest(for: item) {

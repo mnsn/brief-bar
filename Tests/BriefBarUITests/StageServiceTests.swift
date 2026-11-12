@@ -330,7 +330,7 @@ private final class Clock {
         let board = order.board(kinds: [.pullRequest])
         let slot = try #require(board.upNext.slots.first { $0.card.ref == Self.ref(4093) })
         #expect(slot.kind == .fix)
-        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order) == "Cart asks you, build failed, Not in a mission")
+        #expect(UpNextView.spoken(slot, mission: "Not in a mission", order: order, now: Date()) == "Cart asks you, build failed, Not in a mission")
         let lane = try #require(board.lanes.first { $0.cards.contains { $0.ref == Self.ref(4093) } })
         let step = try #require(lane.nextSteps.first { $0.ref == Self.ref(4093) })
         #expect(step.kind == .answer)

@@ -419,7 +419,7 @@ import Testing
     /// A pull request's stage's facts, as the lists read it, with its details' checks when given.
     private static func stageFacts(
         _ number: Int, role: PRRole = .author, author: Person = me, reviewers: [Reviewer] = [], checks: [Check]? = nil,
-        checksKnown: Bool = true, merge: String? = "succeeded"
+        checksKnown: Bool = true, merge: String? = "succeeded", lastActivity: Date? = nil
     ) -> StageFacts? {
         let pr = PullRequest(
             key: PRKey("Contoso", number), title: "Pull request \(number)", author: author,
@@ -428,7 +428,10 @@ import Testing
             sourceCommit: "c\(number)"
         )
         let details = checks.map {
-            PRDetails(fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0, checksKnown: checksKnown)
+            PRDetails(
+                fetchedAt: Date(timeIntervalSince1970: 1_791_000_100), fingerprint: pr.fingerprint, checks: $0, checksKnown: checksKnown,
+                lastActivity: lastActivity
+            )
         }
         return PullRequestOrderFacts.stageFacts(PRRecord(pullRequest: pr, role: role, details: details, me: me.id), item: nil, tasks: [])
     }
@@ -486,6 +489,34 @@ import Testing
 
         let alone = try #require(Self.stageFacts(4105, checks: [build]))
         #expect(alone.waitingFor == nil && !alone.othersVoted && alone.votes == "")
+    }
+
+    /// Who hasn't reviewed one of yours yet, for Follow up next to name: those it requires first, a team by its name; not
+    /// one who voted, nor one who declined, nor a service account, which never votes. And when anything last happened on
+    /// it, which it counts from.
+    @Test func yoursNamesWhoHasntReviewedItYet() throws {
+        let build = Check(name: "shop-web CI", kind: .build, state: .passed)
+        // As Azure DevOps' reviewers decode a team: a service identity too.
+        let team = Person(id: "5A1B0000-0000-4000-8000-0000000000CC", name: "[Storefront]\\Payments", isBot: true)
+        let maria = Person(id: "5A1B0000-0000-4000-8000-0000000000DD", name: "Maria Lopez")
+        let chen = Person(id: "5A1B0000-0000-4000-8000-0000000000EE", name: "Chen Wei")
+        let service = Person(id: "5A1B0000-0000-4000-8000-0000000000FF", name: "Storefront Build Service", isBot: true)
+        let pushed = Date(timeIntervalSince1970: 1_791_003_600)
+        let facts = try #require(Self.stageFacts(4102, reviewers: [
+            Reviewer(person: Self.priya, vote: .none),
+            Reviewer(person: team, vote: .none, isRequired: true, isGroup: true),
+            Reviewer(person: Self.sam, vote: .none, isRequired: true),
+            Reviewer(person: maria, vote: .approved),
+            Reviewer(person: chen, vote: .none, hasDeclined: true),
+            Reviewer(person: service, vote: .none),
+        ], checks: [build], lastActivity: pushed))
+        #expect(facts.pendingReviewers == "Payments, Sam and Priya")
+        #expect(facts.lastActivity == pushed)
+        let voted = try #require(Self.stageFacts(4103, reviewers: [Reviewer(person: maria, vote: .approved)], checks: [build]))
+        #expect(voted.pendingReviewers == nil)
+        #expect(try #require(Self.stageFacts(4105, checks: [build])).pendingReviewers == nil)
+        // Before its details say anything later: when it was opened.
+        #expect(voted.lastActivity == Date(timeIntervalSince1970: 1_791_000_000))
     }
 
     /// One you watch keeps what you set on it, as what you've seen of it is kept; one only sent to you doesn't.

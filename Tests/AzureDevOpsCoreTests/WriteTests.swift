@@ -3,22 +3,29 @@ import Testing
 @testable import AzureDevOpsCore
 
 /// What BriefBar changes in Azure DevOps, with Make Changes in Azure DevOps on: a reply in a thread, a thread's status, a
-/// comment of yours edited or deleted, and a pull request's tags (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and
-/// nothing else, which every other request, a GET, can't.
+/// comment of yours edited or deleted, a pull request's tags, and the sprint a work item of yours is in (`ADOWrite`), which
+/// only `ADOClient.send(_:as:)` sends; and nothing else, which every other request, a GET, can't.
 @Suite struct WriteTests {
     let pullRequest = makePR(7)
     var address: ThreadAddress { ThreadAddress(pullRequest, thread: 12) }
 
     // MARK: What it can send
 
-    /// Six changes, and only those: a new one comes with its kind, which fails this until it's tested here.
+    /// Seven changes, and only those: a new one comes with its kind, which fails this until it's tested here.
     @Test func makesOnlyTheChangesItLists() {
-        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag])
+        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag, .setIteration])
         for kind in ADOWrite.Kind.allCases {
             let write = sample(kind)
             #expect(write.kind == kind)
-            // Each on the pull request it changes, or one of whose threads it does.
-            #expect(write.pullRequest == PullRequestAddress(pullRequest))
+            // Each on the pull request it changes, or one of whose threads it does; or on the work item it moves.
+            if kind.isWorkItem {
+                #expect(write.pullRequest == nil)
+                #expect(write.workItem == WorkItemKey("Contoso", 5052))
+            } else {
+                #expect(write.pullRequest == PullRequestAddress(pullRequest))
+                #expect(write.workItem == nil)
+                #expect(write.contentType == "application/json")
+            }
             switch kind {
             case .reply:
                 #expect(write.thread == address)
@@ -60,12 +67,32 @@ import Testing
                 #expect(write.url.absoluteString
                     == "https://dev.azure.com/contoso/p1/_apis/git/repositories/r1/pullRequests/7/labels/0f5d2c1e-tag?api-version=7.1")
                 #expect(write.body.isEmpty)
+            case .setIteration:
+                #expect(write.thread == nil)
+                #expect(write.method == "PATCH")
+                #expect(write.url.absoluteString == "https://dev.azure.com/contoso/_apis/wit/workitems/5052?api-version=7.1")
+                #expect(write.contentType == "application/json-patch+json")
+                // Where it is first, so that Azure DevOps moves nothing that someone moved meanwhile; then where it goes.
+                #expect(String(decoding: write.body, as: UTF8.self) == #"[{"op":"test","path":"/fields/System.IterationPath","value":"Storefront\\Sprint 41"},"#
+                    + #"{"op":"add","path":"/fields/System.IterationPath","value":"Storefront\\Sprint 42"}]"#)
             }
         }
         #expect(!ADOWrite.Kind.reply.isTags)
         #expect(!ADOWrite.Kind.setStatus.isTags)
         #expect(ADOWrite.Kind.allCases.filter(\.isComment) == [.editComment, .deleteComment])
         #expect(ADOWrite.Kind.allCases.filter(\.isTags) == [.addTag, .removeTag])
+        #expect(ADOWrite.Kind.allCases.filter(\.isWorkItem) == [.setIteration])
+    }
+
+    /// A move says where the work item is and where it goes, as their paths are, quotes and all, which JSON encodes, and
+    /// nothing else of it.
+    @Test func aMoveSaysWhereItWasAndWhereItGoesAndNothingElse() throws {
+        let write = ADOWrite.setIteration(WorkItemKey("contoso", 5052), from: #"Shop\Q4 "Polish"\Sprint 41"#, to: "Shop")
+        let body = try #require(JSONSerialization.jsonObject(with: write.body) as? [[String: String]])
+        #expect(body == [
+            ["op": "test", "path": "/fields/System.IterationPath", "value": #"Shop\Q4 "Polish"\Sprint 41"#],
+            ["op": "add", "path": "/fields/System.IterationPath", "value": "Shop"],
+        ])
     }
 
     /// An edit says what you wrote instead, as you wrote it, and nothing else of the comment.
@@ -546,6 +573,104 @@ import Testing
         #expect(signedOut.requests.count == 2)
     }
 
+    /// Moving a work item sends its JSON Patch as one, and answers with the work item as Azure DevOps has it now.
+    @Test func movesAWorkItemWithAPatchThatTestsWhereItWas() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie", iteration: "Storefront\\Sprint 42"))
+        }
+        let answer = try await server.client().send(sample(.setIteration), as: nil)
+        guard case .workItem(let item) = answer else {
+            Issue.record("Expected a work item, got \(answer)")
+            return
+        }
+        #expect(item.id == 5052)
+        #expect(item.fields.iterationPath == "Storefront\\Sprint 42")
+        let request = try #require(server.requests.first)
+        #expect(server.requests.count == 1)
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == sample(.setIteration).url)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json-patch+json")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(server.id)")
+        #expect(body(of: request) == sample(.setIteration).body)
+    }
+
+    /// A change is asked whether it's still wanted before each try, once its token came: one that isn't, as what it changes
+    /// moved while the token came, never goes; and after Azure DevOps turned down a token, it's asked again before the try
+    /// with a fresh one.
+    @Test func aChangeNoLongerWantedOnceItsTokenCameNeverGoes() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie", iteration: "Storefront\\Sprint 42"))
+        }
+        await #expect(throws: CancellationError.self) {
+            try await server.client().send(sample(.setIteration), as: nil, while: { false })
+        }
+        #expect(server.requests.isEmpty)
+
+        let expired = StubServer()
+        let attempts = Locked(0)
+        expired.on("/contoso/_apis/wit/workitems/5052") { _ in
+            attempts.increment() == 1 ? .status(401) : .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie"))
+        }
+        let asked = Locked(0)
+        await #expect(throws: CancellationError.self) {
+            try await expired.client().send(sample(.setIteration), as: nil, while: { asked.increment() == 1 })
+        }
+        #expect(asked.value == 2)
+        #expect(expired.requests.count == 1)
+    }
+
+    /// A change called off while it's asked whether it's still wanted never goes, even when the answer is yes, as when
+    /// Make Changes in Azure DevOps was turned off and on again meanwhile.
+    @Test func aChangeCalledOffWhileItsAskedIfWantedNeverGoes() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie", iteration: "Storefront\\Sprint 42"))
+        }
+        let client = server.client()
+        let write = sample(.setIteration)
+        let task = Task {
+            try await client.send(write, as: nil, while: {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return true
+            })
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(server.requests.isEmpty)
+    }
+
+    /// Why a move didn't happen: someone moved it meanwhile, which fails its test, as Azure DevOps says; no permission; a work
+    /// item that isn't there, or you can't see. Each sent once.
+    @Test func saysWhyAMoveDidntHappen() async throws {
+        let cases: [(StubServer.Reply, ADOError)] = [
+            (.json(["message": "Test operation failed for field 'System.IterationPath'."], status: 400),
+             .refused(nil, message: "Test operation failed for field 'System.IterationPath'.")),
+            (.status(403), .forbidden),
+            (.status(404), .notFound),
+            (.failure(.notConnectedToInternet), .offline),
+            (.failure(.timedOut), .network(ADOClient.unansweredMessage)),
+        ]
+        for (reply, expected) in cases {
+            let server = StubServer()
+            server.on("/_apis/wit/workitems/5052") { _ in reply }
+            await #expect(throws: expected) { try await server.client().send(sample(.setIteration), as: nil) }
+            #expect(server.requests.count == 1)
+        }
+    }
+
+    @Test func saysWhatHappenedToAMoveInASentence() {
+        #expect(ADOWriteProblem.notAllowed.sentence(.setIteration) == "Azure DevOps says you may not change this work item.")
+        #expect(ADOWriteProblem.gone.sentence(.setIteration).contains("doesn't have this work item anymore"))
+        #expect(ADOWriteProblem.offline.sentence(.setIteration) == "You're offline: try again once you're back.")
+        #expect(ADOWriteProblem.unanswered.sentence(.setIteration).contains("it may have moved"))
+        #expect(ADOWriteProblem.refused("Test operation failed.").sentence(.setIteration) == "Azure DevOps refused it: Test operation failed.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.setIteration) == "Couldn't move it: HTTP 500.")
+        // Pull requests' sentences as they were.
+        #expect(ADOWriteProblem.notAllowed.sentence(.addTag) == "Azure DevOps says you may not change this pull request's tags.")
+    }
+
     /// Why a tag's change didn't happen, as for a thread's: a completed pull request, no permission, a tag that isn't on it.
     @Test func saysWhyATagsChangeDidntHappen() async throws {
         let cases: [(StubServer.Reply, ADOError)] = [
@@ -593,6 +718,7 @@ import Testing
             ADOEndpoint.threads(organization: "contoso", projectId: "p1", repositoryId: "r1", pullRequestId: 7),
             ADOEndpoint.pullRequest(organization: "contoso", id: 7), ADOEndpoint.profile,
             ADOEndpoint.assignedToMe(organization: "contoso", project: "p1"),
+            ADOEndpoint.teamIterations(team: WorkFixture.team),
         ]
         for url in urls {
             #expect(ADOClient.request(url, token: "t").httpMethod == "GET")
@@ -839,6 +965,7 @@ import Testing
         case .deleteComment: .deleteComment(address, comment: 3)
         case .addTag: .addTag(PullRequestAddress(pullRequest), name: "deploy-eu")
         case .removeTag: .removeTag(PullRequestAddress(pullRequest), tag: "0f5d2c1e-tag")
+        case .setIteration: .setIteration(WorkItemKey("Contoso", 5052), from: "Storefront\\Sprint 41", to: "Storefront\\Sprint 42")
         }
     }
 

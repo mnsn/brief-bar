@@ -96,7 +96,7 @@ struct PullRequestsPage: View {
                 }
                 // What's next, in every order: it changes no group or count. On My Work instead, while that shows.
                 if let board, store.hasLoaded, !store.items.isEmpty, !ordering.showsMyWork {
-                    UpNextView(upNext: board.upNext, order: ordering, select: showDetails(of:)) { stage in
+                    UpNextView(upNext: board.upNext, order: ordering, now: store.now, select: showDetails(of:)) { stage in
                         Self.showColumn(stage, settings: settings, ordering: ordering)
                     }
                 }

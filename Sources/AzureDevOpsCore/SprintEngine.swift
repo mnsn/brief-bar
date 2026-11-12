@@ -15,10 +15,13 @@ public struct SprintSnapshot: Sendable, Equatable {
     /// Your open tasks and bugs outside the sprint, while My Work wants them (`SprintEngine.setReadsOutside`), as last read;
     /// nil until a read tried.
     public var outside: OutsideWork?
+    /// Whose sign-in they were read as, once it's known: a change to one of them goes only as them.
+    public var account: String?
 
     public init(
         board: SprintBoard? = nil, teams: [TeamRef] = [], foundTeam: TeamRef? = nil, problem: PulseProblem? = nil,
-        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false, outside: OutsideWork? = nil
+        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false, outside: OutsideWork? = nil,
+        account: String? = nil
     ) {
         self.board = board
         self.teams = teams
@@ -28,6 +31,7 @@ public struct SprintSnapshot: Sendable, Equatable {
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
         self.outside = outside
+        self.account = account
     }
 }
 
@@ -116,6 +120,10 @@ public actor SprintEngine {
     private var outside: OutsideWork?
     /// The ID of the team whose project it was read in.
     private var outsideTeam: String?
+    /// Your work items BriefBar moved to another sprint, as Azure DevOps answered, with when it did (`moved`): a read that
+    /// started before then may have them where they were, so they're put where they went again after it, until a refresh
+    /// that started after then has read them, on the sprint's board and, while My Work wants it, among your work outside it.
+    private var moves: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
 
     public init(
         client: ADOClient, configuration: Configuration, now: @escaping @Sendable () -> Date = { Date() },
@@ -163,6 +171,24 @@ public actor SprintEngine {
         waker.wake()
     }
 
+    /// A work item of yours BriefBar moved to another sprint, on My Work, as Azure DevOps answered (`ADOWrite.setIteration`):
+    /// it shows where it went at once, off the sprint's board when it left the sprint, among your work outside it in its new
+    /// iteration, and the sprint and your work outside it are read again as soon as possible.
+    public func moved(_ item: WorkItem) {
+        moves[item.key] = (item, now())
+        applyMoves()
+        publish()
+        refresh()
+    }
+
+    /// Puts the work items BriefBar moved where they went, over what was read before.
+    private func applyMoves() {
+        for (item, _) in moves.values {
+            board = board?.moving(item)
+            outside = outside?.placing(item, board: board)
+        }
+    }
+
     /// Whether each refresh reads your open tasks and bugs outside the sprint too, for My Work, after the sprint. Once
     /// they're wanted, a refresh reads them as soon as something shows the sprint, unless a read got them less than half an
     /// interval ago; while they aren't, what was read stays, read no more.
@@ -191,6 +217,7 @@ public actor SprintEngine {
             // Another team: show nothing of the last one's while its sprint loads.
             board = nil
             outside = nil
+            moves = [:]
             problem = nil
             forced = true
         } else if configuration.team == nil, old.team != nil {
@@ -198,6 +225,7 @@ public actor SprintEngine {
             checkedTeams = nil
             board = nil
             outside = nil
+            moves = [:]
             forced = true
         }
         publish()
@@ -287,6 +315,9 @@ public actor SprintEngine {
             refreshedAt = now()
         }
         isRefreshing = false
+        // What BriefBar moved since a read that replaced the board or your work outside the sprint started stays where it went,
+        // though the rest of the refresh failed, or stopped as nothing showed the sprint anymore.
+        applyMoves()
         publish()
     }
 
@@ -338,7 +369,13 @@ public actor SprintEngine {
             if outsideTeam != team.id { outside = nil }
             do {
                 try await readBoard(of: team, at: date)
-                if readsOutside { try await readOutside(of: team, at: date) }
+                // Your work outside the sprint that couldn't be read again, or no longer is, may still have what BriefBar moved
+                // where it was: it stays where it went until a refresh reads both.
+                switch readsOutside ? try await readOutside(of: team, at: date) : .all {
+                case .all: settleMoves(readAt: date)
+                case .some(let seen): settleMoves(readAt: date, only: seen)
+                case .none: applyMoves()
+                }
                 return teamsProblem
             } catch let error as ADOError where configuration.team == nil && PulseProblem.isOtherDirectory(error) {
                 // The team found for you is in a directory to sign in to now: its organization waits on that sign-in, and
@@ -394,10 +431,11 @@ public actor SprintEngine {
     /// is in. A read that fails keeps what was read before, saying why; but Azure DevOps asking to slow down, or the read
     /// stopping, ends the refresh, as for the sprint. Once My Work no longer wants them, as when it goes while the Sprint
     /// page still shows, the rest isn't read, and what was read before stays.
-    private func readOutside(of team: TeamRef, at date: Date) async throws {
+    /// - Returns: what it read of them, in place of what was read before.
+    private func readOutside(of team: TeamRef, at date: Date) async throws -> OutsideRead {
         do {
             let setup = try await boardSetup(of: team)
-            guard readsOutside else { return }
+            guard readsOutside else { return .none }
             let query = try await get(
                 ADOEndpoint.assignedToMe(organization: team.organization, project: team.projectId), as: ADOPredefinedQuery.self
             )
@@ -406,7 +444,7 @@ public actor SprintEngine {
             let ids = query.ids.filter { !onBoard.contains($0) && seen.insert($0).inserted }
             var found: [WorkItem] = []
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
-                guard readsOutside else { return }
+                guard readsOutside else { return .none }
                 let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
                 let list = try await get(
                     ADOEndpoint.workItems(organization: team.organization, ids: batch, fields: ADOWorkItem.fieldNamesWithIteration),
@@ -415,20 +453,32 @@ public actor SprintEngine {
                 found += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
             }
             // The team may have changed while this loaded.
-            guard configuration.team == nil || configuration.team?.id == team.id else { return }
+            guard configuration.team == nil || configuration.team?.id == team.id else { return .none }
             outside = OutsideWork(
                 items: OutsideWork.yours(found, board: board, taskTypes: setup.taskTypes), sprintPath: board?.sprint.path,
                 isPartial: query.hasMore, readAt: date, taskTypes: setup.taskTypes
             )
             outsideTeam = team.id
+            return query.hasMore ? .some(Set(query.ids).union(onBoard)) : .all
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as ADOError {
             if case .throttled = error { throw error }
             outsideFailed(error.description, team: team)
+            return .none
         } catch {
             outsideFailed(error.localizedDescription, team: team)
+            return .none
         }
+    }
+
+    /// What a read of your work outside the sprint established: where each of yours is; where those the query listed are,
+    /// when it listed only some (`ADOPredefinedQuery.hasMore`), with the sprint's board's; or nothing, as it failed or
+    /// stopped, which leaves what was read before.
+    private enum OutsideRead {
+        case all
+        case some(Set<Int>)
+        case none
     }
 
     /// The read of your work outside the sprint failed: what was read before stays, without what the sprint's board has
@@ -619,6 +669,17 @@ public actor SprintEngine {
         board = nil
         outside = nil
         outsideTeam = nil
+        moves = [:]
+    }
+
+    /// A refresh that started at `date` read the sprint, and your work outside it while My Work wants it, both in full, or,
+    /// where its query listed only some of yours, those it listed and the board's (`seen`, by their IDs): what BriefBar moved
+    /// before then is where it went in what it read, and the rest, what it moved since and what that read didn't see, is put
+    /// there again, over what it read.
+    private func settleMoves(readAt date: Date, only seen: Set<Int>? = nil) {
+        guard !moves.isEmpty else { return }
+        moves = moves.filter { key, move in move.at > date || seen.map { !$0.contains(key.id) } ?? false }
+        applyMoves()
     }
 
     private func identity(in organization: String) async throws -> String {
@@ -652,7 +713,7 @@ public actor SprintEngine {
     private func snapshot() -> SprintSnapshot {
         SprintSnapshot(
             board: board, teams: allTeams, foundTeam: configuration.team == nil && foundWithout.isEmpty ? foundTeam : nil, problem: problem,
-            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, outside: outside
+            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, outside: outside, account: account
         )
     }
 

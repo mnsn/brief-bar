@@ -268,7 +268,7 @@ extension PRReadiness {
     }
 
     /// "Sam" for Sam Rivera; "Storefront Team" for the group "[Storefront]\Storefront Team".
-    static func shortName(_ reviewer: Reviewer) -> String {
+    public static func shortName(_ reviewer: Reviewer) -> String {
         guard reviewer.isGroup else { return reviewer.person.firstName }
         let name = reviewer.person.name
         if name.hasPrefix("["), let end = name.range(of: "]\\") { return String(name[end.upperBound...]) }

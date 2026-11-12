@@ -1207,9 +1207,10 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the six changes **Make Changes in Azure
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the seven changes **Make Changes in Azure
 DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status),
-[your comments](#editing-and-deleting-your-comments) and [a pull request's tags](#a-pull-requests-tags)):
+[your comments](#editing-and-deleting-your-comments), [a pull request's tags](#a-pull-requests-tags) and
+[moving a task to a sprint](#moving-a-task-to-a-sprint)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1250,6 +1251,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, as it settles, though Make Changes in Azure DevOps went off meanwhile, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
+| `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on My Work, when you confirm moving a task or bug of yours to your team's current sprint or its next, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its iteration alone: a test of the path it's in, then the path it goes to, so Azure DevOps refuses it if someone moved it meanwhile; Azure DevOps answers with the work item as it keeps it |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1688,13 +1690,30 @@ turning Copilot off what they all set. None of it goes to Azure DevOps. The demo
 
 Up Next and the Board show stages; they read nothing more, and change nothing in Azure DevOps. `PullRequestBoard.make`
 works out, from each pull request's stage and the missions, a card for each Azure DevOps pull request on your board, its
-lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`), so Up Next's pull
-request is always the first in its column's order, which wears **Next** on the Board. Fix next has what needs you from
-every column (`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks
-you, then a build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, the
-oldest first; but none while a session writes it, which may be fixing just that. Its pull request wears **Fix next**
-wherever it is, and stays in its column's slot too, as one in Your review is still your next review, whatever its
-build. A mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
+lanes, Up Next's slots and each mission's next steps, all with one order in each stage (`BoardOrder`). Up Next has a
+slot only for a next step that's yours (`UpNextSlot`): Fix next; Your next review, the first in Your review's order; and
+Follow up next, the first in Teammate's review's of those that wait on teammates alone
+(`StageReading.waitsOnTeammates`), whose reviewers haven't finished, needing nothing else of you: Fix next has one that
+needs a reviewer, a fix or an answer, never both, and one a session writes is in neither while it does, as it may be
+fixing just that. Follow up next says who hasn't voted yet, those it requires first, a team by its name, but not a
+service account, which never votes (`StageFacts.pendingReviewers`), and how long it has waited, since anything last
+happened on it, a push, a comment or a vote (`StageFacts.lastActivity`), not since a comment that waits on you came, or
+since you set it there, whichever came later (`StageReading.followUpSince`), "Waiting on Alex and Jordan · 20m"
+(`StageText.followUpWords`); a narrow slot cuts the names short and keeps the time; with nobody left to vote, as when a
+policy wants another approval, why it waits, "1 of 2 approvals · 2h". BriefBar reads nothing more for it: the reviewers
+and their votes come with the lists, and the time with the details it reads. What waits on Azure DevOps or another pull
+request has none: the Board's columns keep it, and completing a pull request is a click in Azure DevOps. Each column's
+first card, across the lanes, wears **Next** on the Board where its order says what's next
+(`PullRequestBoard.nextInColumn`, `PullRequestStage.firstWearsNext`): in Your review, Up Next's; in Teammate's review,
+Follow up next's, the first card in its order that the slot has, even below others, such as those Fix next has or a
+session writes, and none while it has none; in Approved, Can merge and Waits, BriefBar's order's alone; not in In
+progress, whose next is Fix next's, nor in Merged. Fix next has what needs you from every column
+(`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks you, then a
+build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, then one of
+yours that needs a reviewer, as nobody's asked to review it yet, **Find a reviewer · in Teammate's review**, after them
+as nothing's broken, the oldest first; but none while a session writes it, which may be fixing just that. Its pull
+request wears **Fix next** wherever it is; one in Your review is still your next review too, whatever its build. A
+mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
 (`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
 (`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
 focus on comes first in each stage, but in In progress, what needs you comes before it:
@@ -1718,15 +1737,29 @@ wait for each other. It's only between open pull requests: nothing waits through
 then lets what comes after it merge, or holds it until you check the order. A mission's lane counts how long those in
 other missions have waited, as Up Next does.
 
+Up Next's slots go as many to a line as fit, each at least 176 points wide and at most 664, both times Text Size in
+Windows, spread evenly over the lines (`UpNextGrid`). 664 is the page's width beside the sidebar in a 946-point window:
+in a wider one, a line ends short rather than each slot stretching across it. With nothing in them, it says what they're
+for: "Nothing to fix, review or follow up", or, on My Work with + Sprint Tasks or + All My Tasks, "Nothing to fix,
+review, follow up or start" (`UpNext.nothingNext`).
+
 **The one you choose.** A slot's title in Up Next is a menu, **Fix next ⌄**, of its pull requests in its column's order,
 each with why it's there, the one it shows checked; a Board card's menu has **Make Next**, a toggle, and VoiceOver's
-actions **Make Next** and **Let BriefBar Choose Next**. Only one the slot has now can be chosen (`UpNextSlot.has`). The
-one you chose (`UpNextPicks`) comes first in its column, ahead of all of the above, in every lane that has it
-(`BoardOrder.sorted`'s `first`), and first of its kind in its mission's next steps, but in In progress only while it
-needs you, so that what needs you still comes first; Fix next's comes first of what needs you, wherever it is, in its
-mission's next steps too;
-the slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on
-your board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`). Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
+actions **Make Next** and **Let BriefBar Choose Next**, only in a column Up Next has a slot for: In progress, while it
+needs you, for Fix next, Your review, Teammate's review, while it waits on teammates alone, for Follow up next
+(`UpNextSlot.of`), and, on My Work, To start, for Start next (below); in the others, BriefBar's order alone decides
+which comes first. Only one the slot has now can be chosen (`UpNextSlot.has`). The one you chose (`UpNextPicks`) comes
+first in its slot's column, Fix next's in In progress, Your next review's in Your review and Follow up next's in
+Teammate's review, ahead of all of the above, in every lane that has it (`BoardOrder.sorted`'s `first`), but on My Work
+where your order has it, where it keeps its place (`BoardLane.items(in:)`), and first of its kind in its mission's next
+steps, but in In progress only while it needs you, so that what needs you still comes first. Fix next's comes first of
+what asks you or what to fix in its mission's next steps too, wherever it is; elsewhere it keeps its place: in another
+column, as Teammate's review for one that needs a reviewer, and among its mission's reviews or reviewers to find. The
+slot shows it with ✎, and its card wears **✎ Next**, or **✎ Fix next**. It stands while its pull request is on your
+board in that stage, or, for Fix next, while it needs you, in any stage but Merged (`UpNextSlot.keeps`), a reviewer to
+find included: one you chose as its build failed stays once it passes, while nobody's asked to review it; Follow up
+next's waits while Fix next has it, as when its build fails, or a session writes it, and comes first again once it waits
+on teammates alone. Once it moves on to another stage, leaves your board, merges or closes, it's away; so it is once
 it leaves your lists, as a review you chose once its author completes it, as the reviewing list has only active pull
 requests and Done only yours, or once you're taken off it: the lists Azure DevOps has read of its organization since
 BriefBar started, as the account signed in now (`PRStore.listedOrganizations`), don't have it. Once it's been away for
@@ -1750,8 +1783,10 @@ Let BriefBar Choose, whatever became of that (`StageChange.picked`). **Let Brief
 it at once, whether the slot shows it then or waits for it to come back; so does unchecking Make Next on its card while
 the slot shows it. There's no Undo line, as for Focus. It's kept in the preferences with the Azure DevOps account you
 chose it with, as the stages you set are (`UpNextPicks.Kept`, `order.upNextPicks`): each slot's name, its pull request's
-reference, and when a list last had it, noted once a day; what BriefBar can't read there, as what builds from main saved
-before, each slot's reference alone, goes as Pull Request Order reads it. What one account chose applies only while it's
+reference, and when a list last had it, noted once a day; what BriefBar can't read there, as a slot Up Next no longer
+has, such as an earlier build's Approved next, or what builds from main saved before, each slot's reference alone, goes
+as Pull Request Order reads it, the rest saved again (`UpNextPicks.Kept.tidy`). What one account chose applies only
+while it's
 signed in, and waits, unused, while another is; one no list has had for 30 days goes, with any account, such as once its
 organization isn't watched, or its account doesn't sign in again, but, as for a stage you set, only once Azure DevOps
 has listed what it shows since Pull Request Order turned on. One of a pull request listed only because
@@ -1829,8 +1864,9 @@ flags say; or a work item you started, with no pull request or Copilot task, `Bo
 What still doesn't fit scrolls, and open columns share the room the strips leave. So the 664 points the Board has in a
 946-point window take three open columns and the rest as strips, with My Work's + Sprint Tasks too, whose nine columns
 take 3 × 172 + 6 × 18 + 2 × 10 + 6 × 3 = 662. A strip's count is in a pill bordered in its column's color where one of
-its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or a problem Fix next ranks,
-`fixRank`, but none in Merged), which only marks it, and the strip wears its column's mark, To start's dashed ring,
+its cards needs you (`BoardCard.needsYou`: a review waiting on you, one you can complete, or what Fix next ranks,
+`fixRank`, a problem or one of yours that needs a reviewer, but none in Merged), which only marks it, and the strip
+wears its column's mark, To start's dashed ring,
 Approved's seal, Completed's checkmark or a dot: a shape as well as a color. With
 every column folded, the strips' names, whole, set a lane's height. Some columns open for the moment, unsaved: one a
 card you drag has hovered for 0.6 seconds, where it can go, until the drag ends, as Finder's spring-loaded folders do, a
@@ -1913,8 +1949,8 @@ DevOps' links from a work item to a GitHub pull request aren't read (`ArtifactLi
 own), so that work stays in To start. Work items and pull requests go together only through those links, never by their
 states: with Show Links off, + Sprint Tasks and + All My Tasks show none of your work, and offer to turn it on.
 
-`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
-agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
+`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, pull request's Up Next slot,
+group, count or agent's answer changes, though Up Next gains Start next (below). A work item with a pull request on the board has no card of its own: that pull request's card
 names it, resolved and done too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181
 (Sprint 41)" (`MyWorkText.mention`). One without, a `BoardTask`, goes in **Completed**, a column after Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
 request is, "Closed · !4120 merged"; else, with a pull request that isn't on the board, the first of an open one, one that
@@ -1970,6 +2006,55 @@ problem too, as the Sprint page shows the cards read before under it. With no sp
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,
 BriefBar finds no team for you to read them in.
 
+**Your order** (`LaneOrders`), on My Work only, puts the cards in each lane's To start and In progress, the work you do
+yourself, in the order you put them in (`BoardColumn.takesYourOrder`): a drag within the column, with a line where it
+would go (`Dropping.reorder`), in an open column with another card in it, as a strip shows no cards to go between; ⌘↑
+and ⌘↓ on a card that has the keyboard's focus, which beep at either end, and after which the page scrolls only as far
+as it takes to show the card where it moved out of sight, just under the column titles (`FollowAnchor`); and Move Up,
+Move Down, Move to Top and Reset Order, under a Your Order header in its menu, Reset Order apart, and in VoiceOver's
+actions, which then say where it is, "2 of 5 in To start" (`BoardText.place`). A menu doesn't scroll the page, which
+stays where you are as you move one card after another to the top. A pull request's card there moves too, its stage
+staying. Each lane's order has a key (`LaneOrderKey`): a story's, for the story's own lane and the lane of a mission for
+that story, so that its work keeps your order once its first pull request makes it a mission; a mission's; that of the
+lane of what's in no mission; and Lanes: None's. `PullRequestBoard.inYourOrder` gives each lane its key and order, and
+`BoardLane.items(in:)` puts a column's cards in it, those it doesn't have after them, in the Board's order; the Board
+works out each card's place from that once a column. A lane has no order until you move a card there: that move puts all
+its cards in To start and In progress in your order as they show, In progress's first, and work that comes later goes to
+the bottom of its column. A move only swaps places among its column's cards in the lane's list (`LaneOrders.moving`), so
+that the other column's cards, and those Show doesn't show now, keep theirs, and a task keeps its place as it starts;
+cards that merged or completed leave it. The pull request you chose for Fix next, and Start next's work item, keep their
+places where your order has them, rather than coming first; where it doesn't, they come first of the rest. The order is
+kept in the preferences (`order.laneOrders`), by reference, never a title, for the 50 lanes you changed last
+(`LaneOrders.mostLanes`), each with the cards it shows, however many, and as many of the rest as fit in 200
+(`mostCards`), those you'd do last going first: not for each account, as a reference names its organization. Reset Order
+takes a lane's away, at once, back to the Board's order, the backlog's for work items and BriefBar's for pull requests;
+Forget All Orders… forgets them all (`PullRequestOrder.forgetAll`), which it counts as something it keeps
+(`keepsAnything`), and so does turning Azure DevOps off (`PullRequestOrder.forget`). Nothing goes to Azure DevOps, whose
+backlog keeps its order, and no stage, slot, count or agent's answer changes; only Start next follows it (below). The
+Pull Requests page's Board keeps the Board's order.
+
+**Start next** (`StartNext`), with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, after the pull
+requests' (`UpNextView`'s `startNext`), as starting comes after what needs you to finish: what's in To start, in the
+order `withWork` is given your work, the sprint's first, in `SprintBoard.myWork`'s backlog order, then, with + All My
+Tasks, yours outside it, in `OutsideWork.yours`' order, so that it offers your older work once none of the sprint's is
+left to start; but yours in a sprint after the current one, by its name (`OutsideWork.isLater`,
+`SprintWork.laterSprint`), as one you moved to the next, goes last, the nearest sprint's first, by the number in its
+name, where that order would offer the latest first; the Board's lanes keep it. In a lane in your order, its work comes
+in your order instead, in the places the lane's work holds (`PullRequestBoard.inLanesOrder`), so that between lanes,
+that order still decides. Work swaps places only with the lane's other work of its part: the sprint's, yours outside it
+(`SprintWork.isOutside`), or a later sprint's. So, wherever you put them, the sprint's still comes first and a later
+sprint's last, the nearest first, and each part keeps the backlog's order between lanes. It isn't an `UpNextSlot`:
+`UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To start's dashed ring, in To start's gray, as
+To start's column title has it; its lines are the work item's type, number and title, its card's why, with where it is
+for one outside the sprint, "New · Sprint 41", and its lane, as My Work words them (`StartNextContent`). Its ⌄, or Make
+Next on a card in To start, in its menu or VoiceOver's actions, chooses another (`PullRequestOrder.startPick`), in
+memory only: it's first in Start next, with ✎, and in its lane's To start, unless your order has it there, while it's in
+To start, and waits otherwise; Let BriefBar Choose forgets it. The card it shows wears Next, ✎ Next where you chose it,
+on a line of its own above the card's content, as a pull request's two badges are (`BoardTaskCardView.withNextLine`): in
+the corner, it would cover a work item's number, which may be eight digits. A click shows its details; a right-click,
+its card's menu; "2 more ›" shows the next one's card (`PullRequestOrder.revealedCard`), as Show Them does. Up Next
+shows on My Work once your pull requests are read, with Start next even when you have none.
+
 While a window shows My Work with + Sprint Tasks or + All My Tasks and Show Links on, the sprint is read as while its
 Sprint page is on screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull
 requests linked to its work items, as Show Links reads them for the Sprint page. So is your work outside the sprint, with
@@ -1977,7 +2062,63 @@ each of the sprint's refreshes, after it (`SprintEngine.setReadsOutside`): the q
 lists that the sprint's board doesn't have, 200 a request, with the iteration each is in, all GETs, kept in memory only.
 Only with + All My Tasks are the pull requests linked to them read too, with the sprint's
 (`SprintStore.showsOutside`). Each window shows it as a viewer of its own (`myWork.window.<id>`), apart from the Sprint
-page in the same window. Nothing else is read for it.
+page in the same window. Nothing else is read for it, but the team's sprints as you move a task to the next (below).
+
+#### Moving a task to a sprint
+
+With **Make Changes in Azure DevOps** on, a task or bug of yours outside the sprint, on My Work with + All My Tasks,
+moves to the team's current sprint or its next (`SprintMoves`), only while a sprint is going on, and only one read with
+its iteration, outside the sprint's own (`SprintMoves.canMove`, `OutsideWork.place`). Where its card says it is is then
+a menu, "Sprint 41 ⌄" (`MyWorkTaskCard`), in which a long iteration's name wraps rather than widening the card, with
+**Move to Sprint 42…** and **Move to Next Sprint…**, which the card's menu, Start next's and VoiceOver's actions on the
+card have too (`BoardCardContent.actions`); with the setting off, its tooltip says how to turn it on. Each asks first,
+in a confirmation in the window you clicked in only (`MyWorkContent.proposal`, `SprintMoveText.message`): where it is,
+where it goes, the team's current sprint or its next with its dates, and that it changes its iteration in Azure DevOps,
+as you, which you can undo on My Work. The next sprint is the team's that starts first after the current one does
+(`Sprint.next`), of all its sprints, past, current and future, read with one GET as you choose it (`TeamSprints.next`,
+`ADOEndpoint.teamIterations`), and known for an hour, in memory only, for that team and current sprint
+(`SprintStore.nextSprint`), but forgotten as a move there fails, as it may have been deleted or renamed
+(`SprintStore.forgetNextSprint`), and not kept when there's none, as one may be added any time; without dates, the first
+Azure DevOps calls future, as it lists them. While they're read, the line under Show says so (`SprintMoveLine`, with the
+header, so that it stays in sight as the page scrolls, and only while it has something to say); when they can't be, why,
+naming the work item, with Try Again; when there's none, that the team has no sprint after the current one yet; and when
+the work item is in it already, that it is (`SprintMoves.Finding`). Once it's known, a work item in it isn't offered a
+move there, and its place line's tooltip says it's in the next sprint (`SprintMoves.isInNextSprint`,
+`SprintStore.knownNextSprint`).
+
+The move is a `PATCH` of the work item (`ADOWrite.setIteration`), a JSON Patch (`application/json-patch+json`) of two
+operations: a `test` that its iteration is the path it was read in, then an `add` of the path it goes to, so that Azure
+DevOps refuses it if someone moved it meanwhile; nothing else of it changes. Where Azure DevOps answers it went shows at
+once, with when it changed, so that its details follow (`WorkItem.moved(to:answer:at:)`, `SprintStore.moved`): off the
+sprint's board when it left the sprint (`SprintBoard.moving`), a story's tasks left without one, and among your work
+outside the sprint in its new iteration, in order (`OutsideWork.placing`); one moved into the sprint's own iteration
+stays there, with no place to say, until the sprint's board, read again, has it. The engine keeps it there over any read
+that started before the move, which may have read it where it was, until a refresh that started after it has read the
+sprint's board and, while My Work wants it, your work outside the sprint, in full, or, where the Assigned to me query
+listed only some of yours (`ADOPredefinedQuery.hasMore`), those it listed, the rest staying where they went
+(`SprintEngine.moved`, `settleMoves`): one that failed partway, as when Azure DevOps asked BriefBar to slow down, or
+that couldn't read your work outside the sprint, or stopped reading it, leaves it where it went; and it refreshes at
+once. The line says "Moved Task 5052 from Sprint 41 to Sprint 42.", or "Moved Task 4870 to Sprint 42." for one that was
+in no sprint, with **Undo**, which sends the same change back, testing the path it went to, without asking
+(`SprintMoves.undo`), while the setting's on and the work item is where it went, as BriefBar last read it: one on the
+sprint's board is in its iteration, though the board reads none (`SprintMoves.undoable`); Undo heads its menus
+meanwhile. A move that didn't happen, or may not have, says why (`ADOWriteProblem.sentence`, for `.setIteration`), with
+**Try Again** where it may help, not when Azure DevOps refused it, nor for a work item that's gone or not where it was
+(`SprintMoves.retries`), and the sprint and your work outside it are read again, to show where it is. One move goes at a
+time, in a task that turning the setting off, Azure DevOps stopping or someone else signing in calls off
+(`SprintMoves.forgetAll`): one that hasn't gone never does; one that has settles, the card showing where Azure DevOps
+put it, but nothing more happens, and Undo goes. It goes only as whom the sprint was read as when you chose to move it
+(`Move.account`, `SprintStore.account`, `ADOClient.send(_:as:)`), whose reads tell when someone else signed in; and only
+while BriefBar reads the work item where it was then, as you confirm, and again before each try, once its token came,
+which may take a while (`SprintMoves.send`, `isStillWanted`, `ADOClient.send(_:as:while:)`): read elsewhere, or gone
+from your work, nothing goes, and the line says it isn't where it was (`.notListed`); where it goes already, as when you
+confirmed it in another window too, nothing goes again. Where it is isn't always known, as for one read without its
+iteration: Azure DevOps' test then tells. It goes only for the team, and the sprint going on, it was chosen for
+(`SprintMoves.Context`): once that sprint ended, or another team shows, as you confirm it, try it again, or as it goes,
+nothing goes, and the line says the sprint isn't your team's current, or next, anymore (`.outdated`); a next sprint
+found once either changed asks nothing. Undo moves it back whatever goes on. BriefBar changes only the iteration, never
+the area: a work item under another team's area moved into the sprint's iteration stays off that sprint's board. The
+demo moves only its made-up work, to Sprint 43 for the next (`DemoData.nextSprint`), and sends nothing.
 
 ### A pull request's details
 
@@ -2214,7 +2355,8 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
 only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
-([below](#editing-and-deleting-your-comments)), and a pull request's tags ([below](#a-pull-requests-tags)).
+([below](#editing-and-deleting-your-comments)), a pull request's tags ([below](#a-pull-requests-tags)), and, on My
+Work, the sprint a task or bug of yours is in ([Moving a task to a sprint](#moving-a-task-to-a-sprint)).
 `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
 once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
 otherwise, or times out, isn't made twice. Once it
@@ -2911,6 +3053,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/work/predefinedqueries/AssignedToMe?includeCompleted=false&$top=500` | every refresh, only while My Work shows + Sprint Tasks or + All My Tasks | the work items assigned to you in the team's project, by ID, in any sprint or none, done ones left out |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, 200 work items a request, for those the sprint's board doesn't have | the same, with the iteration each is in |
+| `{project}/{team}/_apis/work/teamsettings/iterations` | only with Make Changes in Azure DevOps on, as you move a task or bug of yours to the team's next sprint on My Work, unless it found that sprint within the hour | the team's sprints, past, current and future, with their dates, kept in memory only, for the one after the current one ([Moving a task to a sprint](#moving-a-task-to-a-sprint)) |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint, or for one outside it My Work's read of your work there, shows it changed, or no longer has it, while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
 | `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |
@@ -4618,7 +4761,7 @@ Azure DevOps starts. The demo keeps them in memory.
 #### Stages for agents
 
 While Pull Request Order is on, as the app has it, `needs_me` ends Azure DevOps' part with the Board in words: each
-stage but Merged, what's next first, the pull request you chose for its Up Next slot first of all, as the app keeps it in
+stage but Merged, what's next first, a pull request you chose in Up Next first of all, as the app keeps it in
 the preferences for the account the lists read with, each pull request with its number, title and repository and why it's there, in
 BriefBar's words, with who set it; and `pull_request` says its stage, and, where a session's replaced yours, that you
 can put yours back while the session's lasts, and whether yours goes or shows again once it ends. `--mcp` works them
