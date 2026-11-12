@@ -13,6 +13,7 @@ import Testing
 @MainActor
 @Suite struct SprintMovesTests {
     /// What the stand-in for Azure DevOps was sent, and answers.
+    @MainActor
     final class AzureDevOps {
         var sent: [ADOWrite] = []
         var fails: ADOError?
@@ -23,8 +24,12 @@ import Testing
         var sprintsFail: ADOError?
         var next: Sprint? = DemoData.nextSprint(now: SprintMovesTests.referenceNow)
 
-        func send(_ write: ADOWrite, as account: String? = nil) throws -> ADOWrite.Answer {
+        /// As the client does: nothing goes as someone else, nor once `wanted` no longer wants it, as it's about to go.
+        func send(
+            _ write: ADOWrite, as account: String? = nil, while wanted: (@Sendable () async -> Bool)? = nil
+        ) async throws -> ADOWrite.Answer {
             if let signedIn, let account, account != signedIn { throw ADOError.otherAccount }
+            if let wanted, !(await wanted()) { throw CancellationError() }
             sent.append(write)
             if let fails { throw fails }
             guard case .setIteration(let key, _, let path) = write else { throw ADOError.http(400) }
@@ -56,7 +61,7 @@ import Testing
         ))
         let moves = SprintMoves(sprint: sprint, settings: settings, client: store.client)
         let azure = AzureDevOps()
-        moves.send = { write, account in try azure.send(write, as: account) }
+        moves.send = { write, account, wanted in try await azure.send(write, as: account, while: wanted) }
         moves.readNextSprint = { try azure.readNext() }
         return (sprint, moves, azure)
     }
@@ -176,7 +181,7 @@ import Testing
             return
         }
         #expect(name == "Task 4870" && failedKey == WorkItemKey(DemoData.organization, 4870))
-        #expect(SprintMoveText.findFailed(problem) == "Couldn't find your team's next sprint. \(problem)")
+        #expect(SprintMoveText.findFailed(name, problem) == "Couldn't find your team's next sprint, for Task 4870. \(problem)")
         // Said in place of what the move did, which comes back once it's dismissed.
         azure.sprintsFail = nil
         let again = try #require(await moves.retryFinding())
@@ -330,14 +335,62 @@ import Testing
         #expect(moves.state == .moved(moving.move.back))
     }
 
+    /// A move is checked again as it's about to go, once its token came, which may take a while: once a read no longer has its
+    /// work item among yours, or another team shows, nothing goes, and the line says why.
+    @Test func aMoveIsCheckedAgainOnceItsTokenCame() async throws {
+        let (sprint, moves, azure) = live()
+        var token: CheckedContinuation<Void, Never>?
+        moves.send = { write, account, wanted in
+            await withCheckedContinuation { token = $0 }
+            return try await azure.send(write, as: account, while: wanted)
+        }
+        let board = try #require(sprint.board), outside = try #require(sprint.outside)
+        let proposal = try #require(moves.propose(try item(sprint)))
+        let moving = Task { await moves.move(proposal) }
+        try await waitUntil { token != nil }
+        // Read again while the token came: reassigned, it's no longer yours.
+        sprint.receive(SprintSnapshot(
+            board: board, hasLoaded: true, outside: OutsideWork(items: outside.items.filter { $0.key != key }, sprintPath: board.sprint.path)
+        ))
+        token?.resume()
+        await moving.value
+        #expect(azure.sent.isEmpty)
+        #expect(moves.state == .failed(proposal.move, .notListed))
+
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true, outside: outside))
+        token = nil
+        let again = try #require(moves.propose(try item(sprint)))
+        let next = Task { await moves.move(again) }
+        try await waitUntil { token != nil }
+        var other = board
+        other.team = DemoData.otherTeam
+        sprint.receive(SprintSnapshot(board: other, hasLoaded: true, outside: outside))
+        token?.resume()
+        await next.value
+        #expect(azure.sent.isEmpty)
+        #expect(moves.state == .outdated(again.move))
+    }
+
+    /// One in no sprint is said so: it isn't in a sprint, it moved to one, and Undo's menu item, in title case, moves it back
+    /// to No Sprint.
+    @Test func oneInNoSprintIsSaidSo() async throws {
+        let (sprint, moves, _) = live()
+        let proposal = try #require(moves.propose(try item(sprint, 4870)))
+        #expect(SprintMoveText.message(proposal).hasPrefix("“\(proposal.move.title)” isn't in a sprint. BriefBar sets its iteration"))
+        await moves.move(proposal)
+        #expect(SprintMoveText.moved(proposal.move) == "Moved Task 4870 to Sprint 42.")
+        #expect(SprintMoveText.menuPlace(proposal.move.fromName) == "No Sprint")
+        #expect(SprintMoveText.moved(proposal.move.back) == "Moved Task 4870 back to no sprint.")
+    }
+
     /// A move called off before it went, as the setting goes off while it waits for a token, sends nothing and leaves nothing
     /// on its way; with the setting back on, a move goes again.
     @Test func aMoveCalledOffBeforeItWentLeavesNothingOnItsWay() async throws {
         let (sprint, moves, azure) = live()
-        moves.send = { write, account in
+        moves.send = { write, account, wanted in
             // Waits, as for a token, until it's called off: longer than a test can wait, on however busy a machine.
             try await Task.sleep(for: .seconds(600))
-            return try azure.send(write, as: account)
+            return try await azure.send(write, as: account, while: wanted)
         }
         let proposal = try #require(moves.propose(try item(sprint)))
         let moving = Task { await moves.move(proposal) }
@@ -350,7 +403,7 @@ import Testing
         #expect(place(sprint) == "Sprint 41")
 
         moves.settings.makesChanges = true
-        moves.send = { write, account in try azure.send(write, as: account) }
+        moves.send = { write, account, wanted in try await azure.send(write, as: account, while: wanted) }
         let again = try #require(moves.propose(try item(sprint)))
         await moves.move(again)
         #expect(azure.sent.count == 1)
@@ -477,7 +530,7 @@ import Testing
         await sprint.loadOnce()
         let moves = SprintMoves(sprint: sprint, settings: settings, client: store.client)
         let azure = AzureDevOps()
-        moves.send = { write, account in try azure.send(write, as: account) }
+        moves.send = { write, account, wanted in try await azure.send(write, as: account, while: wanted) }
         let proposal = try #require(await moves.proposeNext(try item(sprint)))
         #expect(proposal.sprint.name == "Sprint 43")
         await moves.move(proposal)

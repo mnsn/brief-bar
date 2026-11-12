@@ -14,7 +14,7 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, and pull requests' tags, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, pull requests' tags, and, on My Work, the sprint a task or bug of yours is in, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, and **Ask…**, with Send Work to Copilot on, a session's conversation and your question, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in, as each account it's signed in to: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query for each account each refresh |
 
@@ -492,30 +492,32 @@ the pull requests linked to them.
 what needs you to finish: the work item in To start to start next. Your sprint's come first, in its backlog's order, as
 the Sprint page lists them; then, with + All My Tasks, once none of the sprint's is left to start, yours outside it, in
 the Board's order, each saying where it is, such as **New · Sprint 41**, but for those in a later sprint, as one you
-moved to the next, which come last, the nearest sprint's first. It's marked with To start's dashed ring, in its
-gray, and its work item wears **Next** on the Board. Click **Start next ⌄** to choose another, or right-click a card in
-To start and choose **Make Next**: it shows with ✎, first in its lane's To start too, until BriefBar quits, waiting while
-that work item isn't in To start, and **Let BriefBar Choose** gives the slot back to the backlog's order. Click the slot
-for the work item's details, or right-click it for its card's menu; **2 more ›** shows the next on the Board, with the
-keyboard on it, its column opened for the moment if it's folded.
+moved to the next, which come last, the nearest sprint's first. It's marked with To start's dashed ring, in its gray,
+and its work item wears **Next** on the Board, on a line of its own above the card's number. Click **Start next ⌄** to
+choose another, or right-click a card in To start and choose **Make Next**: it shows with ✎, first in its lane's To
+start too, until BriefBar quits, waiting while that work item isn't in To start, and **Let BriefBar Choose** gives the
+slot back to the backlog's order. Click the slot for the work item's details, or right-click it for its card's menu; **2
+more ›** shows the next on the Board, with the keyboard on it, its column opened for the moment if it's folded.
 
 **Move a task to a sprint.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), a task or bug of yours outside the sprint, on My Work with + All My Tasks, moves to your team's current sprint
 or its next: click where its card says it is, such as **Sprint 41 ⌄**, or right-click the card, or Start next, and
-choose **Move to Sprint 42…** or **Move to Next Sprint…**. BriefBar asks first, saying where it is, where it goes, with
-the next sprint's dates, and that it changes its iteration in Azure DevOps, as you; it changes nothing else of it. For
-the next sprint, BriefBar reads your team's sprints, with one request, only as you choose it, and keeps them in memory
-for an hour, unless a move there fails; it says so when your team has none after the current one yet, and reads them
-again next time. A task already in the next sprint, such as one you just moved there, isn't offered a move there. The card goes where the work item went at
-once, and BriefBar reads the sprint and your work outside it again. A line under the header says what it did, with
-**Undo**, which moves it back without asking, until you dismiss it, move another, the work item moves some other way,
-you quit, or turn the setting off; meanwhile Undo heads its card's menu too. A move goes only as whom BriefBar read the
-work item as, and only while BriefBar still reads it where it was when you chose to move it; it sends where it was with
-where it goes, so if someone moved it meanwhile, Azure DevOps refuses it. If the sprint ends, or you choose another team,
-before you confirm, it doesn't move. The line says why one didn't happen, with **Try Again** where trying again may help,
-and BriefBar reads your work again to show where it is. A work item in an area your team doesn't own stays off its sprint's
-board even there, as BriefBar changes only its iteration. With the setting off, where a card says it is tells how to
-turn it on; with no sprint going on, nothing moves.
+choose **Move to Sprint 42…** or **Move to Next Sprint…**; a long sprint name wraps there rather than being cut.
+BriefBar asks first, saying where it is, where it goes, with the next sprint's dates, and that it changes its iteration
+in Azure DevOps, as you; it changes nothing else of it. For the next sprint, BriefBar reads your team's sprints, with
+one request, only as you choose it, and keeps them in memory for an hour, unless a move there fails; it says so when
+your team has none after the current one yet, and reads them again next time. A task already in the next sprint, such as
+one you just moved there, isn't offered a move there. The card goes where the work item went at once, and BriefBar reads
+the sprint and your work outside it again. A line under **Show** says what it did, staying in sight as you scroll the
+page, with **Undo**, which moves it back without asking, until you dismiss it, move another, the work item moves some
+other way, you quit, or turn the setting off; meanwhile Undo heads its card's menu too. A move goes only as whom
+BriefBar read the work item as, and only while BriefBar still reads it where it was when you chose to move it, as it
+goes too, once Azure CLI gave it a token; it sends where it was with where it goes, so if someone moved it meanwhile,
+Azure DevOps refuses it. If the sprint ends, or you choose another team, before you confirm, it doesn't move. The line
+says why one didn't happen, with **Try Again** where trying again may help, and BriefBar reads your work again to show
+where it is. A work item in an area your team doesn't own stays off its sprint's board even there, as BriefBar changes
+only its iteration. With the setting off, where a card says it is tells how to turn it on; with no sprint going on,
+nothing moves.
 
 **Suggested splits**, with Apple Intelligence on: when a mission's pull requests look like they've become different
 pieces of work, such as an unrelated fix or a tooling change among a story's feature, a box under the mission's header,

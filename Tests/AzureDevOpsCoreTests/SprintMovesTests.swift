@@ -296,6 +296,49 @@ import Testing
         #expect(now.onBoard)
     }
 
+    /// A query that lists only some of yours (`hasMore`) settles only what BriefBar moved that it, or the board, has: one it
+    /// didn't list keeps its card where it went; a full read then shows it as Azure DevOps has it, here no longer yours.
+    @Test func aPartialReadSettlesOnlyTheMovesItSaw() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1], children: [(1, 2)])], items: [
+            WorkFixture.workItem(1, "User Story", "Story", state: "Active"),
+            WorkFixture.workItem(2, state: "Active", assignee: People.me, parent: 1),
+            WorkFixture.workItem(10, assignee: People.me, parent: 1, iteration: "Shop\\Sprint 5"),
+            WorkFixture.workItem(11, assignee: People.me, parent: 1, iteration: "Shop\\Sprint 5"),
+        ])
+        let assigned = "/_apis/work/predefinedqueries/AssignedToMe"
+        server.on(assigned, json: ["results": [["id": 2], ["id": 10], ["id": 11]]])
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let read = try #require(await engine.currentSnapshot().outside)
+        for id in [10, 11] {
+            let item = try #require(read.items.first { $0.id == id })
+            await engine.moved(item.moved(to: "Shop\\Sprint 8", answer: nil, at: clock.value))
+        }
+        func place(_ id: Int) async -> String? {
+            let outside = await engine.currentSnapshot().outside
+            return outside?.items.first { $0.id == id }.flatMap { outside?.place(of: $0) }
+        }
+
+        // Only 10 among the first it lists: it's where Azure DevOps has it, here still in Sprint 5; 11 stays where it went.
+        server.on(assigned, json: ["results": [["id": 2], ["id": 10]], "hasMore": true])
+        clock.set(t(5 * minute))
+        await engine.refreshNow()
+        #expect(await place(10) == "Sprint 5")
+        #expect(await place(11) == "Sprint 8")
+
+        // Listed in full, without 11: it's no longer yours.
+        server.on(assigned, json: ["results": [["id": 2], ["id": 10]]])
+        clock.set(t(10 * minute))
+        await engine.refreshNow()
+        #expect(await place(11) == nil)
+    }
+
     /// Moved out of the sprint, it leaves the board at once, and joins your work outside it.
     @Test func aMoveOutOfTheSprintLeavesTheBoardAtOnce() async throws {
         let server = StubServer()

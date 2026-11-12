@@ -8,8 +8,9 @@
 - **Move a task to this sprint or the next.** With **Make Changes in Azure DevOps** on, a task or bug of yours outside
   the sprint, on My Work with + All My Tasks, moves to your team's current sprint or its next: click where its card says
   it is, such as **Sprint 41 ⌄**, or right-click it, and choose **Move to Sprint 42…** or **Move to Next Sprint…**.
-  BriefBar asks first, then sets its iteration in Azure DevOps, as you, and nothing else; **Undo**, on the line under
-  the header, moves it back. If someone moved it meanwhile, Azure DevOps refuses it, and BriefBar says so.
+  BriefBar asks first, then sets its iteration in Azure DevOps, as you, and nothing else; **Undo**, on a line under
+  **Show** that stays in sight as you scroll, moves it back. If someone moved it meanwhile, Azure DevOps refuses it, and
+  BriefBar says so.
 
 ## Descriptions
 

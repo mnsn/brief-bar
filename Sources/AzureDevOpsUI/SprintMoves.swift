@@ -100,9 +100,9 @@ final class SprintMoves: ObservableObject {
 
     let settings: AppSettings
     private weak var sprint: SprintStore?
-    /// Sends a change to Azure DevOps, as whom it was asked for as, when that's known: the client's; a test's stand-in. Never
-    /// in the demo.
-    var send: (ADOWrite, String?) async throws -> ADOWrite.Answer
+    /// Sends a change to Azure DevOps, as whom it was asked for as, when that's known, if it's still wanted as it goes, once
+    /// its token came (`ADOClient.send(_:as:while:)`): the client's; a test's stand-in. Never in the demo.
+    var send: (ADOWrite, String?, @escaping @Sendable () async -> Bool) async throws -> ADOWrite.Answer
     /// Your team's sprint after the current one (`SprintStore.nextSprint`); a test's stand-in.
     var readNextSprint: @MainActor () async throws -> Sprint?
     var now: () -> Date = Date.init
@@ -124,7 +124,7 @@ final class SprintMoves: ObservableObject {
     init(sprint: SprintStore, settings: AppSettings, client: ADOClient) {
         self.sprint = sprint
         self.settings = settings
-        send = { try await client.send($0, as: $1) }
+        send = { try await client.send($0, as: $1, while: $2) }
         readNextSprint = { [weak sprint] in try await sprint?.nextSprint() }
         // Someone else signed in, as the sprint tells once it's read as them: what was going on was the last one's.
         sprint.$account.removeDuplicates()
@@ -195,7 +195,7 @@ final class SprintMoves: ObservableObject {
             guard generation == self.generation else { return nil }
             let problem = (error as? ADOError).map { PulseProblem.from($0).message } ?? error.localizedDescription
             finding = .failed(name: name, key: item.key, problem: problem)
-            SpokenText.announce(SprintMoveText.findFailed(problem))
+            SpokenText.announce(SprintMoveText.findFailed(name, problem))
             return nil
         }
         guard generation == self.generation else { return nil }
@@ -314,29 +314,16 @@ final class SprintMoves: ObservableObject {
     /// again. One that didn't happen, or may not have, says why, and your work is read again to show where it is.
     private func send(_ move: Move) async {
         guard !isStopped, !isBusy, settings.makesChanges, let sprint else { return }
-        // Chosen for a team or a sprint going on that isn't the one BriefBar shows now, as when the sprint ended while you
-        // confirmed it: it would go elsewhere than you chose.
-        if let context = move.context, sprint.board.map({ Context($0, context.target) }) != context {
-            state = .outdated(move)
-            SpokenText.announce(SprintMoveText.outdated(move))
-            return
-        }
-        // As BriefBar reads it now, which a read or another window may have moved since: it goes only from where it was then.
-        // Where it is isn't always known, as for one read without its iteration: Azure DevOps then tests it (`ADOWrite`).
-        guard let item = sprint.item(move.key) else {
-            didNotMove(move, .notListed)
-            return
-        }
-        if let path = path(of: item) {
+        switch hold(move) {
+        case nil:
+            break
+        case .there?:
             // Where it goes already, as confirmed in another window too: there's nothing to send, nor to try again.
-            if OutsideWork.isSamePath(path, move.to) {
-                if case .failed(move, _)? = state { state = nil }
-                return
-            }
-            guard OutsideWork.isSamePath(path, move.from) else {
-                didNotMove(move, .notListed)
-                return
-            }
+            if case .failed(move, _)? = state { state = nil }
+            return
+        case let hold?:
+            held(move, hold)
+            return
         }
         let generation = generation, lifetime = lifetime
         finding = nil
@@ -348,13 +335,21 @@ final class SprintMoves: ObservableObject {
                 answer = nil
             case .live:
                 let write = ADOWrite.setIteration(move.key, from: move.from, to: move.to)
-                let result = try await dispatch(write, as: move.account, in: generation)
+                // Checked again as it goes, once its token came, which may take a while, over which a read may have moved it.
+                let result = try await dispatch(write, as: move.account, in: generation) { [weak self] in
+                    await self?.isStillWanted(move) ?? false
+                }
                 if case .workItem(let item) = result { answer = item } else { answer = nil }
             }
         } catch is CancellationError {
-            // Called off before it went, as the setting was turned off while it waited for a token, or someone else signed
-            // in: nothing went, and the line says nothing.
-            if lifetime == self.lifetime, case .sending(move)? = state { state = nil }
+            // Called off before it went: as the setting was turned off while it waited for a token, or someone else signed in,
+            // the line says nothing; as BriefBar no longer reads it where it was, or shows another team or sprint, it says so.
+            guard lifetime == self.lifetime, case .sending(move)? = state else { return }
+            if generation == self.generation, let hold = hold(move), hold != .there {
+                held(move, hold)
+            } else {
+                state = nil
+            }
             return
         } catch {
             // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
@@ -393,14 +388,57 @@ final class SprintMoves: ObservableObject {
         SpokenText.announce(SprintMoveText.failed(move) + " " + problem.sentence(.setIteration))
     }
 
+    /// Why a move doesn't go now, as BriefBar reads its work item, and shows your team and its sprint.
+    private enum Hold {
+        /// Another team shows, or another sprint is going on, than it was chosen for.
+        case outdated
+        /// BriefBar no longer reads it among your work, or reads it elsewhere than where it was when you chose to move it.
+        case notListed
+        /// BriefBar reads it where it goes already.
+        case there
+    }
+
+    /// Why a move doesn't go now; nil when it can. Where its work item is isn't always known, as for one read without its
+    /// iteration: Azure DevOps then tests it (`ADOWrite`).
+    private func hold(_ move: Move) -> Hold? {
+        guard let sprint else { return .notListed }
+        if let context = move.context, sprint.board.map({ Context($0, context.target) }) != context { return .outdated }
+        guard let item = sprint.item(move.key) else { return .notListed }
+        guard let path = path(of: item) else { return nil }
+        if OutsideWork.isSamePath(path, move.to) { return .there }
+        return OutsideWork.isSamePath(path, move.from) ? nil : .notListed
+    }
+
+    /// Says why a move doesn't go, but for one where it goes already.
+    private func held(_ move: Move, _ hold: Hold) {
+        switch hold {
+        case .outdated:
+            state = .outdated(move)
+            SpokenText.announce(SprintMoveText.outdated(move))
+        case .notListed:
+            didNotMove(move, .notListed)
+        case .there:
+            break
+        }
+    }
+
+    /// Whether a move on its way still goes, as it's about to, once its token came: while you can make changes, and BriefBar
+    /// reads its work item where it was, for the team and sprint it was chosen for.
+    private func isStillWanted(_ move: Move) -> Bool {
+        settings.makesChanges && !isStopped && hold(move) == nil
+    }
+
     /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
     /// it was asked for as, in a task that's called off as they go (`forgetAll`): before it goes, as while it waits for a
-    /// token, it never does, and throws `CancellationError`; once it's gone, it settles all the same, with Azure DevOps'
-    /// answer or why it failed (`ADOClient.send(_:as:)`).
-    private func dispatch(_ write: ADOWrite, as account: String?, in generation: Int) async throws -> ADOWrite.Answer {
+    /// token, it never does, nor once `wanted`, asked as it's about to go, no longer wants it, and throws
+    /// `CancellationError`; once it's gone, it settles all the same, with Azure DevOps' answer or why it failed
+    /// (`ADOClient.send(_:as:while:)`).
+    private func dispatch(
+        _ write: ADOWrite, as account: String?, in generation: Int, while wanted: @escaping @Sendable () async -> Bool
+    ) async throws -> ADOWrite.Answer {
         guard generation == self.generation, !isStopped, settings.makesChanges else { throw CancellationError() }
         let send = send
-        let task = Task { try await send(write, account) }
+        let task = Task { try await send(write, account, wanted) }
         inFlight = task
         defer { if inFlight == task { inFlight = nil } }
         return try await task.value
@@ -462,14 +500,14 @@ enum SprintMoveText {
     /// team's next sprint, Nov 24 – Dec 5, as you. You can undo it on My Work."
     static func message(_ proposal: SprintMoves.Proposal) -> String {
         let move = proposal.move
-        let place = move.fromName == OutsideWork.noSprint ? "in no sprint" : "in \(move.fromName)"
+        let place = move.fromName == OutsideWork.noSprint ? "isn't in a sprint" : "is in \(move.fromName)"
         let sprint = switch proposal.target {
         case .current:
             "\(proposal.sprint.name), your team's current sprint"
         case .next:
             "\(proposal.sprint.name), your team's next sprint" + (dates(proposal.sprint).map { ", \($0)" } ?? "")
         }
-        return "“\(move.title)” is \(place). BriefBar sets its iteration in Azure DevOps to \(sprint), as you. "
+        return "“\(move.title)” \(place). BriefBar sets its iteration in Azure DevOps to \(sprint), as you. "
             + "You can undo it on My Work."
     }
 
@@ -484,10 +522,12 @@ enum SprintMoveText {
         "Moving \(move.name) \(move.isUndo ? "back " : "")to \(place(move.toName))…"
     }
 
-    /// "Moved Task 5052 from Sprint 41 to Sprint 42.", "Moved Task 5052 back to Sprint 41."
+    /// "Moved Task 5052 from Sprint 41 to Sprint 42.", "Moved Task 4870 to Sprint 42." for one that was in no sprint, "Moved
+    /// Task 5052 back to Sprint 41."
     static func moved(_ move: SprintMoves.Move) -> String {
-        move.isUndo ? "Moved \(move.name) back to \(place(move.toName))."
-            : "Moved \(move.name) from \(place(move.fromName)) to \(place(move.toName))."
+        if move.isUndo { return "Moved \(move.name) back to \(place(move.toName))." }
+        if move.fromName == OutsideWork.noSprint { return "Moved \(move.name) to \(place(move.toName))." }
+        return "Moved \(move.name) from \(place(move.fromName)) to \(place(move.toName))."
     }
 
     /// "Didn't move Task 5052: Sprint 42 isn't your team's current sprint anymore."
@@ -506,9 +546,9 @@ enum SprintMoveText {
         "Finding your team's next sprint, for \(name)…"
     }
 
-    /// "Couldn't find your team's next sprint. Azure DevOps answered with HTTP 500."
-    static func findFailed(_ problem: String) -> String {
-        "Couldn't find your team's next sprint. \(problem)"
+    /// "Couldn't find your team's next sprint, for Task 5052. Azure DevOps answered with HTTP 500."
+    static func findFailed(_ name: String, _ problem: String) -> String {
+        "Couldn't find your team's next sprint, for \(name). \(problem)"
     }
 
     /// "Your team has no sprint after Sprint 42 in Azure DevOps yet."
@@ -531,6 +571,11 @@ enum SprintMoveText {
     /// An iteration as a sentence names it: "Sprint 41"; "no sprint" for a project's own.
     static func place(_ name: String) -> String {
         name == OutsideWork.noSprint ? "no sprint" : name
+    }
+
+    /// An iteration as a menu item names it, in title case: "Sprint 41"; "No Sprint" for a project's own.
+    static func menuPlace(_ name: String) -> String {
+        name == OutsideWork.noSprint ? "No Sprint" : name
     }
 
     /// A card's place line's tooltip, where it can't move: how to turn on what moves it.

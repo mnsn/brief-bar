@@ -2291,7 +2291,7 @@ private struct BoardTaskCardView: View {
     }
 
     var body: some View {
-        content.view
+        withNextLine
             .padding(.leading, 13 * textScale)
             .padding(.trailing, 9 * textScale)
             .padding(.vertical, 9 * textScale)
@@ -2303,13 +2303,6 @@ private struct BoardTaskCardView: View {
                     .fill(column.color)
                     .mask(alignment: .leading) { Rectangle().frame(width: 4 * textScale) }
                     .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topTrailing) {
-                if let next {
-                    nextBadge(next)
-                        .padding(7 * textScale)
-                        .allowsHitTesting(false)
-                }
             }
             .overlay {
                 if isSelected {
@@ -2374,6 +2367,24 @@ private struct BoardTaskCardView: View {
         var parts = [column.stage?.title ?? column.title] + content.details
         if let next { parts.append(next.isPicked ? "Start next, you chose it" : "Start next") }
         return parts.joined(separator: ", ")
+    }
+
+    /// Its content, under Next's line of its own while Start next shows it: in the corner, Next would cover a work item's
+    /// number, which can be eight digits long, as a pull request's badges would theirs (`withBadgeLine`).
+    private var withNextLine: some View {
+        VStack(alignment: .leading, spacing: 4 * textScale) {
+            if let next {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    nextBadge(next)
+                }
+                // As far in as a pull request's badge in its corner.
+                .padding(.top, -2 * textScale)
+                .padding(.trailing, -2 * textScale)
+                .allowsHitTesting(false)
+            }
+            content.view
+        }
     }
 
     /// Next, in To start's gray, with ✎ where you chose it: Start next shows it.

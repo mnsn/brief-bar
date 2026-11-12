@@ -138,9 +138,24 @@ public struct ADOClient: Sendable {
     /// the list was read), when that's known: when someone else signed in to the Azure CLI since, nothing goes
     /// (`ADOError.otherAccount`).
     public func send(_ write: ADOWrite, as account: String?) async throws -> ADOWrite.Answer {
+        try await send(write, as: account, wanted: nil)
+    }
+
+    /// Makes a change as `send(_:as:)` does, but only while `wanted` wants it, as it's asked before each try, once its
+    /// token came, which may take a while: one it no longer wants, as what it changes moved meanwhile, never goes, and says
+    /// so (`CancellationError`).
+    public func send(
+        _ write: ADOWrite, as account: String?, while wanted: @escaping @Sendable () async -> Bool
+    ) async throws -> ADOWrite.Answer {
+        try await send(write, as: account, wanted: wanted)
+    }
+
+    private func send(
+        _ write: ADOWrite, as account: String?, wanted: (@Sendable () async -> Bool)?
+    ) async throws -> ADOWrite.Answer {
         let session = session
         let data = try await answer(write.url, request: { Self.request(write, token: $0) }, isAnswer: { _ in true }, isChange: true,
-                                    account: account, refusal: Self.refusal) { request, redirects in
+                                    account: account, refusal: Self.refusal, wanted: wanted) { request, redirects in
             // Gone, it isn't called off with its caller: that wouldn't take it back, only lose what Azure DevOps answers.
             let (data, response) = try await Task { try await session.data(for: request, delegate: redirects) }.value
             return (data, response, true)
@@ -166,10 +181,11 @@ public struct ADOClient: Sendable {
     /// from a sign-in page; `refusal` tells, for a change, why Azure DevOps refused it, from its status and its answer; and
     /// `send` sends the request with the guard against redirects it's given, and gets the answer's body, and whether that's
     /// all of it. A change (`isChange`) takes any answer but 203 that says it was made, an empty one too, is never sent
-    /// once it's called off, and goes only with a token for whom it was asked for as (`account`).
+    /// once it's called off, or once `wanted` no longer wants it, as it's asked before each try, and goes only with a token
+    /// for whom it was asked for as (`account`).
     private func answer(
         _ url: URL, request makeRequest: (String) -> URLRequest, isAnswer: (HTTPURLResponse) -> Bool, isChange: Bool = false,
-        account: String? = nil, refusal: ((Int, Data) -> ADOError?)? = nil,
+        account: String? = nil, refusal: ((Int, Data) -> ADOError?)? = nil, wanted: (@Sendable () async -> Bool)? = nil,
         _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
     ) async throws -> (data: Data, isComplete: Bool) {
         if let wait = await gate.remainingWait(), wait > 0 {
@@ -205,7 +221,10 @@ public struct ADOClient: Sendable {
         var refreshed: Set<String?> = []
         var movedDirectory = false
         for _ in 0..<4 {
-            if isChange { try Task.checkCancellation() }
+            if isChange {
+                try Task.checkCancellation()
+                if let wanted, !(await wanted()) { throw CancellationError() }
+            }
             let redirects = RedirectGuard()
             let (data, response, isComplete): (Data, URLResponse, Bool)
             do {

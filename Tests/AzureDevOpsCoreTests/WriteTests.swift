@@ -596,6 +596,32 @@ import Testing
         #expect(body(of: request) == sample(.setIteration).body)
     }
 
+    /// A change is asked whether it's still wanted before each try, once its token came: one that isn't, as what it changes
+    /// moved while the token came, never goes; and after Azure DevOps turned down a token, it's asked again before the try
+    /// with a fresh one.
+    @Test func aChangeNoLongerWantedOnceItsTokenCameNeverGoes() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie", iteration: "Storefront\\Sprint 42"))
+        }
+        await #expect(throws: CancellationError.self) {
+            try await server.client().send(sample(.setIteration), as: nil, while: { false })
+        }
+        #expect(server.requests.isEmpty)
+
+        let expired = StubServer()
+        let attempts = Locked(0)
+        expired.on("/contoso/_apis/wit/workitems/5052") { _ in
+            attempts.increment() == 1 ? .status(401) : .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie"))
+        }
+        let asked = Locked(0)
+        await #expect(throws: CancellationError.self) {
+            try await expired.client().send(sample(.setIteration), as: nil, while: { asked.increment() == 1 })
+        }
+        #expect(asked.value == 2)
+        #expect(expired.requests.count == 1)
+    }
+
     /// Why a move didn't happen: someone moved it meanwhile, which fails its test, as Azure DevOps says; no permission; a work
     /// item that isn't there, or you can't see. Each sent once.
     @Test func saysWhyAMoveDidntHappen() async throws {

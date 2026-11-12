@@ -371,6 +371,19 @@ private struct MyWorkContent: View {
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
             showPicker
+            // What a move to another sprint is doing, or did, under Show, with the header: in sight wherever the page is
+            // scrolled, as the cards you move from are far below the header.
+            if moves.state != nil || moves.finding != nil {
+                SprintMoveLine(moves: moves) {
+                    Task {
+                        if let found = await moves.retryFinding() { proposal = found }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 14)
+                .padding(.trailing, 20)
+                .padding(.bottom, 10)
+            }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
             let detailsShown = shownDetails
             DetailsSplit(
@@ -620,7 +633,7 @@ private struct MyWorkContent: View {
     @ViewBuilder
     private func moveItems(_ item: WorkItem) -> some View {
         if let undo = moves.undoable, undo.key == item.key {
-            Button("Undo: Move Back to \(SprintMoveText.place(undo.fromName))") { Task { await moves.undo() } }
+            Button("Undo: Move Back to \(SprintMoveText.menuPlace(undo.fromName))") { Task { await moves.undo() } }
                 .disabled(moves.isBusy)
         }
         if moves.canMove(item) {
@@ -722,11 +735,6 @@ private struct MyWorkContent: View {
                     outsideLine(sprint: board.sprint.name)
                 } else if let outside, outside.readAt != nil || outside.problem != nil {
                     outsideLine(sprint: nil)
-                }
-                SprintMoveLine(moves: moves) {
-                    Task {
-                        if let found = await moves.retryFinding() { proposal = found }
-                    }
                 }
             }
         }
@@ -894,8 +902,8 @@ private struct OutsideSprintLine: View {
 }
 
 /// What became of moving a work item of yours to another sprint, or of looking for your team's next sprint for it, under My
-/// Work's header: while it's on its way; once it moved, with Undo, while it's where it went; why it didn't, with Try Again
-/// where it may help; each with ✕, but while it's on its way.
+/// Work's header, under Show, where it stays as the page scrolls: while it's on its way; once it moved, with Undo, while
+/// it's where it went; why it didn't, with Try Again where it may help; each with ✕, but while it's on its way.
 private struct SprintMoveLine: View {
     @ObservedObject var moves: SprintMoves
     /// Try Again, for your team's sprints that couldn't be read: they're read again, and the move asks you to confirm it.
@@ -908,9 +916,9 @@ private struct SprintMoveLine: View {
                 case .reading(let name):
                     ProgressView().controlSize(.small)
                     words(SprintMoveText.finding(name))
-                case .failed(_, _, let problem):
+                case .failed(let name, _, let problem):
                     symbol("exclamationmark.triangle")
-                    words(SprintMoveText.findFailed(problem))
+                    words(SprintMoveText.findFailed(name, problem))
                     Button("Try Again", action: findAgain)
                         .buttonStyle(.borderless)
                     dismiss
@@ -1050,6 +1058,7 @@ struct MyWorkTaskCard: View {
     var placeHelp: String? = nil
 
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -1072,25 +1081,28 @@ struct MyWorkTaskCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let place {
                 if let moveMenu {
+                    // Rounded as a capsule is on one line; a long iteration's name wraps in it, which keeps its number, rather
+                    // than widening the card.
+                    let shape = RoundedRectangle(cornerRadius: 8.5 * textScale, style: .continuous)
                     Menu {
                         moveMenu
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Image(systemName: "calendar")
                             Text(place)
-                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
                             MenuChevron()
                         }
                         .font(size: 11.5)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1.5)
-                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
-                        .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1))
-                        .contentShape(Capsule())
+                        .background(shape.fill(Color.secondary.opacity(0.12)))
+                        .overlay(shape.strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1))
+                        .contentShape(shape)
                     }
                     .labelMenuStyle()
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
                     .help(placeHelp ?? "")
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
