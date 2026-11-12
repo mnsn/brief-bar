@@ -209,6 +209,7 @@ import Testing
         #expect(task.pullRequests.map(\.state) == [.unknown])
         #expect(work.first { $0.ref == workItem(4870) }?.progress == .toDo)
         #expect(work.allSatisfy { $0.laterSprint == nil })
+        #expect(work.allSatisfy { $0.isOutside })
 
         // Moved to the sprint after the current one, it says so, for Start next, which offers it last.
         var moved = try #require(outside.items.first { $0.id == 4870 })

@@ -130,6 +130,18 @@ private struct LaneTop: Hashable {
     var lane: BoardLane.Kind
 }
 
+/// Where the page scrolls to show a card a key moved within its column, in your order: from as far above the card as the
+/// column titles are tall, which stay at the page's top over it, to its bottom. Outside the board's sideways scroll, as a
+/// lane's top is, so that it scrolls the page.
+private struct FollowAnchor: Hashable {}
+
+/// A card a key moved within its column, which the page shows where it moved out of sight: each move a new one, as the same
+/// card moves again.
+private struct FollowedMove: Equatable {
+    var spot: CardSpot
+    var count: Int
+}
+
 /// Why a card couldn't move, under its lane until your next move.
 private struct BoardNotice: Equatable {
     var lane: BoardLane.Kind
@@ -165,17 +177,20 @@ private enum TitleHover: Equatable {
     case split(ShownColumn)
 }
 
-/// What dropping the card you drag on a lane's column would do: a move to one of its columns; or, on a joined column where
-/// more than one of its columns would take it, nothing until it springs open into them, saying so.
+/// What dropping the card you drag on a lane's column would do: a move to one of its columns; within the column it's in, To
+/// start or In progress on My Work, a move to where you drop it there; or, on a joined column where more than one of its
+/// columns would take it, nothing until it springs open into them, saying so.
 private enum Dropping {
     case move(BoardMove, to: BoardColumn)
+    /// Within its column, which is in your order: where you drop it.
+    case reorder(BoardColumn)
     case choose(String)
 
     /// The column lights up: one of its columns takes it.
     var takes: Bool {
         switch self {
         case .move(let move, _): move.isTaken
-        case .choose: true
+        case .reorder, .choose: true
         }
     }
 
@@ -183,13 +198,125 @@ private enum Dropping {
     var words: String? {
         switch self {
         case .move(.refused(let why), _): why
-        case .move: nil
+        case .move, .reorder: nil
         case .choose(let words): words
         }
     }
 
     var isRefused: Bool {
         if case .move(.refused, _) = self { true } else { false }
+    }
+}
+
+/// Where a card you drag within its column, which is in your order, would go if you dropped it now: in a lane's cell, before
+/// as many of the column's other cards, for the line that shows it.
+private struct Insertion: Equatable {
+    var cell: BoardCell
+    var column: BoardColumn
+    var ref: ItemRef
+    var index: Int
+}
+
+/// Where each card of a column in your order is in its lane's cell, as it last laid out, for where a drop puts it: in a
+/// class, so that the frames, which change as the Board lays out, don't draw the Board anew.
+private final class CardFrames {
+    var frames: [CardSpot: CGRect] = [:]
+}
+
+/// What a card's menu, its keys and VoiceOver offer to move it within its column of a lane, To start or In progress, on My
+/// Work: Move Up, Move Down and Move to Top, but where it's first or last already, and Reset Order where the lane is in your
+/// order.
+private struct CardReorder {
+    var isFirst: Bool
+    var isLast: Bool
+    var hasOrder: Bool
+    /// Moves it; false where it can't, as at the top for Move Up. Where it `follows`, as for a key, which keeps the
+    /// keyboard's focus on it, the page scrolls to show it where it moved out of sight; not from a menu, so that the page
+    /// stays where you are as you move one card after another to the top.
+    var move: (_ move: LaneMove, _ follows: Bool) -> Bool
+    var reset: () -> Void
+}
+
+/// Keeps a card's frame in its lane's cell where its column is in your order, for where a drop puts the card you drag there;
+/// and tells where it is in the board's lanes as it moves, for the page to follow it where a key moved it.
+private struct KeepsFrame: ViewModifier {
+    let spot: CardSpot
+    let cell: BoardCell
+    /// Where it keeps it; nil for a card in a column that isn't in your order.
+    let frames: CardFrames?
+    /// Where it is in the board's lanes, as it changes.
+    let moved: (CGRect) -> Void
+
+    init(spot: CardSpot, in cell: BoardCell, frames: CardFrames?, moved: @escaping (CGRect) -> Void) {
+        self.spot = spot
+        self.cell = cell
+        self.frames = frames
+        self.moved = moved
+    }
+
+    func body(content: Content) -> some View {
+        if let frames {
+            content
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(cell)) } action: { frames.frames[spot] = $0 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(OrderBoardView.lanesSpace)) } action: { moved($0) }
+        } else {
+            content
+        }
+    }
+}
+
+/// Move Up, Move Down, Move to Top and Reset Order, in a card's menu, for one you can put in your order: under a header of
+/// their own, apart from the moves that change Azure DevOps, such as Move to Next Sprint…; Reset Order, which has no Undo,
+/// apart from Move to Top.
+private struct ReorderMenuItems: View {
+    let reorder: CardReorder
+
+    var body: some View {
+        Divider()
+        Section(BoardText.yourOrder) {
+            Button(BoardText.moveUp) { _ = reorder.move(.up, false) }
+                .disabled(reorder.isFirst)
+            Button(BoardText.moveDown) { _ = reorder.move(.down, false) }
+                .disabled(reorder.isLast)
+            Button(BoardText.moveToTop) { _ = reorder.move(.toTop, false) }
+                .disabled(reorder.isFirst)
+            if reorder.hasOrder {
+                Divider()
+                Button(BoardText.resetOrder, action: reorder.reset)
+            }
+        }
+    }
+}
+
+/// The same, as VoiceOver's actions: only those that move it.
+private struct ReorderActions: View {
+    let reorder: CardReorder
+
+    var body: some View {
+        if !reorder.isFirst {
+            Button(BoardText.moveUp) { _ = reorder.move(.up, false) }
+        }
+        if !reorder.isLast {
+            Button(BoardText.moveDown) { _ = reorder.move(.down, false) }
+        }
+        if !reorder.isFirst {
+            Button(BoardText.moveToTop) { _ = reorder.move(.toTop, false) }
+        }
+        if reorder.hasOrder {
+            Button(BoardText.resetOrder, action: reorder.reset)
+        }
+    }
+}
+
+extension View {
+    /// ⌘↑ and ⌘↓ on a card that has the keyboard's focus: up or down its column, in your order, the page following it, or a
+    /// beep at either end.
+    fileprivate func reorderKeys(_ reorder: CardReorder?) -> some View {
+        onKeyPress(keys: [.upArrow, .downArrow], phases: .down) { press in
+            guard press.modifiers.isCommandAlone, let reorder else { return .ignored }
+            if !reorder.move(press.key == .upArrow ? .up : .down, true) { ThisMac.beep() }
+            return .handled
+        }
     }
 }
 
@@ -381,6 +508,15 @@ package struct OrderBoardView: View {
     @LocalState private var sprung: Set<BoardColumn> = []
     /// The joined columns a drag sprang open into their columns, until it ends.
     @LocalState private var sprungJoins: Set<ShownColumn> = []
+    /// Where the card you drag within its column would go, while it's over that column: a line shows it.
+    @LocalState private var insertion: Insertion?
+    @LocalState private var frames = CardFrames()
+    /// The card a key moved last within its column, until the page shows it (`FollowAnchor`).
+    @LocalState private var followed: FollowedMove?
+    /// Where that card is in the board's lanes, once it's laid out where it moved.
+    @LocalState private var followedFrame: CGRect?
+    /// How tall the column titles are, which stay at the page's top over the card it shows.
+    @LocalState private var titlesHeight: CGFloat = 0
     /// Where the pointer is over the column titles: a gap where →|← joins two, or a joined title, where ←|→ splits it.
     @LocalState private var titleHover: TitleHover?
     /// The column a card you moved with a key went to, open while it keeps the keyboard's focus.
@@ -505,6 +641,7 @@ package struct OrderBoardView: View {
         .onChange(of: isDragging) { _, dragging in
             guard !dragging else { return }
             springing = nil
+            insertion = nil
             if !sprung.isEmpty || !sprungJoins.isEmpty {
                 withAnimation(.easeOut(duration: 0.15)) {
                     sprung = []
@@ -661,12 +798,9 @@ package struct OrderBoardView: View {
         oweFocus(to: spot)
     }
 
-    /// A lane's first card in a column, column by column, a pull request's, else a work item's: where the keyboard goes as
-    /// its strip opens.
+    /// A lane's first card in a column, column by column, as they show: where the keyboard goes as its strip opens.
     private func firstSpot(in lane: BoardLane, column: ShownColumn) -> CardSpot? {
-        let ref = column.parts.lazy.compactMap { part in
-            lane.cards(in: part).first?.ref ?? lane.tasks.first { BoardColumn($0.column) == part }?.ref
-        }.first
+        let ref = column.parts.lazy.compactMap { part in lane.items(in: part).first?.ref }.first
         return ref.map { CardSpot(lane: lane.kind, ref: $0) }
     }
 
@@ -737,6 +871,7 @@ package struct OrderBoardView: View {
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 0) {
                 PinnedTitles(pin: pin, content: columnTitles(metrics))
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { titlesHeight = $0 }
                     // Over the cards that scroll under them.
                     .zIndex(1)
                 lanesView(lanes, metrics: metrics, moves: moves)
@@ -747,12 +882,36 @@ package struct OrderBoardView: View {
                 return BoardPlace(top: min(max(-1, geometry.bounds(of: .scrollView)?.minY ?? -1), height), height: height)
             } action: { pin.place = $0 }
             .overlay(alignment: .topLeading) { laneAnchors(lanes, proxy: proxy) }
+            .overlay(alignment: .topLeading) { followAnchor }
             .onAppear {
                 takeReveal(order.revealed, with: proxy)
                 takeCardReveal(order.revealedCard, lanes: lanes, with: proxy)
             }
             .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
             .onChange(of: order.revealedCard) { _, ref in takeCardReveal(ref, lanes: lanes, with: proxy) }
+            // A card a key moved out of sight: once it's laid out where it moved, the page scrolls only as far as it takes to
+            // show it, once.
+            .onChange(of: followedFrame) { _, frame in
+                guard frame != nil, followed != nil else { return }
+                followed = nil
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(FollowAnchor(), anchor: nil) }
+                }
+            }
+        }
+    }
+
+    /// Where the page scrolls to show the card a key moved (`FollowAnchor`): from the board's top, where its column titles
+    /// start, as far down as the card is in the lanes under them, so that it starts as far above the card as they're tall.
+    @ViewBuilder
+    private var followAnchor: some View {
+        if let frame = followedFrame {
+            VStack(spacing: 0) {
+                Color.clear.frame(width: 1, height: max(0, frame.minY))
+                Color.clear.frame(width: 1, height: max(1, frame.height + titlesHeight)).id(FollowAnchor())
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 
@@ -1107,7 +1266,7 @@ package struct OrderBoardView: View {
     // MARK: Lanes
 
     /// The coordinate space of the board's lanes, where each lane's top is measured.
-    private static let lanesSpace = "boardLanes"
+    fileprivate nonisolated static let lanesSpace = "boardLanes"
 
     private func lanesView(_ lanes: [BoardLane], metrics: BoardMetrics, moves: BoardMoves) -> some View {
         ScrollViewReader { proxy in
@@ -1382,9 +1541,24 @@ package struct OrderBoardView: View {
                 openCell(lane, column: column, width: metrics.width(column), moves: moves)
             }
         }
+        // Where a card dragged within its column, in your order, would go.
+        .overlay(alignment: .topLeading) {
+            if !isFolded, let insertion, insertion.cell == target, let y = insertionY(insertion, in: lane) {
+                // The accent color, as a list's line where a drop goes: a column's own color, as To start's gray and In
+                // progress's pink, would hardly show on its cell's tint.
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: max(metrics.width(column) - 16 * textScale, 0), height: 3)
+                    .offset(x: 8 * textScale, y: y - 1.5)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .contentShape(Rectangle())
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, on: column, in: lane, moves: moves)
+        // The cards' frames and a drop's place, in the same space.
+        .coordinateSpace(.named(target))
+        .dropDestination(for: String.self) { items, location in
+            drop(items, at: location, on: column, isFolded: isFolded, in: lane, moves: moves)
         } isTargeted: { isOver in
             if isOver {
                 hovered = target
@@ -1392,12 +1566,56 @@ package struct OrderBoardView: View {
             } else {
                 if hovered == target { hovered = nil }
                 if springing == target { springing = nil }
+                if insertion?.cell == target { insertion = nil }
+            }
+        }
+        // As the card you drag moves within its column, where it would go.
+        .onDropSessionUpdated { session in
+            switch session.phase {
+            case .entering, .active:
+                let at = isFolded ? nil : insertion(at: session.location, on: column, in: lane, moves: moves)
+                if insertion != at, at != nil || insertion?.cell == target { insertion = at }
+            default:
+                if insertion?.cell == target { insertion = nil }
             }
         }
         // The column a drag starts over can be hovered before the board knows which card it drags: it springs once it does.
         .onChange(of: springs) { _, springs in
             if springs, hovered == target { springing = target }
         }
+    }
+
+    /// Where the card you drag would go within its column, dropped at this point of a lane's cell: nil where it would stay
+    /// where it is, or isn't in that column, or that column isn't in your order.
+    private func insertion(at location: CGPoint, on column: ShownColumn, in lane: BoardLane, moves: BoardMoves) -> Insertion? {
+        guard isDragging, let ref = drag?.ref, case .reorder(let part)? = dropping(on: column, isFolded: false, in: lane, moves: moves)
+        else {
+            return nil
+        }
+        let index = dropIndex(of: ref, at: location, in: lane, column: part)
+        guard lane.items(in: part).firstIndex(where: { $0.ref == ref }) != index else { return nil }
+        return Insertion(cell: BoardCell(lane: lane.kind, column: column), column: part, ref: ref, index: index)
+    }
+
+    /// Where a card dropped at this point of a lane's cell goes within its column: before as many of the column's other cards
+    /// as have their middle above it.
+    private func dropIndex(of ref: ItemRef, at location: CGPoint, in lane: BoardLane, column: BoardColumn) -> Int {
+        lane.items(in: column).filter { item in
+            guard item.ref != ref, let frame = frames.frames[CardSpot(lane: lane.kind, ref: item.ref)] else { return false }
+            return frame.midY < location.y
+        }.count
+    }
+
+    /// How far down a lane's cell the line goes that shows where the card you drag would go: between the cards it would go
+    /// between, above the first or under the last. Nil before the cards have laid out.
+    private func insertionY(_ insertion: Insertion, in lane: BoardLane) -> CGFloat? {
+        let others = lane.items(in: insertion.column).filter { $0.ref != insertion.ref }
+            .compactMap { frames.frames[CardSpot(lane: lane.kind, ref: $0.ref)] }
+        guard !others.isEmpty else { return nil }
+        let gap = 4 * textScale
+        if insertion.index <= 0 { return others[0].minY - gap }
+        if insertion.index >= others.count { return others[others.count - 1].maxY + gap }
+        return (others[insertion.index - 1].maxY + others[insertion.index].minY) / 2
     }
 
     /// Whether a lane's column springs open as the card you drag stays over it a moment: a strip, where the card would go
@@ -1410,20 +1628,27 @@ package struct OrderBoardView: View {
     }
 
     /// What dropping the card you drag on a column of a lane would do, to the card as it is now: nil while you drag none.
-    private func dropping(on column: ShownColumn, in lane: BoardLane, moves: BoardMoves) -> Dropping? {
-        isDragging ? drag.flatMap { outcome(of: $0.ref, on: column, in: lane, moves: moves) } : nil
+    private func dropping(on column: ShownColumn, isFolded: Bool, in lane: BoardLane, moves: BoardMoves) -> Dropping? {
+        isDragging ? drag.flatMap { outcome(of: $0.ref, on: column, isFolded: isFolded, in: lane, moves: moves) } : nil
     }
 
     /// What dropping a card on a column of a lane does: on a joined column, what dropping it on the one of its columns that
-    /// takes it does, or nothing where it's in one of them already; where more than one would take it, nothing until it
-    /// springs open into them; and where none does, why the first doesn't. Nil for a card that left the board.
-    private func outcome(of ref: ItemRef, on column: ShownColumn, in lane: BoardLane, moves: BoardMoves) -> Dropping? {
+    /// takes it does, or nothing where it's in one of them already, but in your order, where it goes where you drop it in
+    /// an open column; where more than one would take it, nothing until it springs open into them; and where none does, why
+    /// the first doesn't. Nil for a card that left the board.
+    /// - Parameter isFolded: the column is a strip, whose cards don't show: one dropped in its own does nothing there.
+    private func outcome(of ref: ItemRef, on column: ShownColumn, isFolded: Bool, in lane: BoardLane, moves: BoardMoves) -> Dropping? {
         var outcomes: [(move: BoardMove, part: BoardColumn)] = []
         for part in column.parts {
             guard let move = moving(ref, to: part, in: lane, moves: moves) else { return nil }
             outcomes.append((move, part))
         }
-        if let stays = outcomes.first(where: { $0.move == .stays }) { return .move(.stays, to: stays.part) }
+        if let stays = outcomes.first(where: { $0.move == .stays }) {
+            // Within its column, in your order, it goes where you drop it: where there's another card to go above or below.
+            let reorders = !isFolded && board.isInYourOrder && lane.takesYourOrder(in: stays.part)
+                && lane.items(in: stays.part).count > 1
+            return reorders ? .reorder(stays.part) : .move(.stays, to: stays.part)
+        }
         let taken = outcomes.filter(\.move.isTaken)
         if taken.count > 1 { return .choose(BoardText.chooseOne(of: column)) }
         return (taken.first ?? outcomes.first).map { .move($0.move, to: $0.part) }
@@ -1431,18 +1656,12 @@ package struct OrderBoardView: View {
 
     private func openCell(_ lane: BoardLane, column: ShownColumn, width: CGFloat, moves: BoardMoves) -> some View {
         let target = BoardCell(lane: lane.kind, column: column)
-        let dropping = dropping(on: column, in: lane, moves: moves)
+        let dropping = dropping(on: column, isFolded: false, in: lane, moves: moves)
         let takes = dropping?.takes == true
         let isHovered = hovered == target
         return VStack(alignment: .leading, spacing: 8 * textScale) {
-            // Column by column: each one's pull requests, then your sprint work's own cards.
             ForEach(column.parts, id: \.self) { part in
-                ForEach(lane.cards(in: part)) { card in
-                    cardView(card, in: lane, column: part, isJoined: column.isJoined, moves: moves)
-                }
-                ForEach(lane.tasks.filter { BoardColumn($0.column) == part }) { task in
-                    taskView(task, in: lane)
-                }
+                cellCards(part, of: column, in: lane, cell: target, moves: moves)
             }
         }
         // Those that don't take the card dim while you drag it.
@@ -1460,6 +1679,45 @@ package struct OrderBoardView: View {
         }
     }
 
+    /// A column's cards in an open cell, as they show: in To start and In progress on My Work, in your order. Each card's
+    /// view has a function of its own, each value its own statement: in one closure, Xcode 26's compiler gives up on them.
+    private func cellCards(
+        _ part: BoardColumn, of column: ShownColumn, in lane: BoardLane, cell: BoardCell, moves: BoardMoves
+    ) -> some View {
+        let items: [BoardItem] = lane.items(in: part)
+        let ordered: Bool = board.isInYourOrder && lane.takesYourOrder(in: part)
+        let places: [ItemRef: Int]? = ordered ? Self.places(of: items) : nil
+        return ForEach(items) { item in
+            cellCard(item, column: part, of: column, in: lane, cell: cell, places: places, count: items.count, moves: moves)
+        }
+    }
+
+    /// Where each card is in its column, for its moves: worked out once for them all.
+    private static func places(of items: [BoardItem]) -> [ItemRef: Int] {
+        var places: [ItemRef: Int] = [:]
+        for (offset, item) in items.enumerated() where places[item.ref] == nil {
+            places[item.ref] = offset
+        }
+        return places
+    }
+
+    /// One of an open cell's cards, with its moves within its column where it's in your order: `places` has where each of
+    /// the column's cards is there; nil for a column that isn't in your order.
+    private func cellCard(
+        _ item: BoardItem, column part: BoardColumn, of column: ShownColumn, in lane: BoardLane, cell: BoardCell,
+        places: [ItemRef: Int]?, count: Int, moves: BoardMoves
+    ) -> some View {
+        let spot = CardSpot(lane: lane.kind, ref: item.ref)
+        let place: Int? = places?[item.ref]
+        let cardReorder: CardReorder? = place.map { index in reorder(item.ref, at: index, of: count, in: lane) }
+        let kept: CardFrames? = places == nil ? nil : frames
+        let moved: (CGRect) -> Void = { frame in
+            if followed?.spot == spot { followedFrame = frame }
+        }
+        return itemView(item, in: lane, column: part, isJoined: column.isJoined, reorder: cardReorder, moves: moves)
+            .modifier(KeepsFrame(spot: spot, in: cell, frames: kept, moved: moved))
+    }
+
     /// A folded column's strip in a lane: how many cards it has there, in a pill where one needs you, and its name, cut
     /// short where the lane is shorter. A click opens the column. A card you drag drops on it as on the open column, and
     /// springs it open once it stays a moment, where it would go there. One with cards takes the keyboard's focus as a card
@@ -1470,7 +1728,7 @@ package struct OrderBoardView: View {
         let needing = lane.needingYou(in: column).count
         let target = BoardCell(lane: lane.kind, column: column)
         let first = firstSpot(in: lane, column: column)
-        let dropping = dropping(on: column, in: lane, moves: moves)
+        let dropping = dropping(on: column, isFolded: true, in: lane, moves: moves)
         let takes = dropping?.takes == true
         let isHovered = hovered == target
         let index = metrics.shown.firstIndex(of: column) ?? 0
@@ -1534,8 +1792,12 @@ package struct OrderBoardView: View {
     private func stripCellHelp(_ lane: BoardLane, column: ShownColumn, count: Int, needing: Int, why: BoardFolding.Why?) -> String {
         var lines = [Self.stripHelp(title: column.title, count: count, needing: needing, why: why ?? .yours)]
         for part in column.parts {
-            lines += lane.cards(in: part).map { [$0.ref.shortOrderLabel, order.name(of: $0.ref)].compactMap { $0 }.joined(separator: " ") }
-            lines += lane.tasks.filter { BoardColumn($0.column) == part }.compactMap { work?.card($0)?.label }
+            lines += lane.items(in: part).compactMap { item in
+                switch item {
+                case .pullRequest(let card): [card.ref.shortOrderLabel, order.name(of: card.ref)].compactMap { $0 }.joined(separator: " ")
+                case .work(let task): work?.card(task)?.label
+                }
+            }
         }
         return (lines + ["Click to open it"]).joined(separator: "\n")
     }
@@ -1562,14 +1824,28 @@ package struct OrderBoardView: View {
             .overlay(shape.strokeBorder(column.color.opacity(takes ? (isHovered ? 0.9 : 0.55) : 0), lineWidth: isHovered ? 2 : 1.5))
     }
 
+    /// A card in its column, a pull request's or a work item's own, which is joined to others where `isJoined`.
+    /// - Parameter reorder: how it moves within its column, in your order; nil where it doesn't.
+    @ViewBuilder
+    private func itemView(
+        _ item: BoardItem, in lane: BoardLane, column: BoardColumn, isJoined: Bool, reorder: CardReorder?, moves: BoardMoves
+    ) -> some View {
+        switch item {
+        case .pullRequest(let card): cardView(card, in: lane, column: column, isJoined: isJoined, reorder: reorder, moves: moves)
+        case .work(let task): taskView(task, in: lane, reorder: reorder)
+        }
+    }
+
     /// A pull request's card in its column, which is joined to others where `isJoined`: there Approved's cards wear its seal.
     @ViewBuilder
-    private func cardView(_ card: BoardCard, in lane: BoardLane, column: BoardColumn, isJoined: Bool, moves: BoardMoves) -> some View {
+    private func cardView(
+        _ card: BoardCard, in lane: BoardLane, column: BoardColumn, isJoined: Bool, reorder: CardReorder?, moves: BoardMoves
+    ) -> some View {
         if let content = self.card(card) {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
-                badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref),
+                badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), reorder: reorder,
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
@@ -1596,12 +1872,12 @@ package struct OrderBoardView: View {
 
     /// A work item's own card, which shows its details as a pull request's does, but doesn't move: ⌘→ and ⌘← say why.
     @ViewBuilder
-    private func taskView(_ task: BoardTask, in lane: BoardLane) -> some View {
+    private func taskView(_ task: BoardTask, in lane: BoardLane, reorder: CardReorder?) -> some View {
         if let work, let content = work.card(task) {
             let spot = CardSpot(lane: lane.kind, ref: task.ref)
             BoardTaskCardView(
                 task: task, content: content, next: board.startNext.flatMap { $0.task.ref == task.ref ? $0 : nil }, order: order,
-                isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
+                isSelected: work.isSelected(task.ref), reorder: reorder, spot: spot, focus: $focused,
                 takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
                     lastFocus = spot
@@ -1634,19 +1910,59 @@ package struct OrderBoardView: View {
         return { setAsNext(card.ref, mission, .onBoard(moves.board.mode)) }
     }
 
+    // MARK: Your order
+
+    /// What a card's menu, its keys and VoiceOver offer to move it within its column of a lane, To start or In progress, on
+    /// My Work, from where it is there, from 0, of how many.
+    private func reorder(_ ref: ItemRef, at index: Int, of count: Int, in lane: BoardLane) -> CardReorder {
+        CardReorder(
+            isFirst: index == 0, isLast: index == count - 1, hasOrder: lane.yourOrder != nil,
+            move: { move, follows in reorder(ref, move, in: lane, follows: follows) }, reset: { resetOrder(of: lane) }
+        )
+    }
+
+    /// Moves a card within its column of a lane, remembered, and VoiceOver says where it is: false where it doesn't move,
+    /// as at the top for Move Up.
+    /// - Parameter follows: the page shows it where it moved out of sight, as for a key.
+    @discardableResult
+    private func reorder(_ ref: ItemRef, _ move: LaneMove, in lane: BoardLane, follows: Bool = false) -> Bool {
+        guard let column = lane.orderColumn(of: ref) else { return false }
+        notice = nil
+        let place = withAnimation(.easeOut(duration: 0.15)) { order.move(ref, move, in: lane) }
+        guard let place else { return false }
+        if follows {
+            followedFrame = nil
+            followed = FollowedMove(spot: CardSpot(lane: lane.kind, ref: ref), count: (followed?.count ?? 0) + 1)
+        }
+        SpokenText.announce(BoardText.place(place, in: column))
+        return true
+    }
+
+    /// Reset Order: the lane's To start and In progress go back to the Board's own order.
+    private func resetOrder(of lane: BoardLane) {
+        withAnimation(.easeOut(duration: 0.15)) { order.resetOrder(of: lane) }
+        SpokenText.announce(BoardText.orderReset)
+    }
+
     // MARK: Moving
 
-    private func drop(_ items: [String], on column: ShownColumn, in lane: BoardLane, moves: BoardMoves) -> Bool {
+    private func drop(
+        _ items: [String], at location: CGPoint, on column: ShownColumn, isFolded: Bool, in lane: BoardLane, moves: BoardMoves
+    ) -> Bool {
         let started = drag
         isDragging = false
         hovered = nil
+        insertion = nil
         // Only a card dragged from this board, as it is now: never text dragged in from another app.
         guard let payload = items.first, let ref = started?.ref(dropped: payload),
-              let outcome = outcome(of: ref, on: column, in: lane, moves: moves) else {
+              let outcome = outcome(of: ref, on: column, isFolded: isFolded, in: lane, moves: moves) else {
             return false
         }
         drag = nil
         switch outcome {
+        // Within its column, in your order: where you dropped it.
+        case .reorder(let part):
+            return reorder(ref, .to(dropIndex(of: ref, at: location, in: lane, column: part)), in: lane)
         // A joined column more than one of whose columns would take it, before it sprang open into them.
         case .choose(let words):
             refuse(words, about: ref, in: lane.kind)
@@ -2046,6 +2362,8 @@ private struct BoardCardView: View {
     /// What it wears: Fix next, as Fix next's pull request, then Next, as its column's first.
     let badges: [CardBadge]
     let isSelected: Bool
+    /// Its moves within its column, in your order, on My Work's In progress; nil elsewhere.
+    let reorder: CardReorder?
     @ObservedObject var order: PullRequestOrder
     let now: Date
     let spot: CardSpot
@@ -2109,7 +2427,10 @@ private struct BoardCardView: View {
                 focus.wrappedValue = spot
                 select()
             }
-            .contextMenu { content.menu }
+            .contextMenu {
+                content.menu
+                if let reorder { ReorderMenuItems(reorder: reorder) }
+            }
             .draggable(drag()) {
                 preview
             }
@@ -2132,11 +2453,15 @@ private struct BoardCardView: View {
                 move(press.key == .rightArrow)
                 return .handled
             }
+            .reorderKeys(reorder)
             .onKeyPress(keys: [.return, .space], phases: .down) { _ in
                 select()
                 return .handled
             }
-            .help("\(content.label)\nClick to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage")
+            .help(
+                "\(content.label)\nClick to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage"
+                    + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(content.label)
             .accessibilityValue(accessibilityValue)
@@ -2155,6 +2480,7 @@ private struct BoardCardView: View {
                         Button("Make Next") { order.pickNext(card.ref, in: slot) }
                     }
                 }
+                if let reorder { ReorderActions(reorder: reorder) }
                 Button("Show Details", action: select)
             }
             // Its Mission menu's, as its row has them; but for one that waits, Set as Next to Merge is the Board's, above,
@@ -2303,6 +2629,8 @@ private struct BoardTaskCardView: View {
     /// For Make Next, on a card in To start.
     let order: PullRequestOrder
     let isSelected: Bool
+    /// Its moves within its column, in your order, in To start and In progress; nil elsewhere.
+    let reorder: CardReorder?
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
     /// Owed the keyboard's focus as it's drawn, as when Return on its column's strip opened the column for it: it takes it
@@ -2355,7 +2683,10 @@ private struct BoardTaskCardView: View {
                 focus.wrappedValue = spot
                 select()
             }
-            .contextMenu { content.menu }
+            .contextMenu {
+                content.menu
+                if let reorder { ReorderMenuItems(reorder: reorder) }
+            }
             .draggable(drag()) {
                 preview
             }
@@ -2375,11 +2706,15 @@ private struct BoardTaskCardView: View {
                 move()
                 return .handled
             }
+            .reorderKeys(reorder)
             .onKeyPress(keys: [.return, .space], phases: .down) { _ in
                 select()
                 return .handled
             }
-            .help("\(content.label)\nClick to see its details. It moves by itself, as its work goes on in Azure DevOps")
+            .help(
+                "\(content.label)\nClick to see its details. It moves to another column by itself, as its work goes on in Azure DevOps"
+                    + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(content.label)
             .accessibilityValue(accessibilityValue)
@@ -2397,6 +2732,7 @@ private struct BoardTaskCardView: View {
                 if let actions = content.actions {
                     actions
                 }
+                if let reorder { ReorderActions(reorder: reorder) }
                 Button("Show Details", action: select)
             }
     }

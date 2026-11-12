@@ -829,6 +829,12 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     /// Whether a pull request's card in it names work of yours not resolved yet, on My Work with your work
     /// (`PullRequestBoard.withWork`): with its work items' own cards, what keeps a finished mission's lane open.
     public var namesWorkToDo = false
+    /// Whose order it has in To start and In progress, on My Work, where you put its cards in your order
+    /// (`PullRequestBoard.inYourOrder`); nil elsewhere.
+    public var orderKey: LaneOrderKey?
+    /// Your order of its cards in To start and In progress, as kept (`LaneOrders`): nil until you move one, as it keeps the
+    /// Board's own order till then.
+    public var yourOrder: [ItemRef]?
 
     public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
@@ -923,6 +929,9 @@ public struct PullRequestBoard: Equatable, Sendable {
     /// Start next, Up Next's last slot while it shows your sprint work (`withWork`): what's in To start, to start next; nil
     /// with nothing there.
     public var startNext: StartNext?
+    /// It's in your order, on My Work (`inYourOrder`): you can move the cards of its To start and In progress within their
+    /// columns of a lane.
+    public var isInYourOrder = false
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],

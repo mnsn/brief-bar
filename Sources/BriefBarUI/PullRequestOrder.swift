@@ -8,8 +8,8 @@ import Foundation
 /// it changed (`AgentChanges`), and of your changes to missions (`OrderChanges`), which only the app writes. It's off until
 /// you turn it on (`PullRequestOrderSetting`): until then it reads nothing, not even the orders it kept, and the sources tell
 /// it nothing. Turned off, it shows nothing again, and keeps the orders, what it saw become of their pull requests, the
-/// mission you focus on, your changes, the names you gave missions, the suggested splits you kept together and the pull
-/// requests you chose for Up Next's slots, unused, until you forget them. A mission is called by the name you gave it, else
+/// mission you focus on, your changes, the names you gave missions, the suggested splits you kept together, the pull
+/// requests you chose for Up Next's slots and your order of the work on My Work, unused, until you forget them. A mission is called by the name you gave it, else
 /// the one Apple Intelligence gave it on this Mac while By Mission showed it (`MissionNamer`), else the one BriefBar gives
 /// it from its sources.
 @MainActor
@@ -87,6 +87,10 @@ package final class PullRequestOrder: ObservableObject {
     /// The work item you chose for My Work's Start next, with its ⌄ or a To start card's Make Next (`StartNext`): first there
     /// while it's in To start, until BriefBar quits or you Let BriefBar Choose. In memory only.
     @Published package private(set) var startPick: ItemRef?
+    /// Your order of the work in the Board's lanes on My Work, To start's and In progress's (`LaneOrders`), as you put it:
+    /// kept in the preferences, by reference, whether Pull Request Order is on or not, until you reset a lane's, or turn
+    /// Azure DevOps off.
+    @Published package private(set) var laneOrders: LaneOrders
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -227,6 +231,7 @@ package final class PullRequestOrder: ObservableObject {
         isUpNextFolded = UpNext.isFolded(in: defaults)
         boardFolds = BoardFolds.load(from: defaults)
         boardLayout = BoardLayout.load(from: defaults)
+        laneOrders = LaneOrders.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -342,11 +347,12 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, the mission you focus on, a change of yours, a name you gave a mission, or a suggestion you kept together.
+    /// requests, the mission you focus on, a change of yours, a name you gave a mission, a suggestion you kept together, or
+    /// the order you put your work in on My Work.
     package var keepsAnything: Bool {
         let keys = [
             DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
-            KeptTogether.defaultsKey,
+            KeptTogether.defaultsKey, LaneOrders.defaultsKey,
         ]
         return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
@@ -568,8 +574,8 @@ package final class PullRequestOrder: ObservableObject {
     /// Forgets a source's things when you turn it off, as each source forgets what it kept, whether Pull Request Order is on
     /// or not: its pull requests' places in every order, which goes up a revision, the orders left with none, what BriefBar
     /// saw become of them, your changes to them and those that put pull requests in its missions, the mission you focus on,
-    /// the names you gave missions and the suggestions you kept together, when they're theirs, and the stages you set for its
-    /// pull requests, and those you chose for Up Next's slots.
+    /// the names you gave missions and the suggestions you kept together, when they're theirs, the stages you set for its
+    /// pull requests, those you chose for Up Next's slots, and your order of its things on My Work.
     package func forget(_ source: SourceID) {
         let kinds = ItemRef.Kind.of(source)
         guard !kinds.isEmpty else { return }
@@ -600,6 +606,10 @@ package final class PullRequestOrder: ObservableObject {
         if reached.forget(kinds) { reached.save(to: defaults) }
         var picks = UpNextPicks.Kept.load(from: defaults)
         if picks.forget(kinds) { picks.save(to: defaults) }
+        // Your order on My Work, on or off.
+        var laneOrders = LaneOrders.load(from: defaults)
+        if laneOrders.forget(kinds) { laneOrders.save(to: defaults) }
+        if laneOrders != self.laneOrders { self.laneOrders = laneOrders }
         forgetInMemory(kinds)
         // What sessions set: on its pull requests, or, with GitHub Copilot, everything, as its sessions told it.
         if !isDemo { SessionStages.forget(kinds, in: defaults, now: now()) }
@@ -704,10 +714,28 @@ package final class PullRequestOrder: ObservableObject {
         startPick = ref
     }
 
-    /// Let BriefBar Choose, for Start next: forgets the work item you chose, and the backlog's order chooses again.
+    /// Let BriefBar Choose, for Start next: forgets the work item you chose, and the order of your work chooses again.
     package func letBriefBarChooseStart() {
         guard startPick != nil else { return }
         startPick = nil
+    }
+
+    /// Moves a card within its column of a lane on My Work, To start or In progress, remembered (`LaneOrders`): where it is
+    /// then, for VoiceOver to say. Nil where it doesn't move, as at the top for Move Up, or while Pull Request Order is off.
+    @discardableResult
+    package func move(_ ref: ItemRef, _ move: LaneMove, in lane: BoardLane) -> LanePlace? {
+        guard isOn, let key = lane.orderKey, let moved = lane.moving(ref, move) else { return nil }
+        laneOrders.set(moved.order, for: key)
+        laneOrders.save(to: defaults)
+        return moved.place
+    }
+
+    /// Reset Order: a lane's To start and In progress go back to the Board's own order: the backlog's for your work, BriefBar's
+    /// for pull requests.
+    package func resetOrder(of lane: BoardLane) {
+        guard let key = lane.orderKey, laneOrders[key] != nil else { return }
+        laneOrders.reset(key)
+        laneOrders.save(to: defaults)
     }
 
     /// You decided what a slot shows since your last stage change: its Undo no longer chooses the pull request it changed for
@@ -796,8 +824,8 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your changes
-    /// to missions, the names you gave missions and the suggestions you kept together, whether Pull Request Order is on or
-    /// not.
+    /// to missions, the names you gave missions, the suggestions you kept together and the order you put your work in on My
+    /// Work, whether Pull Request Order is on or not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
@@ -812,6 +840,8 @@ package final class PullRequestOrder: ObservableObject {
         yourNames = MissionNames()
         keptTogether = KeptTogether()
         splitsShownAgain = []
+        laneOrders = LaneOrders()
+        laneOrders.save(to: defaults)
         rebuild()
     }
 
