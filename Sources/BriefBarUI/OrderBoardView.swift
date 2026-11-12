@@ -28,13 +28,20 @@ package struct BoardCardContent {
     package var details: [String]
     /// Its Mission menu, for VoiceOver's actions as its row has them; nil where it has none.
     package var mission: MissionMenuContext?
+    /// What VoiceOver offers as its actions, before Show Details, of what its menu and its content do: a work item's move
+    /// to another sprint. Nil for none.
+    package var actions: AnyView?
 
-    package init(view: AnyView, menu: AnyView, label: String, details: [String] = [], mission: MissionMenuContext? = nil) {
+    package init(
+        view: AnyView, menu: AnyView, label: String, details: [String] = [], mission: MissionMenuContext? = nil,
+        actions: AnyView? = nil
+    ) {
         self.view = view
         self.menu = menu
         self.label = label
         self.details = details
         self.mission = mission
+        self.actions = actions
     }
 }
 
@@ -1593,7 +1600,8 @@ package struct OrderBoardView: View {
         if let work, let content = work.card(task) {
             let spot = CardSpot(lane: lane.kind, ref: task.ref)
             BoardTaskCardView(
-                task: task, content: content, isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
+                task: task, content: content, next: board.startNext.flatMap { $0.task.ref == task.ref ? $0 : nil }, order: order,
+                isSelected: work.isSelected(task.ref), spot: spot, focus: $focused,
                 takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
                 select: {
                     lastFocus = spot
@@ -2252,6 +2260,10 @@ private struct BoardCardView: View {
 private struct BoardTaskCardView: View {
     let task: BoardTask
     let content: BoardCardContent
+    /// Start next, when it shows this work item, which wears Next then.
+    let next: StartNext?
+    /// For Make Next, on a card in To start.
+    let order: PullRequestOrder
     let isSelected: Bool
     let spot: CardSpot
     var focus: FocusState<CardSpot?>.Binding
@@ -2279,7 +2291,7 @@ private struct BoardTaskCardView: View {
     }
 
     var body: some View {
-        content.view
+        withNextLine
             .padding(.leading, 13 * textScale)
             .padding(.trailing, 9 * textScale)
             .padding(.vertical, 9 * textScale)
@@ -2332,13 +2344,63 @@ private struct BoardTaskCardView: View {
             .help("\(content.label)\nClick to see its details. It moves by itself, as its work goes on in Azure DevOps")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(content.label)
-            .accessibilityValue(([column.stage?.title ?? column.title] + content.details).joined(separator: ", "))
+            .accessibilityValue(accessibilityValue)
             .accessibilityHint("Shows its details")
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction(.default, select)
             .accessibilityActions {
+                if task.column == .toStart {
+                    if order.startPick == task.ref {
+                        Button("Let BriefBar Choose Next") { order.letBriefBarChooseStart() }
+                    } else {
+                        Button("Make Next") { order.pickStart(task.ref) }
+                    }
+                }
+                if let actions = content.actions {
+                    actions
+                }
                 Button("Show Details", action: select)
             }
+    }
+
+    private var accessibilityValue: String {
+        var parts = [column.stage?.title ?? column.title] + content.details
+        if let next { parts.append(next.isPicked ? "Start next, you chose it" : "Start next") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Its content, under Next's line of its own while Start next shows it: in the corner, Next would cover a work item's
+    /// number, which can be eight digits long, as a pull request's badges would theirs (`withBadgeLine`).
+    private var withNextLine: some View {
+        VStack(alignment: .leading, spacing: 4 * textScale) {
+            if let next {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    nextBadge(next)
+                }
+                // As far in as a pull request's badge in its corner.
+                .padding(.top, -2 * textScale)
+                .padding(.trailing, -2 * textScale)
+                .allowsHitTesting(false)
+            }
+            content.view
+        }
+    }
+
+    /// Next, in To start's gray, with ✎ where you chose it: Start next shows it.
+    private func nextBadge(_ next: StartNext) -> some View {
+        HStack(spacing: 2) {
+            if next.isPicked {
+                Image(systemName: "pencil")
+            }
+            Text("Next")
+        }
+        .font(size: 10, weight: .bold)
+        .foregroundStyle(column.textColor)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1.5)
+        .background(Capsule().fill(column.color.opacity(0.2)))
+        .help(next.isPicked ? "Start next: you chose it, while BriefBar runs" : "Start next: it comes first of your work to start")
     }
 
     /// What follows the pointer as it's dragged: its name and title, in its column's color.

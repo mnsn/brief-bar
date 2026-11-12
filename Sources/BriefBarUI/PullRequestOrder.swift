@@ -84,6 +84,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package var revealedColumn: PullRequestStage?
     /// The card My Work's Show Them asked the Board to show, until it has: a work item's, or a pull request's that names one.
     @Published package var revealedCard: ItemRef?
+    /// The work item you chose for My Work's Start next, with its ⌄ or a To start card's Make Next (`StartNext`): first there
+    /// while it's in To start, until BriefBar quits or you Let BriefBar Choose. In memory only.
+    @Published package private(set) var startPick: ItemRef?
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -693,6 +696,19 @@ package final class PullRequestOrder: ObservableObject {
         picks[slot] = nil
         undoChoosesNothing(for: slot)
         keepPicks()
+    }
+
+    /// Chooses the work item My Work's Start next shows, first in its lane's To start too, in place of the one you chose
+    /// before, while it's in To start (`StartNext`): in memory only.
+    package func pickStart(_ ref: ItemRef) {
+        guard isOn, startPick != ref else { return }
+        startPick = ref
+    }
+
+    /// Let BriefBar Choose, for Start next: forgets the work item you chose, and the backlog's order chooses again.
+    package func letBriefBarChooseStart() {
+        guard startPick != nil else { return }
+        startPick = nil
     }
 
     /// You decided what a slot shows since your last stage change: its Undo no longer chooses the pull request it changed for

@@ -29,8 +29,8 @@ import Testing
                 ]))
             case .setStatus(let address, let status):
                 return .thread(try decode(ADOThread.self, ["id": address.id, "status": status.rawValue]))
-            case .editComment, .deleteComment, .addTag, .removeTag:
-                // Replies and statuses never send one (CommentChangesTests, TagChangesTests).
+            case .editComment, .deleteComment, .addTag, .removeTag, .setIteration:
+                // Replies and statuses never send one (CommentChangesTests, TagChangesTests, SprintMovesTests).
                 throw ADOError.http(400)
             }
         }

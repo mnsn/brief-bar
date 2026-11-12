@@ -60,16 +60,36 @@ public struct OutsideWork: Sendable, Equatable {
 
     /// Whether a work item is in the sprint's own iteration, whatever the letter case of its path.
     public func isInSprint(_ item: WorkItem) -> Bool {
-        guard let sprintPath, let path = item.iteration else { return false }
-        return path.caseInsensitiveCompare(sprintPath) == .orderedSame
+        Self.isSamePath(item.iteration, sprintPath)
+    }
+
+    /// Whether one of yours is in a sprint after the sprint's own, as their paths' names compare, as the Board orders them:
+    /// Sprint 43 after Sprint 42, as one you moved to the next sprint is. Start next offers it last. Never for one in no
+    /// sprint, or with no sprint going on.
+    public func isLater(_ item: WorkItem) -> Bool {
+        guard let sprintPath, let path = Self.sprintPath(of: item) else { return false }
+        return path.compare(sprintPath, options: [.numeric, .caseInsensitive]) == .orderedDescending
+    }
+
+    /// Whether two iterations' paths are the same one's, as Azure DevOps compares them, ignoring letter case; never for an
+    /// unknown one.
+    public static func isSamePath(_ path: String?, _ other: String?) -> Bool {
+        guard let path, let other else { return false }
+        return path.caseInsensitiveCompare(other) == .orderedSame
     }
 
     /// Where one of yours is, as its card says: its iteration's name, the last part of its path, such as "Sprint 38", or "No
     /// sprint" for the project's own, its root; nil for one in the sprint's own iteration, or read without its iteration.
     public func place(of item: WorkItem) -> String? {
         guard !isInSprint(item), let path = item.iteration else { return nil }
+        return Self.place(path)
+    }
+
+    /// What a card says of an iteration, by its path: its name, the last part of it, such as "Sprint 38", or "No sprint" for
+    /// a project's own, its root.
+    public static func place(_ path: String) -> String {
         let parts = path.split(separator: "\\", omittingEmptySubsequences: true)
-        guard parts.count > 1, let last = parts.last else { return Self.noSprint }
+        guard parts.count > 1, let last = parts.last else { return noSprint }
         return String(last)
     }
 

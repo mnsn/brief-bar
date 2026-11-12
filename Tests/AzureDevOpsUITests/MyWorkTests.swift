@@ -208,6 +208,17 @@ import Testing
         #expect(task.story == workItem(5180))
         #expect(task.pullRequests.map(\.state) == [.unknown])
         #expect(work.first { $0.ref == workItem(4870) }?.progress == .toDo)
+        #expect(work.allSatisfy { $0.laterSprint == nil })
+
+        // Moved to the sprint after the current one, it says so, for Start next, which offers it last.
+        var moved = try #require(outside.items.first { $0.id == 4870 })
+        moved.iteration = "Storefront\\Sprint 43"
+        let later = MyWorkFacts.work(
+            outside: outside.placing(moved, board: DemoData.sprintBoard(now: Date())), linked: { links[$0] ?? [] },
+            pullRequest: { _ in nil }, copilotWorks: { _ in false }
+        )
+        #expect(later.first { $0.ref == workItem(4870) }?.laterSprint == "Storefront\\Sprint 43")
+        #expect(later.filter { $0.laterSprint != nil }.count == 1)
     }
 
     /// The line under the header counts tasks and bugs apart, in the singular for one, and says when there may be more; with

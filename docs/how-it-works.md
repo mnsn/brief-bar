@@ -1207,9 +1207,10 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the six changes **Make Changes in Azure
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the seven changes **Make Changes in Azure
 DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status),
-[your comments](#editing-and-deleting-your-comments) and [a pull request's tags](#a-pull-requests-tags)):
+[your comments](#editing-and-deleting-your-comments), [a pull request's tags](#a-pull-requests-tags) and
+[moving a task to a sprint](#moving-a-task-to-a-sprint)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1250,6 +1251,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only in a pull request's details, for one whose lists don't carry its tags, such as one sent to you or that you watch: as they show on a window's page on screen, then ten minutes after they were read, and half a minute after a read of them failed, while they show; and after a change to its tags, as it settles, though Make Changes in Azure DevOps went off meanwhile, below | its tags |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
+| `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on My Work, when you confirm moving a task or bug of yours to your team's current sprint or its next, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its iteration alone: a test of the path it's in, then the path it goes to, so Azure DevOps refuses it if someone moved it meanwhile; Azure DevOps answers with the work item as it keeps it |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1913,8 +1915,8 @@ DevOps' links from a work item to a GitHub pull request aren't read (`ArtifactLi
 own), so that work stays in To start. Work items and pull requests go together only through those links, never by their
 states: with Show Links off, + Sprint Tasks and + All My Tasks show none of your work, and offer to turn it on.
 
-`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, Up Next slot, group, count or
-agent's answer changes. A work item with a pull request on the board has no card of its own: that pull request's card
+`PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, pull request's Up Next slot,
+group, count or agent's answer changes, though Up Next gains Start next (below). A work item with a pull request on the board has no card of its own: that pull request's card
 names it, resolved and done too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181
 (Sprint 41)" (`MyWorkText.mention`). One without, a `BoardTask`, goes in **Completed**, a column after Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
 request is, "Closed · !4120 merged"; else, with a pull request that isn't on the board, the first of an open one, one that
@@ -1970,6 +1972,24 @@ problem too, as the Sprint page shows the cards read before under it. With no sp
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,
 BriefBar finds no team for you to read them in.
 
+**Start next** (`StartNext`), with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, after the pull
+requests' (`UpNextView`'s `startNext`), as starting comes after what needs you to finish: what's in To start, in the
+order `withWork` is given your work, the sprint's first, in `SprintBoard.myWork`'s backlog order, then, with + All My
+Tasks, yours outside it, in `OutsideWork.yours`' order, so that it offers your older work once none of the sprint's is
+left to start; but yours in a sprint after the current one, by its name (`OutsideWork.isLater`,
+`SprintWork.laterSprint`), as one you moved to the next, goes last, the nearest sprint's first, by the number in its
+name, where that order would offer the latest first; the Board's lanes keep it. It isn't an `UpNextSlot`: `UpNextPicks`,
+`needs_me` and agents keep to pull requests. Its mark is To start's dashed ring, in To start's gray, which its shape
+tells from Waits next's dot; its lines are the work item's type, number and title, its card's why, with where it is for
+one outside the sprint, "New · Sprint 41", and its lane, as My Work words them (`StartNextContent`). Its ⌄, or Make Next
+on a card in To start, in its menu or VoiceOver's actions, chooses another (`PullRequestOrder.startPick`), in memory
+only: it's first in Start next, with ✎, and in its lane's To start, while it's in To start, and waits otherwise; Let
+BriefBar Choose forgets it. The card it shows wears Next, ✎ Next where you chose it, on a line of its own above the
+card's content, as a pull request's two badges are (`BoardTaskCardView.withNextLine`): in the corner, it would cover a
+work item's number, which may be eight digits. A click shows its details; a right-click, its card's menu; "2 more ›"
+shows the next one's card (`PullRequestOrder.revealedCard`), as Show Them does. Up Next shows on My Work once your pull
+requests are read, with Start next even when you have none.
+
 While a window shows My Work with + Sprint Tasks or + All My Tasks and Show Links on, the sprint is read as while its
 Sprint page is on screen ([Your sprint and pipelines](#your-sprint-and-pipelines)); so, with Show Links, are the pull
 requests linked to its work items, as Show Links reads them for the Sprint page. So is your work outside the sprint, with
@@ -1977,7 +1997,63 @@ each of the sprint's refreshes, after it (`SprintEngine.setReadsOutside`): the q
 lists that the sprint's board doesn't have, 200 a request, with the iteration each is in, all GETs, kept in memory only.
 Only with + All My Tasks are the pull requests linked to them read too, with the sprint's
 (`SprintStore.showsOutside`). Each window shows it as a viewer of its own (`myWork.window.<id>`), apart from the Sprint
-page in the same window. Nothing else is read for it.
+page in the same window. Nothing else is read for it, but the team's sprints as you move a task to the next (below).
+
+#### Moving a task to a sprint
+
+With **Make Changes in Azure DevOps** on, a task or bug of yours outside the sprint, on My Work with + All My Tasks,
+moves to the team's current sprint or its next (`SprintMoves`), only while a sprint is going on, and only one read with
+its iteration, outside the sprint's own (`SprintMoves.canMove`, `OutsideWork.place`). Where its card says it is is then
+a menu, "Sprint 41 ⌄" (`MyWorkTaskCard`), in which a long iteration's name wraps rather than widening the card, with
+**Move to Sprint 42…** and **Move to Next Sprint…**, which the card's menu, Start next's and VoiceOver's actions on the
+card have too (`BoardCardContent.actions`); with the setting off, its tooltip says how to turn it on. Each asks first,
+in a confirmation in the window you clicked in only (`MyWorkContent.proposal`, `SprintMoveText.message`): where it is,
+where it goes, the team's current sprint or its next with its dates, and that it changes its iteration in Azure DevOps,
+as you, which you can undo on My Work. The next sprint is the team's that starts first after the current one does
+(`Sprint.next`), of all its sprints, past, current and future, read with one GET as you choose it (`TeamSprints.next`,
+`ADOEndpoint.teamIterations`), and known for an hour, in memory only, for that team and current sprint
+(`SprintStore.nextSprint`), but forgotten as a move there fails, as it may have been deleted or renamed
+(`SprintStore.forgetNextSprint`), and not kept when there's none, as one may be added any time; without dates, the first
+Azure DevOps calls future, as it lists them. While they're read, the line under Show says so (`SprintMoveLine`, with the
+header, so that it stays in sight as the page scrolls, and only while it has something to say); when they can't be, why,
+naming the work item, with Try Again; when there's none, that the team has no sprint after the current one yet; and when
+the work item is in it already, that it is (`SprintMoves.Finding`). Once it's known, a work item in it isn't offered a
+move there, and its place line's tooltip says it's in the next sprint (`SprintMoves.isInNextSprint`,
+`SprintStore.knownNextSprint`).
+
+The move is a `PATCH` of the work item (`ADOWrite.setIteration`), a JSON Patch (`application/json-patch+json`) of two
+operations: a `test` that its iteration is the path it was read in, then an `add` of the path it goes to, so that Azure
+DevOps refuses it if someone moved it meanwhile; nothing else of it changes. Where Azure DevOps answers it went shows at
+once, with when it changed, so that its details follow (`WorkItem.moved(to:answer:at:)`, `SprintStore.moved`): off the
+sprint's board when it left the sprint (`SprintBoard.moving`), a story's tasks left without one, and among your work
+outside the sprint in its new iteration, in order (`OutsideWork.placing`); one moved into the sprint's own iteration
+stays there, with no place to say, until the sprint's board, read again, has it. The engine keeps it there over any read
+that started before the move, which may have read it where it was, until a refresh that started after it has read the
+sprint's board and, while My Work wants it, your work outside the sprint, in full, or, where the Assigned to me query
+listed only some of yours (`ADOPredefinedQuery.hasMore`), those it listed, the rest staying where they went
+(`SprintEngine.moved`, `settleMoves`): one that failed partway, as when Azure DevOps asked BriefBar to slow down, or
+that couldn't read your work outside the sprint, or stopped reading it, leaves it where it went; and it refreshes at
+once. The line says "Moved Task 5052 from Sprint 41 to Sprint 42.", or "Moved Task 4870 to Sprint 42." for one that was
+in no sprint, with **Undo**, which sends the same change back, testing the path it went to, without asking
+(`SprintMoves.undo`), while the setting's on and the work item is where it went, as BriefBar last read it: one on the
+sprint's board is in its iteration, though the board reads none (`SprintMoves.undoable`); Undo heads its menus
+meanwhile. A move that didn't happen, or may not have, says why (`ADOWriteProblem.sentence`, for `.setIteration`), with
+**Try Again** where it may help, not when Azure DevOps refused it, nor for a work item that's gone or not where it was
+(`SprintMoves.retries`), and the sprint and your work outside it are read again, to show where it is. One move goes at a
+time, in a task that turning the setting off, Azure DevOps stopping or someone else signing in calls off
+(`SprintMoves.forgetAll`): one that hasn't gone never does; one that has settles, the card showing where Azure DevOps
+put it, but nothing more happens, and Undo goes. It goes only as whom the sprint was read as when you chose to move it
+(`Move.account`, `SprintStore.account`, `ADOClient.send(_:as:)`), whose reads tell when someone else signed in; and only
+while BriefBar reads the work item where it was then, as you confirm, and again before each try, once its token came,
+which may take a while (`SprintMoves.send`, `isStillWanted`, `ADOClient.send(_:as:while:)`): read elsewhere, or gone
+from your work, nothing goes, and the line says it isn't where it was (`.notListed`); where it goes already, as when you
+confirmed it in another window too, nothing goes again. Where it is isn't always known, as for one read without its
+iteration: Azure DevOps' test then tells. It goes only for the team, and the sprint going on, it was chosen for
+(`SprintMoves.Context`): once that sprint ended, or another team shows, as you confirm it, try it again, or as it goes,
+nothing goes, and the line says the sprint isn't your team's current, or next, anymore (`.outdated`); a next sprint
+found once either changed asks nothing. Undo moves it back whatever goes on. BriefBar changes only the iteration, never
+the area: a work item under another team's area moved into the sprint's iteration stays off that sprint's board. The
+demo moves only its made-up work, to Sprint 43 for the next (`DemoData.nextSprint`), and sends nothing.
 
 ### A pull request's details
 
@@ -2214,7 +2290,8 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
 only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
-([below](#editing-and-deleting-your-comments)), and a pull request's tags ([below](#a-pull-requests-tags)).
+([below](#editing-and-deleting-your-comments)), a pull request's tags ([below](#a-pull-requests-tags)), and, on My
+Work, the sprint a task or bug of yours is in ([Moving a task to a sprint](#moving-a-task-to-a-sprint)).
 `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
 once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
 otherwise, or times out, isn't made twice. Once it
@@ -2911,6 +2988,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/work/predefinedqueries/AssignedToMe?includeCompleted=false&$top=500` | every refresh, only while My Work shows + Sprint Tasks or + All My Tasks | the work items assigned to you in the team's project, by ID, in any sprint or none, done ones left out |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, 200 work items a request, for those the sprint's board doesn't have | the same, with the iteration each is in |
+| `{project}/{team}/_apis/work/teamsettings/iterations` | only with Make Changes in Azure DevOps on, as you move a task or bug of yours to the team's next sprint on My Work, unless it found that sprint within the hour | the team's sprints, past, current and future, with their dates, kept in memory only, for the one after the current one ([Moving a task to a sprint](#moving-a-task-to-a-sprint)) |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint, or for one outside it My Work's read of your work there, shows it changed, or no longer has it, while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
 | `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |
