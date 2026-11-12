@@ -1703,17 +1703,18 @@ it: the reviewers and their votes come with the lists, and the time with the det
 DevOps or another pull request has none: the Board's columns keep it, and completing a pull request is a click in Azure
 DevOps. Each column's first card, across the lanes, wears **Next** on the Board where its order says what's next
 (`PullRequestBoard.nextInColumn`, `PullRequestStage.firstWearsNext`): in Your review, Up Next's; in Teammate's review,
-Follow up next's, the first card it has, after any that need a reviewer, which are Fix next's, and none while it has
-none; in Approved, Can merge and Waits, BriefBar's order's alone; not in In progress, whose next is Fix next's, nor in
-Merged. Fix next has what needs you from every column (`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you
-focus on first, then a session that asks you, then a build or check that failed, conflicts or a merge Azure DevOps
-couldn't make, then changes someone wants, then one of yours that needs a reviewer, as nobody's asked to review it yet,
-**Find a reviewer · in Teammate's review**, after them as nothing's broken, the oldest first; but none while a session
-writes it, which may be fixing just that. Its pull request wears **Fix next** wherever it is; one in Your review is
-still your next review too, whatever its build. A mission's next step is what a session asks you first, then its
-column's own, as a review, then what to fix (`MissionNextStep.of`); what asks you and what to fix come as Fix next has
-them, whatever their columns (`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column
-(below); then the mission you focus on comes first in each stage, but in In progress, what needs you comes before it:
+Follow up next's, the first card in its order that the slot has, even below others, such as those Fix next has or a
+session writes, and none while it has none; in Approved, Can merge and Waits, BriefBar's order's alone; not in In
+progress, whose next is Fix next's, nor in Merged. Fix next has what needs you from every column
+(`StageReading.fixRank`, `BoardOrder.fixOrder`): the mission you focus on first, then a session that asks you, then a
+build or check that failed, conflicts or a merge Azure DevOps couldn't make, then changes someone wants, then one of
+yours that needs a reviewer, as nobody's asked to review it yet, **Find a reviewer · in Teammate's review**, after them
+as nothing's broken, the oldest first; but none while a session writes it, which may be fixing just that. Its pull
+request wears **Fix next** wherever it is; one in Your review is still your next review too, whatever its build. A
+mission's next step is what a session asks you first, then its column's own, as a review, then what to fix
+(`MissionNextStep.of`); what asks you and what to fix come as Fix next has them, whatever their columns
+(`BoardLane.nextSteps`). The pull request you chose for a slot comes first in its column (below); then the mission you
+focus on comes first in each stage, but in In progress, what needs you comes before it:
 
 | Stage | Which comes first |
 |---|---|

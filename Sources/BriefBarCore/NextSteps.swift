@@ -930,8 +930,8 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var picked: [UpNextSlot: ItemRef]
     /// The card that wears Next in each column, across the lanes, where its order says what's next
     /// (`PullRequestStage.firstWearsNext`): in a column with an Up Next slot, the slot's, Your next review's or Follow up
-    /// next's, the first of the column's cards it has, none while it has none, as when all of Teammate's review's need a
-    /// reviewer, which are Fix next's; in each column Up Next has no slot for, as it waits on others, its first card:
+    /// next's, the first of the column's cards it has, none while it has none, as when none of Teammate's review's waits on
+    /// teammates alone; in each column Up Next has no slot for, as it waits on others, its first card:
     /// Approved's, Can merge's and Waits'.
     public var nextInColumn: [PullRequestStage: ItemRef]
     public var upNext: UpNext

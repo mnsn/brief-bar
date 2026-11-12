@@ -87,7 +87,7 @@ stage to change it, or **Finished My Review** to pass a pull request on to your 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-pull-requests-board-window-dark.jpg">
-    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review and the next to follow up on, then the Board, with a column for each stage, its first card marked Next, and a lane for each mission, naming your next steps in it">
+    <img src="docs/images/azureDevOps-pull-requests-board-window-light.jpg" width="900" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review and the next to follow up on, then the Board, with a column for each stage, what's next in it marked Next, and a lane for each mission, naming your next steps in it">
   </picture>
 </p>
 
