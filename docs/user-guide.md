@@ -511,8 +511,9 @@ once, and BriefBar reads the sprint and your work outside it again. A line under
 **Undo**, which moves it back without asking, until you dismiss it, move another, the work item moves some other way,
 you quit, or turn the setting off; meanwhile Undo heads its card's menu too. A move goes only as whom BriefBar read the
 work item as, and only while BriefBar still reads it where it was when you chose to move it; it sends where it was with
-where it goes, so if someone moved it meanwhile, Azure DevOps refuses it. The line says why one didn't happen, with
-**Try Again** where trying again may help, and BriefBar reads your work again to show where it is. A work item in an area your team doesn't own stays off its sprint's
+where it goes, so if someone moved it meanwhile, Azure DevOps refuses it. If the sprint ends, or you choose another team,
+before you confirm, it doesn't move. The line says why one didn't happen, with **Try Again** where trying again may help,
+and BriefBar reads your work again to show where it is. A work item in an area your team doesn't own stays off its sprint's
 board even there, as BriefBar changes only its iteration. With the setting off, where a card says it is tells how to
 turn it on; with no sprint going on, nothing moves.
 

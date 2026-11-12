@@ -122,7 +122,7 @@ public actor SprintEngine {
     private var outsideTeam: String?
     /// Your work items BriefBar moved to another sprint, as Azure DevOps answered, with when it did (`moved`): a read that
     /// started before then may have them where they were, so they're put where they went again after it, until a refresh
-    /// that started after then has read them.
+    /// that started after then has read them, on the sprint's board and, while My Work wants it, among your work outside it.
     private var moves: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
 
     public init(
@@ -369,8 +369,10 @@ public actor SprintEngine {
             if outsideTeam != team.id { outside = nil }
             do {
                 try await readBoard(of: team, at: date)
-                if readsOutside { try await readOutside(of: team, at: date) }
-                settleMoves(readAt: date)
+                // Your work outside the sprint that couldn't be read again, or no longer is, may still have what BriefBar moved
+                // where it was: it stays where it went until a refresh reads both.
+                let readAll = readsOutside ? try await readOutside(of: team, at: date) : true
+                if readAll { settleMoves(readAt: date) } else { applyMoves() }
                 return teamsProblem
             } catch let error as ADOError where configuration.team == nil && PulseProblem.isOtherDirectory(error) {
                 // The team found for you is in a directory to sign in to now: its organization waits on that sign-in, and
@@ -426,10 +428,11 @@ public actor SprintEngine {
     /// is in. A read that fails keeps what was read before, saying why; but Azure DevOps asking to slow down, or the read
     /// stopping, ends the refresh, as for the sprint. Once My Work no longer wants them, as when it goes while the Sprint
     /// page still shows, the rest isn't read, and what was read before stays.
-    private func readOutside(of team: TeamRef, at date: Date) async throws {
+    /// - Returns: whether it read them, in place of what was read before.
+    private func readOutside(of team: TeamRef, at date: Date) async throws -> Bool {
         do {
             let setup = try await boardSetup(of: team)
-            guard readsOutside else { return }
+            guard readsOutside else { return false }
             let query = try await get(
                 ADOEndpoint.assignedToMe(organization: team.organization, project: team.projectId), as: ADOPredefinedQuery.self
             )
@@ -438,7 +441,7 @@ public actor SprintEngine {
             let ids = query.ids.filter { !onBoard.contains($0) && seen.insert($0).inserted }
             var found: [WorkItem] = []
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
-                guard readsOutside else { return }
+                guard readsOutside else { return false }
                 let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
                 let list = try await get(
                     ADOEndpoint.workItems(organization: team.organization, ids: batch, fields: ADOWorkItem.fieldNamesWithIteration),
@@ -447,19 +450,22 @@ public actor SprintEngine {
                 found += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
             }
             // The team may have changed while this loaded.
-            guard configuration.team == nil || configuration.team?.id == team.id else { return }
+            guard configuration.team == nil || configuration.team?.id == team.id else { return false }
             outside = OutsideWork(
                 items: OutsideWork.yours(found, board: board, taskTypes: setup.taskTypes), sprintPath: board?.sprint.path,
                 isPartial: query.hasMore, readAt: date, taskTypes: setup.taskTypes
             )
             outsideTeam = team.id
+            return true
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as ADOError {
             if case .throttled = error { throw error }
             outsideFailed(error.description, team: team)
+            return false
         } catch {
             outsideFailed(error.localizedDescription, team: team)
+            return false
         }
     }
 
@@ -654,8 +660,9 @@ public actor SprintEngine {
         moves = [:]
     }
 
-    /// A refresh that started at `date` read the sprint, and your work outside it while My Work wants it: what BriefBar moved
-    /// before then is where it went in what it read, and what it moved since is put there again, over what it read.
+    /// A refresh that started at `date` read the sprint, and your work outside it while My Work wants it, both in full: what
+    /// BriefBar moved before then is where it went in what it read, and what it moved since is put there again, over what it
+    /// read.
     private func settleMoves(readAt date: Date) {
         guard !moves.isEmpty else { return }
         moves = moves.filter { $0.value.at > date }

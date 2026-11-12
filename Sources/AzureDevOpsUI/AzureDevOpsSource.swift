@@ -1219,7 +1219,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             let move = proposal.move
             let states: [(SprintMoves.State?, SprintMoves.Finding?)] = [
                 (.sending(move), nil), (.moved(move.back), nil),
-                (.failed(move, .refused("Its iteration path changed meanwhile.")), nil),
+                (.failed(move, .refused("Its iteration path changed meanwhile.")), nil), (.outdated(move), nil),
                 (nil, .reading(name: move.name)), (nil, .failed(name: move.name, key: key, problem: "You're offline.")),
                 (nil, .none(after: "Sprint 42")), (nil, .already(name: move.name, sprint: "Sprint 43")),
             ]

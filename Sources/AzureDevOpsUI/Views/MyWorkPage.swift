@@ -947,6 +947,10 @@ private struct SprintMoveLine: View {
                             .buttonStyle(.borderless)
                     }
                     dismiss
+                case .outdated(let move):
+                    symbol("exclamationmark.triangle")
+                    words(SprintMoveText.outdated(move))
+                    dismiss
                 }
             }
         }

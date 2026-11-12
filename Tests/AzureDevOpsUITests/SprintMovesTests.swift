@@ -275,6 +275,61 @@ import Testing
         #expect(moves.state == .failed(other.move, .otherAccount))
     }
 
+    /// A move goes only for the team, and the sprint going on, it was chosen for: not once that sprint ended, or another team
+    /// shows, before you confirm it or try it again; and a next sprint found for what BriefBar no longer shows asks nothing.
+    /// Undo moves it back whatever goes on.
+    @Test func aMoveGoesOnlyForTheSprintItWasChosenFor() async throws {
+        let (sprint, moves, azure) = live()
+        let board = try #require(sprint.board), outside = try #require(sprint.outside)
+        let proposal = try #require(moves.propose(try item(sprint)))
+        #expect(proposal.move.context == SprintMoves.Context(board, .current))
+
+        // Sprint 42 ended while you confirmed it: Sprint 43 is going on.
+        var later = board
+        later.sprint = DemoData.nextSprint(now: Self.referenceNow)
+        sprint.receive(SprintSnapshot(board: later, hasLoaded: true, outside: outside))
+        await moves.move(proposal)
+        #expect(azure.sent.isEmpty)
+        #expect(moves.state == .outdated(proposal.move))
+        #expect(SprintMoveText.outdated(proposal.move) == "Didn't move Task 5052: Sprint 42 isn't your team's current sprint anymore.")
+        moves.dismiss()
+        #expect(moves.state == nil)
+
+        // It failed, then another team shows by the time you try it again.
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true, outside: outside))
+        azure.fails = .offline
+        let again = try #require(moves.propose(try item(sprint)))
+        await moves.move(again)
+        #expect(moves.state == .failed(again.move, .offline))
+        azure.fails = nil
+        var other = board
+        other.team = DemoData.otherTeam
+        sprint.receive(SprintSnapshot(board: other, hasLoaded: true, outside: outside))
+        await moves.retry()
+        #expect(azure.sent.count == 1)
+        #expect(moves.state == .outdated(again.move))
+
+        // Another team shows by the time the next sprint is found.
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true, outside: outside))
+        moves.readNextSprint = { [weak sprint] in
+            sprint?.receive(SprintSnapshot(board: other, hasLoaded: true, outside: outside))
+            return DemoData.nextSprint(now: Self.referenceNow)
+        }
+        #expect(await moves.proposeNext(try item(sprint)) == nil)
+        #expect(moves.finding == nil)
+
+        // Moved, then Sprint 42 ends: Undo still moves it back.
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true, outside: outside))
+        let moving = try #require(moves.propose(try item(sprint)))
+        await moves.move(moving)
+        #expect(moves.state == .moved(moving.move))
+        sprint.receive(SprintSnapshot(board: later, hasLoaded: true, outside: sprint.outside))
+        #expect(moves.undoable == moving.move)
+        await moves.undo()
+        #expect(azure.sent.last == .setIteration(key, from: "Storefront\\Sprint 42", to: "Storefront\\Sprint 41"))
+        #expect(moves.state == .moved(moving.move.back))
+    }
+
     /// A move called off before it went, as the setting goes off while it waits for a token, sends nothing and leaves nothing
     /// on its way; with the setting back on, a move goes again.
     @Test func aMoveCalledOffBeforeItWentLeavesNothingOnItsWay() async throws {

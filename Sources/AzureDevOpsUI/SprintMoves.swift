@@ -20,6 +20,20 @@ final class SprintMoves: ObservableObject {
         case next
     }
 
+    /// What a move was chosen in: your team and its sprint going on then, by their IDs, and where it goes, that sprint or the
+    /// next. Once either changed, as when the sprint ended, it doesn't go: where it goes isn't what you chose anymore.
+    struct Context: Equatable {
+        var team: String
+        var sprint: String
+        var target: Target
+
+        init(_ board: SprintBoard, _ target: Target) {
+            team = board.team.id
+            sprint = board.sprint.id
+            self.target = target
+        }
+    }
+
     /// A move of one of your work items from one iteration to another.
     struct Move: Equatable {
         var key: WorkItemKey
@@ -34,6 +48,8 @@ final class SprintMoves: ObservableObject {
         /// Whose sign-in it goes as: whom BriefBar read the work item as when you chose to move it; nil while that's not
         /// known, as in the demo. Signed in as someone else since, nothing goes as them (`ADOClient.send(_:as:)`).
         var account: String?
+        /// What it was chosen in, which it goes only in; nil for Undo's, which moves it back where it was, whatever goes on.
+        var context: Context?
 
         /// Where it goes from, as its card says: "Sprint 41", "No sprint".
         var fromName: String { OutsideWork.place(from) }
@@ -62,6 +78,8 @@ final class SprintMoves: ObservableObject {
         case moved(Move)
         /// It didn't move, or may not have: why. Try Again sends it again.
         case failed(Move, ADOWriteProblem)
+        /// It didn't go: your team, or its sprint going on, changed since you chose it.
+        case outdated(Move)
     }
 
     /// Looking for your team's next sprint, to move a work item there, or why it couldn't be found.
@@ -154,7 +172,9 @@ final class SprintMoves: ObservableObject {
 
     /// A work item's move to the sprint going on, to confirm.
     func propose(_ item: WorkItem) -> Proposal? {
-        guard canMove(item), !isBusy, let board = sprint?.board, let move = move(of: item, to: board.sprint.path) else { return nil }
+        guard canMove(item), !isBusy, let board = sprint?.board,
+              let move = move(of: item, to: board.sprint.path, in: Context(board, .current))
+        else { return nil }
         return Proposal(move: move, target: .current, sprint: board.sprint)
     }
 
@@ -179,6 +199,11 @@ final class SprintMoves: ObservableObject {
             return nil
         }
         guard generation == self.generation else { return nil }
+        // Your team, or its sprint going on, changed while its sprints were read: what was found is for what went before.
+        guard let shown = sprint?.board, Context(shown, .next) == Context(board, .next) else {
+            finding = nil
+            return nil
+        }
         guard let next else {
             finding = .none(after: board.sprint.name)
             SpokenText.announce(SprintMoveText.noNextSprint(after: board.sprint.name))
@@ -189,7 +214,7 @@ final class SprintMoves: ObservableObject {
             finding = nil
             return nil
         }
-        guard let move = move(of: current, to: next.path) else {
+        guard let move = move(of: current, to: next.path, in: Context(board, .next)) else {
             finding = .already(name: name, sprint: next.name)
             SpokenText.announce(SprintMoveText.already(name, in: next.name))
             return nil
@@ -215,10 +240,13 @@ final class SprintMoves: ObservableObject {
         return await proposeNext(item)
     }
 
-    /// A work item's move from where it is to another iteration; nil where it is already.
-    private func move(of item: WorkItem, to path: String) -> Move? {
+    /// A work item's move from where it is to another iteration, chosen in `context`; nil where it is already.
+    private func move(of item: WorkItem, to path: String, in context: Context) -> Move? {
         guard let from = item.iteration, !OutsideWork.isSamePath(from, path) else { return nil }
-        return Move(key: item.key, name: Self.name(of: item), title: item.title, from: from, to: path, account: sprint?.account)
+        return Move(
+            key: item.key, name: Self.name(of: item), title: item.title, from: from, to: path, account: sprint?.account,
+            context: context
+        )
     }
 
     /// Where a work item of yours is, as BriefBar last read it: in the sprint's iteration, for one on its board, which reads
@@ -286,6 +314,13 @@ final class SprintMoves: ObservableObject {
     /// again. One that didn't happen, or may not have, says why, and your work is read again to show where it is.
     private func send(_ move: Move) async {
         guard !isStopped, !isBusy, settings.makesChanges, let sprint else { return }
+        // Chosen for a team or a sprint going on that isn't the one BriefBar shows now, as when the sprint ended while you
+        // confirmed it: it would go elsewhere than you chose.
+        if let context = move.context, sprint.board.map({ Context($0, context.target) }) != context {
+            state = .outdated(move)
+            SpokenText.announce(SprintMoveText.outdated(move))
+            return
+        }
         // As BriefBar reads it now, which a read or another window may have moved since: it goes only from where it was then.
         // Where it is isn't always known, as for one read without its iteration: Azure DevOps then tests it (`ADOWrite`).
         guard let item = sprint.item(move.key) else {
@@ -453,6 +488,12 @@ enum SprintMoveText {
     static func moved(_ move: SprintMoves.Move) -> String {
         move.isUndo ? "Moved \(move.name) back to \(place(move.toName))."
             : "Moved \(move.name) from \(place(move.fromName)) to \(place(move.toName))."
+    }
+
+    /// "Didn't move Task 5052: Sprint 42 isn't your team's current sprint anymore."
+    static func outdated(_ move: SprintMoves.Move) -> String {
+        "Didn't move \(move.name): \(place(move.toName)) isn't your team's \(move.context?.target == .next ? "next" : "current") "
+            + "sprint anymore."
     }
 
     /// "Couldn't move Task 5052 to Sprint 42.", "Couldn't move Task 5052 back to Sprint 41."

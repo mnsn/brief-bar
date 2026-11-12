@@ -2023,9 +2023,10 @@ once, with when it changed, so that its details follow (`WorkItem.moved(to:answe
 sprint's board when it left the sprint (`SprintBoard.moving`), a story's tasks left without one, and among your work
 outside the sprint in its new iteration, in order (`OutsideWork.placing`); one moved into the sprint's own iteration
 stays there, with no place to say, until the sprint's board, read again, has it. The engine keeps it there over any read
-that started before the move, which may have read it where it was, until a refresh that started after it has read it
-(`SprintEngine.moved`, `settleMoves`), and over one that failed partway, as when Azure DevOps asked BriefBar to slow down
-after the board was read; and it refreshes at once. The line under the header says "Moved Task 5052 from
+that started before the move, which may have read it where it was, until a refresh that started after it has read the
+sprint's board and, while My Work wants it, your work outside the sprint, in full (`SprintEngine.moved`, `settleMoves`):
+one that failed partway, as when Azure DevOps asked BriefBar to slow down, or that couldn't read your work outside the
+sprint, or stopped reading it, leaves it where it went; and it refreshes at once. The line under the header says "Moved Task 5052 from
 Sprint 41 to Sprint 42." with **Undo**, which sends the same change back, testing the path it went to, without asking
 (`SprintMoves.undo`), while the setting's on and the work item is where it went, as BriefBar last read it: one on the
 sprint's board is in its iteration, though the board reads none (`SprintMoves.undoable`); Undo heads its menus
@@ -2039,7 +2040,10 @@ it, but nothing more happens, and Undo goes. It goes only as whom the sprint was
 only while BriefBar reads the work item where it was then, as you confirm (`SprintMoves.send`): read elsewhere, or gone
 from your work, nothing goes, and the line says it isn't where it was (`.notListed`); where it goes already, as when you
 confirmed it in another window too, nothing goes again. Where it is isn't always known, as for one read without its
-iteration: Azure DevOps' test then tells. BriefBar changes only the iteration, never the area: a work item under another team's area
+iteration: Azure DevOps' test then tells. It goes only for the team, and the sprint going on, it was chosen for
+(`SprintMoves.Context`): once that sprint ended, or another team shows, as you confirm it or try it again, nothing goes,
+and the line says the sprint isn't your team's current, or next, anymore (`.outdated`); a next sprint found once either
+changed asks nothing. Undo moves it back whatever goes on. BriefBar changes only the iteration, never the area: a work item under another team's area
 moved into the sprint's iteration stays off that sprint's board. The demo moves only its made-up work, to Sprint 43 for
 the next (`DemoData.nextSprint`), and sends nothing.
 

@@ -235,6 +235,67 @@ import Testing
         #expect(outside.items.first { $0.id == 3 }.flatMap(outside.place(of:)) == "Sprint 8")
     }
 
+    /// A refresh that read the board again, but not your work outside the sprint, as that read failed or stopped as My Work
+    /// stopped wanting it, keeps what BriefBar moved where it went; one that reads all that's wanted then settles it.
+    @Test func aMoveStaysUntilARefreshReadsAllThatsWanted() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1], children: [(1, 2), (1, 3)])], items: [
+            WorkFixture.workItem(1, "User Story", "Story", state: "Active"),
+            WorkFixture.workItem(2, state: "Active", assignee: People.me, parent: 1),
+            WorkFixture.workItem(3, assignee: People.me, parent: 1),
+            WorkFixture.workItem(10, assignee: People.me, parent: 1, iteration: "Shop\\Sprint 5"),
+        ])
+        let assigned = "/_apis/work/predefinedqueries/AssignedToMe"
+        server.on(assigned, json: ["results": [["id": 2], ["id": 3], ["id": 10]]])
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let task = try #require(await engine.currentSnapshot().board?.item(WorkItemKey(Fixture.org, 3)))
+        await engine.moved(task.moved(to: "Shop\\Sprint 8", answer: nil, at: clock.value))
+        func placed() async -> (onBoard: Bool, place: String?) {
+            let snapshot = await engine.currentSnapshot()
+            let outside = snapshot.outside
+            return (snapshot.board?.item(task.key) != nil, outside?.items.first { $0.id == 3 }.flatMap { outside?.place(of: $0) })
+        }
+
+        // Your work outside the sprint couldn't be read.
+        server.on(assigned) { _ in .status(500) }
+        clock.set(t(5 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.problem != nil)
+        var now = await placed()
+        #expect(!now.onBoard && now.place == "Sprint 8")
+
+        // My Work stopped wanting it while it was read.
+        let gate = DispatchSemaphore(value: 0)
+        server.on(assigned) { _ in
+            _ = gate.wait(timeout: .now() + 240)
+            return .json(["results": [["id": 2], ["id": 3], ["id": 10]]])
+        }
+        let asked = server.requests.filter { $0.url?.path.contains(assigned) == true }.count
+        clock.set(t(10 * minute))
+        let refreshing = Task { await engine.refreshNow() }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while server.requests.filter({ $0.url?.path.contains(assigned) == true }).count == asked, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await engine.setReadsOutside(false)
+        gate.signal()
+        await refreshing.value
+        now = await placed()
+        #expect(!now.onBoard && now.place == "Sprint 8")
+
+        // Not wanted, it isn't waited for: the board, read after the move, is as Azure DevOps has it.
+        clock.set(t(15 * minute))
+        await engine.refreshNow()
+        now = await placed()
+        #expect(now.onBoard)
+    }
+
     /// Moved out of the sprint, it leaves the board at once, and joins your work outside it.
     @Test func aMoveOutOfTheSprintLeavesTheBoardAtOnce() async throws {
         let server = StubServer()
