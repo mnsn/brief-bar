@@ -22,6 +22,9 @@ final class SprintStore: ObservableObject {
     @Published private(set) var outside: OutsideWork?
     /// My Work shows their cards, with + All My Tasks: Show Links reads their pull requests, as it does the sprint's.
     @Published private(set) var showsOutside = false
+    /// Whose sign-in the sprint and your work outside it were read as, once it's known: a move of one goes only as them
+    /// (`SprintMoves`).
+    @Published private(set) var account: String?
 
     let settings: AppSettings
     let mode: PRStore.Mode
@@ -100,6 +103,8 @@ final class SprintStore: ObservableObject {
 
     /// What the engine read, as it published it; a test's made-up sprint.
     func receive(_ snapshot: SprintSnapshot) {
+        // First, so that what was the last one's goes before what was read as someone else shows.
+        if account != snapshot.account { account = snapshot.account }
         if board != snapshot.board { board = snapshot.board }
         if outside != snapshot.outside {
             if let problem = snapshot.outside?.problem, problem != outside?.problem {
@@ -190,8 +195,9 @@ final class SprintStore: ObservableObject {
     /// How long the team's next sprint, once read, stays known.
     static let nextSprintLifetime: TimeInterval = 3_600
 
-    /// The team's next sprint, as last read, by team: after which sprint, and when (`nextSprint`). In memory only.
-    private var nextSprints: [String: (sprint: Sprint?, after: String, readAt: Date)] = [:]
+    /// The team's next sprint, as last read, by team: after which sprint, and when (`nextSprint`). In memory only; not when
+    /// there was none, as one may be added any time.
+    private var nextSprints: [String: (sprint: Sprint, after: String, readAt: Date)] = [:]
     /// Reads a team's sprint after the one going on, with one request (`TeamSprints.next`); a test's stand-in.
     var readNextSprint: @MainActor (TeamRef, Sprint) async throws -> Sprint?
 
@@ -201,7 +207,8 @@ final class SprintStore: ObservableObject {
     }
 
     /// Your team's sprint after the one going on (`TeamSprints.next`), for Move to Next Sprint: read with one request, only
-    /// as you ask for it, and known for an hour, in memory only; nil when Azure DevOps has none. The demo's is made up.
+    /// as you ask for it, and known for an hour, in memory only, unless a move there fails; nil when Azure DevOps has none,
+    /// which isn't kept. The demo's is made up.
     func nextSprint(now: Date = Date()) async throws -> Sprint? {
         guard let board else { return nil }
         if mode == .demo { return DemoData.nextSprint(now: now) }
@@ -211,8 +218,14 @@ final class SprintStore: ObservableObject {
             return known.sprint
         }
         let next = try await readNextSprint(team, current)
-        nextSprints[team.id] = (next, current.id, now)
+        nextSprints[team.id] = next.map { ($0, current.id, now) }
         return next
+    }
+
+    /// Forgets your team's next sprint, as read, when it's this one: a move there failed, as when it was deleted or renamed
+    /// since, so it's read again as you move one there.
+    func forgetNextSprint(at path: String) {
+        nextSprints = nextSprints.filter { !OutsideWork.isSamePath($0.value.sprint.path, path) }
     }
 
     /// A work item of yours BriefBar moved to another sprint, as Azure DevOps answered (`SprintMoves`): it shows where it went

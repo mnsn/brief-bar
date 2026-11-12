@@ -9,8 +9,9 @@ import Foundation
 /// and confirm, one at a time. The team's sprints are read, with one request, only as you move one to its next sprint, and
 /// known for an hour (`SprintStore.nextSprint`). Where Azure DevOps put it shows at once, and the sprint and your work outside
 /// it are read again (`SprintStore.moved`); Undo moves it back, while the line under My Work's header says it moved. A move
-/// that didn't happen says why there, and your work is read again, to show where it is. The demo moves only its made-up work,
-/// and reads nothing.
+/// goes as whom BriefBar read the work item as, and only while it's where it was when you chose to move it, as BriefBar reads
+/// it as you confirm. A move that didn't happen says why there, and your work is read again, to show where it is. The demo
+/// moves only its made-up work, and reads nothing.
 @MainActor
 final class SprintMoves: ObservableObject {
     /// Where a move takes a work item: your team's current sprint, or its next.
@@ -30,6 +31,9 @@ final class SprintMoves: ObservableObject {
         var to: String
         /// Undo's, which moves it back where it was.
         var isUndo = false
+        /// Whose sign-in it goes as: whom BriefBar read the work item as when you chose to move it; nil while that's not
+        /// known, as in the demo. Signed in as someone else since, nothing goes as them (`ADOClient.send(_:as:)`).
+        var account: String?
 
         /// Where it goes from, as its card says: "Sprint 41", "No sprint".
         var fromName: String { OutsideWork.place(from) }
@@ -38,7 +42,7 @@ final class SprintMoves: ObservableObject {
 
         /// The same move, back where it was: Undo's.
         var back: Move {
-            Move(key: key, name: name, title: title, from: to, to: from, isUndo: !isUndo)
+            Move(key: key, name: name, title: title, from: to, to: from, isUndo: !isUndo, account: account)
         }
     }
 
@@ -93,7 +97,7 @@ final class SprintMoves: ObservableObject {
     private var lifetime = 0
     /// Azure DevOps stopped: nothing more is moved.
     private var isStopped = false
-    /// Who's signed in to the Azure CLI, as the list last told.
+    /// Whom the sprint was last read as (`SprintStore.account`).
     private var account: String?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -102,6 +106,12 @@ final class SprintMoves: ObservableObject {
         self.settings = settings
         send = { try await client.send($0, as: $1) }
         readNextSprint = { [weak sprint] in try await sprint?.nextSprint() }
+        // Someone else signed in, as the sprint tells once it's read as them: what was going on was the last one's.
+        sprint.$account.removeDuplicates()
+            .sink { [weak self] account in
+                MainActor.assumeIsolated { self?.accountChanged(account) }
+            }
+            .store(in: &cancellables)
         // Turned off, cards offer no move, and what a move did goes, Undo with it; one on its way that hasn't gone yet is
         // called off. One that has gone goes on, since Azure DevOps may make it all the same: the line says so until it
         // settles, and then the card shows where Azure DevOps put it.
@@ -191,7 +201,14 @@ final class SprintMoves: ObservableObject {
     /// A work item's move from where it is to another iteration; nil where it is already.
     private func move(of item: WorkItem, to path: String) -> Move? {
         guard let from = item.iteration, !OutsideWork.isSamePath(from, path) else { return nil }
-        return Move(key: item.key, name: Self.name(of: item), title: item.title, from: from, to: path)
+        return Move(key: item.key, name: Self.name(of: item), title: item.title, from: from, to: path, account: sprint?.account)
+    }
+
+    /// Where a work item of yours is, as BriefBar last read it: in the sprint's iteration, for one on its board, which reads
+    /// none; in its own, for one outside it; nil when that's not known.
+    private func path(of item: WorkItem) -> String? {
+        if let board = sprint?.board, board.item(item.key) != nil { return board.sprint.path }
+        return item.iteration
     }
 
     /// "Task 5052".
@@ -202,15 +219,20 @@ final class SprintMoves: ObservableObject {
     /// The move Undo takes back: the last one, once Azure DevOps made it, while Make Changes in Azure DevOps is on and the
     /// work item is still where it went, as BriefBar last read it; not once you dismissed it, moved another, or quit.
     var undoable: Move? {
-        guard case .moved(let move)? = state, !move.isUndo, settings.makesChanges, !isStopped, let sprint,
-              let item = sprint.item(move.key)
+        guard case .moved(let move)? = state, !move.isUndo, settings.makesChanges, !isStopped,
+              let item = sprint?.item(move.key)
         else { return nil }
-        // One on the sprint's board is in its iteration, though the board reads no iteration.
-        if let board = sprint.board, board.item(move.key) != nil {
-            return OutsideWork.isSamePath(move.to, board.sprint.path) ? move : nil
+        guard let path = path(of: item) else { return move }
+        return OutsideWork.isSamePath(path, move.to) ? move : nil
+    }
+
+    /// Whether Try Again may help a move that didn't happen: not when Azure DevOps refused it, nor when the work item isn't
+    /// there, or isn't where it was.
+    static func retries(_ problem: ADOWriteProblem) -> Bool {
+        switch problem {
+        case .notAllowed, .closed, .gone, .refused, .notListed: false
+        default: true
         }
-        guard item.iteration != nil else { return move }
-        return OutsideWork.isSamePath(item.iteration, move.to) ? move : nil
     }
 
     /// Dismisses what the line under My Work's header says.
@@ -238,16 +260,33 @@ final class SprintMoves: ObservableObject {
 
     /// Sends a move that didn't happen again, as Try Again does.
     func retry() async {
-        guard case .failed(let move, _)? = state else { return }
+        guard case .failed(let move, let problem)? = state, Self.retries(problem) else { return }
         await send(move)
     }
 
-    /// Sends a move, while you can make changes, as whom it was asked for as: what Azure DevOps answers shows at once, and the
-    /// sprint and your work outside it are read again. One that didn't happen, or may not have, says why, and your work is
-    /// read again to show where it is.
+    /// Sends a move, while you can make changes, as whom BriefBar read the work item as when you chose to move it, and only
+    /// while it's where it was then: what Azure DevOps answers shows at once, and the sprint and your work outside it are read
+    /// again. One that didn't happen, or may not have, says why, and your work is read again to show where it is.
     private func send(_ move: Move) async {
         guard !isStopped, !isBusy, settings.makesChanges, let sprint else { return }
-        let generation = generation, lifetime = lifetime, account = account
+        // As BriefBar reads it now, which a read or another window may have moved since: it goes only from where it was then.
+        // Where it is isn't always known, as for one read without its iteration: Azure DevOps then tests it (`ADOWrite`).
+        guard let item = sprint.item(move.key) else {
+            didNotMove(move, .notListed)
+            return
+        }
+        if let path = path(of: item) {
+            // Where it goes already, as confirmed in another window too: there's nothing to send, nor to try again.
+            if OutsideWork.isSamePath(path, move.to) {
+                if case .failed(move, _)? = state { state = nil }
+                return
+            }
+            guard OutsideWork.isSamePath(path, move.from) else {
+                didNotMove(move, .notListed)
+                return
+            }
+        }
+        let generation = generation, lifetime = lifetime
         finding = nil
         state = .sending(move)
         let answer: ADOWorkItem?
@@ -257,12 +296,13 @@ final class SprintMoves: ObservableObject {
                 answer = nil
             case .live:
                 let write = ADOWrite.setIteration(move.key, from: move.from, to: move.to)
-                let result = try await dispatch(write, as: account, in: generation)
+                let result = try await dispatch(write, as: move.account, in: generation)
                 if case .workItem(let item) = result { answer = item } else { answer = nil }
             }
         } catch is CancellationError {
-            // Called off before it went, as the setting was turned off, or someone else signed in: nothing to say.
-            if generation == self.generation, lifetime == self.lifetime { state = nil }
+            // Called off before it went, as the setting was turned off while it waited for a token, or someone else signed
+            // in: nothing went, and the line says nothing.
+            if lifetime == self.lifetime, case .sending(move)? = state { state = nil }
             return
         } catch {
             // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
@@ -270,13 +310,14 @@ final class SprintMoves: ObservableObject {
             let problem = ADOWriteProblem(error, now: now())
             // Read again, to show where it is: Azure DevOps may have moved it, or someone else may have.
             sprint.refresh()
+            // The sprint it didn't go to may be gone or renamed: your team's next sprint is read again as you move one there.
+            sprint.forgetNextSprint(at: move.to)
             // Called off as it went, as the setting was turned off: the line says nothing more.
             guard generation == self.generation else {
                 if case .sending(move)? = state { state = nil }
                 return
             }
-            state = .failed(move, problem)
-            SpokenText.announce(SprintMoveText.failed(move) + " " + problem.sentence(.setIteration))
+            didNotMove(move, problem)
             return
         }
         guard lifetime == self.lifetime else { return }
@@ -292,6 +333,12 @@ final class SprintMoves: ObservableObject {
         }
         state = .moved(move)
         SpokenText.announce(SprintMoveText.moved(move) + (move.isUndo ? "" : " Undo moves it back."))
+    }
+
+    /// Says why a move didn't happen, or may not have, on the line under My Work's header, and to VoiceOver.
+    private func didNotMove(_ move: Move, _ problem: ADOWriteProblem) {
+        state = .failed(move, problem)
+        SpokenText.announce(SprintMoveText.failed(move) + " " + problem.sentence(.setIteration))
     }
 
     /// Sends a change, while you can make changes and nothing called it off since it was asked for (`generation`), as whom
@@ -336,8 +383,8 @@ final class SprintMoves: ObservableObject {
         forgetAll()
     }
 
-    /// Someone signed in to the Azure CLI, as the list tells: when it's someone else than before, what was going on was the
-    /// last one's, and goes.
+    /// Whom the sprint was read as, as it tells: when it's someone else than before, what was going on was the last one's,
+    /// and goes.
     func accountChanged(_ account: String?) {
         guard let account else { return }
         defer { self.account = account }

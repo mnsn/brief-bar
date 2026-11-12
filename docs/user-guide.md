@@ -473,7 +473,8 @@ the pull requests linked to them.
 **Start next**, with + Sprint Tasks or + All My Tasks, is Up Next's last slot on My Work, since starting comes after
 what needs you to finish: the work item in To start to start next. Your sprint's come first, in its backlog's order, as
 the Sprint page lists them; then, with + All My Tasks, once none of the sprint's is left to start, yours outside it, in
-the Board's order, each saying where it is, such as **New · Sprint 41**. It's marked with To start's dashed ring, in its
+the Board's order, each saying where it is, such as **New · Sprint 41**, but for those in a later sprint, as one you
+moved to the next, which come last, the nearest sprint's first. It's marked with To start's dashed ring, in its
 gray, and its work item wears **Next** on the Board. Click **Start next ⌄** to choose another, or right-click a card in
 To start and choose **Make Next**: it shows with ✎, first in its lane's To start too, until BriefBar quits, waiting while
 that work item isn't in To start, and **Let BriefBar Choose** gives the slot back to the backlog's order. Click the slot
@@ -486,12 +487,14 @@ or its next: click where its card says it is, such as **Sprint 41 ⌄**, or righ
 choose **Move to Sprint 42…** or **Move to Next Sprint…**. BriefBar asks first, saying where it is, where it goes, with
 the next sprint's dates, and that it changes its iteration in Azure DevOps, as you; it changes nothing else of it. For
 the next sprint, BriefBar reads your team's sprints, with one request, only as you choose it, and keeps them in memory
-for an hour; it says so when your team has none after the current one yet. The card goes where the work item went at
+for an hour, unless a move there fails; it says so when your team has none after the current one yet, and reads them
+again next time. The card goes where the work item went at
 once, and BriefBar reads the sprint and your work outside it again. A line under the header says what it did, with
 **Undo**, which moves it back without asking, until you dismiss it, move another, the work item moves some other way,
-you quit, or turn the setting off; meanwhile Undo heads its card's menu too. BriefBar sends where the work item was with
-where it goes, so if someone moved it meanwhile, Azure DevOps refuses it: the line says why, with **Try Again**, and
-BriefBar reads your work again to show where it is. A work item in an area your team doesn't own stays off its sprint's
+you quit, or turn the setting off; meanwhile Undo heads its card's menu too. A move goes only as whom BriefBar read the
+work item as, and only while BriefBar still reads it where it was when you chose to move it; it sends where it was with
+where it goes, so if someone moved it meanwhile, Azure DevOps refuses it. The line says why one didn't happen, with
+**Try Again** where trying again may help, and BriefBar reads your work again to show where it is. A work item in an area your team doesn't own stays off its sprint's
 board even there, as BriefBar changes only its iteration. With the setting off, where a card says it is tells how to
 turn it on; with no sprint going on, nothing moves.
 

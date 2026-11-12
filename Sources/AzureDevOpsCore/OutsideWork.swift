@@ -63,6 +63,14 @@ public struct OutsideWork: Sendable, Equatable {
         Self.isSamePath(item.iteration, sprintPath)
     }
 
+    /// Whether one of yours is in a sprint after the sprint's own, as their paths' names compare, as the Board orders them:
+    /// Sprint 43 after Sprint 42, as one you moved to the next sprint is. Start next offers it last. Never for one in no
+    /// sprint, or with no sprint going on.
+    public func isLater(_ item: WorkItem) -> Bool {
+        guard let sprintPath, let path = Self.sprintPath(of: item) else { return false }
+        return path.compare(sprintPath, options: [.numeric, .caseInsensitive]) == .orderedDescending
+    }
+
     /// Whether two iterations' paths are the same one's, as Azure DevOps compares them, ignoring letter case; never for an
     /// unknown one.
     public static func isSamePath(_ path: String?, _ other: String?) -> Bool {

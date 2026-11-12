@@ -593,7 +593,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
         case .otherAccount:
             "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
         case .notListed:
-            "It's no longer among the work of yours BriefBar reads, so it didn't move."
+            "As BriefBar reads your work now, it isn't where it was when you chose to move it, so it didn't move."
         case .failed(let why):
             "Couldn't move it: " + why
         }

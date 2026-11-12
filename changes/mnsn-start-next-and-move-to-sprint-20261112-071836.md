@@ -1,6 +1,7 @@
 - **Start next, on My Work.** With **+ Sprint Tasks** or **+ All My Tasks**, Up Next ends with **Start next**: the task
   in To start to start next, your sprint's first, in its backlog's order, then, with + All My Tasks, once none of the
-  sprint's is left, yours from older sprints or none, each saying where it is, such as **New · Sprint 41**. It's marked
+  sprint's is left, yours from older sprints or none, each saying where it is, such as **New · Sprint 41**, and last,
+  those in a later sprint, as one you moved to the next. It's marked
   with To start's dashed ring, and its task wears **Next** on the Board. Choose another with **Start next ⌄**, or
   **Make Next** on a card in To start: it's first in its lane too, until BriefBar quits. Click it for its details, or
   right-click it for its card's menu; **2 more ›** shows the next on the Board.

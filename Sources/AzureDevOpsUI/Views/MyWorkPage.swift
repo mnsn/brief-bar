@@ -74,13 +74,15 @@ enum MyWorkFacts {
     }
 
     /// Your open tasks and bugs outside the sprint (`OutsideWork`), in their order, as the sprint's: each with the story it's
-    /// for, its parent for a task and itself for a bug, how far along it is, the pull requests Show Links links it to, and
-    /// whether a task you sent to Copilot works on it.
+    /// for, its parent for a task and itself for a bug, how far along it is, the pull requests Show Links links it to,
+    /// whether a task you sent to Copilot works on it, and its sprint, when that's after the current one.
     static func work(
         outside: OutsideWork, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?, copilotWorks: (WorkItem) -> Bool
     ) -> [SprintWork] {
         outside.items.map { item in
-            work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+            var mine = work(item, story: outside.story(of: item), linked: linked, pullRequest: pullRequest, copilotWorks: copilotWorks)
+            mine.laterSprint = outside.isLater(item) ? item.iteration : nil
+            return mine
         }
     }
 
@@ -883,8 +885,8 @@ private struct OutsideSprintLine: View {
 }
 
 /// What became of moving a work item of yours to another sprint, or of looking for your team's next sprint for it, under My
-/// Work's header: while it's on its way; once it moved, with Undo, while it's where it went; why it didn't, with Try Again;
-/// each with ✕, but while it's on its way.
+/// Work's header: while it's on its way; once it moved, with Undo, while it's where it went; why it didn't, with Try Again
+/// where it may help; each with ✕, but while it's on its way.
 private struct SprintMoveLine: View {
     @ObservedObject var moves: SprintMoves
     /// Try Again, for your team's sprints that couldn't be read: they're read again, and the move asks you to confirm it.
@@ -927,8 +929,10 @@ private struct SprintMoveLine: View {
                 case .failed(let move, let problem):
                     symbol("exclamationmark.triangle")
                     words(SprintMoveText.failed(move) + " " + problem.sentence(.setIteration))
-                    Button("Try Again") { Task { await moves.retry() } }
-                        .buttonStyle(.borderless)
+                    if SprintMoves.retries(problem) {
+                        Button("Try Again") { Task { await moves.retry() } }
+                            .buttonStyle(.borderless)
+                    }
                     dismiss
                 }
             }

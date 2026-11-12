@@ -38,15 +38,20 @@ public struct SprintWork: Equatable, Sendable, Identifiable {
     public var pullRequests: [LinkedPullRequest]
     /// A task you sent to Copilot works on it now.
     public var copilotWorks: Bool
+    /// For one of yours outside the sprint in a sprint after it, as one you moved to the next: that sprint's iteration path.
+    /// Start next offers it after the rest, the nearest sprint's first. Nil for the rest.
+    public var laterSprint: String?
 
     public init(
-        ref: ItemRef, story: ItemRef? = nil, progress: Progress, pullRequests: [LinkedPullRequest] = [], copilotWorks: Bool = false
+        ref: ItemRef, story: ItemRef? = nil, progress: Progress, pullRequests: [LinkedPullRequest] = [], copilotWorks: Bool = false,
+        laterSprint: String? = nil
     ) {
         self.ref = ref
         self.story = story
         self.progress = progress
         self.pullRequests = pullRequests
         self.copilotWorks = copilotWorks
+        self.laterSprint = laterSprint
     }
 
     public var id: ItemRef { ref }
@@ -166,10 +171,18 @@ public struct StartNext: Equatable, Sendable {
     /// You chose its work item, rather than the backlog's order.
     public var isPicked: Bool
 
-    /// What To start has, in its order, with the one you chose first while it's there; nil when it has none.
+    /// What To start has, in its order, but for your work in a sprint after the current one, which goes last, the nearest
+    /// sprint's first; with the one you chose first while it's there. Nil when it has none.
     public init?(_ toStart: [BoardTask], pick: ItemRef?) {
-        let picked = pick.flatMap { pick in toStart.first { $0.ref == pick } }
-        let tasks = picked.map { picked in [picked] + toStart.filter { $0.ref != picked.ref } } ?? toStart
+        let later = toStart.enumerated().compactMap { index, task in task.work.laterSprint.map { (index, $0, task) } }
+            .sorted { lhs, rhs in
+                let order = lhs.1.compare(rhs.1, options: [.numeric, .caseInsensitive])
+                return order == .orderedSame ? lhs.0 < rhs.0 : order == .orderedAscending
+            }
+            .map(\.2)
+        let ordered = toStart.filter { $0.work.laterSprint == nil } + later
+        let picked = pick.flatMap { pick in ordered.first { $0.ref == pick } }
+        let tasks = picked.map { picked in [picked] + ordered.filter { $0.ref != picked.ref } } ?? ordered
         guard let first = tasks.first else { return nil }
         task = first
         self.tasks = tasks
@@ -188,7 +201,8 @@ public struct StartNext: Equatable, Sendable {
 
     /// What it shows, for its tooltip.
     public static let help =
-        "Your work that hasn't started: the sprint's, in its backlog's order; then, with + All My Tasks, yours outside it"
+        "Your work that hasn't started: the sprint's, in its backlog's order; then, with + All My Tasks, yours outside it, "
+            + "a later sprint's last"
 
     /// What its tooltip says of the work item you chose for it.
     public static let pickedHelp =

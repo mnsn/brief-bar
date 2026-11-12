@@ -1947,7 +1947,9 @@ BriefBar finds no team for you to read them in.
 requests' (`UpNextView`'s `startNext`), as starting comes after what needs you to finish: what's in To start, in the
 order `withWork` is given your work, the sprint's first, in `SprintBoard.myWork`'s backlog order, then, with + All My
 Tasks, yours outside it, in `OutsideWork.yours`' order, so that it offers your older work once none of the sprint's is
-left to start. It isn't an `UpNextSlot`: `UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To
+left to start; but yours in a sprint after the current one, by its name (`OutsideWork.isLater`,
+`SprintWork.laterSprint`), as one you moved to the next, goes last, the nearest sprint's first, by the number in its
+name, where that order would offer the latest first; the Board's lanes keep it. It isn't an `UpNextSlot`: `UpNextPicks`, `needs_me` and agents keep to pull requests. Its mark is To
 start's dashed ring, in To start's gray, which its shape tells from Waits next's dot; its lines are the work item's type,
 number and title, its card's why, with where it is for one outside the sprint, "New · Sprint 41", and its lane, as My
 Work words them (`StartNextContent`). Its ⌄, or Make Next on a card in To start, in its menu or VoiceOver's actions,
@@ -1978,8 +1980,9 @@ tooltip says how to turn it on. Each asks first, in a confirmation in the window
 with its dates, and that it changes its iteration in Azure DevOps, as you, which you can undo on My Work. The next sprint
 is the team's that starts first after the current one does (`Sprint.next`), of all its sprints, past, current and
 future, read with one GET as you choose it (`TeamSprints.next`, `ADOEndpoint.teamIterations`), and known for an hour,
-in memory only, for that team and current sprint (`SprintStore.nextSprint`); without dates, the first Azure DevOps calls
-future, as it lists them. While they're read, the line under the header says so; when they can't be, why, with Try
+in memory only, for that team and current sprint (`SprintStore.nextSprint`), but forgotten as a move there fails, as it
+may have been deleted or renamed (`SprintStore.forgetNextSprint`), and not kept when there's none, as one may be added
+any time; without dates, the first Azure DevOps calls future, as it lists them. While they're read, the line under the header says so; when they can't be, why, with Try
 Again; and when there's none, that the team has no sprint after the current one yet (`SprintMoves.Finding`).
 
 The move is a `PATCH` of the work item (`ADOWrite.setIteration`), a JSON Patch (`application/json-patch+json`) of two
@@ -1990,16 +1993,22 @@ sprint's board when it left the sprint (`SprintBoard.moving`), a story's tasks l
 outside the sprint in its new iteration, in order (`OutsideWork.placing`); one moved into the sprint's own iteration
 stays there, with no place to say, until the sprint's board, read again, has it. The engine keeps it there over any read
 that started before the move, which may have read it where it was, until a refresh that started after it has read it
-(`SprintEngine.moved`, `settleMoves`), and refreshes at once. The line under the header says "Moved Task 5052 from
+(`SprintEngine.moved`, `settleMoves`), and over one that failed partway, as when Azure DevOps asked BriefBar to slow down
+after the board was read; and it refreshes at once. The line under the header says "Moved Task 5052 from
 Sprint 41 to Sprint 42." with **Undo**, which sends the same change back, testing the path it went to, without asking
 (`SprintMoves.undo`), while the setting's on and the work item is where it went, as BriefBar last read it: one on the
 sprint's board is in its iteration, though the board reads none (`SprintMoves.undoable`); Undo heads its menus
 meanwhile. A move that didn't happen, or may not have, says why (`ADOWriteProblem.sentence`, for `.setIteration`), with
-**Try Again**, and the sprint and your work outside it are read again, to show where it is. One move goes at a time, in
+**Try Again** where it may help, not when Azure DevOps refused it, nor for a work item that's gone or not where it was
+(`SprintMoves.retries`), and the sprint and your work outside it are read again, to show where it is. One move goes at a time, in
 a task that turning the setting off, Azure DevOps stopping or someone else signing in calls off
 (`SprintMoves.forgetAll`): one that hasn't gone never does; one that has settles, the card showing where Azure DevOps put
-it, but nothing more happens, and Undo goes. It goes only as whom the list was read as when you clicked
-(`ADOClient.send(_:as:)`). BriefBar changes only the iteration, never the area: a work item under another team's area
+it, but nothing more happens, and Undo goes. It goes only as whom the sprint was read as when you chose to move it
+(`Move.account`, `SprintStore.account`, `ADOClient.send(_:as:)`), whose reads tell when someone else signed in; and
+only while BriefBar reads the work item where it was then, as you confirm (`SprintMoves.send`): read elsewhere, or gone
+from your work, nothing goes, and the line says it isn't where it was (`.notListed`); where it goes already, as when you
+confirmed it in another window too, nothing goes again. Where it is isn't always known, as for one read without its
+iteration: Azure DevOps' test then tells. BriefBar changes only the iteration, never the area: a work item under another team's area
 moved into the sprint's iteration stays off that sprint's board. The demo moves only its made-up work, to Sprint 43 for
 the next (`DemoData.nextSprint`), and sends nothing.
 

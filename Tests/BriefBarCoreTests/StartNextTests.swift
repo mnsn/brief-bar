@@ -36,6 +36,31 @@ import Testing
         #expect(Steps.board(stages, missions: []).startNext == nil)
     }
 
+    /// Your work in a sprint after the current one, as one you moved to the next, comes last, the nearest sprint's first,
+    /// after the rest of yours outside the sprint, which the Board has latest sprint first; the Board keeps its order.
+    @Test func aLaterSprintsWorkComesLastTheNearestFirst() throws {
+        func later(_ id: Int, _ sprint: Int) -> SprintWork {
+            var work = Steps.work(id, .toDo)
+            work.laterSprint = "Storefront\\Sprint \(sprint)"
+            return work
+        }
+        let work = [Steps.work(5104, .toDo, story: 5001), later(5190, 44), later(5052, 43), Steps.work(4870, .toDo), later(5191, 43)]
+        let stories = [Steps.task(5001)]
+        let board = Steps.board([:], missions: []).withWork(work, missions: [], stories: stories)
+        #expect(board.startNext?.tasks.map(\.ref) == [5104, 4870, 5052, 5191, 5190].map(Steps.task))
+        #expect(board.lanes.first { $0.kind == .notInAMission }?.tasks.map(\.ref) == [5190, 5052, 4870, 5191].map(Steps.task))
+
+        // By the number in their names: Sprint 9 is nearer than Sprint 10.
+        let numbered = Steps.board([:], missions: []).withWork([later(5190, 10), later(5191, 9)], missions: [], stories: [])
+        #expect(numbered.startNext?.tasks.map(\.ref) == [5191, 5190].map(Steps.task))
+
+        // Nothing else to start: it's next. The one you chose comes first all the same.
+        let alone = Steps.board([:], missions: []).withWork([later(5052, 43)], missions: [], stories: [])
+        #expect(alone.startNext?.task.ref == Steps.task(5052))
+        let picked = Steps.board([:], missions: []).withWork(work, missions: [], stories: stories, startPick: Steps.task(5190))
+        #expect(picked.startNext?.tasks.map(\.ref) == [5190, 5104, 4870, 5052, 5191].map(Steps.task))
+    }
+
     /// The one you chose comes first, in the slot and in its lane's To start, while it's there; otherwise it waits, and the
     /// backlog's order chooses.
     @Test func theOneYouChoseComesFirstWhileItsThere() throws {

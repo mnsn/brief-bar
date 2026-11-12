@@ -128,6 +128,13 @@ import Testing
         #expect(later.items.first?.id == 4870)
         #expect(later.place(of: item) == "Sprint 43")
         #expect(later.taskTypes == outside.taskTypes && later.sprintPath == outside.sprintPath)
+        // In a sprint after the current one, as the Board orders them by name: Start next offers it last.
+        #expect(later.isLater(item))
+        #expect(!outside.isLater(try #require(outside.items.first { $0.id == 5052 })))
+        #expect(!outside.isLater(try #require(outside.items.first { $0.id == 4870 })))
+        item.iteration = "Storefront\\Sprint 100"
+        #expect(outside.isLater(item))
+        #expect(!OutsideWork(items: outside.items, taskTypes: outside.taskTypes).isLater(item))
 
         item.iteration = board.sprint.path
         let inSprint = outside.placing(item, board: board)
@@ -194,6 +201,38 @@ import Testing
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.board?.item(WorkItemKey(Fixture.org, 10)) != nil)
         #expect(snapshot.outside?.items.contains { $0.id == 10 } == false)
+    }
+
+    /// A refresh that read the board again, and then couldn't read your work outside the sprint, as Azure DevOps asked
+    /// BriefBar to slow down, keeps what BriefBar moved where it went, until a read after it succeeds.
+    @Test func aMoveStaysOverARefreshThatFailedAfterReadingTheBoard() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1], children: [(1, 2), (1, 3)])], items: [
+            WorkFixture.workItem(1, "User Story", "Story", state: "Active"),
+            WorkFixture.workItem(2, state: "Active", assignee: People.me, parent: 1),
+            WorkFixture.workItem(3, assignee: People.me, parent: 1),
+        ])
+        server.on("/_apis/work/predefinedqueries/AssignedToMe", json: ["results": [["id": 2], ["id": 3]]])
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let task = try #require(await engine.currentSnapshot().board?.item(WorkItemKey(Fixture.org, 3)))
+        await engine.moved(task.moved(to: "Shop\\Sprint 8", answer: nil, at: clock.value))
+
+        server.on("/_apis/work/predefinedqueries/AssignedToMe") { _ in
+            StubServer.Reply(status: 429, headers: ["Retry-After": "120"], body: Data())
+        }
+        clock.set(t(5 * minute))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.problem != nil)
+        #expect(snapshot.board?.item(task.key) == nil)
+        let outside = try #require(snapshot.outside)
+        #expect(outside.items.first { $0.id == 3 }.flatMap(outside.place(of:)) == "Sprint 8")
     }
 
     /// Moved out of the sprint, it leaves the board at once, and joins your work outside it.

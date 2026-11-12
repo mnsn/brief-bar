@@ -359,7 +359,6 @@ package final class AzureDevOpsSource: BriefBarSource {
                     pullRequestConflicts?.accountChanged(account)
                     self?.threadChanges?.accountChanged(account)
                     self?.tagChanges?.accountChanged(account)
-                    self?.sprintMoves?.accountChanged(account)
                     self?.detailsDrafts?.accountChanged(account)
                 }
             }

@@ -15,10 +15,13 @@ public struct SprintSnapshot: Sendable, Equatable {
     /// Your open tasks and bugs outside the sprint, while My Work wants them (`SprintEngine.setReadsOutside`), as last read;
     /// nil until a read tried.
     public var outside: OutsideWork?
+    /// Whose sign-in they were read as, once it's known: a change to one of them goes only as them.
+    public var account: String?
 
     public init(
         board: SprintBoard? = nil, teams: [TeamRef] = [], foundTeam: TeamRef? = nil, problem: PulseProblem? = nil,
-        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false, outside: OutsideWork? = nil
+        refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false, outside: OutsideWork? = nil,
+        account: String? = nil
     ) {
         self.board = board
         self.teams = teams
@@ -28,6 +31,7 @@ public struct SprintSnapshot: Sendable, Equatable {
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
         self.outside = outside
+        self.account = account
     }
 }
 
@@ -311,6 +315,9 @@ public actor SprintEngine {
             refreshedAt = now()
         }
         isRefreshing = false
+        // What BriefBar moved since a read that replaced the board or your work outside the sprint started stays where it went,
+        // though the rest of the refresh failed, or stopped as nothing showed the sprint anymore.
+        applyMoves()
         publish()
     }
 
@@ -686,7 +693,7 @@ public actor SprintEngine {
     private func snapshot() -> SprintSnapshot {
         SprintSnapshot(
             board: board, teams: allTeams, foundTeam: configuration.team == nil && foundWithout.isEmpty ? foundTeam : nil, problem: problem,
-            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, outside: outside
+            refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, outside: outside, account: account
         )
     }
 
