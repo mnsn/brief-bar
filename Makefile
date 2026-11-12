@@ -155,9 +155,14 @@ screenshots: build
 	for name in $(WINDOW_SHOTS); do sips -s format jpeg -s formatOptions 88 build/screenshots/$$name.png --out docs/images/$$name.jpg >/dev/null; done
 	@if command -v ffmpeg >/dev/null; then $(MAKE) readme-tour; else echo "Skipped the README's tours: brew install ffmpeg, then make readme-tour."; fi
 
-# The README's animated tours, in light and dark, from the pictures make screenshots renders. Needs ffmpeg.
+# The README's animated tours, in light and dark, from the pictures make screenshots renders, and the first frame of its
+# trail, which the website shows instead to visitors who'd rather not see motion. Needs ffmpeg.
 readme-tour:
 	swift scripts/make-readme-tour.swift build/screenshots docs/images build/readme-tour
+	for appearance in light dark; do \
+		sips -s format jpeg -s formatOptions 88 docs/images/readme-trail-$$appearance.gif \
+			--out docs/images/readme-trail-still-$$appearance.jpg >/dev/null; \
+	done
 
 # The app's icon, and the README's copy of it.
 icon:

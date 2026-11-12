@@ -149,36 +149,36 @@
                 </header>
 
                 <div class="showcase reveal" data-showcase>
-                    <div class="showcase__tabs" role="tablist" aria-label="Where BriefBar shows what needs you" aria-orientation="vertical">
-                        <button class="showcase__tab" type="button" role="tab" id="glance-tab-items" aria-controls="glance-panel-items" aria-selected="true">
+                    <div class="showcase__tabs" data-showcase-tabs data-label="Where BriefBar shows what needs you">
+                        <a class="showcase__tab" id="glance-tab-items" href="#glance-panel-items">
                             <span class="showcase__tab-title">An item for each source</span>
                             <span class="showcase__tab-text"><span>Click one for its list, such as your unread Teams chats, each summed up on your Mac.</span></span>
                             <span class="showcase__progress" aria-hidden="true"></span>
-                        </button>
-                        <button class="showcase__tab" type="button" role="tab" id="glance-tab-together" aria-controls="glance-panel-together" aria-selected="false" tabindex="-1">
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-together" href="#glance-panel-together">
                             <span class="showcase__tab-title">Sections together</span>
                             <span class="showcase__tab-text"><span>Put sections together, such as Azure DevOps with Copilot, with a tab for each in the list.</span></span>
                             <span class="showcase__progress" aria-hidden="true"></span>
-                        </button>
-                        <button class="showcase__tab" type="button" role="tab" id="glance-tab-state" aria-controls="glance-panel-state" aria-selected="false" tabindex="-1">
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-state" href="#glance-panel-state">
                             <span class="showcase__tab-title">Everything by state</span>
                             <span class="showcase__tab-text"><span>Or everything in one item, its counts added up by state, with what needs you under a brief.</span></span>
                             <span class="showcase__progress" aria-hidden="true"></span>
-                        </button>
-                        <button class="showcase__tab" type="button" role="tab" id="glance-tab-widgets" aria-controls="glance-panel-widgets" aria-selected="false" tabindex="-1">
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-widgets" href="#glance-panel-widgets">
                             <span class="showcase__tab-title">Desktop widgets</span>
                             <span class="showcase__tab-text"><span>Behind your windows or floating above them, in three sizes.</span></span>
                             <span class="showcase__progress" aria-hidden="true"></span>
-                        </button>
-                        <button class="showcase__tab" type="button" role="tab" id="glance-tab-window" aria-controls="glance-panel-window" aria-selected="false" tabindex="-1">
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-window" href="#glance-panel-window">
                             <span class="showcase__tab-title">The window</span>
                             <span class="showcase__tab-text"><span>An Overview of everything by state, with the brief, then a page for every section.</span></span>
                             <span class="showcase__progress" aria-hidden="true"></span>
-                        </button>
+                        </a>
                     </div>
 
                     <div class="showcase__stage">
-                        <div class="showcase__panel" role="tabpanel" id="glance-panel-items" aria-labelledby="glance-tab-items">
+                        <div class="showcase__panel" id="glance-panel-items">
                             <a class="zoom" href="images/menubar-teams.chats-light.png" data-zoom>
                                 <picture>
                                     <source media="(prefers-color-scheme: dark)" srcset="images/menubar-teams.chats-dark.png" data-dark>
@@ -186,7 +186,7 @@
                                 </picture>
                             </a>
                         </div>
-                        <div class="showcase__panel" role="tabpanel" id="glance-panel-together" aria-labelledby="glance-tab-together" hidden>
+                        <div class="showcase__panel" id="glance-panel-together">
                             <a class="zoom" href="images/menubar-combined-light.png" data-zoom>
                                 <picture>
                                     <source media="(prefers-color-scheme: dark)" srcset="images/menubar-combined-dark.png" data-dark>
@@ -194,7 +194,7 @@
                                 </picture>
                             </a>
                         </div>
-                        <div class="showcase__panel" role="tabpanel" id="glance-panel-state" aria-labelledby="glance-tab-state" hidden>
+                        <div class="showcase__panel" id="glance-panel-state">
                             <a class="zoom" href="images/menubar-by-state-light.png" data-zoom>
                                 <picture>
                                     <source media="(prefers-color-scheme: dark)" srcset="images/menubar-by-state-dark.png" data-dark>
@@ -202,7 +202,7 @@
                                 </picture>
                             </a>
                         </div>
-                        <div class="showcase__panel showcase__panel--cutout" role="tabpanel" id="glance-panel-widgets" aria-labelledby="glance-tab-widgets" hidden>
+                        <div class="showcase__panel showcase__panel--cutout" id="glance-panel-widgets">
                             <a class="zoom" href="images/widget-all-medium-light.png" data-zoom>
                                 <picture>
                                     <source media="(prefers-color-scheme: dark)" srcset="images/widget-all-medium-dark.png" data-dark>
@@ -210,7 +210,7 @@
                                 </picture>
                             </a>
                         </div>
-                        <div class="showcase__panel" role="tabpanel" id="glance-panel-window" aria-labelledby="glance-tab-window" hidden>
+                        <div class="showcase__panel" id="glance-panel-window">
                             <a class="zoom" href="images/window-overview-light.jpg" data-zoom>
                                 <picture>
                                     <source media="(prefers-color-scheme: dark)" srcset="images/window-overview-dark.jpg" data-dark>
@@ -314,10 +314,12 @@
                     <p class="note">Links you add stay in BriefBar; they don’t change Azure DevOps, GitHub or Copilot. <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#links">How linking works →</a></p>
                 </div>
                 <figure class="split__media shot reveal">
-                    <a class="zoom" href="images/readme-trail-light.gif" data-zoom>
+                    <a class="zoom" href="images/readme-trail-still-light.jpg" data-zoom>
                         <picture>
+                            <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="images/readme-trail-still-dark.jpg" data-dark="(prefers-reduced-motion: reduce)">
+                            <source media="(prefers-reduced-motion: reduce)" srcset="images/readme-trail-still-light.jpg">
                             <source media="(prefers-color-scheme: dark)" srcset="images/readme-trail-dark.gif" data-dark>
-                            <img src="images/readme-trail-light.gif" width="960" height="736" loading="lazy" decoding="async" alt="From a story on the Sprint page to its bug, the bug’s pull request and the Copilot session that opened it, each a click away">
+                            <img src="images/readme-trail-light.gif" width="960" height="736" loading="lazy" decoding="async" alt="A story on the Sprint page with Where It Stands open; its bug, the bug’s pull request and the Copilot session that opened it are each a click away">
                         </picture>
                     </a>
                 </figure>

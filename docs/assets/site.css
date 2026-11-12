@@ -527,8 +527,11 @@ h3 {
 .zoom { display: block; border-radius: 14px; cursor: zoom-in; }
 .hero__frame .zoom { border-radius: 18px; }
 
-/* At a glance: a tab for each place BriefBar shows what needs you, which change by themselves until you pick one. */
+/* At a glance: a tab for each place BriefBar shows what needs you, which change by themselves until you pick one. The
+   script makes the tabs from links to each picture; until it has, or without it, every picture shows, one under
+   another, with the links and all their text beside them. */
 .showcase {
+    --stage-height: clamp(340px, 48vw, 600px);
     display: grid;
     grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
     gap: clamp(28px, 4vw, 64px);
@@ -549,11 +552,12 @@ h3 {
     background: transparent;
     font: inherit;
     text-align: left;
+    text-decoration: none;
     cursor: pointer;
     overflow: hidden;
     transition: background-color .3s, border-color .3s, box-shadow .3s, color .3s;
 }
-.showcase__tab:hover { color: var(--text); background: var(--glass); }
+.showcase__tab:hover { color: var(--text); background: var(--glass); text-decoration: none; }
 .showcase__tab[aria-selected="true"] {
     color: var(--text);
     background: var(--glass-strong);
@@ -565,15 +569,16 @@ h3 {
 
 .showcase__tab-text {
     display: grid;
-    grid-template-rows: 0fr;
+    grid-template-rows: 1fr;
     color: var(--text-2);
     font-size: .95rem;
     line-height: 1.45;
     transition: grid-template-rows .4s var(--ease);
 }
-.showcase__tab-text > span { overflow: hidden; }
-.showcase__tab[aria-selected="true"] .showcase__tab-text { grid-template-rows: 1fr; }
-.showcase__tab[aria-selected="true"] .showcase__tab-text > span { padding-top: 4px; }
+.showcase__tab-text > span { overflow: hidden; padding-top: 4px; }
+/* As tabs, only the chosen one's text shows. */
+.showcase.is-tabbed .showcase__tab:not([aria-selected="true"]) .showcase__tab-text { grid-template-rows: 0fr; }
+.showcase.is-tabbed .showcase__tab:not([aria-selected="true"]) .showcase__tab-text > span { padding-top: 0; }
 
 .showcase__progress {
     position: absolute;
@@ -603,10 +608,8 @@ h3 {
 
 @keyframes showcase-progress { to { transform: scaleX(1); } }
 
-.showcase__stage {
-    position: relative;
-    height: clamp(340px, 48vw, 600px);
-}
+.showcase__stage { position: relative; }
+.showcase.is-tabbed .showcase__stage { height: var(--stage-height); }
 .showcase__stage::before {
     content: "";
     position: absolute;
@@ -618,13 +621,13 @@ h3 {
 }
 
 .showcase__panel {
-    position: absolute;
-    inset: 0;
     display: grid;
     grid-template: 100% / 100%;
     place-items: center;
+    height: var(--stage-height);
     transition: opacity .55s var(--ease), transform .55s var(--ease), visibility .55s;
 }
+.showcase.is-tabbed .showcase__panel { position: absolute; inset: 0; height: auto; }
 .showcase__panel[hidden] {
     display: grid;
     visibility: hidden;
@@ -657,6 +660,12 @@ h3 {
     box-shadow: none;
     filter: drop-shadow(0 30px 40px var(--shadow));
 }
+
+/* Before the tabs: the pictures one under another, and the links beside them, staying in view. */
+.showcase:not(.is-tabbed) { align-items: start; }
+.showcase:not(.is-tabbed) .showcase__tabs { position: sticky; top: 96px; }
+.showcase:not(.is-tabbed) .showcase__tab { color: var(--text); }
+.showcase:not(.is-tabbed) .showcase__stage { display: grid; gap: 32px; }
 
 /* The sources */
 
@@ -1172,8 +1181,8 @@ h3 {
     .nav__links { display: none; }
     .nav__actions { margin-left: auto; }
 
-    .showcase { grid-template-columns: minmax(0, 1fr); }
-    .showcase__stage { height: clamp(300px, 90vw, 520px); }
+    .showcase { --stage-height: clamp(300px, 90vw, 520px); grid-template-columns: minmax(0, 1fr); }
+    .showcase:not(.is-tabbed) .showcase__tabs { position: static; }
 
     .split,
     .split--flip { grid-template-columns: minmax(0, 1fr); }

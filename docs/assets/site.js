@@ -30,8 +30,13 @@
         if (theme) root.dataset.theme = theme;
         else delete root.dataset.theme;
         const dark = theme ? theme === 'dark' : systemDark.matches;
-        const media = theme ? (dark ? 'all' : 'not all') : '(prefers-color-scheme: dark)';
         for (const source of document.querySelectorAll('source[data-dark]')) {
+            // A dark picture's own condition, such as less motion, still applies whichever appearance shows.
+            const also = source.dataset.dark;
+            let media;
+            if (!theme) media = also ? `${also} and (prefers-color-scheme: dark)` : '(prefers-color-scheme: dark)';
+            else if (dark) media = also || 'all';
+            else media = 'not all';
             if (source.media !== media) source.media = media;
         }
         for (const meta of document.querySelectorAll('meta[data-theme-color]')) {
@@ -107,13 +112,26 @@
         revealed.forEach((element) => element.classList.add('is-visible'));
     }
 
-    // The showcase's tabs: arrow keys move between them, and on a wide screen they change by themselves, each as its
-    // progress bar fills, until the visitor picks one. Pointing at them, or reaching them by keyboard, pauses them.
+    // The showcase's links to its pictures become tabs: arrow keys move between them, and on a wide screen they change
+    // by themselves, each as its progress bar fills, until the visitor picks one. Pointing at them, or reaching them by
+    // keyboard, pauses them. Until then, every picture shows.
     for (const showcase of document.querySelectorAll('[data-showcase]')) {
-        const tabs = [...showcase.querySelectorAll('[role="tab"]')];
-        const panels = tabs.map((tab) => document.getElementById(tab.getAttribute('aria-controls')));
-        let current = Math.max(0, tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true'));
+        const list = showcase.querySelector('[data-showcase-tabs]');
+        const tabs = list ? [...list.querySelectorAll('a[href^="#"]')] : [];
+        const panels = tabs.map((tab) => document.getElementById(tab.hash.slice(1)));
+        if (!tabs.length || panels.includes(null)) continue;
+        let current = 0;
         let autoplay = !reduceMotion.matches && matchMedia('(min-width: 961px)').matches;
+
+        list.setAttribute('role', 'tablist');
+        list.setAttribute('aria-orientation', 'vertical');
+        if (list.dataset.label) list.setAttribute('aria-label', list.dataset.label);
+        tabs.forEach((tab, index) => {
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-controls', panels[index].id);
+            panels[index].setAttribute('role', 'tabpanel');
+            panels[index].setAttribute('aria-labelledby', tab.id);
+        });
 
         const select = (index, focus) => {
             current = (index + tabs.length) % tabs.length;
@@ -133,7 +151,8 @@
 
         const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
         tabs.forEach((tab, index) => {
-            tab.addEventListener('click', () => {
+            tab.addEventListener('click', (event) => {
+                event.preventDefault();
                 stopAutoplay();
                 select(index);
             });
@@ -142,12 +161,17 @@
                 if (event.key in keys) next = current + keys[event.key];
                 else if (event.key === 'Home') next = 0;
                 else if (event.key === 'End') next = tabs.length - 1;
+                // Space, which would scroll the page from a link, picks the tab as Enter does.
+                else if (event.key === ' ') next = index;
                 if (next === null) return;
                 event.preventDefault();
                 stopAutoplay();
                 select(next, true);
             });
         });
+
+        select(current);
+        showcase.classList.add('is-tabbed');
 
         if (autoplay) {
             showcase.classList.add('is-autoplay');
@@ -239,8 +263,8 @@
         lightbox.addEventListener('close', () => large.removeAttribute('src'));
     }
 
-    // The latest release, in the pill above the title, from GitHub's API: once an hour at most, and nothing changes if
-    // it doesn't answer.
+    // The latest release, in the pill above the title, from GitHub's API: asked at most once an hour in a tab, whether
+    // or not it answered, and nothing changes when it doesn't.
     const pill = document.querySelector('[data-release]');
     const label = pill?.querySelector('[data-release-label]');
     if (pill && label) {
@@ -253,12 +277,21 @@
 
     async function latestRelease() {
         const KEY = 'briefbar-release';
+        const save = (value) => {
+            try {
+                sessionStorage.setItem(KEY, JSON.stringify(value));
+            } catch {
+                // Storage is off: it's asked again next time.
+            }
+        };
         try {
             const saved = JSON.parse(sessionStorage.getItem(KEY));
-            if (saved && Date.now() - saved.at < 3600 * 1000) return saved;
+            // Within the hour, the release it found then, or nothing if it didn't find one.
+            if (saved && Date.now() - saved.at < 3600 * 1000) return saved.version && saved.url ? saved : null;
         } catch {
             // Nothing saved, or storage is off.
         }
+        save({ at: Date.now() });
         try {
             const response = await fetch('https://api.github.com/repos/mnsn/brief-bar/releases/latest', {
                 headers: { Accept: 'application/vnd.github+json' },
@@ -271,11 +304,7 @@
                 ? json.html_url
                 : 'https://github.com/mnsn/brief-bar/releases/latest';
             const release = { version, url, at: Date.now() };
-            try {
-                sessionStorage.setItem(KEY, JSON.stringify(release));
-            } catch {
-                // It's asked again next time.
-            }
+            save(release);
             return release;
         } catch {
             return null;

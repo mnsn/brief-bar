@@ -468,7 +468,9 @@ Source** set to **GitHub Actions**.
 The website, [mnsn.github.io/brief-bar](https://mnsn.github.io/brief-bar/), is `docs/index.html`, with its styles and
 script in `docs/assets` and no build step: open the file in a browser to see it. It shows the README's pictures from
 `docs/images`, so `make screenshots` updates both, in light or dark as the Mac's appearance is, unless the visitor picks
-one. It says what the README says, shorter: when a change makes the README wrong, check the website too.
+one. To visitors who'd rather not see motion, it shows a still of the trail instead, its first frame, which
+`make readme-tour` cuts from the GIF. It says what the README says, shorter: when a change makes the README wrong,
+check the website too.
 
 ## Releasing
 
