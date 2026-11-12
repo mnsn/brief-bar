@@ -574,10 +574,16 @@ private struct MyWorkContent: View {
     private func taskCard(_ task: BoardTask, item: WorkItem) -> BoardCardContent {
         let place = outside?.place(of: item)
         let movable = moves.canMove(item) || moves.undoable?.key == item.key
+        let placeHelp: String? = if movable, let place {
+            SprintMoveText.placeHelp(place, inNextSprint: moves.isInNextSprint(item))
+        } else if sprint.board != nil, !settings.makesChanges {
+            SprintMoveText.turnOnHelp
+        } else {
+            nil
+        }
         return BoardCardContent(
             view: AnyView(MyWorkTaskCard(
-                item: item, task: task, place: place, moveMenu: movable ? AnyView(moveItems(item)) : nil,
-                placeHelp: sprint.board != nil && !settings.makesChanges ? SprintMoveText.turnOnHelp : nil
+                item: item, task: task, place: place, moveMenu: movable ? AnyView(moveItems(item)) : nil, placeHelp: placeHelp
             )),
             menu: AnyView(Group {
                 Button("Show Details") { showDetails(of: item) }
@@ -609,7 +615,8 @@ private struct MyWorkContent: View {
     }
 
     /// What moves a work item of yours to another sprint, as its place line's menu, its card's and Start next's have it:
-    /// Undo, while it's the one you moved last; then Move to the sprint going on, and to the next, which ask first.
+    /// Undo, while it's the one you moved last; then Move to the sprint going on, and to the next, but for one in it already,
+    /// as BriefBar read it within the hour, which ask first.
     @ViewBuilder
     private func moveItems(_ item: WorkItem) -> some View {
         if let undo = moves.undoable, undo.key == item.key {
@@ -621,8 +628,10 @@ private struct MyWorkContent: View {
                 Button("Move to \(current)…") { proposal = moves.propose(item) }
                     .disabled(moves.isBusy)
             }
-            Button("Move to Next Sprint…") { proposeNext(item) }
-                .disabled(moves.isBusy)
+            if !moves.isInNextSprint(item) {
+                Button("Move to Next Sprint…") { proposeNext(item) }
+                    .disabled(moves.isBusy)
+            }
         }
     }
 
@@ -909,6 +918,10 @@ private struct SprintMoveLine: View {
                     symbol("calendar.badge.exclamationmark")
                     words(SprintMoveText.noNextSprint(after: current))
                     dismiss
+                case .already(let name, let sprint):
+                    symbol("calendar.badge.checkmark")
+                    words(SprintMoveText.already(name, in: sprint))
+                    dismiss
                 }
             }
         } else if let state = moves.state {
@@ -1029,7 +1042,7 @@ struct MyWorkTaskCard: View {
     var place: String? = nil
     /// What its place's menu offers, which moves it to another sprint (`SprintMoves`); nil where it can't move.
     var moveMenu: AnyView? = nil
-    /// Its place's tooltip where it has no menu: how to turn on what moves it.
+    /// Its place's tooltip: where it's a menu, where it is and what the menu does; otherwise how to turn on what moves it.
     var placeHelp: String? = nil
 
     @EnvironmentObject private var copilot: CopilotTasksStore
@@ -1074,7 +1087,7 @@ struct MyWorkTaskCard: View {
                     }
                     .labelMenuStyle()
                     .fixedSize()
-                    .help("Where it is: \(place). Click to move it to the current sprint or the next")
+                    .help(placeHelp ?? "")
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "calendar")

@@ -211,15 +211,23 @@ final class SprintStore: ObservableObject {
     /// which isn't kept. The demo's is made up.
     func nextSprint(now: Date = Date()) async throws -> Sprint? {
         guard let board else { return nil }
-        if mode == .demo { return DemoData.nextSprint(now: now) }
+        if let known = knownNextSprint(now: now) { return known }
+        if mode == .demo { return nil }
         let team = board.team, current = board.sprint
-        if let known = nextSprints[team.id], known.after == current.id,
-           now.timeIntervalSince(known.readAt) < Self.nextSprintLifetime {
-            return known.sprint
-        }
         let next = try await readNextSprint(team, current)
         nextSprints[team.id] = next.map { ($0, current.id, now) }
         return next
+    }
+
+    /// Your team's sprint after the one going on, as read within the hour, without reading it: nil when it wasn't, or there
+    /// was none. The demo's is made up.
+    func knownNextSprint(now: Date = Date()) -> Sprint? {
+        guard let board else { return nil }
+        if mode == .demo { return DemoData.nextSprint(now: now) }
+        guard let known = nextSprints[board.team.id], known.after == board.sprint.id,
+              now.timeIntervalSince(known.readAt) < Self.nextSprintLifetime
+        else { return nil }
+        return known.sprint
     }
 
     /// Forgets your team's next sprint, as read, when it's this one: a move there failed, as when it was deleted or renamed

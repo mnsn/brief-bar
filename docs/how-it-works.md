@@ -2012,7 +2012,9 @@ future, read with one GET as you choose it (`TeamSprints.next`, `ADOEndpoint.tea
 in memory only, for that team and current sprint (`SprintStore.nextSprint`), but forgotten as a move there fails, as it
 may have been deleted or renamed (`SprintStore.forgetNextSprint`), and not kept when there's none, as one may be added
 any time; without dates, the first Azure DevOps calls future, as it lists them. While they're read, the line under the header says so; when they can't be, why, with Try
-Again; and when there's none, that the team has no sprint after the current one yet (`SprintMoves.Finding`).
+Again; when there's none, that the team has no sprint after the current one yet; and when the work item is in it
+already, that it is (`SprintMoves.Finding`). Once it's known, a work item in it isn't offered a move there, and its place
+line's tooltip says it's in the next sprint (`SprintMoves.isInNextSprint`, `SprintStore.knownNextSprint`).
 
 The move is a `PATCH` of the work item (`ADOWrite.setIteration`), a JSON Patch (`application/json-patch+json`) of two
 operations: a `test` that its iteration is the path it was read in, then an `add` of the path it goes to, so that Azure
@@ -2973,7 +2975,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/work/predefinedqueries/AssignedToMe?includeCompleted=false&$top=500` | every refresh, only while My Work shows + Sprint Tasks or + All My Tasks | the work items assigned to you in the team's project, by ID, in any sprint or none, done ones left out |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, 200 work items a request, for those the sprint's board doesn't have | the same, with the iteration each is in |
-| `{project}/{team}/_apis/work/teamsettings/iterations` | only with Make Changes in Azure DevOps on, as you move a task or bug of yours to the team's next sprint on My Work, and again after an hour | the team's sprints, past, current and future, with their dates, kept in memory only, for the one after the current one ([Moving a task to a sprint](#moving-a-task-to-a-sprint)) |
+| `{project}/{team}/_apis/work/teamsettings/iterations` | only with Make Changes in Azure DevOps on, as you move a task or bug of yours to the team's next sprint on My Work, unless it found that sprint within the hour | the team's sprints, past, current and future, with their dates, kept in memory only, for the one after the current one ([Moving a task to a sprint](#moving-a-task-to-a-sprint)) |
 | `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint, or for one outside it My Work's read of your work there, shows it changed, or no longer has it, while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
 | `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |

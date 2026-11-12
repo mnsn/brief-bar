@@ -72,6 +72,8 @@ final class SprintMoves: ObservableObject {
         case failed(name: String, key: WorkItemKey, problem: String)
         /// Azure DevOps has none after the current one, by its name.
         case none(after: String)
+        /// The work item is in it already: what it is, "Task 5052", and the sprint's name.
+        case already(name: String, sprint: String)
     }
 
     @Published private(set) var state: State?
@@ -182,10 +184,25 @@ final class SprintMoves: ObservableObject {
             SpokenText.announce(SprintMoveText.noNextSprint(after: board.sprint.name))
             return nil
         }
-        finding = nil
         // As the work item is now, which may have changed while the sprints were read.
-        guard let current = sprint?.item(item.key), canMove(current), let move = move(of: current, to: next.path) else { return nil }
+        guard let current = sprint?.item(item.key), canMove(current) else {
+            finding = nil
+            return nil
+        }
+        guard let move = move(of: current, to: next.path) else {
+            finding = .already(name: name, sprint: next.name)
+            SpokenText.announce(SprintMoveText.already(name, in: next.name))
+            return nil
+        }
+        finding = nil
         return Proposal(move: move, target: .next, sprint: next)
+    }
+
+    /// Whether a work item is in your team's next sprint, as read within the hour (`SprintStore.knownNextSprint`): its menus
+    /// then offer no move there.
+    func isInNextSprint(_ item: WorkItem) -> Bool {
+        guard let next = sprint?.knownNextSprint(now: now()) else { return false }
+        return OutsideWork.isSamePath(item.iteration, next.path)
     }
 
     /// Reads your team's sprints again, for a work item's move to the next, as Try Again does.
@@ -456,6 +473,18 @@ enum SprintMoveText {
     /// "Your team has no sprint after Sprint 42 in Azure DevOps yet."
     static func noNextSprint(after current: String) -> String {
         "Your team has no sprint after \(current) in Azure DevOps yet."
+    }
+
+    /// "Task 5052 is already in Sprint 43, your team's next sprint."
+    static func already(_ name: String, in sprint: String) -> String {
+        "\(name) is already in \(sprint), your team's next sprint."
+    }
+
+    /// A card's place line's tooltip, where it's a menu: "Where it is: Sprint 41. Click to move it to the current sprint or
+    /// the next"; only to the current one, for one in the next already.
+    static func placeHelp(_ place: String, inNextSprint: Bool) -> String {
+        inNextSprint ? "Where it is: \(place), your team's next sprint. Click to move it to the current sprint"
+            : "Where it is: \(place). Click to move it to the current sprint or the next"
     }
 
     /// An iteration as a sentence names it: "Sprint 41"; "no sprint" for a project's own.

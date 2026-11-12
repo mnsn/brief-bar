@@ -506,7 +506,7 @@ choose **Move to Sprint 42…** or **Move to Next Sprint…**. BriefBar asks fir
 the next sprint's dates, and that it changes its iteration in Azure DevOps, as you; it changes nothing else of it. For
 the next sprint, BriefBar reads your team's sprints, with one request, only as you choose it, and keeps them in memory
 for an hour, unless a move there fails; it says so when your team has none after the current one yet, and reads them
-again next time. The card goes where the work item went at
+again next time. A task already in the next sprint, such as one you just moved there, isn't offered a move there. The card goes where the work item went at
 once, and BriefBar reads the sprint and your work outside it again. A line under the header says what it did, with
 **Undo**, which moves it back without asking, until you dismiss it, move another, the work item moves some other way,
 you quit, or turn the setting off; meanwhile Undo heads its card's menu too. A move goes only as whom BriefBar read the

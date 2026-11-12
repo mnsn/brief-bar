@@ -383,6 +383,36 @@ import Testing
         #expect(azure.sprintsRead == 3)
     }
 
+    /// One in your team's next sprint already, as one you just moved there, is offered no move there once BriefBar knows the
+    /// next sprint; asked for before then, the line says it's there already, and nothing goes.
+    @Test func oneInTheNextSprintAlreadyIsntMovedThere() async throws {
+        let (sprint, moves, azure) = live()
+        sprint.readNextSprint = { _, _ in try azure.readNext() }
+        moves.readNextSprint = { [weak sprint] in try await sprint?.nextSprint() }
+        #expect(!moves.isInNextSprint(try item(sprint)))
+        let proposal = try #require(await moves.proposeNext(try item(sprint)))
+        #expect(!moves.isInNextSprint(try item(sprint)))
+        await moves.move(proposal)
+        #expect(moves.isInNextSprint(try item(sprint)))
+        #expect(!moves.isInNextSprint(try item(sprint, 4870)))
+        #expect(SprintMoveText.placeHelp("Sprint 43", inNextSprint: true)
+            == "Where it is: Sprint 43, your team's next sprint. Click to move it to the current sprint")
+        #expect(SprintMoveText.placeHelp("Sprint 41", inNextSprint: false)
+            == "Where it is: Sprint 41. Click to move it to the current sprint or the next")
+
+        let (other, otherMoves, otherAzure) = live()
+        var there = try item(other, 4870)
+        there.iteration = "Storefront\\Sprint 43"
+        let board = try #require(other.board), outside = try #require(other.outside)
+        other.receive(SprintSnapshot(board: board, hasLoaded: true, outside: outside.placing(there, board: board)))
+        #expect(await otherMoves.proposeNext(try item(other, 4870)) == nil)
+        #expect(otherMoves.finding == .already(name: "Task 4870", sprint: "Sprint 43"))
+        #expect(SprintMoveText.already("Task 4870", in: "Sprint 43") == "Task 4870 is already in Sprint 43, your team's next sprint.")
+        #expect(otherAzure.sent.isEmpty)
+        otherMoves.dismiss()
+        #expect(otherMoves.finding == nil)
+    }
+
     /// The demo moves only its made-up work, and sends nothing.
     @Test func theDemoMovesOnlyItsMadeUpWork() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
