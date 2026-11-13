@@ -130,7 +130,9 @@ scripts/                       app bundling, signing and checks, the optional si
                                releases (their keys, signing and appcast), the boundary and demo checks,
                                the demo data, the MDM profile and the icon
 windows/                       BriefBar for Windows, in development: a WinUI 3 app with its own README
-.github/workflows/             CI and releases
+docs/                          the user guide, How it works, the README's pictures (make screenshots) and the
+                               website: index.html, with its styles and script in docs/assets
+.github/workflows/             CI, releases and the website
 changes/                       the release notes of the pull requests merged since the last release
 ```
 
@@ -455,6 +457,20 @@ under **Security**, so check them before you approve a release.
 for x64 and Arm64 on Windows and checks its third-party notices, on pushes to `main` that change it, on every pull
 request, and when started by hand.
 A pull request that doesn't change it skips the build, which counts as passing, so `main` can require it.
+
+`.github/workflows/pages.yml` publishes the [website](#website) on GitHub Pages, on pushes to `main` that change it or
+the pictures it shows, and when started by hand. A pull request that changes them checks that every file the page
+names is there, such as a picture that `make screenshots` no longer draws. Publishing needs **Settings › Pages ›
+Source** set to **GitHub Actions**.
+
+## Website
+
+The website, [mnsn.github.io/brief-bar](https://mnsn.github.io/brief-bar/), is `docs/index.html`, with its styles and
+script in `docs/assets` and no build step: open the file in a browser to see it. It shows the README's pictures from
+`docs/images`, so `make screenshots` updates both, in light or dark as the Mac's appearance is, unless the visitor picks
+one. To visitors who'd rather not see motion, it shows a still of the trail instead, its first frame, which
+`make readme-tour` cuts from the GIF. It says what the README says, shorter: when a change makes the README wrong,
+check the website too.
 
 ## Releasing
 

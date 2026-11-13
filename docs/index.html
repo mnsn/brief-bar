@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BriefBar: everything that needs you, in your Mac’s menu bar</title>
+    <meta name="description" content="BriefBar is a free, open-source Mac menu-bar app for pull requests, GitHub Copilot sessions, your Azure DevOps sprint and Microsoft Teams chats. See what’s next, get the short version from AI, and hand the next step to Copilot.">
+    <link rel="canonical" href="https://mnsn.github.io/brief-bar/">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f8f6fd" media="(prefers-color-scheme: light)" data-theme-color="light">
+    <meta name="theme-color" content="#0b0a13" media="(prefers-color-scheme: dark)" data-theme-color="dark">
+    <link rel="icon" type="image/png" href="images/icon.png">
+    <link rel="apple-touch-icon" href="images/icon.png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="BriefBar">
+    <meta property="og:title" content="BriefBar: everything that needs you, in your Mac’s menu bar">
+    <meta property="og:description" content="Pull requests, GitHub Copilot sessions, your Azure DevOps sprint and Microsoft Teams chats, in one place. Free and open source, for macOS.">
+    <meta property="og:url" content="https://mnsn.github.io/brief-bar/">
+    <meta property="og:image" content="https://mnsn.github.io/brief-bar/assets/social.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="BriefBar’s icon and name, “Everything that needs you, in your Mac’s menu bar”, beside its Copilot list open under the menu bar">
+    <meta name="twitter:card" content="summary_large_image">
+    <script>
+        // Before the page draws: the appearance chosen on an earlier visit, so that it doesn't flash, and the class that
+        // hides what appears as you scroll. If the script doesn't run, that class goes again and everything shows.
+        (function () {
+            var root = document.documentElement;
+            try {
+                var theme = localStorage.getItem('briefbar-theme');
+                if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme);
+            } catch (error) {}
+            root.classList.add('js');
+            setTimeout(function () { if (!window.briefBarSite) root.classList.remove('js'); }, 3000);
+        })();
+    </script>
+    <link rel="stylesheet" href="assets/site.css">
+    <script src="assets/site.js" defer></script>
+</head>
+<body>
+    <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11m0 0-4.5-4.5m4.5 4.5 4.5-4.5M4.5 16.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5.5-5.5L19 12l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-pr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5.5" r="2.2"/><circle cx="7" cy="18.5" r="2.2"/><circle cx="17" cy="18.5" r="2.2"/><path d="M7 7.7v8.6M17 16.3V10a3 3 0 0 0-3-3h-3.5m2-2.2L10.3 7l2.2 2.2"/></g></symbol>
+        <symbol id="i-merge" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5.5" r="2.2"/><circle cx="7" cy="18.5" r="2.2"/><circle cx="17" cy="12" r="2.2"/><path d="M7 7.7v8.6M7 7.7c0 2.5 2 4.3 4.5 4.3h3.3"/></g></symbol>
+        <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2.5 12h4l2.2-6 4.6 12 2.2-6h6" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.7" fill="currentColor"/><path d="M4.6 19.4c.6-3.7 3.7-5.9 7.4-5.9s6.8 2.2 7.4 5.9c.1.6-.4 1.1-1 1.1H5.6c-.6 0-1.1-.5-1-1.1Z" fill="currentColor"/></symbol>
+        <symbol id="i-reply" viewBox="0 0 24 24"><path d="M10 6.5 4.5 12l5.5 5.5M4.5 12H13a6.5 6.5 0 0 1 6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="m7.5 7.5 9 9m0-9-9 9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.2 10.5V8a3.8 3.8 0 0 1 7.6 0v2.5" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 5.2 6v5.4c0 4.3 2.9 8 6.8 9.3 3.9-1.3 6.8-5 6.8-9.3V6L12 3.2Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="m9 12 2.2 2.2 3.9-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5.5 5h13A1.5 1.5 0 0 1 20 6.5v9a1.5 1.5 0 0 1-1.5 1.5h-8L6 20.5V17h-.5A1.5 1.5 0 0 1 4 15.5v-9A1.5 1.5 0 0 1 5.5 5Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
+    </svg>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="backdrop" aria-hidden="true"></div>
+
+    <header class="nav" data-nav>
+        <div class="container nav__inner">
+            <a class="nav__brand" href="#top">
+                <img src="images/icon.png" width="28" height="28" alt="">
+                <span>BriefBar</span>
+            </a>
+            <nav class="nav__links" aria-label="On this page">
+                <a href="#glance">Features</a>
+                <a href="#next">Pull requests</a>
+                <a href="#copilot">Copilot</a>
+                <a href="#privacy">Privacy</a>
+                <a href="#get-started">Get started</a>
+                <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md">User guide</a>
+            </nav>
+            <div class="nav__actions">
+                <a class="icon-button" href="https://github.com/mnsn/brief-bar" aria-label="BriefBar on GitHub">
+                    <svg aria-hidden="true"><use href="#i-github"/></svg>
+                </a>
+                <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="Use the dark appearance">
+                    <svg class="icon-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+                    <svg class="icon-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+                </button>
+                <a class="button button--primary button--small" href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip">Download</a>
+            </div>
+        </div>
+    </header>
+
+    <main id="main">
+        <section class="hero" id="top" aria-labelledby="hero-title">
+            <div class="container hero__intro">
+                <a class="release-pill" href="https://github.com/mnsn/brief-bar/releases/latest" data-release>
+                    <span class="release-pill__dot" aria-hidden="true"></span>
+                    <span data-release-label>See what’s new in BriefBar</span>
+                    <svg class="release-pill__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+                </a>
+                <h1 id="hero-title">Everything that <span class="gradient-text">needs you</span>, in your Mac’s menu bar.</h1>
+                <p class="lead">Pull requests, GitHub Copilot sessions, your Azure DevOps sprint and Microsoft Teams chats, in one place. See what’s next, get the short version from AI, and hand the next step to Copilot.</p>
+                <div class="cta-row">
+                    <a class="button button--primary button--large" href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip">
+                        <svg aria-hidden="true"><use href="#i-download"/></svg>
+                        Download for macOS
+                    </a>
+                    <button class="copy-command" type="button" data-copy="brew install --cask mnsn/tap/briefbar" aria-label="Copy the Homebrew command, brew install --cask mnsn/tap/briefbar">
+                        <span class="copy-command__prompt" aria-hidden="true">$</span>
+                        <code>brew install --cask mnsn/tap/briefbar</code>
+                        <span class="copy-command__icon" aria-hidden="true">
+                            <svg class="icon-copy"><use href="#i-copy"/></svg>
+                            <svg class="icon-check"><use href="#i-check"/></svg>
+                        </span>
+                    </button>
+                </div>
+                <p class="fineprint">Free and open source · macOS 26 or later · Apple silicon</p>
+            </div>
+
+            <div class="container hero__visual">
+                <div class="hero__frame">
+                    <a class="zoom" href="images/menubar-copilot.sessions-light.png" data-zoom>
+                        <picture>
+                            <source media="(prefers-color-scheme: dark)" srcset="images/menubar-copilot.sessions-dark.png" data-dark>
+                            <img src="images/menubar-copilot.sessions-light.png" width="737" height="711" fetchpriority="high" alt="BriefBar’s items in the menu bar, one for each source with its counts; Copilot’s list is open, with three sessions that need you, one waiting for your answer, one with a plan to review and one asking permission, then the sessions still running">
+                        </picture>
+                    </a>
+                    <ul class="float-chips" aria-hidden="true">
+                        <li class="float-chip" style="--chip: var(--orange)">
+                            <span class="float-chip__icon"><svg><use href="#i-reply"/></svg></span>
+                            <span><strong>Sam Rivera replied</strong><span>Add retry with backoff to the payments client</span></span>
+                        </li>
+                        <li class="float-chip" style="--chip: var(--red)">
+                            <span class="float-chip__icon"><svg><use href="#i-x"/></svg></span>
+                            <span><strong>Failed at Run unit tests</strong><span>Show delivery estimates on the product page</span></span>
+                        </li>
+                        <li class="float-chip" style="--chip: var(--green)">
+                            <span class="float-chip__icon"><svg><use href="#i-check"/></svg></span>
+                            <span><strong>Ready to complete</strong><span>Fix the coupon rounding error</span></span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="section accent-orange" id="glance" aria-labelledby="glance-title">
+            <div class="container">
+                <header class="section-head section-head--center reveal">
+                    <p class="kicker">At a glance</p>
+                    <h2 id="glance-title">See what needs you, wherever you look.</h2>
+                    <p class="lead">Each source gets its own item in the menu bar, with its counts: pull requests that need you, failed or are ready to complete, and Copilot sessions waiting for you, running, done or stopped. Put them together, put a widget on your desktop, or open the window for everything.</p>
+                </header>
+
+                <div class="showcase reveal" data-showcase>
+                    <div class="showcase__tabs" data-showcase-tabs data-label="Where BriefBar shows what needs you">
+                        <a class="showcase__tab" id="glance-tab-items" href="#glance-panel-items">
+                            <span class="showcase__tab-title">An item for each source</span>
+                            <span class="showcase__tab-text"><span>Click one for its list, such as your unread Teams chats, each summed up on your Mac.</span></span>
+                            <span class="showcase__progress" aria-hidden="true"></span>
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-together" href="#glance-panel-together">
+                            <span class="showcase__tab-title">Sections together</span>
+                            <span class="showcase__tab-text"><span>Put sections together, such as Azure DevOps with Copilot, with a tab for each in the list.</span></span>
+                            <span class="showcase__progress" aria-hidden="true"></span>
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-state" href="#glance-panel-state">
+                            <span class="showcase__tab-title">Everything by state</span>
+                            <span class="showcase__tab-text"><span>Or everything in one item, its counts added up by state, with what needs you under a brief.</span></span>
+                            <span class="showcase__progress" aria-hidden="true"></span>
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-widgets" href="#glance-panel-widgets">
+                            <span class="showcase__tab-title">Desktop widgets</span>
+                            <span class="showcase__tab-text"><span>Behind your windows or floating above them, in three sizes.</span></span>
+                            <span class="showcase__progress" aria-hidden="true"></span>
+                        </a>
+                        <a class="showcase__tab" id="glance-tab-window" href="#glance-panel-window">
+                            <span class="showcase__tab-title">The window</span>
+                            <span class="showcase__tab-text"><span>An Overview of everything by state, with the brief, then a page for every section.</span></span>
+                            <span class="showcase__progress" aria-hidden="true"></span>
+                        </a>
+                    </div>
+
+                    <div class="showcase__stage">
+                        <div class="showcase__panel" id="glance-panel-items">
+                            <a class="zoom" href="images/menubar-teams.chats-light.png" data-zoom>
+                                <picture>
+                                    <source media="(prefers-color-scheme: dark)" srcset="images/menubar-teams.chats-dark.png" data-dark>
+                                    <img src="images/menubar-teams.chats-light.png" width="737" height="394" loading="lazy" decoding="async" alt="BriefBar’s Teams Chats menu-bar list, showing unread messages and on-device summaries">
+                                </picture>
+                            </a>
+                        </div>
+                        <div class="showcase__panel" id="glance-panel-together">
+                            <a class="zoom" href="images/menubar-combined-light.png" data-zoom>
+                                <picture>
+                                    <source media="(prefers-color-scheme: dark)" srcset="images/menubar-combined-dark.png" data-dark>
+                                    <img src="images/menubar-combined-light.png" width="714" height="772" loading="lazy" decoding="async" alt="Azure DevOps and Copilot sharing one menu-bar item, with the Pull Requests tab open and linked work items and sessions beside the pull requests">
+                                </picture>
+                            </a>
+                        </div>
+                        <div class="showcase__panel" id="glance-panel-state">
+                            <a class="zoom" href="images/menubar-by-state-light.png" data-zoom>
+                                <picture>
+                                    <source media="(prefers-color-scheme: dark)" srcset="images/menubar-by-state-dark.png" data-dark>
+                                    <img src="images/menubar-by-state-light.png" width="440" height="694" loading="lazy" decoding="async" alt="Every section in one menu-bar item, with counts added up by state and a combined list of what needs you">
+                                </picture>
+                            </a>
+                        </div>
+                        <div class="showcase__panel showcase__panel--cutout" id="glance-panel-widgets">
+                            <a class="zoom" href="images/widget-all-medium-light.png" data-zoom>
+                                <picture>
+                                    <source media="(prefers-color-scheme: dark)" srcset="images/widget-all-medium-dark.png" data-dark>
+                                    <img src="images/widget-all-medium-light.png" width="372" height="530" loading="lazy" decoding="async" alt="A desktop widget combining Azure DevOps pull requests, Copilot sessions and GitHub pull requests">
+                                </picture>
+                            </a>
+                        </div>
+                        <div class="showcase__panel" id="glance-panel-window">
+                            <a class="zoom" href="images/window-overview-light.jpg" data-zoom>
+                                <picture>
+                                    <source media="(prefers-color-scheme: dark)" srcset="images/window-overview-dark.jpg" data-dark>
+                                    <img src="images/window-overview-light.jpg" width="980" height="680" loading="lazy" decoding="async" alt="The BriefBar Overview, with a brief and items needing attention from Teams, Azure DevOps, GitHub and Copilot">
+                                </picture>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sources" data-stagger>
+                    <article class="source-card reveal" style="--icon-a: #5aa8ff; --icon-b: #0a64e8">
+                        <span class="source-card__icon" aria-hidden="true"><svg><use href="#i-pr"/></svg></span>
+                        <h3>Azure DevOps</h3>
+                        <p>Pull requests that need your reply or review, failures and work ready to complete, with what’s left before each of yours can complete. Your team’s sprint, work-item details and pipelines.</p>
+                    </article>
+                    <article class="source-card reveal" style="--icon-a: #ff7a9c; --icon-b: #e0245e">
+                        <span class="source-card__icon" aria-hidden="true"><svg><use href="#i-pulse"/></svg></span>
+                        <h3>GitHub Copilot</h3>
+                        <p>Sessions running, waiting for your answer, ready for plan review, finished or stopped, with the work items and pull requests they’re on. From the Copilot app or the CLI.</p>
+                    </article>
+                    <article class="source-card reveal" style="--icon-a: #b98aff; --icon-b: #7b3fe0">
+                        <span class="source-card__icon" aria-hidden="true"><svg><use href="#i-merge"/></svg></span>
+                        <h3>GitHub</h3>
+                        <p>Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals, for every account the GitHub CLI is signed in to.</p>
+                    </article>
+                    <article class="source-card reveal" style="--icon-a: #8f8dff; --icon-b: #5552d9">
+                        <span class="source-card__icon" aria-hidden="true"><svg><use href="#i-person"/></svg></span>
+                        <h3>Microsoft Teams</h3>
+                        <p>Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="section section--tinted accent-blue" id="next" aria-labelledby="next-title">
+            <div class="container">
+                <header class="section-head section-head--center reveal">
+                    <p class="kicker">Pull Request Order</p>
+                    <h2 id="next-title">Know what’s next.</h2>
+                    <p class="lead">Each Azure DevOps pull request shows its stage, in color. BriefBar works it out from Azure DevOps and your Copilot sessions, and the sessions working on your pull requests update it as they go.</p>
+                </header>
+
+                <div class="flow reveal" data-flow aria-hidden="true">
+                    <ol class="flow__stages">
+                        <li class="flow__stage" style="--stage: var(--red)" data-stage-status="Copilot is working on it">In progress</li>
+                        <li class="flow__stage" style="--stage: var(--orange)" data-stage-status="‘Retry backoff’ says it’s ready">Your review</li>
+                        <li class="flow__stage" style="--stage: var(--blue)" data-stage-status="Waiting on Alex and Jordan">Teammate’s review</li>
+                        <li class="flow__stage" style="--stage: var(--teal)" data-stage-status="2 of 2 approvals">Approved</li>
+                        <li class="flow__stage" style="--stage: var(--green)" data-stage-status="Build passed, ready to complete">Can merge</li>
+                        <li class="flow__stage" style="--stage: var(--purple)" data-stage-status="Merged into main">Merged</li>
+                    </ol>
+                    <div class="flow__track">
+                        <div class="flow__card">
+                            <span class="flow__id">!4102</span>
+                            <span class="flow__title">Add retry with backoff to the payments client</span>
+                            <span class="flow__status" data-flow-status>Copilot is working on it</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="note note--center reveal">In progress, Your review, Teammate’s review, Approved, Can merge, Waits for another PR or Merged. Click a stage to change it, or <strong>Finished My Review</strong> to pass a pull request on to your teammates.</p>
+
+                <figure class="shot shot--wide reveal">
+                    <a class="zoom" href="images/azureDevOps-pull-requests-board-window-light.jpg" data-zoom>
+                        <picture>
+                            <source media="(prefers-color-scheme: dark)" srcset="images/azureDevOps-pull-requests-board-window-dark.jpg" data-dark>
+                            <img src="images/azureDevOps-pull-requests-board-window-light.jpg" width="1080" height="750" loading="lazy" decoding="async" alt="The Pull Requests page: a brief, Up Next with the pull request to fix next, your next review and the next to follow up on, then the Board, with a column for each stage, what’s next in it marked Next, and a lane for each mission, naming your next steps in it">
+                        </picture>
+                    </a>
+                </figure>
+
+                <div class="cards" data-stagger>
+                    <article class="card reveal">
+                        <h3>Up Next</h3>
+                        <p>Picks your next steps: the pull request to fix next, your next review, and the next of yours to follow up on, saying who hasn’t reviewed it yet and for how long.</p>
+                    </article>
+                    <article class="card reveal">
+                        <h3>The Board</h3>
+                        <p>A column for each stage and a lane for each mission. Drag a card to another column, or press <kbd>⌘→</kbd> or <kbd>⌘←</kbd>, to change its stage.</p>
+                    </article>
+                    <article class="card reveal">
+                        <h3>By Mission</h3>
+                        <p>The pull requests that go together, such as a stack’s or a story’s, in the order they merge. Apple Intelligence names each mission on your Mac.</p>
+                    </article>
+                </div>
+                <p class="note note--center reveal">Stages, missions and what you choose are BriefBar’s own: nothing changes in Azure DevOps. <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#azure-devops">Pull Request Order, Up Next and the Board →</a></p>
+            </div>
+        </section>
+
+        <section class="section accent-green" id="follow" aria-labelledby="follow-title">
+            <div class="container split">
+                <div class="split__text reveal">
+                    <p class="kicker">Links</p>
+                    <h2 id="follow-title">Follow the work, not the notifications.</h2>
+                    <p class="lead">Open a story on the Sprint page. <strong>Where It Stands</strong> brings together its linked pull requests, their builds and Copilot sessions, with what needs you first, and <strong>Waiting on</strong> names who acts next: you, a reviewer or Copilot.</p>
+                    <ul class="feature-list">
+                        <li><strong>Work item:</strong> description, acceptance criteria, tasks, attachments and discussion.</li>
+                        <li><strong>Pull request:</strong> reviewers and votes, comments waiting on you, conflicts, builds and failure details, and one click to its Copilot session or worktree.</li>
+                        <li><strong>Session:</strong> its question or plan, progress notes, what’s been done, what’s next and its last response.</li>
+                    </ul>
+                    <p class="note">Links you add stay in BriefBar; they don’t change Azure DevOps, GitHub or Copilot. <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#links">How linking works →</a></p>
+                </div>
+                <figure class="split__media shot reveal">
+                    <a class="zoom" href="images/readme-trail-still-light.jpg" data-zoom>
+                        <picture>
+                            <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="images/readme-trail-still-dark.jpg" data-dark="(prefers-reduced-motion: reduce)">
+                            <source media="(prefers-reduced-motion: reduce)" srcset="images/readme-trail-still-light.jpg">
+                            <source media="(prefers-color-scheme: dark)" srcset="images/readme-trail-dark.gif" data-dark>
+                            <img src="images/readme-trail-light.gif" width="960" height="736" loading="lazy" decoding="async" alt="A story on the Sprint page with Where It Stands open; its bug, the bug’s pull request and the Copilot session that opened it are each a click away">
+                        </picture>
+                    </a>
+                </figure>
+            </div>
+        </section>
+
+        <section class="section section--tinted accent-purple" id="summaries" aria-labelledby="summaries-title">
+            <div class="container split split--flip">
+                <div class="split__text reveal">
+                    <p class="kicker">Summaries</p>
+                    <h2 id="summaries-title">Get the short version.</h2>
+                    <blockquote class="quote">“Where does this stand, what’s next, and who is it waiting on?”</blockquote>
+                    <p class="lead">A work item’s summary reads it and its linked work, down to pull requests’ comment threads and what each Copilot session was asked and answered. You get a headline, the next step and whose it is. Pull requests and sessions get one too.</p>
+                    <div class="models">
+                        <div class="model">
+                            <h3>GitHub Copilot</h3>
+                            <p>Claude Haiku 5.5 by default, through your signed-in Copilot CLI, one request on your plan each. Or any model up to Claude Opus 5.5.</p>
+                        </div>
+                        <div class="model">
+                            <h3>Apple Intelligence</h3>
+                            <p>On your Mac, and the default without the CLI: free, with no Copilot requests.</p>
+                        </div>
+                    </div>
+                    <p class="note">Either way, nothing from Teams is included and no tools are allowed: summarizing can’t change files or take actions. <a href="https://github.com/mnsn/brief-bar#get-the-short-version-with-ai">Which model writes them, and what it sees →</a></p>
+                </div>
+                <figure class="split__media shot reveal">
+                    <a class="zoom" href="images/rows-summary-pull-requests-light.jpg" data-zoom>
+                        <picture>
+                            <source media="(prefers-color-scheme: dark)" srcset="images/rows-summary-pull-requests-dark.jpg" data-dark>
+                            <img src="images/rows-summary-pull-requests-light.jpg" width="980" height="680" loading="lazy" decoding="async" alt="Pull requests with linked work and an inline summary explaining the remaining review feedback and the next action">
+                        </picture>
+                    </a>
+                </figure>
+            </div>
+        </section>
+
+        <section class="section accent-pink" id="copilot" aria-labelledby="copilot-title">
+            <div class="container split">
+                <div class="split__text reveal">
+                    <p class="kicker">Send Work to Copilot</p>
+                    <h2 id="copilot-title">Hand the next step to Copilot.</h2>
+                    <p class="lead">Send a task, review comments, a failing build or merge conflicts to Copilot, with the context already in the prompt. Review, edit or copy the prompt, then choose where it goes and the model.</p>
+                    <ul class="action-chips" aria-label="Some of the actions">
+                        <li>Fix Comments</li>
+                        <li>Fix the Build</li>
+                        <li>Resolve Conflicts</li>
+                        <li>Pre-review</li>
+                        <li>✨ Explain the Failure</li>
+                        <li>Ask…</li>
+                        <li>Push &amp; Reply</li>
+                    </ul>
+                    <ul class="feature-list">
+                        <li><strong>Send a task</strong> from the Sprint page. Copilot works on its own in a new worktree, then pushes a branch and opens a pull request as you.</li>
+                        <li><strong>Fix a pull request</strong> from its comments, its failed build or its conflicts, or from the notification that tells you.</li>
+                        <li><strong>Ask a session</strong> where it stands, or why it changed something. It answers aside, in a copy of the session, so nothing in it changes.</li>
+                        <li><strong>Ship the fix</strong> with Push &amp; Reply, which pushes all a session changed and replies on the threads it fixed, as you.</li>
+                    </ul>
+                    <p class="note">Fixes don’t push unless you ask, and Pre-review changes and posts nothing. <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#sending-to-a-session-thats-already-there">Copilot actions and their limits →</a></p>
+                </div>
+                <figure class="split__media shot shot--narrow reveal">
+                    <a class="zoom" href="images/azureDevOps-copilot-composer-light.jpg" data-zoom>
+                        <picture>
+                            <source media="(prefers-color-scheme: dark)" srcset="images/azureDevOps-copilot-composer-dark.jpg" data-dark>
+                            <img src="images/azureDevOps-copilot-composer-light.jpg" width="640" height="651" loading="lazy" decoding="async" alt="Send Work to Copilot composer with an editable task prompt, session destination, repository and model options">
+                        </picture>
+                    </a>
+                </figure>
+            </div>
+        </section>
+
+        <section class="section section--tinted accent-teal" id="agents" aria-labelledby="agents-title">
+            <div class="container split split--flip">
+                <div class="split__text reveal">
+                    <p class="kicker">Agents</p>
+                    <h2 id="agents-title">Works with your agents.</h2>
+                    <p class="lead">Turn on agents in <strong>Settings › Agents</strong>, then install the Copilot plugin there to use <code>/briefbar</code> in the GitHub Copilot app or CLI.</p>
+                    <ul class="feature-list">
+                        <li><strong>Sessions keep BriefBar current.</strong> They tell it the work items and pull requests they’re working on, the pull requests they open, and, with Pull Request Order on, their stages as they go.</li>
+                        <li><strong>Sessions don’t sit waiting on pipelines.</strong> Once one pushes, it ends its turn, and if the build fails, BriefBar’s notification offers <strong>Fix with Copilot…</strong></li>
+                        <li><strong>Any MCP agent.</strong> BriefBar is also an opt-in MCP server, with install actions for VS Code and Cursor.</li>
+                    </ul>
+                    <p class="note"><a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#agents">Agent setup and available tools →</a></p>
+                </div>
+                <div class="split__media terminal reveal">
+                    <div class="terminal__bar" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                        <em>GitHub Copilot</em>
+                    </div>
+                    <dl class="terminal__body">
+                        <div class="terminal__entry" style="--chars: 9; --delay: .3s">
+                            <dt><span class="terminal__prompt" aria-hidden="true">❯</span> <span class="terminal__command">/briefbar</span></dt>
+                            <dd>What needs you across Azure DevOps and Copilot; in the Copilot app, an inbox you can search, sort and group.</dd>
+                        </div>
+                        <div class="terminal__entry" style="--chars: 14; --delay: 1.9s">
+                            <dt><span class="terminal__prompt" aria-hidden="true">❯</span> <span class="terminal__command">/briefbar 5101</span></dt>
+                            <dd>Where the work item stands, what’s done, what’s left and who it waits on.</dd>
+                        </div>
+                        <div class="terminal__entry" style="--chars: 25; --delay: 3.8s">
+                            <dt><span class="terminal__prompt" aria-hidden="true">❯</span> <span class="terminal__command">Fix the comments on !4102</span></dt>
+                            <dd>In the Copilot app, the pull request’s own session, a fork of it or a new one, which you can follow and steer.</dd>
+                        </div>
+                    </dl>
+                    <p class="terminal__ready" aria-hidden="true"><span class="terminal__prompt">❯</span> <span class="terminal__caret"></span></p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section accent-green" id="privacy" aria-labelledby="privacy-title">
+            <div class="container">
+                <header class="section-head section-head--center reveal">
+                    <p class="kicker">Private by default</p>
+                    <h2 id="privacy-title">Your data and your choices.</h2>
+                    <p class="lead"><strong>No BriefBar account. No telemetry. Nothing starts acting on your work unless you ask.</strong></p>
+                </header>
+
+                <div class="privacy">
+                    <div class="settings-panel reveal">
+                        <p class="settings-panel__title" id="settings-title">Every source and feature starts off</p>
+                        <ul class="settings-list" aria-labelledby="settings-title">
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-teams">Microsoft Teams</p>
+                                    <p class="setting__text" id="setting-teams-text">Reads Teams’ notifications and read markers on your Mac, with Full Disk Access; not your complete chat history.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-teams" aria-describedby="setting-teams-text"></button>
+                            </li>
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-ado">Azure DevOps</p>
+                                    <p class="setting__text" id="setting-ado-text">Your pull requests, sprint and pipelines, with your Azure CLI sign-in. No personal access token.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-ado" aria-describedby="setting-ado-text"></button>
+                            </li>
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-github">GitHub</p>
+                                    <p class="setting__text" id="setting-github-text">Reviews requested from you and your pull requests, with one read-only query through your GitHub CLI sign-in.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-github" aria-describedby="setting-github-text"></button>
+                            </li>
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-copilot">GitHub Copilot</p>
+                                    <p class="setting__text" id="setting-copilot-text">Your local Copilot app or CLI session files, with no extra sign-in.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-copilot" aria-describedby="setting-copilot-text"></button>
+                            </li>
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-summaries">Summaries</p>
+                                    <p class="setting__text" id="setting-summaries-text">Sends the details of the work you open to GitHub Copilot, or keeps them on your Mac with Apple Intelligence.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-summaries" aria-describedby="setting-summaries-text"></button>
+                            </li>
+                            <li class="setting">
+                                <div>
+                                    <p class="setting__name" id="setting-changes">Make Changes in Azure DevOps</p>
+                                    <p class="setting__text" id="setting-changes-text">Posts your replies, sets threads’ statuses and changes tags, as you, only when you click.</p>
+                                </div>
+                                <button class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="setting-changes" aria-describedby="setting-changes-text"></button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="promises" data-stagger>
+                        <article class="promise reveal">
+                            <h3><svg aria-hidden="true"><use href="#i-lock"/></svg>Your sign-ins, not tokens</h3>
+                            <p>Azure DevOps and GitHub use your existing CLI sign-ins, and Teams and Copilot read files on your Mac.</p>
+                        </article>
+                        <article class="promise reveal">
+                            <h3><svg aria-hidden="true"><use href="#i-shield"/></svg>Read-only, but for two opt-ins</h3>
+                            <p>Sources only read. Make Changes in Azure DevOps acts as you only when you click. Send Work to Copilot is separate: Copilot works as you on what you send it, changing code, pushing a branch and opening a pull request. Both start off.</p>
+                        </article>
+                        <article class="promise reveal">
+                            <h3><svg aria-hidden="true"><use href="#i-chat"/></svg>Teams stays out of it</h3>
+                            <p>Teams content never goes to Copilot summaries or BriefBar’s agent tools.</p>
+                        </article>
+                    </div>
+                </div>
+                <p class="note note--center reveal"><a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#privacy">Full privacy details</a> · <a href="https://github.com/mnsn/brief-bar/blob/main/SECURITY.md">Security and download verification</a></p>
+            </div>
+        </section>
+
+        <section class="section section--tinted accent-blue" id="get-started" aria-labelledby="start-title">
+            <div class="container">
+                <header class="section-head section-head--center reveal">
+                    <p class="kicker">Get started</p>
+                    <h2 id="start-title">Three steps, and it’s in your menu bar.</h2>
+                </header>
+
+                <ol class="steps" data-stagger>
+                    <li class="step reveal">
+                        <span class="step__number" aria-hidden="true">1</span>
+                        <h3>Install</h3>
+                        <p>With <a href="https://brew.sh">Homebrew</a>:</p>
+                        <button class="copy-command copy-command--block" type="button" data-copy="brew install --cask mnsn/tap/briefbar" aria-label="Copy the Homebrew command, brew install --cask mnsn/tap/briefbar">
+                            <code>brew install --cask mnsn/tap/briefbar</code>
+                            <span class="copy-command__icon" aria-hidden="true">
+                                <svg class="icon-copy"><use href="#i-copy"/></svg>
+                                <svg class="icon-check"><use href="#i-check"/></svg>
+                            </span>
+                        </button>
+                        <p>Or download <a href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip">BriefBar.zip</a>, unzip it and move <strong>BriefBar</strong> to <strong>Applications</strong>.</p>
+                    </li>
+                    <li class="step reveal">
+                        <span class="step__number" aria-hidden="true">2</span>
+                        <h3>Open it</h3>
+                        <p>The app isn’t notarized by Apple, so macOS blocks the first launch: click <strong>Done</strong>, then go to <strong>System Settings › Privacy &amp; Security › Open Anyway</strong> and confirm. On a managed Mac, check your organization’s policy first.</p>
+                    </li>
+                    <li class="step reveal">
+                        <span class="step__number" aria-hidden="true">3</span>
+                        <h3>Turn on what you want</h3>
+                        <p>In BriefBar’s Settings, turn on only the sources you want. Each explains what it reads before you consent.</p>
+                    </li>
+                </ol>
+
+                <div class="setup reveal">
+                    <h3>What each source needs</h3>
+                    <dl class="setup__list">
+                        <div>
+                            <dt>Azure DevOps</dt>
+                            <dd>The Azure CLI (<code>brew install azure-cli</code>) and <code>az login</code>, or <strong>Sign In…</strong> in Settings.</dd>
+                        </div>
+                        <div>
+                            <dt>GitHub</dt>
+                            <dd>The GitHub CLI (<code>brew install gh</code>) and <code>gh auth login</code>, or <strong>Sign In…</strong> in Settings.</dd>
+                        </div>
+                        <div>
+                            <dt>Copilot sessions</dt>
+                            <dd>Nothing more: BriefBar reads your local Copilot app or CLI session files.</dd>
+                        </div>
+                        <div>
+                            <dt>Teams</dt>
+                            <dd><strong>Full Disk Access</strong>, with BriefBar’s setup guide.</dd>
+                        </div>
+                    </dl>
+                    <p class="note">Later releases install through the built-in updater, even if you installed with Homebrew. <a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md#install">Full installation guide, managed Macs and building from source →</a></p>
+                </div>
+            </div>
+        </section>
+
+        <section class="final-cta" aria-labelledby="cta-title">
+            <div class="container final-cta__inner reveal">
+                <div class="final-cta__icon">
+                    <img src="images/icon.png" width="128" height="128" alt="" loading="lazy" decoding="async">
+                </div>
+                <h2 id="cta-title">Everything that needs you, one click away.</h2>
+                <div class="cta-row">
+                    <a class="button button--primary button--large" href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip">
+                        <svg aria-hidden="true"><use href="#i-download"/></svg>
+                        Download for macOS
+                    </a>
+                    <a class="button button--secondary button--large" href="https://github.com/mnsn/brief-bar">
+                        <svg aria-hidden="true"><use href="#i-github"/></svg>
+                        View on GitHub
+                    </a>
+                </div>
+                <p class="fineprint">Free and open source · macOS 26 or later · Apple silicon</p>
+                <p class="fineprint">On Windows? <a href="https://github.com/mnsn/brief-bar/blob/main/windows/README.md">BriefBar for Windows</a> is in development.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container footer__inner">
+            <div class="footer__brand">
+                <p class="footer__name"><img src="images/icon.png" width="28" height="28" alt="" loading="lazy" decoding="async"> BriefBar</p>
+                <p>Everything that needs you, in your Mac’s menu bar.</p>
+            </div>
+            <nav class="footer__links" aria-label="More about BriefBar">
+                <div>
+                    <h2>Get it</h2>
+                    <ul>
+                        <li><a href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip">Download</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/releases">Releases</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/CHANGELOG.md">What’s new</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h2>Learn</h2>
+                    <ul>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/docs/user-guide.md">User guide and FAQ</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/docs/how-it-works.md">How it works</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/SECURITY.md">Security</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h2>Project</h2>
+                    <ul>
+                        <li><a href="https://github.com/mnsn/brief-bar">Source code</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/CONTRIBUTING.md">Contributing</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/issues">Report a bug or suggest a feature</a></li>
+                        <li><a href="https://github.com/mnsn/brief-bar/blob/main/windows/README.md">BriefBar for Windows</a></li>
+                    </ul>
+                </div>
+            </nav>
+        </div>
+        <div class="container footer__legal">
+            <p>BriefBar is an independent project, not affiliated with or endorsed by Microsoft or GitHub.</p>
+            <p>Copyright © 2026 Asaf Manassen. Licensed under <a href="https://github.com/mnsn/brief-bar/blob/main/LICENSE">GPL v3.0 or later</a>.</p>
+        </div>
+    </footer>
+
+    <dialog class="lightbox" data-lightbox aria-label="Enlarged picture">
+        <button class="lightbox__close" type="button" aria-label="Close">
+            <svg aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+    </dialog>
+    <p class="sr-only" aria-live="polite" data-announce></p>
+</body>
+</html>
