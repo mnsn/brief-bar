@@ -20,8 +20,9 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     /// closes or shows another task.
     private var sending: Task<Void, Never>?
 
-    func show(item: TaskWorkItem, options: CopilotRunOptions, store: CopilotTasksStore) {
-        show(subject: .workItem(item), prompt: nil, options: options, continuing: nil, store: store)
+    /// - Parameter problem: why what you sent didn't start, for the window to say.
+    func show(item: TaskWorkItem, options: CopilotRunOptions, problem: String? = nil, store: CopilotTasksStore) {
+        show(subject: .workItem(item), prompt: nil, options: options, continuing: nil, problem: problem, store: store)
     }
 
     /// - Parameters:
@@ -34,10 +35,11 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     ///   - start: where it goes to begin with, as a composer in place chose it, rather than BriefBar's suggestion.
     ///   - parts: what of the pull request it takes on, its threads, builds or conflicts, for each to say what became of it.
     ///   - fixes: a Push & Reply that fixes the threads it takes on first, as a comment's fix sent with Push and Reply on.
+    ///   - problem: why what you sent didn't start, for the window to say.
     func show(
         subject: TaskSubject, prompt: String?, sessionPrompt: String? = nil, createdAt: Date? = nil, options: CopilotRunOptions,
         continuing: CopilotRun?, handOff: CommentHandOff? = nil, session start: ComposerStart? = nil, parts: [PullRequestPart] = [],
-        fixes: Bool = false, store: CopilotTasksStore
+        fixes: Bool = false, problem: String? = nil, store: CopilotTasksStore
     ) {
         // Another task in its place stops the last one's prompt, which may be on its way to a session.
         stopSending()
@@ -46,7 +48,7 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
         let view = CopilotComposerView(
             subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt,
             sessionPrompt: sessionPrompt, createdAt: createdAt, continuing: continuing, handOff: handOff, start: start, parts: parts,
-            fixes: fixes, asksForStage: store.asksForStage, sending: { [weak self] sending in
+            fixes: fixes, asksForStage: store.asksForStage, startsInApp: store.startsInApp, problem: problem, sending: { [weak self] sending in
                 guard self?.shown == task else { return sending.cancel() }
                 self?.sending = sending
             }
@@ -104,13 +106,14 @@ enum ComposerStart {
 
 struct CopilotComposerView: View {
     /// How a task goes to a session that's there already: where Copilot takes it up, and whether in the session itself or
-    /// in a fork of it, a new session with its history.
+    /// in a fork of it, a new session with its history. For a work item's new session, where it starts: in the Copilot app,
+    /// or with the CLI.
     struct Delivery: Hashable {
         enum Place: Hashable {
             /// In the Copilot app: BriefBar's extension in the session sends it the prompt, or BriefBar copies it for you
-            /// to paste there.
+            /// to paste there; for a new session, BriefBar's extension in another of the app's sessions starts it.
             case app
-            /// The Copilot CLI goes on with it now, on its own.
+            /// The Copilot CLI goes on with it now, on its own; or, for a new session, starts it, on its own.
             case cli
         }
 
@@ -144,6 +147,8 @@ struct CopilotComposerView: View {
     /// Its prompt ends asking the session to tell BriefBar the pull request's stage once it pushed, as Pull Request Order
     /// does while it's on (`PromptTemplate.stageLine`), unless it's a review.
     let asksForStage: Bool
+    /// A work item's new session starts in the Copilot app unless you choose otherwise (`CopilotTasksStore.startsInApp`).
+    let startsInApp: Bool
     /// A pull request's prompts: for a worktree of BriefBar's, and for a session that works wherever it is.
     let worktreePrompt: String?
     let sessionPrompt: String?
@@ -191,6 +196,17 @@ struct CopilotComposerView: View {
     @LocalState private var fallback: SessionFallback?
     /// The session whose folder is being checked for the CLI.
     @LocalState private var checkingSession: String?
+    /// Where a work item's new session would start in the Copilot app, once looked at (`CopilotTasksStore.appStart`).
+    @LocalState private var appPlan: AppStartPlan?
+    /// Why a work item's new session can't start in the Copilot app, once looked at.
+    @LocalState private var appStartProblem: AppStartProblem?
+    /// Looking at whether a new session can start in the Copilot app, the first time for its repository.
+    @LocalState private var isCheckingAppStart = false
+    /// The Copilot app is on this Mac: a work item's new session can start there, or with the CLI.
+    @LocalState private var hasApp: Bool
+    /// You chose where a work item's new session starts: whether it can start in the Copilot app later doesn't change it,
+    /// unless it can't start where you chose.
+    @LocalState private var choseNewSessionPlace = false
     /// You're writing in the prompt: its card shows it.
     @FocusState private var isEditingPrompt: Bool
 
@@ -207,15 +223,18 @@ struct CopilotComposerView: View {
     ///   - parts: what of the pull request it takes on, its threads, builds or conflicts.
     ///   - fixes: a Push & Reply that fixes the threads it takes on first, as a comment's fix sent with Push and Reply on.
     ///   - asksForStage: Pull Request Order is on: its prompt ends asking for the stage, unless it's a review's.
+    ///   - startsInApp: a work item's new session starts in the Copilot app unless you choose otherwise.
+    ///   - problem: why what you sent didn't start, as you sent it without the window.
     init(
         subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, sessionPrompt: String? = nil,
         createdAt: Date? = nil, continuing: CopilotRun? = nil, handOff: CommentHandOff? = nil,
         session: (choice: SessionChoice, reach: SessionReach?)? = nil, start: ComposerStart? = nil, parts: [PullRequestPart] = [],
-        fixes: Bool = false, asksForStage: Bool = false, sending: @escaping (Task<Void, Never>) -> Void = { _ in },
-        close: @escaping () -> Void
+        fixes: Bool = false, asksForStage: Bool = false, startsInApp: Bool = false, problem: String? = nil,
+        sending: @escaping (Task<Void, Never>) -> Void = { _ in }, close: @escaping () -> Void
     ) {
         self.subject = subject
         self.asksForStage = asksForStage
+        self.startsInApp = startsInApp
         self.continuing = continuing
         self.handOff = handOff
         self.parts = parts
@@ -239,7 +258,7 @@ struct CopilotComposerView: View {
                 reasons: [.earlierTask]
             )
         }
-        var delivery: Delivery = initial?.opensInApp == true ? .session : .cli
+        var delivery: Delivery = initial.map { $0.opensInApp ? .session : .cli } ?? Self.newSession(subject, startsInApp: startsInApp)
         switch start {
         case .session(let choice, let forking)?:
             initial = choice
@@ -250,17 +269,19 @@ struct CopilotComposerView: View {
             }
         case .newSession?:
             initial = nil
-            delivery = .cli
+            delivery = Self.newSession(subject, startsInApp: startsInApp)
         case nil:
             break
         }
         let filledIn = CopilotComposerView.writtenPrompt(
             for: initial, subject: subject, template: template, worktreePrompt: prompts.worktree, sessionPrompt: prompts.session,
-            baseBranch: nil, forks: delivery.forks, asksForStage: asksForStage
+            baseBranch: nil, forks: delivery.forks, startsInApp: initial == nil && delivery.place == .app, asksForStage: asksForStage
         )
         _target = LocalState(wrappedValue: initial)
         _choseTarget = LocalState(wrappedValue: start != nil)
         _delivery = LocalState(wrappedValue: delivery)
+        _hasApp = LocalState(wrappedValue: startsInApp)
+        _deliveryProblem = LocalState(wrappedValue: problem)
         _reach = LocalState(wrappedValue: session?.reach)
         _prompt = LocalState(wrappedValue: filledIn)
         _filledIn = LocalState(wrappedValue: filledIn)
@@ -269,22 +290,27 @@ struct CopilotComposerView: View {
     }
 
     /// The prompt BriefBar writes for where Copilot works. A work item's: the one in Settings for a new session, in a new
-    /// worktree, with its base branch once known; or BriefBar's own for a session that's there already, which checks where
-    /// it works first. A pull request's: for a worktree of BriefBar's, detached at its latest commit, for a new session or
-    /// an earlier task's in such a worktree; or for wherever the session works otherwise, as the Copilot app's sessions
-    /// and the work item's task that opened it do. Each but a review's ends asking the session to tell BriefBar the pull
-    /// request's stage once it pushed, while Pull Request Order is on.
+    /// worktree, with its base branch once known, or the Copilot app's take on it for a new session there
+    /// (`PromptTemplate.forAppSession`); or BriefBar's own for a session that's there already, which checks where it works
+    /// first. A pull request's: for a worktree of BriefBar's, detached at its latest commit, for a new session or an earlier
+    /// task's in such a worktree; or for wherever the session works otherwise, as the Copilot app's sessions and the work
+    /// item's task that opened it do. Each but a review's ends asking the session to tell BriefBar the pull request's stage
+    /// once it pushed, while Pull Request Order is on.
     /// - Parameters:
     ///   - forks: it goes to a fork of the session, which works in a checkout of its own, wherever that is.
+    ///   - startsInApp: a work item's new session starts in the Copilot app.
     ///   - asksForStage: Pull Request Order is on.
     static func writtenPrompt(
         for choice: SessionChoice?, subject: TaskSubject, template: String, worktreePrompt: String?, sessionPrompt: String?,
-        baseBranch: String?, forks: Bool = false, asksForStage: Bool = false
+        baseBranch: String?, forks: Bool = false, startsInApp: Bool = false, asksForStage: Bool = false
     ) -> String {
         func written() -> String {
             switch subject {
             case .workItem(let item):
-                guard choice != nil else { return PromptTemplate.render(template, item: item, baseBranch: baseBranch) }
+                guard choice != nil else {
+                    let template = startsInApp ? PromptTemplate.forAppSession(template) : template
+                    return PromptTemplate.render(template, item: item, baseBranch: baseBranch)
+                }
                 return PromptTemplate.render(PromptTemplate.existingSession, item: item)
             case .pullRequest:
                 let worktree = worktreePrompt ?? ""
@@ -296,8 +322,21 @@ struct CopilotComposerView: View {
         return PromptTemplate.ending(written(), asksForStage: asksForStage && subject.asksForStage)
     }
 
-    init(item: TaskWorkItem, options: CopilotRunOptions, template: String, asksForStage: Bool = false, close: @escaping () -> Void) {
-        self.init(subject: .workItem(item), options: options, template: template, asksForStage: asksForStage, close: close)
+    init(
+        item: TaskWorkItem, options: CopilotRunOptions, template: String, asksForStage: Bool = false, startsInApp: Bool = false,
+        close: @escaping () -> Void
+    ) {
+        self.init(
+            subject: .workItem(item), options: options, template: template, asksForStage: asksForStage, startsInApp: startsInApp,
+            close: close
+        )
+    }
+
+    /// Where a new session starts to begin with: a work item's in the Copilot app, as Settings say
+    /// (`CopilotTasksStore.startsInApp`); a pull request's, in a worktree of BriefBar's at its latest commit, with the CLI.
+    static func newSession(_ subject: TaskSubject, startsInApp: Bool) -> Delivery {
+        if case .workItem = subject, startsInApp { return Delivery(place: .app) }
+        return .cli
     }
 
     private var workItem: TaskWorkItem? {
@@ -338,8 +377,16 @@ struct CopilotComposerView: View {
         target.map(CopilotDestinations.forksWithTheCLI) == true && !mustContinue
     }
 
-    /// Runs with the CLI, rather than going to the session in the Copilot app: a new session, or the CLI going on with one.
-    private var runsHere: Bool { target == nil || delivery.place == .cli }
+    /// Goes to a session that's there already, in the Copilot app, which works with its own model, rather than with the CLI
+    /// or in a new session, wherever it starts, which works with the model you choose.
+    private var sendsToSession: Bool { target != nil && delivery.place == .app }
+
+    /// A work item's new session, which starts in the Copilot app rather than with the CLI.
+    private var startsNewInApp: Bool { target == nil && workItem != nil && delivery.place == .app }
+
+    /// Where a work item's new session starts can be chosen: in the Copilot app, or with the CLI. Only while the app is on
+    /// this Mac.
+    private var choosesNewSessionPlace: Bool { target == nil && workItem != nil && hasApp }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -373,6 +420,7 @@ struct CopilotComposerView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 await recheckSession()
+                await recheckAppStart()
             }
         }
     }
@@ -454,6 +502,22 @@ struct CopilotComposerView: View {
                 if target != nil {
                     deliveryRow
                 } else {
+                    if choosesNewSessionPlace {
+                        newSessionRow
+                        Divider()
+                            .padding(.leading, 50)
+                            .padding(.trailing, 10)
+                    } else if workItem != nil, !newSessionNotes.isEmpty {
+                        // Without the Copilot app there's nothing to choose, but the window still says why.
+                        VStack(alignment: .leading, spacing: 8) {
+                            noteList(newSessionNotes)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        Divider()
+                            .padding(.leading, 50)
+                            .padding(.trailing, 10)
+                    }
                     repositoryRow
                 }
             }
@@ -553,6 +617,7 @@ struct CopilotComposerView: View {
     /// What it is, under the menu. Why the CLI can't go on with it is under Send.
     private var sessionCaption: String {
         guard let target else {
+            if startsNewInApp { return "Copilot starts a new session in the Copilot app, in a new worktree of the repository." }
             return pullRequest == nil
                 ? "Copilot starts a new session, in a new worktree of the repository."
                 : "Copilot starts a new session, in a new worktree at the pull request's latest commit."
@@ -606,19 +671,79 @@ struct CopilotComposerView: View {
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-            ForEach(notes, id: \.self) { note in
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Image(systemName: "info.circle")
-                    Text(note)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .font(size: 11.5)
-                .foregroundStyle(.secondary)
-            }
+            noteList(notes)
         }
         .padding(10)
         .help("Send to Session sends the prompt to the session in the Copilot app, and Send to a Fork to a fork of it. Run with the CLI goes on with it now, on its own.")
+    }
+
+    /// Where a work item's new session starts, side by side: in the Copilot app, where you can follow and steer it, or with
+    /// the CLI, on its own; with why it can't start in the app, and why nothing started the last time you sent it.
+    private var newSessionRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                ComposerChoice(
+                    symbol: "macwindow", title: "In the Copilot App", detail: "Starts a session there, where you can follow and steer it.",
+                    isSelected: delivery.place == .app, isChecking: isCheckingAppStart
+                ) {
+                    chooseNewSession(.app)
+                }
+                .disabled(appStartProblem != nil || isCheckingAppStart)
+                ComposerChoice(
+                    symbol: "terminal", title: "Run with the CLI", detail: "Copilot works on it on its own, in a worktree of BriefBar's.",
+                    isSelected: delivery.place == .cli
+                ) {
+                    chooseNewSession(.cli)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            noteList(newSessionNotes)
+        }
+        .padding(10)
+        .help("In the Copilot App starts a new session in the Copilot app, where you can follow and steer it. Run with the CLI starts one with the Copilot CLI, which works on its own.")
+    }
+
+    /// What the window says of a work item's new session (`newSessionNotes(hasApp:…)`).
+    private var newSessionNotes: [String] {
+        Self.newSessionNotes(
+            hasApp: hasApp, appStartProblem: appStartProblem, appProblem: appProblem, inAppByDefault: settings.copilotNewSessionsInApp,
+            startingAlready: !isDelivering && store.isStartingInApp(subject), deliveryProblem: deliveryProblem
+        )
+    }
+
+    /// What the window says of a work item's new session, under where it starts, or where that would be without the Copilot
+    /// app, whose choices aren't there then: why it can't start in the app, as BriefBar found it, or, without the app, that
+    /// the app isn't there while Settings say new sessions start in it, since it runs with the CLI instead; that one starts
+    /// there for it already; and why nothing started the last time you sent it, here or with Send with ….
+    static func newSessionNotes(
+        hasApp: Bool, appStartProblem: AppStartProblem?, appProblem: String?, inAppByDefault: Bool, startingAlready: Bool,
+        deliveryProblem: String?
+    ) -> [String] {
+        let whyNotInApp = hasApp ? appStartProblem?.description : inAppByDefault ? appProblem : nil
+        var notes = [whyNotInApp].compactMap { $0 }
+        if startingAlready { notes.append(CopilotTasksStore.startingAlready) }
+        if let deliveryProblem, !notes.contains(deliveryProblem) { notes.append(deliveryProblem) }
+        return notes
+    }
+
+    private func noteList(_ notes: [String]) -> some View {
+        ForEach(notes, id: \.self) { note in
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "info.circle")
+                Text(note)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(size: 11.5)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    /// You chose where a work item's new session starts.
+    private func chooseNewSession(_ place: Delivery.Place) {
+        choseNewSessionPlace = true
+        go(Delivery(place: place))
+        deliveryProblem = nil
     }
 
     /// Sending to the session, or to a fork, can be chosen: the session is free, and the Copilot app opens its sessions.
@@ -631,11 +756,12 @@ struct CopilotComposerView: View {
         deliveryProblem = nil
     }
 
-    /// Goes this way from now on: a fork works in a checkout of its own, wherever that is, which its prompt says.
+    /// Goes this way from now on: a fork works in a checkout of its own, wherever that is, and a work item's new session in
+    /// the Copilot app on a branch the app makes, which its prompt says.
     private func go(_ way: Delivery) {
-        let forked = delivery.forks
+        let before = delivery
         delivery = way
-        if way.forks != forked { refreshPrompt() }
+        if way != before { refreshPrompt() }
     }
 
     /// What keeps a way of sending from working as it says, under the choices: why BriefBar can't send it to the session
@@ -643,7 +769,7 @@ struct CopilotComposerView: View {
     private var notes: [String] {
         var notes: [String] = []
         // Once BriefBar copied it, the note by Send says why.
-        if !runsHere, fallback == nil, let why = reach?.whyNot(forking: delivery.forks) { notes.append(why) }
+        if sendsToSession, fallback == nil, let why = reach?.whyNot(forking: delivery.forks) { notes.append(why) }
         notes += [cliProblem, appProblem, deliveryProblem].compactMap { $0 }
         return notes
     }
@@ -737,7 +863,7 @@ struct CopilotComposerView: View {
                 .opacity(prompt == filledIn ? 0 : 1)
                 .disabled(prompt == filledIn || isDelivering || fallback != nil)
                 .accessibilityHidden(prompt == filledIn)
-                .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
+                .help(usesSettingsPrompt ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
                 ComposerCopyButton(text: prompt)
                     // A little apart from Reset, beside it once you change the prompt.
                     .padding(.leading, 4)
@@ -757,7 +883,7 @@ struct CopilotComposerView: View {
                 Divider()
                     .opacity(0.6)
                 HStack(spacing: 6) {
-                    if runsHere {
+                    if !sendsToSession {
                         CopilotModelMenu(model: $model, isCapsule: true)
                         CopilotEffortPicker(effort: $effort, isCapsule: true)
                     } else {
@@ -783,7 +909,13 @@ struct CopilotComposerView: View {
     /// "From your template in Settings", "Written by BriefBar", or "Edited".
     private var promptOrigin: String {
         if prompt != filledIn { return "Edited" }
-        return workItem != nil && target == nil ? "From your template in Settings" : "Written by BriefBar"
+        return usesSettingsPrompt ? "From your template in Settings" : "Written by BriefBar"
+    }
+
+    /// A work item's new session's prompt comes from the template in Settings: in the Copilot app, only once you changed it
+    /// there, since BriefBar writes the app's take on the standard one (`PromptTemplate.forAppSession`).
+    private var usesSettingsPrompt: Bool {
+        workItem != nil && target == nil && !(startsNewInApp && template == PromptTemplate.standard)
     }
 
     private var footer: some View {
@@ -808,7 +940,7 @@ struct CopilotComposerView: View {
                     HStack(spacing: 6) {
                         ProgressView()
                             .controlSize(.small)
-                        Text(delivery.forks ? "Forking…" : "Sending…")
+                        Text(startsNewInApp ? "Starting…" : delivery.forks ? "Forking…" : "Sending…")
                     }
                 } else {
                     Label(sendTitle, systemImage: sendSymbol)
@@ -825,12 +957,12 @@ struct CopilotComposerView: View {
     /// "Send"; "Open in Copilot" when BriefBar would copy it for you to paste; or "Done" once it did so unexpectedly.
     private var sendTitle: String {
         if fallback != nil { return "Done" }
-        return runsHere || reach?.sends(forking: delivery.forks) != false ? "Send" : "Open in Copilot"
+        return !sendsToSession || reach?.sends(forking: delivery.forks) != false ? "Send" : "Open in Copilot"
     }
 
     private var sendSymbol: String {
         if fallback != nil { return "checkmark" }
-        return runsHere || reach?.sends(forking: delivery.forks) != false ? "paperplane.fill" : "arrow.up.forward.app"
+        return !sendsToSession || reach?.sends(forking: delivery.forks) != false ? "paperplane.fill" : "arrow.up.forward.app"
     }
 
     /// What Copilot does, and where; or what BriefBar did, once it couldn't send it itself.
@@ -839,7 +971,8 @@ struct CopilotComposerView: View {
         // With Push and Reply on: what else goes, which you haven't pushed.
         let also = Self.alsoPushes(subject, fixes: fixes, to: target, delivery: delivery, parts: parts, prompt: prompt, store: store)
             .map { " " + $0 } ?? ""
-        if !runsHere { return appFootnote + also }
+        if sendsToSession { return appFootnote + also }
+        if startsNewInApp { return newAppSessionFootnote }
         let place: String
         switch target?.kind {
         case nil: place = "in a new worktree"
@@ -881,6 +1014,14 @@ struct CopilotComposerView: View {
         return store.alsoPushes(
             key, among: store.partsToFix(key), in: target, forkedWithTheCLI: delivery == .cliFork, taking: sentParts(parts, in: prompt)
         )
+    }
+
+    /// What a work item's new session in the Copilot app does, and how BriefBar starts it: through its extension in another
+    /// of the app's sessions, which it opens first when none listens now (`AppStartPlan.hostListens`).
+    private var newAppSessionFootnote: String {
+        let opens = appPlan?.hostListens == false
+            ? " To start it, BriefBar first opens another of the app's sessions, whose BriefBar extension starts it." : ""
+        return "The Copilot app starts a new session, in a new worktree of the repository on a branch of its own, with the prompt as its first message, as yours.\(opens) Copilot works on it there on its own, in autopilot, with the model you chose, where you can follow and steer it. It pushes the branch and opens a pull request, as you."
     }
 
     /// What happens in the Copilot app, as things stand: BriefBar sends it, to the session or a fork of it, or copies it
@@ -928,7 +1069,8 @@ struct CopilotComposerView: View {
         guard store.canSend, store.isOn, !isDelivering, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let hasModel = !model.trimmingCharacters(in: .whitespaces).isEmpty
         guard let target else {
-            return !mustContinue && !isBusy && repository != nil && !isChecking && hasModel
+            guard !mustContinue, !isBusy, repository != nil, !isChecking, hasModel else { return false }
+            return !startsNewInApp || (appPlan != nil && appStartProblem == nil && !isCheckingAppStart && !store.isStartingInApp(subject))
         }
         // A fork works in a worktree of its own, so the session's own checkout and state don't matter, nor whether Copilot
         // works in it now.
@@ -952,7 +1094,9 @@ struct CopilotComposerView: View {
         }
         guard !hasAppeared, store.canSend, store.isOn else { return }
         hasAppeared = true
-        if !store.canOpenInApp { appProblem = CopilotTasksStore.cantOpenInApp }
+        hasApp = store.canOpenInApp
+        if !hasApp { appProblem = CopilotTasksStore.cantOpenInApp }
+        fixNewSessionPlace()
         checkSession()
         switch subject {
         case .workItem(let item):
@@ -1046,7 +1190,13 @@ struct CopilotComposerView: View {
         target = choice
         // Whether the Copilot app's sessions open at all, rather than why the last one didn't: it can be tried again.
         appProblem = store.canOpenInApp ? nil : CopilotTasksStore.cantOpenInApp
-        delivery = choice?.opensInApp == true ? .session : .cli
+        if let choice {
+            delivery = choice.opensInApp ? .session : .cli
+        } else {
+            // A work item's new session starts as Settings say again, in the Copilot app while it can start there.
+            choseNewSessionPlace = false
+            delivery = Self.newSession(subject, startsInApp: startsInApp && hasApp && appStartProblem == nil)
+        }
         reach = nil
         deliveryProblem = nil
         refreshPrompt()
@@ -1058,7 +1208,7 @@ struct CopilotComposerView: View {
     private func refreshPrompt() {
         let written = Self.writtenPrompt(
             for: target, subject: subject, template: template, worktreePrompt: worktreePrompt, sessionPrompt: sessionPrompt,
-            baseBranch: repository?.baseBranch, forks: delivery.forks, asksForStage: asksForStage
+            baseBranch: repository?.baseBranch, forks: delivery.forks, startsInApp: startsNewInApp, asksForStage: asksForStage
         )
         (prompt, filledIn) = Self.rewritten(prompt: prompt, filledIn: filledIn, written: written)
     }
@@ -1138,11 +1288,15 @@ struct CopilotComposerView: View {
 
     // MARK: A new session's repository
 
-    /// Checks that a folder is in a git repository, and fills the base branch into a prompt you haven't changed.
+    /// Checks that a folder is in a git repository, and fills the base branch into a prompt you haven't changed; then, for a
+    /// work item, whether its new session can start in the Copilot app (`checkAppStart`).
     private func check(_ folder: URL) {
         guard store.canSend, store.isOn, !isChecking else { return }
         isChecking = true
         repositoryProblem = nil
+        // What was found for the repository before isn't this one's.
+        appPlan = nil
+        appStartProblem = nil
         Task {
             do {
                 let git = await store.git()
@@ -1159,6 +1313,49 @@ struct CopilotComposerView: View {
                 repositoryProblem = String(describing: error)
             }
             isChecking = false
+            await checkAppStart(first: true)
+        }
+    }
+
+    /// Whether a work item's new session can start in the Copilot app now, in the repository chosen, and from which of the
+    /// app's sessions (`CopilotTasksStore.appStart`): what the window says before you send it. Its choice shows it's
+    /// looking the first time for a repository, which can take a moment, and can't be chosen meanwhile.
+    private func checkAppStart(first: Bool = false) async {
+        guard choosesNewSessionPlace, store.canSend, store.isOn, let folder = repository?.root else {
+            isCheckingAppStart = false
+            return
+        }
+        if first { isCheckingAppStart = true }
+        let found = await store.appStart(in: folder)
+        // Another repository was chosen meanwhile, which is looked at in its turn.
+        guard repository?.root == folder else { return }
+        if first { isCheckingAppStart = false }
+        switch found {
+        case .success(let plan):
+            appPlan = plan
+            appStartProblem = nil
+        case .failure(let problem):
+            appPlan = nil
+            appStartProblem = problem
+        }
+        fixNewSessionPlace()
+    }
+
+    /// Looks again, every few seconds while the window is open, whether a work item's new session can start in the Copilot
+    /// app: you may add its repository there, or open and close the app's sessions, meanwhile.
+    private func recheckAppStart() async {
+        guard target == nil, !isChecking, !isCheckingAppStart, !isDelivering else { return }
+        await checkAppStart()
+    }
+
+    /// Starts a work item's new session where it can: with the CLI once it can't start in the Copilot app; and in the app
+    /// once it can again, as Settings say, until you choose, or change the prompt BriefBar wrote for where it starts.
+    private func fixNewSessionPlace() {
+        guard target == nil, workItem != nil, !isDelivering else { return }
+        if delivery.place == .app, appStartProblem != nil || !hasApp {
+            go(.cli)
+        } else if delivery.place == .cli, hasApp, appPlan != nil, startsInApp, !choseNewSessionPlace, prompt == filledIn {
+            go(Delivery(place: .app))
         }
     }
 
@@ -1231,6 +1428,7 @@ struct CopilotComposerView: View {
         let options = CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort)
         guard let target else {
             guard let folder = repository?.root else { return }
+            if startsNewInApp { return start(in: folder, options: options) }
             store.send(subject, prompt: prompt, options: options, repository: folder, parts: sentParts(to: nil), handOff: handOff, fixing: fixes)
             close()
             return
@@ -1274,6 +1472,28 @@ struct CopilotComposerView: View {
             }
         }
         close()
+    }
+
+    /// Starts a work item's new session in the Copilot app (`CopilotTasksStore.startInApp`), which shows it there once it
+    /// started: the window closes then. It stays to say why when nothing started, or when BriefBar can't tell whether it
+    /// did. Closing the window, or showing another task in it, stops it (`CopilotComposer.stopSending`).
+    private func start(in folder: URL, options: CopilotRunOptions) {
+        isDelivering = true
+        deliveryProblem = nil
+        let text = prompt
+        sending(Task {
+            let result = await store.startInApp(subject, prompt: text, options: options, repository: folder)
+            // The window closed, or shows another task: it was stopped.
+            guard !Task.isCancelled else { return }
+            isDelivering = false
+            switch result {
+            case .started:
+                close()
+            case .notStarted(let why), .mayHaveStarted(let why):
+                deliveryProblem = why
+                await checkAppStart()
+            }
+        })
     }
 
     /// Sends it to the session in the Copilot app, or to a fork of it (`CopilotTasksStore.deliver`). The window closes once

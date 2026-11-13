@@ -1,8 +1,9 @@
 // BriefBar's outbox, as the extension in one of the GitHub Copilot app's sessions reads it. BriefBar writes a request
-// for a session; the extension in that session claims it, sends the session its prompt, forks the session or stops its
-// turn, and writes the result; for a send BriefBar asks it to report, it then says how the message's turn goes, in a
-// report it rewrites until the turn ends (./turn.mjs). It's files in a private folder on this Mac, and nothing else: no
-// network, no sockets. The extension never logs, echoes or keeps a prompt: it only hands it to session.send.
+// for a session; the extension in that session claims it, sends the session its prompt, forks the session, stops its
+// turn or starts a new session of the app's, and writes the result; for a send BriefBar asks it to report, it then says
+// how the message's turn goes, in a report it rewrites until the turn ends (./turn.mjs). It's files in a private folder
+// on this Mac, and nothing else: no network, no sockets. The extension never logs, echoes or keeps a prompt: it only
+// hands it to session.send, or to the app's create_session as the new session's first message.
 // docs/how-it-works.md describes the files under "Send work to Copilot" (Sending to a session, or a fork of it), and the
 // extension under "Its extension for the app's sessions".
 import fs from "node:fs";
@@ -14,7 +15,11 @@ import { beginning, followTurn, line } from "./turn.mjs";
 
 export const VERSION = 1;
 /** What the extension does when BriefBar asks. */
-export const KINDS = Object.freeze(["send", "fork", "stop"]);
+export const KINDS = Object.freeze(["send", "fork", "stop", "create"]);
+/** The modes the app's create_session starts a new session in. */
+export const MODES = Object.freeze(["interactive", "plan", "autopilot"]);
+/** The longest name the app's create_session takes. */
+export const LONGEST_NAME = 40;
 /** The largest request it reads. */
 export const MOST_BYTES = 256 * 1024;
 /** How long a request may wait to be claimed, at most. */
@@ -41,6 +46,14 @@ const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{
 const FORK_SESSION_ID = new RegExp(`\\bsession_id: (${UUID_PATTERN})\\b`, "gi");
 // What the runtime answers for a tool the session doesn't offer, such as fork_session in a chat or in the Copilot CLI.
 const MISSING_TOOL = /\bTool 'fork_session' does not exist\b/;
+// The app's create_session answers "Created session '…' (id: <id>) in project '…' with a kickoff prompt. … Link to it
+// with ghapp://sessions/<id>." The name and the project's come before the link, so the new session's is the last.
+const CREATED_LINK = new RegExp(`\\bghapp://sessions/(${UUID_PATTERN})\\b`, "gi");
+const CREATED_ID = new RegExp(`\\(id: (${UUID_PATTERN})\\)`, "gi");
+const MISSING_CREATE = /\bTool 'create_session' does not exist\b/;
+// A model's ID, such as claude-opus-5.5 or auto, and a reasoning effort, such as max.
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/;
+const EFFORT = /^[a-z]{1,20}$/;
 // JSON-RPC's code for a method the other end doesn't have, as a runtime without `tools.execute` answers.
 const METHOD_NOT_FOUND = -32601;
 const LONGEST_RETRY_MS = 5 * 60 * 1000;
@@ -313,6 +326,7 @@ export function listen(session, options = {}) {
             return { ok: true, kind: "stop" };
         }
         if (request.kind === "send") return send(request, requestId, claimed);
+        if (request.kind === "create") return create(request);
         let answer;
         try {
             answer = await session.rpc.tools.execute({ name: "fork_session", arguments: {} });
@@ -326,6 +340,40 @@ export function listen(session, options = {}) {
         return forked(answer, sessionId);
     }
 
+    /** Starts a new session of the app's with its own create_session, run here with no model turn, as fork_session is: in
+     * a worktree of the project's repository, with the prompt as its first message, in the mode, with the model and the
+     * reasoning effort asked for. It's no child of this session's: the app lists it on its own, and this session neither
+     * coordinates it nor hears from it. */
+    async function create(request) {
+        const kickoff = {
+            prompt: request.prompt,
+            mode: request.mode,
+            ...(request.model ? { model: request.model } : {}),
+            ...(request.effort ? { reasoning_effort: request.effort } : {}),
+        };
+        let answer;
+        try {
+            answer = await session.rpc.tools.execute({
+                name: "create_session",
+                arguments: {
+                    project_id: request.projectId,
+                    workspace_type: "worktree",
+                    name: request.name,
+                    detached: true,
+                    coordinate_with_creator: false,
+                    kickoff,
+                },
+            });
+        } catch (error) {
+            // As for a fork: only a runtime without the method surely made nothing. Never with what Copilot said went
+            // wrong, which can quote the prompt.
+            return error?.code === METHOD_NOT_FOUND
+                ? failed("create_unavailable", "Copilot didn't let this session start one.", "create")
+                : failed("create_failed", "Copilot didn't say how starting the session went.", "create");
+        }
+        return created(answer, sessionId);
+    }
+
     function result(outcome, requestId) {
         return {
             version: VERSION,
@@ -336,6 +384,7 @@ export function listen(session, options = {}) {
             ...(outcome.messageId ? { messageId: outcome.messageId } : {}),
             ...(outcome.reports ? { reports: true } : {}),
             ...(outcome.forkSessionId ? { forkSessionId: outcome.forkSessionId } : {}),
+            ...(outcome.createdSessionId ? { createdSessionId: outcome.createdSessionId } : {}),
             ...(outcome.ok ? {} : { error: outcome.error }),
             finishedAt: new Date(now()).toISOString(),
         };
@@ -724,18 +773,24 @@ export function checkRequest(value, { requestId, sessionId, now }) {
     if (value.version !== VERSION) throw new Refusal("invalid", `Its version isn't ${VERSION}.`, kind);
     if (value.requestId !== requestId) throw new Refusal("invalid", "Its requestId isn't the one in its name.", kind);
     if (value.sessionId !== sessionId) throw new Refusal("invalid", "It's for another session.", kind);
-    if (!kind) throw new Refusal("invalid", "Its kind isn't send, fork or stop.");
-    if (kind === "send") {
+    if (!kind) throw new Refusal("invalid", "Its kind isn't send, fork, stop or create.");
+    if (kind === "send" || kind === "create") {
         if (typeof value.prompt !== "string" || value.prompt.trim() === "") {
-            throw new Refusal("invalid", "A send needs a prompt.", kind);
-        }
-        if (Object.hasOwn(value, "report") && typeof value.report !== "boolean") {
-            throw new Refusal("invalid", "Its report isn't true or false.", kind);
+            throw new Refusal("invalid", `A ${kind} needs a prompt.`, kind);
         }
     } else if (Object.hasOwn(value, "prompt")) {
         throw new Refusal("invalid", `A ${kind} takes no prompt.`, kind);
+    }
+    if (kind === "send") {
+        if (Object.hasOwn(value, "report") && typeof value.report !== "boolean") {
+            throw new Refusal("invalid", "Its report isn't true or false.", kind);
+        }
     } else if (Object.hasOwn(value, "report")) {
         throw new Refusal("invalid", `A ${kind} has no report.`, kind);
+    }
+    const starting = kind === "create" ? newSession(value) : undefined;
+    if (!starting && NEW_SESSION_FIELDS.some((field) => Object.hasOwn(value, field))) {
+        throw new Refusal("invalid", `A ${kind} starts no session.`, kind);
     }
     const createdAt = instant(value.createdAt);
     const expiresAt = instant(value.expiresAt);
@@ -746,7 +801,40 @@ export function checkRequest(value, { requestId, sessionId, now }) {
     if (expiresAt - createdAt > LONGEST_WAIT_MS) throw new Refusal("invalid", "It would wait longer than 120 s.", kind);
     if (createdAt > now + CLOCK_SLACK_MS) throw new Refusal("invalid", "It's dated in the future.", kind);
     if (now >= expiresAt) throw new Refusal("expired", "It expired before it was claimed.", kind);
-    return kind === "send" ? { kind, prompt: value.prompt, report: value.report === true } : { kind };
+    if (kind === "send") return { kind, prompt: value.prompt, report: value.report === true };
+    if (starting) return { kind, prompt: value.prompt, ...starting };
+    return { kind };
+}
+
+/** What only a create says of the session it starts. */
+const NEW_SESSION_FIELDS = Object.freeze(["projectId", "name", "mode", "model", "effort"]);
+
+/** The session a create starts, if each of its fields is valid: the app's project it goes in, by its ID; its name, as the
+ * app's sidebar shows it; the mode it starts in; and the model and reasoning effort it starts with, unless it takes the
+ * app's own. */
+function newSession(value) {
+    const kind = "create";
+    if (typeof value.projectId !== "string" || !UUID.test(value.projectId)) {
+        throw new Refusal("invalid", "Its projectId isn't a project's ID.", kind);
+    }
+    const name = value.name;
+    if (typeof name !== "string" || name.trim() === "" || name.length > LONGEST_NAME || /[\p{Cc}\p{Cf}]/u.test(name)) {
+        throw new Refusal("invalid", `Its name isn't a line of ${LONGEST_NAME} characters or fewer.`, kind);
+    }
+    if (!MODES.includes(value.mode)) throw new Refusal("invalid", "Its mode isn't interactive, plan or autopilot.", kind);
+    if (Object.hasOwn(value, "model") && (typeof value.model !== "string" || !MODEL.test(value.model))) {
+        throw new Refusal("invalid", "Its model isn't a model's ID.", kind);
+    }
+    if (Object.hasOwn(value, "effort") && (typeof value.effort !== "string" || !EFFORT.test(value.effort))) {
+        throw new Refusal("invalid", "Its effort isn't a reasoning effort.", kind);
+    }
+    return {
+        projectId: value.projectId,
+        name,
+        mode: value.mode,
+        ...(Object.hasOwn(value, "model") ? { model: value.model } : {}),
+        ...(Object.hasOwn(value, "effort") ? { effort: value.effort } : {}),
+    };
 }
 
 function instant(text) {
@@ -782,8 +870,32 @@ function failed(code, message, kind) {
     return { ok: false, ...(kind ? { kind } : {}), error: { code, message: short(message) } };
 }
 
-/** A sentence, with what went wrong after it when there's something to say. Never a prompt: only a fork's errors,
- * which hold none, and the runtime's own, come here. */
+/** What the app's create_session answered: the new session's ID, or why there's none, never with what it says went wrong,
+ * which can quote the prompt it was given. */
+export function created(answer, sessionId) {
+    const result = typeof answer === "string" ? { resultType: "success", textResultForLlm: answer } : answer;
+    if (result === null || typeof result !== "object") return failed("create_failed", "Starting the session gave no answer.", "create");
+    const texts = [result.textResultForLlm, result.sessionLog].filter((text) => typeof text === "string");
+    switch (result.resultType) {
+        case "success": {
+            const last = (pattern) => texts.map((text) => [...text.matchAll(pattern)].at(-1)?.[1]).find(Boolean)?.toLowerCase();
+            const id = last(CREATED_LINK) ?? last(CREATED_ID);
+            if (!id || id === sessionId) return failed("create_failed", "Starting the session gave no session ID.", "create");
+            return { ok: true, kind: "create", createdSessionId: id };
+        }
+        case "rejected":
+        case "denied":
+            return failed("create_unavailable", "Copilot refused to start the session.", "create");
+        default:
+            if ([result.error, ...texts].some((text) => typeof text === "string" && MISSING_CREATE.test(text))) {
+                return failed("create_unavailable", "This session doesn't offer create_session.", "create");
+            }
+            return failed("create_failed", "Starting the session failed.", "create");
+    }
+}
+
+/** A sentence, with what went wrong after it when there's something to say. Only a fork's: what Copilot says went wrong
+ * with a fork holds no prompt, but with a create it can quote the prompt, which never goes back to BriefBar. */
 function because(lead, detail) {
     const said = typeof detail === "string" ? short(detail) : "";
     return said ? `${lead}: ${said}` : `${lead}.`;

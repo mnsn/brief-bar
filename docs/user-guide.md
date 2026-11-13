@@ -1066,12 +1066,25 @@ Requests**, to see its details on the Pull Requests page.
   </picture>
 </p>
 
-**Send Work to Copilot**, off by default, hands a sprint's work item to the
-[Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) on your Mac, the way you'd ask
-Copilot yourself, with your sign-in, tools, MCP servers and instructions. Point at a task and click ✈︎ to
-see the prompt, which you can change, and choose the model, how hard it thinks and the repository the
-change goes in, then **Send**. Or right-click a task to send it right away, with your model or with the
-one for easy work. BriefBar fetches the repository, makes a new worktree of it at the latest base
+**Send Work to Copilot**, off by default, hands a sprint's work item to Copilot on your Mac, the way you'd
+ask Copilot yourself, with your sign-in, tools, MCP servers and instructions: to a new session in the GitHub
+Copilot app, where you can follow and steer it, or to the
+[Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), which works on its own. Point at a task
+and click ✈︎ to see the prompt, which you can change, and choose where it starts, the model, how hard it
+thinks and the repository the change goes in, then **Send**. Or right-click a task to send it right away,
+with your model or with the one for easy work.
+
+**In the Copilot app**, where a new session starts unless you choose otherwise in the window or in
+Settings' **New Sessions**, the app makes a new worktree of the repository, on a branch of its own, and
+starts the session there in autopilot, with the prompt as its first message and the model you chose; then
+BriefBar shows it in the app. It needs **Send Prompts to Copilot Sessions**, in Settings › Agents, since
+BriefBar's extension in another of the app's sessions starts it, with the app's own tool for starting
+sessions: that session gets no message, but its history records the request, prompt included, as it does
+each tool call. The app needs the repository among its own, as a repository rather than a folder; when it
+can't start the session, the window says why, and runs it with the CLI instead. The session is the app's own:
+you follow it there, and it isn't listed as one of BriefBar's tasks.
+
+**With the CLI**, BriefBar fetches the repository, makes a new worktree of it at the latest base
 branch, in `copilot-worktrees` next to it, and starts Copilot there, on its own: in autopilot, with
 every tool allowed and no questions. Nothing opens, so a notification says Copilot is on it as you send
 it. The task shows Copilot working, then **PR** once it has opened a pull request, published and linked
@@ -1084,7 +1097,9 @@ with the session in Terminal, show the worktree, stop Copilot or remove the work
 menu at the top of the Sprint page lists every task you sent. Copilot keeps going if BriefBar quits.
 
 The standard prompt asks Copilot to read the work item with your Azure DevOps tools, branch the way the
-repository does, build and test what it changed, then push and open the pull request. A work item's
+repository does, build and test what it changed, then push and open the pull request. In the Copilot app,
+whose session is on a branch the app made, it asks Copilot to bring that branch up to date with the base
+branch first instead, unless you changed the prompt in Settings, which then goes as you wrote it. A work item's
 text is written by whoever wrote it, and goes to an agent that may run any command: send only work you'd
 hand to Copilot yourself.
 
@@ -1507,7 +1522,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it, and checks that your sign-in can read it: it says why when it can't, such as an organization in another directory, which **Sign In…** fixes, or a project's name, whose organization is the first part of its link |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
+| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to a new session in the Copilot app, or to the Copilot CLI, on your Mac, and your pull requests' Copilot actions. Where **New Sessions** start (in the Copilot app by default), its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
 | | Show Relayed Questions Once | off by default: a question or plan that a coordinating session asks you for another session shows once, on the coordinating session (see [GitHub Copilot](#github-copilot)) |
@@ -1584,7 +1599,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
-  item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  item, or a pull request's comments, build, conflicts or review; or, for a work item's new session in the
+  Copilot app, has BriefBar's extension in another of the app's sessions start one, through a file only you can
+  read, after reading the app's projects, read-only from its database, to find the repository's. Copilot then
+  works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. **Explain** and **Ask…** start it too, when you ask a
   session something: aside, in a fork with no tools, which changes nothing. BriefBar itself reads only the
   repository you choose, with git, and Copilot's log of the session it works in; and, as the window that sends one opens, and while
@@ -1771,9 +1789,10 @@ when the team stops planning sprints: BriefBar shows no sprint then.
 ### Why does Send Work to Copilot use the Copilot CLI?
 
 It's the agent the GitHub Copilot app runs, on your Mac, with your sign-in, tools, MCP servers,
-skills and instructions, and it can work on its own while nothing is open. The app's own link for a
-new session asks you to confirm in the app, can't choose the model, and takes only repositories on
-GitHub. Copilot in Azure DevOps works in the cloud, without your tools and MCP servers. To go on with a
+skills and instructions, and it can work on its own while nothing is open. A work item's new session starts
+in the Copilot app instead, unless you choose the CLI, but only through BriefBar's extension, with
+**Send Prompts to Copilot Sessions** on: the app's own link for a new session asks you to confirm in the
+app, can't choose the model, and takes only repositories on GitHub. Copilot in Azure DevOps works in the cloud, without your tools and MCP servers. To go on with a
 task, choose **Continue in Terminal** in its menu: that resumes the same session, in its worktree. To
 hand a task to one of the Copilot app's sessions instead, such as the one that opened the pull request,
 choose it in the window's session menu, under **Where It Goes**.

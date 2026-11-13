@@ -155,6 +155,7 @@ extension SendFailure {
         case .unsupported: return "the extension can't do it"
         case .failed(let failure, _): return "the extension said \(failure.rawValue)"
         case .unconfirmedFork: return "the app doesn't record the fork"
+        case .unconfirmedSession: return "the app doesn't list the new session"
         case .outbox: return "the outbox can't be used"
         case .cancelled: return "cancelled"
         case .turnedOff: return "turned off"
@@ -695,8 +696,8 @@ extension CopilotTasksStore {
     }
 
     /// Opens a session in the Copilot app, which loads it if nothing has it open: for a delivery, only for a session that
-    /// nothing has open, or a fork the app just made.
-    private func load(_ id: String) -> Bool {
+    /// nothing has open, or a fork the app just made; for a new session, the one it starts from, when nothing has it open.
+    func load(_ id: String) -> Bool {
         if let showForTests { return showForTests(id) }
         return canOpenInApp && Self.openInApp(id)
     }

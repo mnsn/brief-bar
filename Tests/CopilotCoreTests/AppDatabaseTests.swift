@@ -78,7 +78,7 @@ import BriefBarCore
             #expect(sessions[Self.sessionId] == SessionMeta(
                 id: Self.sessionId, name: "Fix login", sessionType: "project", mode: "autopilot", isRunning: true,
                 createdAt: t(-86_400), updatedAt: t(10), projectName: "acme-web", branch: "fix-login",
-                creatorSessionId: "parent-session", workspaceId: Self.workspaceId,
+                creatorSessionId: "parent-session", workspaceId: Self.workspaceId, projectId: "p1",
                 lastActivity: ActivityPreview(kind: "agent_idle", text: "Latest", at: t(9))
             ))
             #expect(sessions[Self.chatId] == SessionMeta(

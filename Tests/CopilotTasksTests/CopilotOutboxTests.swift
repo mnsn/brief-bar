@@ -13,6 +13,8 @@ import Testing
     private let session = "a1111111-1111-4111-8111-11111111111f"
     private let fork = "b2222222-2222-4222-8222-22222222222e"
     private let other = "c3333333-3333-4333-8333-33333333333d"
+    /// One of the app's projects, by its ID.
+    private let project = "d4444444-4444-4444-8444-44444444444c"
     private let now = Date(timeIntervalSince1970: 1_790_000_000.75)
 
     private func outbox() throws -> (CopilotOutbox, URL) {
@@ -92,6 +94,75 @@ import Testing
             }
         }
         #expect(names(outbox.url.appendingPathComponent("requests")) == [send.fileName])
+    }
+
+    /// A create names the session the app starts, as the contract has it: its project, a name the app takes, and how it
+    /// starts, with a model and an effort only when they're chosen; and only a create does.
+    @Test func writesACreateAsTheContractHasIt() throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let requests = outbox.url.appendingPathComponent("requests")
+        let started = NewSession(projectId: project, name: "Task 4217: Show the total", mode: .autopilot, model: "claude-opus-5.5", effort: "max")
+        let create = OutboxRequest.create("Fix work item 4217", started, from: session)
+        try outbox.write(create)
+        let file = requests.appendingPathComponent(create.fileName)
+        let fields = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(Set(fields.keys) == [
+            "version", "requestId", "sessionId", "kind", "prompt", "projectId", "name", "mode", "model", "effort", "createdAt", "expiresAt",
+        ])
+        #expect(FakeExtension.check(file, requestId: create.requestId, sessionId: session) == .init(
+            kind: "create", prompt: "Fix work item 4217",
+            started: .init(projectId: project, name: "Task 4217: Show the total", mode: "autopilot", model: "claude-opus-5.5", effort: "max")
+        ))
+
+        let plain = OutboxRequest.create("Fix it", NewSession(projectId: project, name: "Task 4217", mode: .plan), from: session)
+        try outbox.write(plain)
+        let plainFile = requests.appendingPathComponent(plain.fileName)
+        let plainFields = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: plainFile)) as? [String: Any])
+        #expect(plainFields["model"] == nil)
+        #expect(plainFields["effort"] == nil)
+        #expect(FakeExtension.check(plainFile, requestId: plain.requestId, sessionId: session)?.started == .init(projectId: project, name: "Task 4217", mode: "plan"))
+
+        // Only a valid session: a project's ID, a name the app takes, on one line, and a model and an effort that are IDs.
+        for invalid in [
+            NewSession(projectId: "shop-web", name: "Task 4217", mode: .autopilot),
+            NewSession(projectId: project, name: String(repeating: "x", count: 41), mode: .autopilot),
+            NewSession(projectId: project, name: " ", mode: .autopilot),
+            NewSession(projectId: project, name: "Task\u{202E}4217", mode: .autopilot),
+            NewSession(projectId: project, name: "Task\n4217", mode: .autopilot),
+            NewSession(projectId: project, name: "Task 4217", mode: .autopilot, model: "claude opus"),
+            NewSession(projectId: project, name: "Task 4217", mode: .autopilot, effort: "MAX"),
+        ] {
+            #expect(throws: OutboxError.invalidRequest) { try outbox.write(.create("Fix it", invalid, from: session)) }
+        }
+        // And only a create starts one, with its prompt.
+        #expect(throws: OutboxError.invalidRequest) {
+            try outbox.write(OutboxRequest(sessionId: session, kind: .create, prompt: "Fix it", now: Date()))
+        }
+        #expect(throws: OutboxError.invalidRequest) {
+            try outbox.write(OutboxRequest(sessionId: session, kind: .create, prompt: nil, newSession: started, now: Date()))
+        }
+        #expect(throws: OutboxError.invalidRequest) {
+            try outbox.write(OutboxRequest(sessionId: session, kind: .send, prompt: "Fix it", newSession: started, now: Date()))
+        }
+        #expect(names(requests) == [create.fileName, plain.fileName].sorted())
+    }
+
+    /// A new session's name is one line the app takes: without what its sidebar wouldn't show, or what could pass for a
+    /// session's ID in what the app answers, and cut short to 40 characters as JavaScript counts them, never mid-character.
+    @Test func namesANewSessionAsTheAppTakesIt() {
+        #expect(NewSession.name("Task 4217: Show the total") == "Task 4217: Show the total")
+        #expect(NewSession.name("Task 4217: Fix\nthe (cart)\u{200B} total") == "Task 4217: Fix the cart total")
+        #expect(NewSession.name("") == "Untitled")
+        #expect(NewSession.name(" () ") == "Untitled")
+        #expect(NewSession.name(String(repeating: "a", count: 50)) == String(repeating: "a", count: 39) + "…")
+        let rockets = NewSession.name("Ship " + String(repeating: "🚀", count: 30))
+        #expect(rockets.utf16.count <= NewSession.longestName)
+        #expect(rockets.hasSuffix("…"))
+        #expect(rockets.dropLast().allSatisfy { $0 == "🚀" || "Ship ".contains($0) })
+        for name in [rockets, NewSession.name("Task 4217: " + String(repeating: "x", count: 60) + "\u{202E}")] {
+            #expect(NewSession(projectId: project, name: name, mode: .autopilot).isValid, "\(name)")
+        }
     }
 
     @Test func writesOnlyWhatTheContractAllows() throws {
@@ -201,6 +272,20 @@ import Testing
         for bad in [session, fork.uppercased(), "../\(fork)"] {
             try write(forkBase.merging(["forkSessionId": bad]) { $1 }, to: results, named: "\(forking.requestId).json")
             #expect(outbox.takeResult(of: forking)?.failure == .unreadable)
+        }
+
+        // A create's names the session it started, which isn't the one whose extension started it.
+        let creating = OutboxRequest.create("Fix it", NewSession(projectId: project, name: "Task 4217", mode: .autopilot), from: session)
+        let createBase: [String: Any] = ["version": 1, "requestId": creating.requestId, "sessionId": session, "kind": "create", "ok": true]
+        try write(createBase.merging(["createdSessionId": fork]) { $1 }, to: results, named: "\(creating.requestId).json")
+        #expect(outbox.takeResult(of: creating)?.createdSessionId == fork)
+        for bad in [session, fork.uppercased(), "../\(fork)"] {
+            try write(createBase.merging(["createdSessionId": bad]) { $1 }, to: results, named: "\(creating.requestId).json")
+            #expect(outbox.takeResult(of: creating)?.failure == .unreadable)
+        }
+        for (code, failure) in [("create_unavailable", OutboxResult.Failure.createUnavailable), ("create_failed", .createFailed)] {
+            try write(createBase.merging(["ok": false, "error": ["code": code, "message": "No"]]) { $1 }, to: results, named: "\(creating.requestId).json")
+            #expect(outbox.takeResult(of: creating)?.failure == failure)
         }
 
         // It reports a send's turn only once BriefBar asked, and only when it says so with a boolean.
@@ -342,10 +427,10 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: outbox.url.path))
 
         let ext = FakeExtension(outbox: outbox.url, sessionId: session)
-        try ext.listen(kinds: ["send", "fork", "dance"])
+        try ext.listen(kinds: ["send", "fork", "create", "dance"])
         let listener = try #require(outbox.listener(of: session))
         #expect(listener.pid == getpid())
-        #expect(listener.kinds == [.send, .fork])
+        #expect(listener.kinds == [.send, .fork, .create])
         #expect(CopilotOutbox.isLive(listener))
 
         let started = Date(timeIntervalSince1970: 1_793_000_000)
@@ -364,8 +449,11 @@ import Testing
         try write(["version": 1, "sessionId": other, "pid": true, "startedAt": "2026-11-02T10:00:00Z", "kinds": ["send"]], to: listening, named: "\(other).json")
         #expect(outbox.listener(of: fork) == nil)
         #expect(outbox.listener(of: other) == nil)
+        // Every one that says it listens, as the contract has it, whether or not it still runs.
+        #expect(outbox.listeners().map(\.sessionId) == [session])
         ext.stopListening()
         #expect(outbox.listener(of: session) == nil)
+        #expect(outbox.listeners().isEmpty)
     }
 
     // MARK: Cleaning up
@@ -464,6 +552,10 @@ import Testing
         let forksSince = Mutex<[Date]>([])
         /// No other prompt is on its way to a fork.
         let reservable = Mutex(true)
+        /// The sessions the app's database lists in a project, started since the time asked: nil while it can't be read.
+        let startedSessions = Mutex<[AppSession]?>(nil)
+        /// The projects, and the times, the sessions started there were asked for.
+        let startedAsked = Mutex<[(project: String, since: Date)]>([])
 
         var sender: SessionSender.Effects {
             SessionSender.Effects(
@@ -479,6 +571,10 @@ import Testing
                 forks: { [self] _, since in
                     forksSince.withLock { $0.append(since) }
                     return madeForks.withLock { $0 }
+                },
+                started: { [self] project, since in
+                    startedAsked.withLock { $0.append((project, since)) }
+                    return startedSessions.withLock { $0 }
                 },
                 mayGoOn: { [self] in
                     if stopsWhenAsked.withLock({ $0 }) { withUnsafeCurrentTask { $0?.cancel() } }
@@ -999,5 +1095,129 @@ import Testing
         ext.stop()
         ext.start { _ in .failed("fork_unavailable", "fork_session isn't offered") }
         #expect(await sender(outbox, effects).forkAndSend("Try it", from: session) == .notSent(.failed(.forkUnavailable, "fork_session isn't offered")))
+    }
+
+    // MARK: Starting a session
+
+    /// Another session's extension starts a new session of the app's, with the prompt as its first message, and names it:
+    /// it's the new session once the app lists it in the project, started since the request. The session whose extension
+    /// started it gets no message, and nothing opens.
+    @Test func startsASessionThroughAnotherSessionsExtension() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let host = FakeExtension(outbox: outbox.url, sessionId: session)
+        try host.listen(kinds: ["send", "fork", "create"])
+        host.start { [fork] _ in .after(.milliseconds(50), .done(created: fork)) }
+        defer { host.stop() }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session] }
+        effects.startedSessions.withLock { [fork, project] in $0 = [AppSession(id: fork, name: "Task 4217", projectId: project)] }
+        let started = NewSession(projectId: project, name: "Task 4217", mode: .autopilot, model: "claude-opus-5.5", effort: "max")
+        let before = Date()
+
+        #expect(await sender(outbox, effects).create("Fix work item 4217", started, from: session) == .started(fork))
+        #expect(host.received == [.init(
+            kind: "create", prompt: "Fix work item 4217",
+            started: .init(projectId: project, name: "Task 4217", mode: "autopilot", model: "claude-opus-5.5", effort: "max")
+        )])
+        #expect(effects.opened.withLock { $0 }.isEmpty)
+        // In its project, made since the request started, to the instant.
+        let asked = try #require(effects.startedAsked.withLock { $0.first })
+        #expect(asked.project == project)
+        #expect(asked.since >= before)
+        #expect(asked.since <= Date())
+    }
+
+    /// When its extension names no session, as when it couldn't read the new one's ID, or names one the app doesn't list in
+    /// the project since the request, the one session started there since with its name is the new one. With none, or more
+    /// than one, there's no telling which, and it may have started all the same.
+    @Test func findsTheSessionItsExtensionCouldntName() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let answer = Mutex<FakeExtension.Answer>(.failed("create_failed", "It gave no session ID"))
+        let host = FakeExtension(outbox: outbox.url, sessionId: session)
+        try host.listen(kinds: ["send", "fork", "create"])
+        host.start { _ in answer.withLock { $0 } }
+        defer { host.stop() }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session] }
+        let sender = sender(outbox, effects, timing: .patient.with { $0.confirm = 0.3 })
+        let started = NewSession(projectId: project, name: "Task 4217", mode: .autopilot)
+        let named = AppSession(id: fork, name: "Task 4217", projectId: project)
+
+        effects.startedSessions.withLock { [project] in $0 = [named, AppSession(id: other, name: "Something else", projectId: project)] }
+        #expect(await sender.create("Fix it", started, from: session) == .started(fork))
+
+        let failed = SendFailure.failed(.createFailed, "It gave no session ID")
+        #expect(failed.mayHaveGone)
+        effects.startedSessions.withLock { [project] in $0 = [named, AppSession(id: other, name: "Task 4217", projectId: project)] }
+        #expect(await sender.create("Fix it", started, from: session) == .notStarted(failed))
+        effects.startedSessions.withLock { $0 = [] }
+        #expect(await sender.create("Fix it", started, from: session) == .notStarted(failed))
+        // A database that can't be read is read again, then given up on.
+        effects.startedSessions.withLock { $0 = nil }
+        #expect(await sender.create("Fix it", started, from: session) == .notStarted(failed))
+
+        // It names one that the app doesn't list there since the request.
+        answer.withLock { [other] in $0 = .done(created: other) }
+        effects.startedSessions.withLock { $0 = [named] }
+        #expect(await sender.create("Fix it", started, from: session) == .started(fork))
+        effects.startedSessions.withLock { $0 = [] }
+        #expect(await sender.create("Fix it", started, from: session) == .notStarted(.unconfirmedSession))
+        #expect(SendFailure.unconfirmedSession.mayHaveGone)
+    }
+
+    /// One that the session's extension doesn't do, as one from before BriefBar started sessions, or that the app doesn't
+    /// let it do, as a session the Copilot CLI has open, which has no `create_session`, starts nothing, and no session is
+    /// looked for.
+    @Test func startsNothingThatCantBe() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let host = FakeExtension(outbox: outbox.url, sessionId: session)
+        try host.listen(kinds: ["send", "fork"])
+        host.start()
+        defer { host.stop() }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session] }
+        let started = NewSession(projectId: project, name: "Task 4217", mode: .autopilot)
+        #expect(await sender(outbox, effects).create("Fix it", started, from: session) == .notStarted(.unsupported))
+        #expect(names(outbox.url.appendingPathComponent("requests")).isEmpty)
+        #expect(host.received.isEmpty)
+
+        try host.listen(kinds: ["send", "fork", "create"])
+        host.start { _ in .failed("create_unavailable", "create_session isn't offered") }
+        let outcome = await sender(outbox, effects).create("Fix it", started, from: session)
+        #expect(outcome == .notStarted(.failed(.createUnavailable, "create_session isn't offered")))
+        #expect(!SendFailure.failed(.createUnavailable, nil).mayHaveGone)
+        #expect(effects.startedAsked.withLock { $0 }.isEmpty)
+    }
+
+    /// Turned off once the extension took it, BriefBar still waits for how it went, but reads nothing of the app's database
+    /// to confirm it, or to find it.
+    @Test func readsNothingMoreOnceACreateIsTurnedOff() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session] }
+        effects.startedSessions.withLock { [fork, project] in $0 = [AppSession(id: fork, name: "Task 4217", projectId: project)] }
+        let host = FakeExtension(outbox: outbox.url, sessionId: session)
+        try host.listen(kinds: ["send", "fork", "create"])
+        let claimed = Mutex(false)
+        host.start { [effects, fork] _ in
+            claimed.withLock { $0 = true }
+            return .once({ !effects.allowed.withLock { $0 } }, .done(created: fork))
+        }
+        defer { host.stop() }
+
+        let creating = Task { [sender = sender(outbox, effects), project, session] in
+            await sender.create("Fix it", NewSession(projectId: project, name: "Task 4217", mode: .autopilot), from: session)
+        }
+        let deadline = ContinuousClock.now.advanced(by: waitLimit)
+        while !claimed.withLock({ $0 }), ContinuousClock.now < deadline {
+            try await Task.sleep(for: FakeExtension.lookEvery)
+        }
+        effects.allowed.withLock { $0 = false }
+        #expect(await creating.value == .notStarted(.turnedOff))
+        #expect(effects.startedAsked.withLock { $0 }.isEmpty)
     }
 }

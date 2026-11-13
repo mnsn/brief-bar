@@ -180,8 +180,9 @@ work or a new one, and the model.
   </picture>
 </p>
 
-- **Send a task** from the Sprint page. Copilot works on its own in a new worktree, then pushes a branch and opens a
-  pull request as you, and you follow the task until it does.
+- **Send a task** from the Sprint page. Copilot starts a new session in the Copilot app, where you can follow and steer
+  it, or works on its own with the Copilot CLI; either way in a new worktree, then pushes a branch and opens a pull
+  request as you.
 - **Fix a pull request** with **Fix Comments**, **Fix the Build**, **Resolve Conflicts** or **Pre-review**, or a single
   comment's **Fix**. A failed build has **✨ Explain the Failure**, and merge conflicts list the files that conflict.
   **Fix with Copilot…** is on notifications too, when your build fails, someone comments or your pull request conflicts.
@@ -196,8 +197,8 @@ work or a new one, and the model.
 
 Fixes don't push unless you ask, and Pre-review changes and posts nothing. Turn on **Send Prompts to Copilot
 Sessions** in **Settings › Agents**, and BriefBar sends a prompt to one of the Copilot app's sessions itself, or to a
-fork of it, rather than copy it for you to paste; it's off by default, since it adds a small extension to each of the
-app's sessions.
+fork of it, rather than copy it for you to paste, and starts a task's new session in the app; it's off by default,
+since it adds a small extension to each of the app's sessions.
 [Copilot actions and their limits →](docs/user-guide.md#sending-to-a-session-thats-already-there)
 
 ## Works with your agents

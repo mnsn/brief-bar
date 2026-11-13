@@ -3157,8 +3157,9 @@ work items its details on the Sprint page, and the sprint's footer its task boar
 ### Send work to Copilot
 
 With **Send Work to Copilot** on, a sprint's work items get a ✈︎ button and menu items that send one to
-the Copilot CLI (`Sources/CopilotTasks`). Nothing happens until you send one, and BriefBar's own
-requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
+Copilot: to a new session in the GitHub Copilot app ([below](#in-the-copilot-app)), or to the Copilot CLI
+(`Sources/CopilotTasks`). Nothing happens until you send one, and BriefBar's own requests to Azure DevOps
+stay GETs: the programs it starts for you, or the app, do the rest.
 
 **Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
 `{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`), each value on its placeholder's line, with
@@ -3186,6 +3187,47 @@ suggested change, stays as it was written. Then BriefBar:
    `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read. A Push & Reply
    gets `--plugin-dir ~/Library/Application Support/BriefBar/Copilot/<id>.guard` too, BriefBar's check
    of each push it makes (**BriefBar checks each push too**, below).
+
+#### In the Copilot app
+
+A work item's new session starts in the GitHub Copilot app instead, where you can follow and steer it,
+unless you choose otherwise: **New Sessions** in Settings says which to begin with, and the composer's **In
+the Copilot App** and **Run with the CLI** choose for each (`AppSettings.copilotNewSessionsInApp`,
+`CopilotTasksStore.startsInApp`). It can start there only while **Send Prompts to Copilot Sessions** is on
+and the app is on this Mac, since BriefBar's extension in another of the app's sessions starts it with the
+app's own `create_session` ([below](#its-extension-for-the-apps-sessions)); when it can't, the composer says
+why under its choices, or, without the app, where they'd be, while **New Sessions** says the app
+(`CopilotComposerView.newSessionNotes`), and runs it with the CLI. A pull request's new session still
+starts with the CLI, in a worktree of BriefBar's at its latest commit.
+
+- **Its project.** It works in the app's project for the repository you chose, read-only from the app's
+  database (`projects`: its ID, name, folder, and whether it's a repository), by the repository's own
+  checkout's folder: only a repository, never a folder, whose sessions would work in your checkout itself.
+  Without one, the composer says to add the repository in the app (`CopilotTasksStore.appStart`).
+- **The session it starts from.** One the app has open, whose extension says it can start sessions, in
+  the same project first, the newest first; else one that nothing has open, which BriefBar opens in the app
+  first, loading it with the extension as it is now, as Send to Session loads one, which the composer then
+  says. Never one a Copilot CLI has open, even one of the app's: the CLI has no `create_session`.
+- **What it starts.** `create_session` with that project, `workspace_type: worktree`, a name from the work
+  item's, on one line and cut to the 40 characters the app takes (`NewSession.name`), `detached: true` and
+  `coordinate_with_creator: false`, so it's no child of the session it started from, which gets no message;
+  and a kickoff with the composer's prompt, in `autopilot`, as a task with the CLI runs, with the model and
+  effort you chose. The app makes the worktree, on a branch of its own, from the repository's own checkout,
+  which may be behind `origin`, so the prompt, BriefBar's take on the standard one for the app unless you
+  changed the one in Settings (`PromptTemplate.appSession`, `forAppSession`), has Copilot bring that branch
+  up to date with `origin/<base branch>` first.
+- **Which session it is.** The one the extension names, once the app's database lists it in that project,
+  started since the request; when the extension can't name it, or names one the database doesn't list
+  there, the one session started there since with its name. BriefBar then shows it in the app. When it
+  can't tell which, if any, it says the session may have started, to look in the app before you send it
+  again. It waits up to five minutes for the app to answer, since it makes the worktree first, which took
+  about 10 seconds for BriefBar's own repository (`SessionSender.create`).
+
+It's the app's session, not a task of BriefBar's: nothing runs with the CLI, and no task is listed for it.
+BriefBar starts one at a time for each work item, so sending it again meanwhile starts no other.
+**Send with …** starts it the same way, and opens the composer to say why when it doesn't start, where you
+can run it with the CLI instead. Closing the composer as it starts takes the request back unless the
+extension took it already: then the session starts all the same, but BriefBar doesn't show it.
 
 **Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
 (`PullRequestAction`). In the main window, every row has a visible **Actions** menu; the same actions
@@ -3452,10 +3494,12 @@ BriefBar asks ([below](#its-extension-for-the-apps-sessions)). BriefBar asks thr
 this Mac only (`CopilotOutbox`):
 
 - **Requests.** As you send it, BriefBar writes `requests/<session>.<request>.json`: the session, and
-  `send` with the prompt, or `fork`, or `stop` as you stop what a prompt you sent there is at, which
-  expires two minutes on. The session's extension claims it by
-  renaming it, so it's handled once, then writes `results/<request>.json`: done, with the message's ID or
-  the fork's session ID, or why not. BriefBar reads the result and removes it. A request that no extension
+  `send` with the prompt, or `fork`, or `stop` as you stop what a prompt you sent there is at, or `create`
+  as a work item's new session starts in the app ([above](#in-the-copilot-app)), with the prompt and the
+  session to start: the app's project's ID (`projectId`), its `name`, its `mode`, and the `model` and
+  `effort` you chose; each expires two minutes on. The session's extension claims it by
+  renaming it, so it's handled once, then writes `results/<request>.json`: done, with the message's ID, the
+  fork's session ID or the new session's (`createdSessionId`), or why not. BriefBar reads the result and removes it. A request that no extension
   claims in time, BriefBar withdraws by removing it; one that's claimed always gets a result, however long
   it takes.
 - **Listening.** While it runs, the extension writes `listening/<session>.json`, with its process ID and
@@ -4903,7 +4947,8 @@ short build, with a timeout.
 **Send Prompts to Copilot Sessions**, on the Agents page once agents are on, lets Send to Copilot send a
 prompt to one of the GitHub Copilot app's sessions itself, with **Send to Session**, or fork the session
 and send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste
-([Send work to Copilot](#send-work-to-copilot)). The app's
+([Send work to Copilot](#send-work-to-copilot)); and start a work item's new session in the app
+([In the Copilot app](#in-the-copilot-app)). The app's
 links only open a session, and an MCP server only answers a tool call, but an extension can: the
 Copilot SDK's extensions are processes that the app's runtime starts in each session it has open, which
 join that session (`joinSession()`) and can send it a message (`session.send`). So BriefBar's second
@@ -4965,11 +5010,20 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
   fork, with its history and its uncommitted changes, in a worktree of its own, and the original gains
   only a note that it was forked. The fork's runtime, and its extension, start at once, so BriefBar then
   sends the prompt to the fork through the fork's own extension. A fork takes about 20 seconds.
+- A `create` runs the app's own `create_session` the same way, with the request's project, name, mode,
+  model and effort, `workspace_type: worktree`, `detached: true` and `coordinate_with_creator: false`, and
+  the prompt as the new session's first message, so its own session gets no message and coordinates nothing;
+  and says which session started, from what the tool answers: its `ghapp://sessions/<id>` link, the last one,
+  else its `(id: <id>)`. The runtime records the call, with its arguments, the prompt among them, in its own
+  session's history, as it does each tool call, which an extension can't keep it from; the extension itself
+  never logs or answers with the prompt, nor with what Copilot says went wrong, which can quote it.
 - Last, it writes the result, never with the prompt: done, with the message's ID, and `reports` once it
-  reports its turn, or the fork's session's,
+  reports its turn, or the fork's session's, or the new session's,
   or why not: `invalid`, `expired`, `send_failed`, `fork_unavailable` where the session doesn't offer the
   app's fork, as a chat may not, `fork_failed`, where the fork failed or Copilot couldn't say how it
-  went, so that a fork may exist, or `stop_failed`. It writes it once `session.send` or the fork is done, however long that
+  went, so that a fork may exist, `create_unavailable` where the session doesn't offer `create_session`, as
+  one the Copilot CLI has open doesn't, or Copilot refused it, `create_failed`, where starting it failed or
+  Copilot didn't say which session it started, so that one may exist, or `stop_failed`. It writes it once `session.send` or the fork is done, however long that
   takes. Then it removes the request it claimed, if BriefBar hasn't removed it already, as turning Azure
   DevOps off does.
 - As it starts, it removes the requests of its session that an extension which ended mid-request had

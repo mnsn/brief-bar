@@ -1028,8 +1028,8 @@ private struct SessionPromptsRow: View {
                 Text("""
                     Send to Copilot can then send a prompt to one of the GitHub Copilot app's sessions itself, or fork \
                     the session and send it to the fork, when you ask, instead of copying it for you to paste, and hear \
-                    back how Copilot's turn went. It adds a small extension to each session the app opens: a process of \
-                    about 46\u{00A0}MB that does nothing else.
+                    back how Copilot's turn went; and start a work item's new session in the app. It adds a small \
+                    extension to each session the app opens: a process of about 46\u{00A0}MB that does nothing else.
                     """)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

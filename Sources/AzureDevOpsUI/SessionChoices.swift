@@ -522,7 +522,7 @@ extension CopilotTasksStore {
         return URL(string: "ghapp://sessions").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) } != nil
     }
 
-    static let cantOpenInApp = "No app on this Mac opens the Copilot app's sessions. Install the GitHub Copilot app, or run it with the CLI."
+    nonisolated static let cantOpenInApp = "No app on this Mac opens the Copilot app's sessions. Install the GitHub Copilot app, or run it with the CLI."
 
     /// Opens a session in the Copilot app, by its `ghapp://sessions/` link: false when nothing opened it.
     @discardableResult
