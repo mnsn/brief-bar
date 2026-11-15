@@ -46,6 +46,25 @@ import Testing
         #expect(defaults.string(forKey: SourceChoices.defaultsKey) == "source consent")
     }
 
+    @Test func alignedEasierToReadRowsOffBecomesNeither() {
+        let defaults = MemorySettings()
+        defaults.set(false, forKey: InterfaceOptions.formerReadableRowsKey)
+        InterfaceOptions.migrate(defaults)
+        #expect(defaults.object(forKey: InterfaceOptions.formerReadableRowsKey) == nil)
+        #expect(defaults.object(forKey: InterfaceOption.alignedTitles.defaultsKey) == nil)
+        #expect(defaults.object(forKey: InterfaceOption.largerReasons.defaultsKey) == nil)
+        #expect(InterfaceOptions.load(from: defaults) == InterfaceOptions())
+    }
+
+    @Test func alignedEasierToReadRowsOnLeavesAnOptionSavedSinceAsItIs() {
+        let defaults = MemorySettings()
+        defaults.set(true, forKey: InterfaceOptions.formerReadableRowsKey)
+        defaults.set(false, forKey: InterfaceOption.largerReasons.defaultsKey)
+        InterfaceOptions.migrate(defaults)
+        #expect(InterfaceOptions.load(from: defaults) == InterfaceOptions(enabled: [.alignedTitles]))
+        #expect(defaults.object(forKey: InterfaceOptions.formerReadableRowsKey) == nil)
+    }
+
     @Test func compactMenuIsOnlyAReversibleViewOfVisibleItems() {
         let layout = SectionLayout(.menuBar, items: [
             .init(id: "custom-first", sections: [.copilotSessions, .teamsChats]),

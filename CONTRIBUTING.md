@@ -22,11 +22,13 @@ links sent in chats, sprint, pipelines and tasks sent to Copilot, and never runs
 screenshots without showing your own chats, pull requests or sessions. `make demo ARGS=--window` also
 opens the window.
 
-Settings › Appearance offers independent presentation options, all off by default, and the size of the
-text on windows' pages. `--demo --render` also draws each option separately and all of them together
-(`interface-*`), the window with its largest text (`interface-textSize-window`), plus the Appearance
-page with its switches off and on. These examples use in-memory preferences and never create live
-menu-bar items or widgets, change your layout, or enable optional features in the installed app.
+Settings › Appearance offers independent presentation options, three of which a new install starts with on
+(`NewInstall`), and the size of the text on windows' pages. The demo starts as a new install does, with its look, but
+keeps an item for each section in the menu bar, so that its pictures show each source's list. `--demo --render` also
+draws each option on its own and all of them together (`interface-*`), the window with its largest text in the demo's
+look (`interface-textSize-window`), plus the Appearance page as the demo has it and with every switch on. These
+examples use in-memory preferences and never create live menu-bar items or widgets, change your layout, or enable
+optional features in the installed app.
 Views set fonts with `.font(size:)` and `.font(style:)` from `BriefBarUI`, never `.font(.system(size:))`
 or `.font(.headline)`, so their text follows the text size on windows' pages (`TextSizeTests` checks);
 size anything that must fit that text, such as a label's column, by the `textScale` environment value.

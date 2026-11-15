@@ -19,7 +19,9 @@ public enum Surface: String, CaseIterable, Codable, Sendable {
     }
 
     /// Whether sections that aren't placed yet join the first item, rather than getting items of their own:
-    /// BriefBar starts with one window for every page, but with a menu-bar item and a widget for each section.
+    /// BriefBar starts with one window for every page, but with a widget for each section. A new install's menu bar
+    /// places every section in one item from the start (`NewInstall`), so only a section a later version adds gets one
+    /// of its own there.
     public var startsTogether: Bool {
         self == .windows
     }
@@ -42,9 +44,9 @@ public enum SectionDestination: Hashable, Sendable {
 /// sections you've hidden from it.
 ///
 /// Each section starts in an item of its own, or for windows in the first one, until you put it in another
-/// item, or hide it. Where a section goes is remembered while its source is off or it's hidden, so it comes
-/// back to the same item. Sections that this version doesn't know are kept, for a later version, but never
-/// shown.
+/// item, or hide it; a new install's menu bar starts with every section in one (`NewInstall`). Where a section goes
+/// is remembered while its source is off or it's hidden, so it comes back to the same item. Sections that this
+/// version doesn't know are kept, for a later version, but never shown.
 public struct SectionLayout: Codable, Equatable, Sendable {
     public struct Item: Codable, Equatable, Sendable, Identifiable {
         /// Stable, so the item keeps its place: in the menu bar where you dragged it, and a widget's or a

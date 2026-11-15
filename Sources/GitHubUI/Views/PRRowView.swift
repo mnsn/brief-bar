@@ -20,7 +20,7 @@ struct PRRowView: View {
         VStack(alignment: .leading, spacing: 0) {
             row
             RowSummary(subject: linkRef)
-                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
@@ -39,7 +39,7 @@ struct PRRowView: View {
 
     private var row: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
+            HStack(alignment: .top, spacing: options.rowIconSpacing) {
                 Image(systemName: item.reason.symbol)
                     .font(size: compact ? 15 : 17)
                     .foregroundStyle(item.group.color)

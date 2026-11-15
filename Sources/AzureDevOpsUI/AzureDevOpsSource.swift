@@ -108,7 +108,14 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 32: only with My Work Page, the order you put your work in on My Work, in each lane's To start and In progress,
     /// kept in BriefBar's preferences, by reference, never a title, for the 50 lanes you ordered last, until you reset
     /// a lane's order, forget all orders or turn Azure DevOps off; none of it goes to Azure DevOps.
-    nonisolated package static let descriptionVersion = 32
+    /// 33: only with Send Work to Copilot and Send Prompts to Copilot Sessions, as a work item's new session starts in
+    /// the Copilot app: the app's projects, read-only from its database, with their IDs, names and folders and whether
+    /// each is a repository; which of its sessions are in that project and when each started; which ones the app has
+    /// open; and what BriefBar's extension, in another of the app's sessions, says of starting it, from files only you
+    /// can read in BriefBar's own folder, which the prompt goes through too. With Make Changes in Azure DevOps, on the
+    /// Sprint page, the state you choose for one of its stories, bugs or tasks, a PATCH of its state, when you click
+    /// it, after which BriefBar reads the sprint again.
+    nonisolated package static let descriptionVersion = 33
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"

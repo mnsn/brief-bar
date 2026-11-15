@@ -234,7 +234,7 @@ private struct WidgetWorkRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
+            HStack(alignment: .top, spacing: options.rowIconSpacing) {
                 Image(systemName: item.stateSymbol)
                     .font(size: 15)
                     .foregroundStyle(item.stateColor)
@@ -309,7 +309,7 @@ struct WidgetPipelineRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
+            HStack(alignment: .top, spacing: options.rowIconSpacing) {
                 RunStatusBadge(status: status.latest?.status, size: 17)
                     .frame(width: options.rowIconWidth, height: 20)
                 VStack(alignment: .leading, spacing: 2) {

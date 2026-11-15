@@ -1,18 +1,21 @@
 import Foundation
 
+/// In the order Settings › Appearance lists them: first those a new install starts with on (`NewInstall`), then the others.
 public enum InterfaceOption: String, CaseIterable, Sendable {
+    case clearerStates
+    case alignedTitles
+    case simpleLayoutControls
+    case largerReasons
     case compactBriefs
     case quietAppearance
-    case readableRows
     case compactMenuBar
-    case clearerStates
     case visibleActions
-    case simpleLayoutControls
 
     public var defaultsKey: String { "interface.\(rawValue)" }
 }
 
-/// Presentation choices only: none are enabled implicitly or stored in a source's settings or layout.
+/// Presentation choices only: none is stored in a source's settings or layout. Each is off until you turn it on, but for
+/// those a new install starts with on (`NewInstall`).
 public struct InterfaceOptions: Equatable, Sendable {
     private var enabled: Set<InterfaceOption>
 
@@ -33,7 +36,8 @@ public struct InterfaceOptions: Equatable, Sendable {
 
     public var compactBriefs: Bool { self[.compactBriefs] }
     public var quietAppearance: Bool { self[.quietAppearance] }
-    public var readableRows: Bool { self[.readableRows] }
+    public var alignedTitles: Bool { self[.alignedTitles] }
+    public var largerReasons: Bool { self[.largerReasons] }
     public var compactMenuBar: Bool { self[.compactMenuBar] }
     public var clearerStates: Bool { self[.clearerStates] }
     public var visibleActions: Bool { self[.visibleActions] }
@@ -47,6 +51,22 @@ public struct InterfaceOptions: Equatable, Sendable {
         for option in InterfaceOption.allCases {
             defaults.set(self[option], forKey: option.defaultsKey)
         }
+    }
+
+    /// Where Aligned, Easier-to-Read Rows was saved, the one option that both Aligned Titles and Larger Reasons and
+    /// Previews were, before they became two.
+    public static let formerReadableRowsKey = "interface.readableRows"
+
+    /// Brings over what an earlier version saved, before anything loads it: Aligned, Easier-to-Read Rows on turns both
+    /// options it became on, unless either is saved already, so the look stays as it was. Its key goes.
+    public static func migrate(_ defaults: some SettingsStorage) {
+        guard defaults.object(forKey: formerReadableRowsKey) != nil else { return }
+        if defaults.bool(forKey: formerReadableRowsKey) {
+            for option in [InterfaceOption.alignedTitles, .largerReasons] where defaults.object(forKey: option.defaultsKey) == nil {
+                defaults.set(true, forKey: option.defaultsKey)
+            }
+        }
+        defaults.removeObject(forKey: formerReadableRowsKey)
     }
 
     /// A temporary presentation of already-visible sections. Saved item IDs, hidden sections and order survive.
