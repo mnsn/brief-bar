@@ -758,9 +758,9 @@ import Testing
     }
 
     /// Settings' box, shown as you turn summaries on, names the model they'll write with once on: Claude Haiku 5.5 through
-    /// Copilot while that depends on finding the Copilot CLI, as turning them on does; Apple Intelligence where the CLI is
-    /// known not to be, or nothing's looked for; and a model you chose. So it never says "on this Mac" for one that goes to
-    /// Copilot.
+    /// Copilot while that depends on finding the Copilot CLI, as turning them on does, even where it wasn't found before;
+    /// Apple Intelligence where nothing's looked for; and a model you chose. So it never says "on this Mac" for one that
+    /// goes to Copilot.
     @Test func settingsNamesTheModelTheyllWriteWithOnceOn() async {
         let (_, _, summaries) = hub(on: false)
         #expect(!summaries.modelDependsOnCLI)
@@ -790,6 +790,21 @@ import Testing
         summaries.findCLI = { true }
         summaries.setModel("claude-opus-5.5")
         #expect(summaries.modelOnceOn == "claude-opus-5.5")
+    }
+
+    /// While Show Links is off, Summaries can't be changed, and their box doesn't ask: their switch reads off, as they are,
+    /// rather than on over a Turn On and a Cancel that can't be clicked.
+    @Test func theirBoxDoesntAskWhileShowLinksIsOff() {
+        let (links, _, summaries) = hub(on: false)
+        func height() -> CGFloat {
+            let rows = VStack { SummariesSettingRows(summaries: summaries, links: links) }
+                .environment(\.consentShown, StorySummariesSetting.title)
+                .frame(width: 520)
+            return NSHostingView(rootView: rows).fittingSize.height
+        }
+        let asking = height()
+        links.setOn(false)
+        #expect(height() < asking - 100)
     }
 
     /// Until the model's known, nothing's written as something opens, nor said to be about to be, so a card never says

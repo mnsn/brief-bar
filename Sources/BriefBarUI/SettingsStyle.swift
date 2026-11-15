@@ -375,6 +375,7 @@ package struct ConsentToggle<Extra: View>: View {
 
     @LocalState private var asking = false
     @Environment(\.consentShown) private var consentShown
+    @Environment(\.isEnabled) private var isEnabled
 
     /// - Parameters:
     ///   - entries: what it reads and sends, which the box says.
@@ -392,7 +393,9 @@ package struct ConsentToggle<Extra: View>: View {
     }
 
     package var body: some View {
-        let isAsking = !isOn && (asking || consentShown == title)
+        // Only while it can be changed: one that can't be meanwhile, as Summaries once Show Links is off, stops asking,
+        // rather than read on over a Turn On and a Cancel that can't be clicked.
+        let isAsking = isEnabled && !isOn && (asking || consentShown == title)
         SettingRow(title, caption: caption, info: info) {
             Toggle(title, isOn: Binding(get: { isOn || isAsking }, set: { on in
                 if on {
@@ -406,6 +409,9 @@ package struct ConsentToggle<Extra: View>: View {
             .toggleStyle(.switch)
             // Shown on while it asks, but not yet on.
             .accessibilityValue(Text("Waiting for you to confirm"), isEnabled: isAsking)
+        }
+        .onChange(of: isEnabled) { _, isEnabled in
+            if !isEnabled { asking = false }
         }
         if isAsking {
             ConsentBox(title: title, entries: entries, extra: extra) {

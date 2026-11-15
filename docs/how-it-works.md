@@ -44,11 +44,12 @@ that's off reads nothing for them.
 
 A setting that reads or sends more than its source's consent covered, Summaries, Send Work to Copilot, Make Changes in
 Azure DevOps and Pull Requests Sent in Chats, says what as you turn it on, in a box under it, with Turn On and Cancel
-(`ConsentToggle`), and it's on only once you click Turn On; turning it off needs no box. A source's gear menu, and its
-widgets' right-click menus, have only what you'd change in the moment: Teams' Show Message Previews, for screen sharing;
-Azure DevOps' Notifications and Watch a Pull Request…; GitHub's Refresh Now; and the way to open each app. What you set
-once, such as a refresh interval, how long things are kept, organizations, a prompt or a model, and Launch BriefBar at
-Login, is in Settings only.
+(`ConsentToggle`), and it's on only once you click Turn On; turning it off needs no box, and one that can't be changed
+meanwhile, as Summaries once Show Links is off, stops asking. A source's gear menu, and its widgets' right-click menus,
+have only what you'd change in the moment: Teams' Show Message Previews, for screen sharing; Azure DevOps' Notifications
+and Watch a Pull Request…; GitHub's Refresh Now; and the way to open each app. What you set once, such as a refresh
+interval, how long things are kept, organizations, a prompt or a model, and Launch BriefBar at Login, is in Settings
+only.
 
 Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
 makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
