@@ -6,34 +6,33 @@ struct AppearancePage: View {
     @ObservedObject var services: AppServices
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Appearance")
-                .font(style: .title2, weight: .semibold)
-            Text("Choose a simpler presentation, one option at a time. Every option starts off, and text starts at its usual size. Sources, permissions and saved layouts stay as they are.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Form {
-                Section {
-                    TextSizeSetting(services: services)
-                }
-                Section {
-                    ForEach(InterfaceOption.allCases, id: \.self) { option in
-                        Toggle(isOn: Binding(
-                            get: { services.interfaceOptions[option] },
-                            set: { services.setInterfaceOption(option, enabled: $0) }
-                        )) {
-                            Text(option.title)
-                            Text(option.explanation)
-                        }
-                        .toggleStyle(.switch)
-                    }
-                }
+        Form {
+            Section {
+                SettingsPageHeader(.appearance)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollDisabled(true)
-            .fixedSize(horizontal: false, vertical: true)
+            Section {
+                TextSizeSetting(services: services)
+            }
+            Section {
+                ForEach(InterfaceOption.allCases, id: \.self) { option in
+                    Toggle(isOn: Binding(
+                        get: { services.interfaceOptions[option] },
+                        set: { services.setInterfaceOption(option, enabled: $0) }
+                    )) {
+                        Text(option.title)
+                        Text(option.explanation)
+                    }
+                    .toggleStyle(.switch)
+                }
+            } header: {
+                Text("Simpler Presentation")
+            } footer: {
+                Text("Choose them one at a time. Each starts off. Sources, permissions and saved layouts stay as they are.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .settingsForm()
     }
 }
 
@@ -44,30 +43,40 @@ private struct TextSizeSetting: View {
     var body: some View {
         let percent = services.textSize.percent
         LabeledContent {
-            Slider(
-                value: Binding(
-                    get: { Double(percent) },
-                    set: { services.setTextSize(TextSize(percent: Int($0.rounded()))) }
-                ),
-                in: Double(TextSize.percentages.first ?? 100)...Double(TextSize.percentages.last ?? 100),
-                step: 10
-            ) {
-                Text("Text Size in Windows")
-            } minimumValueLabel: {
-                Image(systemName: "textformat.size.smaller")
-                    .accessibilityLabel("Smaller")
-            } maximumValueLabel: {
-                Image(systemName: "textformat.size.larger")
-                    .accessibilityLabel("Bigger")
+            HStack(spacing: 10) {
+                SettingInfoButton(title: "Text Size in Windows", text: """
+                    Bigger text on the pages of BriefBar's windows. The menu bar's lists and the widgets keep their size. In a \
+                    window, hold ⌘ and scroll up or down to change it.
+                    """)
+                slider(percent)
             }
-            .labelsHidden()
-            .accessibilityValue("\(percent) percent")
-            .frame(width: 180)
         } label: {
             let size = Text("  \(percent)%").foregroundStyle(.secondary)
             Text("Text Size in Windows\(size)")
-            Text("Bigger text on the pages of BriefBar's windows. The menu bar's lists and the widgets keep their size. In a window, hold ⌘ and scroll up or down to change it.")
+            Text("Bigger text on the pages of BriefBar's windows; lists and widgets keep theirs.")
         }
+    }
+
+    private func slider(_ percent: Int) -> some View {
+        Slider(
+            value: Binding(
+                get: { Double(percent) },
+                set: { services.setTextSize(TextSize(percent: Int($0.rounded()))) }
+            ),
+            in: Double(TextSize.percentages.first ?? 100)...Double(TextSize.percentages.last ?? 100),
+            step: 10
+        ) {
+            Text("Text Size in Windows")
+        } minimumValueLabel: {
+            Image(systemName: "textformat.size.smaller")
+                .accessibilityLabel("Smaller")
+        } maximumValueLabel: {
+            Image(systemName: "textformat.size.larger")
+                .accessibilityLabel("Bigger")
+        }
+        .labelsHidden()
+        .accessibilityValue("\(percent) percent")
+        .frame(width: 180)
     }
 }
 

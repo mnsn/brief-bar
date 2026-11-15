@@ -2,10 +2,10 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-/// The end of every gear menu and widget menu: BriefBar's own items.
+/// The end of every gear menu and widget menu: BriefBar's own items. What you set once, such as Launch at Login, is in
+/// Settings.
 package struct AppMenuItems: View {
     @EnvironmentObject private var services: AppServices
-    @EnvironmentObject private var loginItem: LoginItem
     @Environment(\.panelStyle) private var panelStyle
     @Environment(\.shownSection) private var shownSection
     /// The source whose menu this is, for BriefBar Settings… to open at.
@@ -19,17 +19,6 @@ package struct AppMenuItems: View {
         // Not on a window's own page.
         if panelStyle != .page {
             Button("Open in Window") { services.openWindow(shownSection) }
-        }
-        if loginItem.isAvailable {
-            Toggle("Launch BriefBar at Login", isOn: Binding(
-                get: { loginItem.isEnabled },
-                set: { loginItem.setEnabled($0) }
-            ))
-            if loginItem.needsApproval {
-                Button("Allow in Login Items Settings…") { loginItem.openSystemSettings() }
-            } else if let error = loginItem.lastError {
-                Text("Launch at Login failed: \(error)")
-            }
         }
         UpdateMenuItems(updates: services.updates)
         Button("BriefBar Settings…") { services.openSettings(source.map { .source($0) } ?? .general) }

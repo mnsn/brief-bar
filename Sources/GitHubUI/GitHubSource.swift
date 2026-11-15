@@ -21,7 +21,7 @@ package final class GitHubSource: BriefBarSource {
     package let symbol = "arrow.triangle.merge"
     package let description = SourceDescription(
         version: GitHubSource.descriptionVersion,
-        summary: "Your GitHub pull requests: reviews requested from you, and which of yours need changes, are failing or are approved",
+        summary: "Your GitHub pull requests, and reviews requested from you",
         reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. New: those of every account the GitHub CLI is signed in to on github.com, rather than of its active account alone, and which accounts those are, which BriefBar asks the GitHub CLI every half hour. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles. New: only if you turn on Pull Request Order: also, in the same query, the branch each one merges into, whether its branch is a fork's, its repository's default branch, and its place in a GitHub stack, with where each of the stack's pull requests stands; BriefBar keeps which of those it saw merge or close, for the orders that name them, as references only.",
         network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default; with Pull Request Order on, a longer fixed one in its place, and the usual one again when GitHub can't answer it. New: one such query for each account the GitHub CLI is signed in to, with that account's sign-in; and, as BriefBar lists those accounts, every half hour, the GitHub CLI checks each one with GitHub, a request each. It never changes anything on GitHub.",
         needs: "The GitHub CLI, signed in with gh auth login, to each account whose pull requests you want, in version 2.81 or later for more than one. No personal access token.",
@@ -317,7 +317,7 @@ package final class GitHubSource: BriefBarSource {
     }
 }
 
-/// How the GitHub CLI's sign-in stands, on GitHub's page in Settings, with the accounts BriefBar reads as.
+/// How the GitHub CLI's sign-in stands, on GitHub's page in Settings, with the accounts BriefBar reads as: a row of its form.
 struct SignInStatusView: View {
     @EnvironmentObject private var store: GitHubStore
 
@@ -340,8 +340,6 @@ struct SignInStatusView: View {
                     .help("Sign the GitHub CLI in to another of your accounts, in Terminal, to see its pull requests too")
             }
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var needsSignIn: Bool { store.problem?.needsSignIn == true }

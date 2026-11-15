@@ -388,7 +388,7 @@ package struct SummaryCard: View {
             if problem.fix == .chooseModel {
                 Button("Choose Model…") { choosesModel = true }
                     .popover(isPresented: $choosesModel, arrowEdge: .bottom) {
-                        StorySummariesSetting(summaries: summaries, links: services.links, isNested: false)
+                        StorySummariesSetting(summaries: summaries, links: services.links)
                             .padding(16)
                             .frame(width: 480)
                     }
@@ -603,7 +603,7 @@ package struct SummaryOffer: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Don't show this again: Summaries are in Settings › General")
+                .help("Don't show this again: Summaries are in Settings › Links & Summaries")
                 .accessibilityLabel("Dismiss")
             }
             .font(size: 12)
@@ -622,27 +622,157 @@ package struct SummaryOffer: View {
             .fixedSize()
             .help("Shows the setting for summaries: what they use, where, and what they cost")
             .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
-                StorySummariesSetting(summaries: summaries, links: links, isNested: false)
+                StorySummariesSetting(summaries: summaries, links: links)
                     .padding(16)
                     .frame(width: 480)
             }
     }
 }
 
-/// Summaries, off by default: in Settings, under Show Links, with when they're written, what they use, where, what they
-/// cost and what the model can do with it, and the model: Apple Intelligence on this Mac, or one through Copilot. While
-/// Show Links is off, it can't be changed.
+/// Summaries, on Settings' Links & Summaries page, as rows of its form: off until you turn it on, which first says what it
+/// sends, where, what it costs and what the model can do with it, with when it writes them and the model; then those two,
+/// each a row. While Show Links is off, it can't be changed.
+package struct SummariesSettingRows: View {
+    @ObservedObject private var summaries: StorySummaries
+    @ObservedObject private var links: Links
+    @LocalState private var unavailableReason: String?
+
+    package init(summaries: StorySummaries, links: Links) {
+        self.summaries = summaries
+        self.links = links
+    }
+
+    package static let caption = "Writes where a work item, pull request or session stands, as you open it or ask."
+    package static let writesCaption = "As you open a work item, pull request or session, or only when you click ✨."
+
+    package var body: some View {
+        let onDevice = summaries.usesOnDeviceModel
+        let lines = StorySummariesSetting.lines(onDevice: onDevice, writesWhenOpened: summaries.writesWhenOpened)
+        ConsentToggle(
+            StorySummariesSetting.title, caption: Self.caption, info: info(lines),
+            entries: lines.map { DescriptionBox.Entry(title: $0.label, symbol: $0.symbol, text: Self.sentence($0.text)) },
+            isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) })
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Writes")
+                    writesPicker
+                }
+                HStack(spacing: 8) {
+                    Text("Model")
+                    modelPicker
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+        .disabled(!links.isOn)
+        if summaries.isOn {
+            Picker(selection: Binding(get: { summaries.writesWhenOpened }, set: { summaries.setWritesWhenOpened($0) })) {
+                Text(StorySummariesSetting.whenOpened).tag(true)
+                Text(StorySummariesSetting.whenAsked).tag(false)
+            } label: {
+                Text("Writes")
+                Text(Self.writesCaption)
+            }
+            .pickerStyle(.menu)
+            .disabled(!links.isOn)
+            SettingRow("Model", caption: onDevice ? Self.onDeviceCaption : Self.copilotCaption) {
+                modelPicker
+            }
+            .disabled(!links.isOn)
+            .task(id: [summaries.isAvailable ? "on" : "off", summaries.model]) {
+                refreshOnDeviceAvailability()
+                await summaries.lookForCLI()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                refreshOnDeviceAvailability()
+            }
+            if summaries.isAvailable, onDevice, let unavailableReason {
+                Label(unavailableReason + " Choose a model through Copilot to write them instead.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if summaries.isAvailable, !onDevice, summaries.hasCLI == false {
+                Label("Copilot CLI not found. Install it, or open the GitHub Copilot app once.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Where the model it uses runs, and what that costs.
+    package static let onDeviceCaption = "On this Mac with Apple Intelligence: free, but it often gets details wrong."
+    package static let copilotCaption = "Through GitHub Copilot: a request on your plan, at the model's rate, for each."
+
+    /// All the setting says: what it does, then what it sends, where, what it costs and what the model can do, as its box
+    /// says them.
+    private func info(_ lines: [(label: String, symbol: String, text: String)]) -> String {
+        ([StorySummariesSetting.explanation(writesWhenOpened: summaries.writesWhenOpened)]
+            + lines.map { "\($0.label) \($0.text)" }
+            + (summaries.usesOnDeviceModel ? [StorySummariesSetting.onDeviceAccuracy] : []))
+            .joined(separator: "\n\n")
+    }
+
+    /// A line of the box, which follows its label in the setting, as a sentence of its own.
+    private static func sentence(_ text: String) -> String {
+        text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    private var writesPicker: some View {
+        Picker("Writes", selection: Binding(get: { summaries.writesWhenOpened }, set: { summaries.setWritesWhenOpened($0) })) {
+            Text(StorySummariesSetting.whenOpened).tag(true)
+            Text(StorySummariesSetting.whenAsked).tag(false)
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+    }
+
+    /// On this Mac, then through Copilot, each with what it costs.
+    private var modelPicker: some View {
+        Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
+            Section(StorySummariesSetting.onDeviceSection) {
+                ForEach(choices.filter { $0.id == StorySummaries.appleIntelligenceModel }) { model in
+                    Text(StorySummariesSetting.choiceTitle(model, canRunOnDevice: summaries.canRunOnDevice())).tag(model.id)
+                }
+            }
+            Section(StorySummariesSetting.copilotSection) {
+                ForEach(choices.filter { $0.id != StorySummaries.appleIntelligenceModel }) { model in
+                    Text(StorySummariesSetting.choiceTitle(model)).tag(model.id)
+                }
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+    }
+
+    /// The models to choose from, with the one chosen even when it isn't among them.
+    private var choices: [StorySummaries.Model] {
+        var choices = summaries.models
+        if !choices.contains(where: { $0.id == summaries.model }) {
+            choices.append(StorySummaries.Model(id: summaries.model, name: summaries.model))
+        }
+        return choices
+    }
+
+    private func refreshOnDeviceAvailability() {
+        unavailableReason = summaries.isAvailable && summaries.usesOnDeviceModel ? OnDeviceModel.unavailableReason : nil
+    }
+}
+
+/// Summaries, off by default: in the popover that Turn On… or Choose Model… opens where a summary would be, with when
+/// they're written, what they use, where, what they cost and what the model can do with it, and the model: Apple
+/// Intelligence on this Mac, or one through Copilot. While Show Links is off, it can't be changed. Settings has it as rows
+/// of its form (`SummariesSettingRows`).
 package struct StorySummariesSetting: View {
     @ObservedObject private var summaries: StorySummaries
     @ObservedObject private var links: Links
-    private let isNested: Bool
     @LocalState private var unavailableReason: String?
 
-    /// - Parameter isNested: under Show Links, in Settings, it's set in; in a popover of its own, it isn't.
-    package init(summaries: StorySummaries, links: Links, isNested: Bool = true) {
+    package init(summaries: StorySummaries, links: Links) {
         self.summaries = summaries
         self.links = links
-        self.isNested = isNested
     }
 
     package static let title = "Summaries"
@@ -756,7 +886,6 @@ package struct StorySummariesSetting: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, isNested ? 20 : 0)
         .disabled(!links.isOn)
         .opacity(links.isOn ? 1 : 0.45)
         .task(id: [summaries.isAvailable ? "on" : "off", summaries.model]) {

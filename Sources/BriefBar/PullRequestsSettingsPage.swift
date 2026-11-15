@@ -16,7 +16,7 @@ struct PullRequestsSettingsPage: View {
 
     static let title = "Pull Requests"
     static let symbol = "arrow.triangle.branch"
-    static let summary = "What BriefBar does with your pull requests, each setting under the sources it works with"
+    static let summary = "What BriefBar does with your pull requests"
 
     init(
         model: AppModel, order: PullRequestOrder? = nil, state: (@MainActor (SourceID) -> SourceState)? = nil,
@@ -29,39 +29,22 @@ struct PullRequestsSettingsPage: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                Image(systemName: Self.symbol)
-                    .font(style: .largeTitle)
-                    .foregroundStyle(.tint)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(Self.title)
-                        .font(style: .title2, weight: .semibold)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(Self.summary)
-                        .foregroundStyle(.secondary)
-                }
+        Form {
+            Section {
+                SettingsPageHeader(.pullRequests)
             }
-
-            Form {
-                ForEach(groups, id: \.sources) { group in
-                    Section {
-                        if let notice = notice(group) {
-                            notice
-                        }
-                        settings(group)
-                    } header: {
-                        heading(group)
+            ForEach(groups, id: \.sources) { group in
+                Section {
+                    if let notice = notice(group) {
+                        notice
                     }
+                    settings(group)
+                } header: {
+                    heading(group)
                 }
             }
-            .environment(\.inSettingsForm, true)
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollDisabled(true)
-            .fixedSize(horizontal: false, vertical: true)
         }
+        .settingsForm()
     }
 
     /// Pull Request Order's, then each source's own.
@@ -106,7 +89,8 @@ struct PullRequestsSettingsPage: View {
     }
 }
 
-/// A group's settings don't work now, and why: at the top of its box, with what to do.
+/// A group's settings don't work now, and why: at the top of its box, with what to do. The Send to Copilot page says it
+/// too.
 struct PullRequestSettingsNotice: View {
     /// A way to its source's page.
     struct Action {

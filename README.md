@@ -116,7 +116,7 @@ Stages, missions and what you choose are BriefBar's own: nothing changes in Azur
   </picture>
 </p>
 
-Turn on **Show Links** in **Settings › General** to connect work items, pull requests and sessions.
+Turn on **Show Links** in **Settings › Links & Summaries** to connect work items, pull requests and sessions.
 BriefBar picks up Azure DevOps' work-item links, the pull requests Copilot records with its sessions,
 and sessions on a pull request's branch. You can also link things yourself from a row's right-click
 menu or by pasting a link.
@@ -136,7 +136,7 @@ Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilo
 ## Get the short version with AI
 
 **“Where does this stand, what's next, and who is it waiting on?”** Turn on **Summaries** in
-**Settings › General**, with Show Links on. A work item's summary reads it and its linked work, down
+**Settings › Links & Summaries**, with Show Links on. A work item's summary reads it and its linked work, down
 to pull requests' comment threads and what each Copilot session was asked and answered, and gives a
 headline, the next step and whose it is, and a few points on what's done, left or blocking. Pull
 requests and sessions get one too: on their page, or under their row from **✨**.
@@ -169,7 +169,7 @@ Copilot instead. The app and its plain-language brief work without either AI fea
 
 ## Hand the next step to Copilot
 
-Turn on **Send Work to Copilot** in Azure DevOps' settings, and the next step is a click away, with its context already
+Turn on **Send Work to Copilot** in **Settings › Send to Copilot**, and the next step is a click away, with its context already
 in the prompt. Review, edit or copy the prompt, then choose where it goes, such as the session that's already on the
 work or a new one, and the model.
 
@@ -246,9 +246,9 @@ Copilot app or CLI:
 | **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings; **Add Account…** there signs in to another of your accounts. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
-| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence. |
+| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › Links & Summaries**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence. |
 
-You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
+You can enable **Launch BriefBar at Login** and allow automatic update checks, in **Settings › General**. Later releases install
 through the built-in updater, even if you installed with Homebrew (`brew upgrade` skips BriefBar
 unless you add `--greedy`), and keep Full Disk Access.
 [Full installation guide, managed Macs and building from source →](docs/user-guide.md#install)

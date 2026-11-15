@@ -407,36 +407,41 @@ enum Renderer {
             func page(_ destination: SettingsDestination, name: String) {
                 let navigation = SettingsNavigation()
                 navigation.destination = destination
+                // At the size it opens at, and the smallest it gets.
                 let view = SettingsView(model: model, navigation: navigation)
+                    .frame(width: SettingsView.size.width, height: SettingsView.size.height)
                     .environment(\.isRendering, true)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(view, appearance: appearance), "settings-\(name)-\(suffix)")
             }
-            let pages: [(String, SettingsDestination)] = [("general", .general), ("appearance", .appearance)]
-                + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
+            // In the sidebar's order.
+            let pages: [(String, SettingsDestination)] = [("general", .general)]
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
-                + [("pull-requests", .pullRequests), ("agents", .agents)]
+                + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
+                + [("appearance", .appearance), ("pull-requests", .pullRequests), ("links-and-summaries", .linksAndSummaries),
+                   ("notifications", .notifications), ("send-to-copilot", .sendToCopilot), ("agents", .agents)]
             for (name, destination) in pages {
                 page(destination, name: name)
             }
             /// A page whole, without the sidebar, as tall as it is: what scrolls below the window's picture of it too.
             func wholePage(_ content: some View, name: String) {
                 let view = content
-                    .padding(24)
                     .frame(width: SettingsView.pageWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .environment(\.isRendering, true)
                     .interfaceOptions(from: model.services)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(view, appearance: appearance), "settings-\(name)-whole-\(suffix)")
             }
-            // General, the sources' pages and the settings about pull requests, whole.
+            // General, the sources' pages and those about what BriefBar does across sources, whole.
             let wholePages: [(String, SettingsDestination)] = [("general", .general)]
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
-                + [("pull-requests", .pullRequests)]
+                + [("pull-requests", .pullRequests), ("links-and-summaries", .linksAndSummaries), ("notifications", .notifications),
+                   ("send-to-copilot", .sendToCopilot)]
             for (name, destination) in wholePages {
                 wholePage(SettingsPage(model: model, destination: destination) { _ in }, name: name)
             }
@@ -445,36 +450,31 @@ enum Renderer {
             let orderOff = PullRequestOrder(defaults: MemoryDefaults(), isDemo: false)
             let sourcesOff = PullRequestsSettingsPage(model: model, order: orderOff, state: { _ in .off }) { _ in }
             wholePage(sourcesOff, name: "pull-requests-off")
-            // The Notifications page's setting, below what the picture of General shows.
-            let notificationsSetting = NotificationsSetting(recent: model.services.recentNotifications)
-                .padding(24)
-                .frame(width: 600, alignment: .leading)
-                .background(Color(nsColor: .windowBackgroundColor))
-            write(Snapshot.render(notificationsSetting, appearance: appearance), "settings-notifications-\(suffix)")
-            // Show Links and Summaries, below it too, for each provider.
-            let linksSettings = VStack(alignment: .leading, spacing: 20) {
-                LinksSetting(links: model.services.links)
-                StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
-            }
-            .padding(24)
-            .frame(width: 600, alignment: .leading)
-            .background(Color(nsColor: .windowBackgroundColor))
-            write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
+            // And Send to Copilot while Azure DevOps is off: disabled, saying why.
+            wholePage(SendToCopilotPage(model: model, state: { _ in .off }) { _ in }, name: "send-to-copilot-off")
+            // Summaries, off, as you turn them on: what they send, where, what it costs, and the model.
+            let summariesAsked = StorySummaries(
+                defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: false
+            )
+            summariesAsked.models = model.services.summaries.models
+            wholePage(
+                LinksAndSummariesPage(links: model.services.links, summaries: summariesAsked)
+                    .environment(\.consentShown, StorySummariesSetting.title),
+                name: "links-and-summaries-consent"
+            )
             if demo {
+                // On, with a model through Copilot: where it sends what, and what that costs; and when it writes them only
+                // when you ask.
                 let cloudSummaries = StorySummaries(
                     defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: true
                 )
                 cloudSummaries.models = model.services.summaries.models
+                cloudSummaries.setOn(true)
                 cloudSummaries.setModel("claude-haiku-5.5")
-                let cloudSettings = StorySummariesSetting(summaries: cloudSummaries, links: model.services.links)
-                    .padding(24)
-                    .frame(width: 600, alignment: .leading)
-                    .background(Color(nsColor: .windowBackgroundColor))
-                write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-\(suffix)")
-                // What it costs when it's written only when you ask; and the setting as Turn On… shows it, on its own.
                 cloudSummaries.setWritesWhenOpened(false)
-                write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-asked-\(suffix)")
-                let turnOn = StorySummariesSetting(summaries: model.services.summaries, links: model.services.links, isNested: false)
+                wholePage(LinksAndSummariesPage(links: model.services.links, summaries: cloudSummaries), name: "summaries-copilot")
+                // The setting as Turn On… shows it, on its own.
+                let turnOn = StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
                     .padding(16)
                     .frame(width: 460, alignment: .leading)
                     .background(Color(nsColor: .windowBackgroundColor))
@@ -482,16 +482,9 @@ enum Renderer {
             }
             // And with Show Links off, when Summaries can't be changed.
             let linksOff = Links(defaults: MemoryDefaults(), isDemo: false)
-            let summariesOff = StorySummaries(defaults: MemoryDefaults(), links: linksOff, stories: ItemStories(links: linksOff), isDemo: true)
+            let summariesOff = StorySummaries(defaults: MemoryDefaults(), links: linksOff, stories: ItemStories(links: linksOff), isDemo: false)
             summariesOff.models = model.services.summaries.models
-            let linksOffSettings = VStack(alignment: .leading, spacing: 20) {
-                LinksSetting(links: linksOff)
-                StorySummariesSetting(summaries: summariesOff, links: linksOff)
-            }
-            .padding(24)
-            .frame(width: 600, alignment: .leading)
-            .background(Color(nsColor: .windowBackgroundColor))
-            write(Snapshot.render(linksOffSettings, appearance: appearance), "settings-links-off-\(suffix)")
+            wholePage(LinksAndSummariesPage(links: linksOff, summaries: summariesOff), name: "links-and-summaries-off")
             // A summary as it's written, once it is, when it's out of date and when it fails, in the demo; and Where It Stands
             // without one, with ✨ Summarize.
             let summaries = model.services.summaries

@@ -4,7 +4,7 @@ import Foundation
 
 /// The Notifications page: what BriefBar notified you of lately, from every source, so you can see what you missed, even
 /// what macOS didn't show, as during a Focus, and every update a notification only counted. It's off until you turn it
-/// on, in Settings › General, and the window shows it only while it lists something. It lists what was posted while it
+/// on, in Settings › Notifications, and the window shows it only while it lists something. It lists what was posted while it
 /// was off too, so turning it on shows what's still kept.
 ///
 /// What it lists stays in memory only, for as long as you choose (a day unless you change it), and is gone when

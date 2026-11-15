@@ -183,7 +183,7 @@ why.
 
 ## Links
 
-**Show Links**, in **Settings › General**, shows which work items, pull requests and Copilot sessions
+**Show Links**, in **Settings › Links & Summaries**, shows which work items, pull requests and Copilot sessions
 go together, on their own rows: small capsules next to what's going on, for a pull request's work items
 and the sessions working on it, a work item's pull requests and their sessions, and a session's pull
 request and work item. A capsule shows a number, or how many, and the sessions' capsule says how the
@@ -235,7 +235,7 @@ on, one about your pull request whose build failed, that has merge conflicts, or
 commented, replied, mentioned you or wants changes has **Fix with Copilot…** too, which opens the
 Send to Copilot window with the fix's prompt ([below](#azure-devops)).
 
-**Notifications Page**, in **Settings › General**, lists what BriefBar notified you of on a page of
+**Notifications Page**, in **Settings › Notifications**, lists what BriefBar notified you of on a page of
 its own in BriefBar's window, right after the Overview, so you can see what you missed: a banner that
 went away, a notification macOS didn't show, during a Focus or with notifications off for BriefBar,
 and each update of a refresh that had more than its notifications show ("3 more pull request
@@ -1001,7 +1001,7 @@ same way, with **Show Details**, a teammate's too, rather than only in Azure Dev
 write or reword any of it: Copilot's notes show as Copilot wrote them, and nothing more is read from
 Azure DevOps for it.
 
-Turn on **Summaries** in **Settings › General**, under Show Links, or with **Turn On…** where Where It
+Turn on **Summaries** in **Settings › Links & Summaries**, under Show Links, or with **Turn On…** where Where It
 Stands offers them, and, once something's linked to a work item, opening its details writes a few lines on
 where it stands at the top of Where It Stands: a headline, the next step and whose it is, and a few
 points, a bullet each, on what reviewers asked and whether it's answered, what Copilot did and said is
@@ -1066,9 +1066,9 @@ Requests**, to see its details on the Pull Requests page.
   </picture>
 </p>
 
-**Send Work to Copilot**, off by default, hands a sprint's work item to Copilot on your Mac, the way you'd
-ask Copilot yourself, with your sign-in, tools, MCP servers and instructions: to a new session in the GitHub
-Copilot app, where you can follow and steer it, or to the
+**Send Work to Copilot**, in **Settings › Send to Copilot** and off by default, hands a sprint's work item to Copilot on
+your Mac, the way you'd ask Copilot yourself, with your sign-in, tools, MCP servers and instructions: to a new session
+in the GitHub Copilot app, where you can follow and steer it, or to the
 [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), which works on its own. Point at a task
 and click ✈︎ to see the prompt, which you can change, and choose where it starts, the model, how hard it
 thinks and the repository the change goes in, then **Send**. Or right-click a task to send it right away,
@@ -1415,7 +1415,7 @@ Or download it yourself:
    click **Open Anyway** and confirm.
 4. Settings opens: turn on the sources you want, as [above](#turning-a-source-on). Changing the Full
    Disk Access list asks for your password or Touch ID, and an administrator's on a standard account.
-5. Turn on **Launch BriefBar at Login** in Settings. If macOS asks you to allow it, use
+5. Turn on **Launch BriefBar at Login** in Settings › General. If macOS asks you to allow it, use
    **Allow in Login Items Settings…**.
 
 The second time you open it, BriefBar asks whether to check for updates automatically. If you allow
@@ -1475,7 +1475,7 @@ saved, macOS may also ask whether the new build may use BriefBar's keychain item
 fine there, since it covers only that build.
 
 A copy you build updates itself too, to the release builds, unless you turn off
-**Check for Updates Automatically** in Settings and build each new version yourself. Releases are
+**Check for Updates Automatically** in Settings › General and build each new version yourself. Releases are
 signed with the project's certificate, not ad hoc or with a certificate of yours, so after that first
 update, allow Full Disk Access once more the same way. Later updates keep it.
 
@@ -1501,40 +1501,54 @@ has the details.
 
 ## Settings
 
-Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
-right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
-**BriefBar Settings…** and **Quit BriefBar**. Those about pull requests are on **Settings › Pull
-Requests** rather than its page (below). **Settings › General** also has
-**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)),
-**Summaries**, off by default (see [Azure DevOps](#azure-devops)), and
-**Notifications Page**, off by default, with how long it keeps what it lists: 4 hours, 1 day (default)
-or 3 days (see [Notifications](#notifications)).
+**Settings** has a sidebar in four parts. **General** has **Launch BriefBar at Login**, **Check for Updates
+Automatically** in a copy that updates itself, each source in a line with whether it's on and a way to its page, and
+BriefBar's version, with **Check for Updates…** and **Quit BriefBar**. Then come a page for each source, under
+**Sources**; where things show, and how, under **Display**: **Menu Bar**, **Widgets**, **Windows** and **Appearance**;
+and what BriefBar does across sources, under **Features**: **Pull Requests**, **Links & Summaries**, **Notifications**,
+**Send to Copilot** and **Agents**. The window opens at its smallest size; make it bigger, and it keeps its size.
 
-| Source | Setting | Options |
+Each setting says what it does in a line under it and, where there's more to say, **ⓘ** beside it says the rest. A
+setting that reads or sends more than its source does, **Summaries**, **Send Work to Copilot**, **Make Changes in Azure
+DevOps** and **Pull Requests Sent in Chats**, says what as you turn it on, in a box under it, and is on only once you
+click **Turn On**; **Cancel** leaves it off. Turning one off needs no box. Agents say it on their page, as a source does
+before you turn it on.
+
+A list's gear menu, and a widget's right-click menu, have what you'd change in the moment, before **Open in Window**,
+**Check for Updates…**, **BriefBar Settings…** and **Quit BriefBar**: Teams' **Show Message Previews**, to hide what
+messages say while you share your screen; Azure DevOps' **Notifications** and **Watch a Pull Request…**; GitHub's
+**Refresh Now**; and a way to open each app. The rest are in Settings only.
+
+| Page | Setting | Options |
 |---|---|---|
-| Teams | Keep Unread For | 4 hours, 1 day (default), 3 days, until I read it |
+| Microsoft Teams | Keep Unread For | 4 hours, 1 day (default), 3 days, until I read it |
 | | Show Message Previews | on/off: off shows only how many messages are new, for screen sharing |
 | | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, and chats worded in [the brief](#the-brief), while previews are shown |
 | | Mark Chats Read When You Read Them in Teams | on by default: reads how far you've read each chat from Teams' own data, read-only, and keeps only that, in memory |
 | | Mark All Read When Teams' Badge Clears | on by default |
-| Azure DevOps | Notifications, Summaries by Apple Intelligence | on/off |
+| Azure DevOps | Notifications | on/off |
+| | Summaries by Apple Intelligence | on/off: the brief above your pull requests, written on your Mac |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it, and checks that your sign-in can read it: it says why when it can't, such as an organization in another directory, which **Sign In…** fixes, or a project's name, whose organization is the first part of its link |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to a new session in the Copilot app, or to the Copilot CLI, on your Mac, and your pull requests' Copilot actions. Where **New Sessions** start (in the Copilot app by default), its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
-| Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
+| GitHub Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
 | | Show Relayed Questions Once | off by default: a question or plan that a coordinating session asks you for another session shows once, on the coordinating session (see [GitHub Copilot](#github-copilot)) |
 | | Nest Sessions Under Their Parents | off by default: a session that another session started shows under it, as in the Copilot app's sidebar, or with a ↳ tag when it's in another group (see [GitHub Copilot](#github-copilot)) |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request for each account each time |
+| Links & Summaries | Show Links | off by default (see [Links](#links)) |
+| | Summaries | off by default, and only with Show Links on: when it writes them, as you open one or only when you ask, and the model (see [Azure DevOps](#azure-devops)) |
+| Notifications | Notifications Page | off by default (see [Notifications](#notifications)) |
+| | Keep Notifications For | 4 hours, 1 day (default) or 3 days |
+| Send to Copilot | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to a new session in the Copilot app, or to the Copilot CLI, on your Mac, and your pull requests' Copilot actions. Where **New Sessions** start (in the Copilot app by default), its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 
 **Settings › Pull Requests** has the settings about pull requests, each under the sources whose pull
 requests it works with: first those that work with Azure DevOps' and GitHub's, then those that work with
 Azure DevOps' only. A source's settings work only while it's on: while it's off, or paused until you look
 at what it reads now, they show all the same, disabled, saying so, with **Turn On…** or **Review…**. Azure
-DevOps' gear menu has its own too, all but My Work Page, which goes with Pull Request Order: they're the same settings.
+DevOps' gear menu has **Watch a Pull Request…** too: it's the same setting.
 
 | Works with | Setting | Options |
 |---|---|---|
@@ -1548,6 +1562,9 @@ DevOps' gear menu has its own too, all but My Work Page, which goes with Pull Re
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move, and stops a change that hasn't gone yet |
+
+**Settings › Send to Copilot** has Send Work to Copilot, which sends Azure DevOps' work items and pull requests' fixes:
+while Azure DevOps is off, or paused, it shows all the same, disabled, saying so, with **Turn On…** or **Review…**.
 
 **Settings › Agents** lets agents use BriefBar, off by default, and installs its Copilot plugin, and
 its extension for the Copilot app's sessions, only when you ask (see [Agents](#agents)).

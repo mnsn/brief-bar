@@ -4,8 +4,9 @@ import Foundation
 import Testing
 @testable import AzureDevOpsUI
 
-/// Where Azure DevOps' settings show: in its menus all of them, and in the Settings window each once, on its own page or,
-/// for those about its pull requests, on the Pull Requests page, kept where they always were.
+/// Where Azure DevOps' settings show: in the Settings window each once, on its own page, on the Pull Requests page for those
+/// about its pull requests, or, for Send Work to Copilot, on the Send to Copilot page, kept where they always were; and in its
+/// menus only those you'd change in the moment.
 @MainActor
 @Suite struct SettingsPlacesTests {
     private let aboutPullRequests: [AzureDevOpsSetting] = [
@@ -13,23 +14,33 @@ import Testing
         .makesChanges,
     ]
 
-    @Test func theMenusHaveAllOfThem() {
-        #expect(AzureDevOpsSettings.Place.menu.settings == AzureDevOpsSetting.allCases)
-        #expect(AzureDevOpsSettings.Place.menu.groups.count == 3)
+    /// Notifications, say for a meeting, and a pull request to watch from a link you've just been sent; refresh intervals,
+    /// how long things are kept, organizations, and what sends or writes are only in Settings.
+    @Test func theMenusHaveOnlyThoseForTheMoment() {
+        #expect(AzureDevOpsSettings.Place.menu.settings == [.notifications, .watchedPullRequests])
+        #expect(AzureDevOpsSettings.Place.menu.groups.count == 2)
     }
 
     @Test func theSettingsWindowShowsEachOnce() {
-        let own = AzureDevOpsSettings.Place.ownPage.settings
-        let pullRequests = AzureDevOpsSettings.Place.pullRequestsPage.settings
-        #expect(Set(own).isDisjoint(with: pullRequests))
-        #expect(Set(own).union(pullRequests) == Set(AzureDevOpsSetting.allCases))
-        #expect(own.count + pullRequests.count == AzureDevOpsSetting.allCases.count)
+        let shown = [AzureDevOpsSettings.Place.ownPage, .pullRequestsPage, .sendToCopilotPage].flatMap(\.settings)
+        #expect(Set(shown) == Set(AzureDevOpsSetting.allCases))
+        #expect(shown.count == AzureDevOpsSetting.allCases.count)
     }
 
-    /// Those about its pull requests left its page for the Pull Requests page; the rest, about all it reads, stayed.
-    @Test func thoseAboutPullRequestsMovedToThePullRequestsPage() {
+    /// Those about its pull requests are on the Pull Requests page, and Send Work to Copilot on a page of its own; the rest,
+    /// about all it reads, stayed on its page.
+    @Test func eachIsOnItsPage() {
         #expect(AzureDevOpsSettings.Place.pullRequestsPage.settings == aboutPullRequests)
-        #expect(AzureDevOpsSettings.Place.ownPage.settings == [.notifications, .summaries, .refresh, .organizations, .copilot])
+        #expect(AzureDevOpsSettings.Place.sendToCopilotPage.settings == [.copilot])
+        #expect(AzureDevOpsSettings.Place.ownPage.settings == [.notifications, .summaries, .refresh, .organizations])
+    }
+
+    /// Send to Copilot shows Send Work to Copilot whether Azure DevOps is on or not: disabled while it's off or paused.
+    @Test func sendToCopilotShowsItsSettingsWhileAzureDevOpsIsOff() {
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), summarizer: .withoutModel)
+        #expect(source.hasSendToCopilotSettings)
+        #expect(source.sendToCopilotSettingsView(state: .off) != nil)
+        #expect(source.sendToCopilotSettingsView(state: .needsReview) != nil)
     }
 
     /// The page lists each of them once, under Azure DevOps only, after Pull Request Order, which works with GitHub's too: My

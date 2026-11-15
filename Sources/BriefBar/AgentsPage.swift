@@ -656,7 +656,7 @@ extension CopilotPluginRegistration.Status {
 
 enum AgentsText {
     static let symbol = "sparkles"
-    static let summary = "The Copilot CLI and other agents can ask BriefBar what needs you"
+    static let summary = "The Copilot CLI and other agents can ask what needs you"
     /// The plugin's command, which a line never breaks after its slash (a word joiner).
     static let command = "/\u{2060}briefbar"
 }
@@ -665,79 +665,91 @@ struct AgentsPage: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                Image(systemName: AgentsText.symbol)
-                    .font(style: .largeTitle)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Agents")
-                        .font(style: .title2, weight: .semibold)
-                    Text(AgentsText.summary)
-                        .foregroundStyle(.secondary)
+        Form {
+            Section {
+                SettingsPageHeader(
+                    symbol: SettingsPageInfo.agents.symbol, tint: SettingsPageInfo.agents.tint, title: SettingsPageInfo.agents.title,
+                    subtitle: AgentsText.summary
+                ) {
+                    SourceStateLabel(state: agents.state)
                 }
             }
-
             switch agents.state {
             case .off:
-                AgentsLeftoversRow(agents: agents)
-                AgentsDescriptionBox()
-                Button("Let Agents Use BriefBar") { agents.turnOn() }
-                    .keyboardShortcut(.defaultAction)
-                    .controlSize(.large)
-                Text("""
-                    Turning them on adds BriefBar to the Copilot CLI's MCP servers, which the GitHub Copilot app's \
-                    sessions use too. Then you can install its Copilot plugin, which adds \(AgentsText.command) \
-                    there, and turn on \(CopilotSessionPrompts.title). Turning agents off, at any time, removes them \
-                    all.
-                    """)
-                    .font(style: .callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if agents.isLeaving || agents.leftovers != nil {
+                    Section {
+                        AgentsLeftoversRow(agents: agents)
+                    }
+                }
+                Section {
+                    DescriptionRows(entries: AgentsDescription.entries)
+                } footer: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("""
+                            Turning them on adds BriefBar to the Copilot CLI's MCP servers, which the GitHub Copilot app's \
+                            sessions use too. Then you can install its Copilot plugin, which adds \(AgentsText.command) \
+                            there, and turn on \(CopilotSessionPrompts.title). Turning agents off, at any time, removes them \
+                            all.
+                            """)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Spacer()
+                            Button("Let Agents Use BriefBar") { agents.turnOn() }
+                                .keyboardShortcut(.defaultAction)
+                                .controlSize(.large)
+                        }
+                    }
+                }
             case .needsReview:
-                Label("""
-                    Agents are paused: since you let them use BriefBar, an update gave them more. Here's what they get now.
-                    """, systemImage: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                AgentsDescriptionBox()
-                HStack {
-                    Button("Keep Them On") { agents.turnOn() }
-                        .keyboardShortcut(.defaultAction)
-                        .controlSize(.large)
-                    Button("Turn Them Off") { agents.turnOff() }
+                Section {
+                    Label("""
+                        Agents are paused: since you let them use BriefBar, an update gave them more. Here's what they get now.
+                        """, systemImage: "exclamationmark.circle.fill")
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    DescriptionRows(entries: AgentsDescription.entries)
+                } footer: {
+                    HStack {
+                        Spacer()
+                        Button("Turn Them Off") { agents.turnOff() }
+                        Button("Keep Them On") { agents.turnOn() }
+                            .keyboardShortcut(.defaultAction)
+                            .controlSize(.large)
+                    }
                 }
             case .on:
-                VStack(alignment: .leading, spacing: 0) {
+                Section {
                     CopilotCLIRow(agents: agents)
-                        .padding(.vertical, 10)
-                    Divider()
                     CopilotPluginRow(agents: agents)
-                        .padding(.vertical, 10)
-                    Divider()
+                } header: {
+                    Text("GitHub Copilot")
+                }
+                Section {
                     SessionPromptsRow(agents: agents)
-                        .padding(.vertical, 10)
-                    Divider()
                     SessionUpdatesRow(agents: agents)
-                        .padding(.vertical, 10)
                     if agents.showsOrderSkill {
-                        Divider()
                         OrderSkillRow(agents: agents)
-                            .padding(.vertical, 10)
                     }
-                    Divider()
+                } header: {
+                    Text("The Copilot App's Sessions")
+                }
+                Section {
                     OtherAgentsRow(agents: agents)
-                        .padding(.vertical, 10)
                 }
-                .padding(.horizontal, 12)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-                DisclosureGroup("What agents get") {
-                    AgentsDescriptionBox()
-                        .padding(.top, 6)
+                Section {
+                    DisclosureGroup("What agents get") {
+                        DescriptionRows(entries: AgentsDescription.entries)
+                    }
+                } footer: {
+                    HStack {
+                        Spacer()
+                        Button("Turn Off Agents") { agents.turnOff() }
+                    }
                 }
-                Button("Turn Off Agents") { agents.turnOff() }
             }
         }
+        .settingsForm()
         .onAppear { agents.refresh() }
     }
 }
@@ -784,39 +796,67 @@ private struct AgentsLeftoversRow: View {
                 Spacer()
                 Button("Try Again") { agents.removeLeftovers() }
             }
-            .padding(12)
-            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// A row of the Agents page: its name, what it does for you in a line, how it stands now, ⓘ with the rest, and what you can
+/// do with it, on the right.
+private struct AgentRow<Status: View, Control: View>: View {
+    let title: String
+    let caption: String?
+    var info: String?
+    @ViewBuilder let status: Status
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 10) {
+                if let info {
+                    SettingInfoButton(title: title, text: info)
+                }
+                control
+            }
+        } label: {
+            Text(title)
+            VStack(alignment: .leading, spacing: 3) {
+                if let caption {
+                    Text(caption)
+                        .foregroundStyle(.secondary)
+                }
+                status
+                    .font(style: .callout)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
 /// What agents get, where it goes, and what they can change.
-struct AgentsDescriptionBox: View {
-    var body: some View {
-        DescriptionBox(entries: [
-            .init(title: "What agents get", symbol: "text.bubble", text: """
-                What needs you, from the sources that are on: your pull requests, one at a time with its work items and \
-                their story, its comment threads word for word and, with Send Work to Copilot on, the Copilot session \
-                BriefBar sends its work to, your pipelines and sprint, a work item with its description, latest comments, \
-                its tasks with their pull requests, the pull requests linked to it and the Copilot sessions on those, with \
-                what Copilot recorded of their work, the work BriefBar sent to Copilot, and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
-                build passes or fails, comments wait on you, or it has merge conflicts. With Pull Request Order on, the \
-                orders sessions told BriefBar their pull requests merge in, with what you changed in them, and your Azure \
-                DevOps pull requests' stages, with who set them. Never your Teams chats or your pull requests on GitHub.
-                """),
-            .init(title: "Where it goes", symbol: "network", text: """
-                To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \
-                come word for word from whoever wrote them, and an agent may act on what they say.
-                """),
-            .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
-                Only which pull requests BriefBar watches and which pipelines it pins; with Pull Request Order on, the \
-                orders and stages it keeps, never what you changed in a mission; and, with \(SessionUpdatesText.title) \
-                on, what each session works on and the pull requests it opened, as BriefBar shows them, and how soon \
-                BriefBar reads Azure DevOps again. Nothing in Azure DevOps or on GitHub: BriefBar gives agents no way to \
-                change them.
-                """),
-        ])
-    }
+enum AgentsDescription {
+    static let entries: [DescriptionBox.Entry] = [
+        .init(title: "What agents get", symbol: "text.bubble", text: """
+            What needs you, from the sources that are on: your pull requests, one at a time with its work items and \
+            their story, its comment threads word for word and, with Send Work to Copilot on, the Copilot session \
+            BriefBar sends its work to, your pipelines and sprint, a work item with its description, latest comments, \
+            its tasks with their pull requests, the pull requests linked to it and the Copilot sessions on those, with \
+            what Copilot recorded of their work, the work BriefBar sent to Copilot, and your Copilot sessions. They can wait on one of your pull requests, for up to two hours, until its next \
+            build passes or fails, comments wait on you, or it has merge conflicts. With Pull Request Order on, the \
+            orders sessions told BriefBar their pull requests merge in, with what you changed in them, and your Azure \
+            DevOps pull requests' stages, with who set them. Never your Teams chats or your pull requests on GitHub.
+            """),
+        .init(title: "Where it goes", symbol: "network", text: """
+            To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \
+            come word for word from whoever wrote them, and an agent may act on what they say.
+            """),
+        .init(title: "What agents can change", symbol: "slider.horizontal.3", text: """
+            Only which pull requests BriefBar watches and which pipelines it pins; with Pull Request Order on, the \
+            orders and stages it keeps, never what you changed in a mission; and, with \(SessionUpdatesText.title) \
+            on, what each session works on and the pull requests it opened, as BriefBar shows them, and how soon \
+            BriefBar reads Azure DevOps again. Nothing in Azure DevOps or on GitHub: BriefBar gives agents no way to \
+            change them.
+            """),
+    ]
 }
 
 /// BriefBar among the Copilot CLI's MCP servers.
@@ -824,17 +864,9 @@ private struct CopilotCLIRow: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Copilot CLI")
-                    .font(style: .headline)
-                status
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
+        AgentRow(title: "Copilot CLI", caption: "BriefBar among its MCP servers, which the Copilot app's sessions use too.") {
+            status
+        } control: {
             action
         }
     }
@@ -843,7 +875,7 @@ private struct CopilotCLIRow: View {
     private var status: some View {
         switch agents.registration {
         case .unknown:
-            Text(" ")
+            EmptyView()
         case .working:
             HStack(spacing: 6) {
                 ProgressView()
@@ -904,29 +936,20 @@ private struct CopilotPluginRow: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "shippingbox")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Copilot plugin")
-                    .font(style: .headline)
-                Text("""
-                    \(AgentsText.command), in the GitHub Copilot app and the Copilot CLI: what needs you, and pull \
-                    requests handed to sessions you can follow there. Those sessions change code, and Push & Reply \
-                    pushes and replies as you.
-                    """)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                status
-                    .fixedSize(horizontal: false, vertical: true)
-                if needsTheServer {
-                    Text("Its skill uses BriefBar's MCP server: add BriefBar to the Copilot CLI too.")
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        AgentRow(
+            title: "Copilot plugin", caption: "Adds \(AgentsText.command) to the GitHub Copilot app and the Copilot CLI.",
+            info: """
+                \(AgentsText.command), in the GitHub Copilot app and the Copilot CLI: what needs you, and pull requests \
+                handed to sessions you can follow there. Those sessions change code, and Push & Reply pushes and replies \
+                as you.
+                """
+        ) {
+            status
+            if needsTheServer {
+                Text("Its skill uses BriefBar's MCP server: add BriefBar to the Copilot CLI too.")
+                    .foregroundStyle(.orange)
             }
-            Spacer()
+        } control: {
             action
         }
     }
@@ -1018,25 +1041,18 @@ private struct SessionPromptsRow: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "paperplane")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(CopilotSessionPrompts.title)
-                    .font(style: .headline)
-                Text("""
-                    Send to Copilot can then send a prompt to one of the GitHub Copilot app's sessions itself, or fork \
-                    the session and send it to the fork, when you ask, instead of copying it for you to paste, and hear \
-                    back how Copilot's turn went; and start a work item's new session in the app. It adds a small \
-                    extension to each session the app opens: a process of about 46\u{00A0}MB that does nothing else.
-                    """)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                status
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
+        AgentRow(
+            title: CopilotSessionPrompts.title,
+            caption: "Send to Copilot sends a prompt to one of the Copilot app's sessions itself, when you ask.",
+            info: """
+                Send to Copilot can then send a prompt to one of the GitHub Copilot app's sessions itself, or fork the \
+                session and send it to the fork, when you ask, instead of copying it for you to paste, and hear back how \
+                Copilot's turn went; and start a work item's new session in the app. It adds a small extension to each \
+                session the app opens: a process of about 46\u{00A0}MB that does nothing else.
+                """
+        ) {
+            status
+        } control: {
             Toggle(CopilotSessionPrompts.title, isOn: Binding(
                 get: { agents.areSessionPromptsOn },
                 set: { agents.setSessionPrompts($0) }
@@ -1118,17 +1134,10 @@ private struct OrderSkillRow: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(PullRequestOrderSettingView.title)'s skill")
-                    .font(style: .headline)
-                SettingSkillStatus(agents: agents, skill: .order)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
+        AgentRow(title: "\(PullRequestOrderSettingView.title)'s skill", caption: nil) {
+            SettingSkillStatus(agents: agents, skill: .order)
+        } control: {
+            EmptyView()
         }
     }
 }
@@ -1140,27 +1149,15 @@ private struct SessionUpdatesRow: View {
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(SessionUpdatesText.title)
-                    .font(style: .headline)
-                Text(SessionUpdatesText.explanation)
+        AgentRow(title: SessionUpdatesText.title, caption: SessionUpdatesText.caption, info: SessionUpdatesText.explanation) {
+            if agents.areSessionUpdatesOn, !services.links.isOn {
+                Text("Turn on Show Links, in Settings › Links & Summaries, to see sessions on work items and pull requests.")
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if agents.areSessionUpdatesOn, !services.links.isOn {
-                    Text("Turn on Show Links in Settings › General to see sessions on work items and pull requests.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if agents.showsSkill(.updates) {
-                    SettingSkillStatus(agents: agents, skill: .updates)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
-            Spacer()
+            if agents.showsSkill(.updates) {
+                SettingSkillStatus(agents: agents, skill: .updates)
+            }
+        } control: {
             Toggle(SessionUpdatesText.title, isOn: Binding(
                 get: { agents.areSessionUpdatesOn },
                 set: { agents.setSessionUpdates($0) }
@@ -1174,6 +1171,7 @@ private struct SessionUpdatesRow: View {
 /// Updates from Copilot Sessions, in words.
 enum SessionUpdatesText {
     static let title = "Updates from Copilot Sessions"
+    static let caption = "Sessions tell BriefBar what they work on, and what they changed in Azure DevOps."
     static let explanation = """
         Sessions tell BriefBar what they're working on, which Show Links and By Mission then show, and what they changed \
         in Azure DevOps, which BriefBar reads again then, at most every 30 seconds. It keeps references only: what a \
@@ -1293,20 +1291,14 @@ private struct OtherAgentsRow: View {
 
     var body: some View {
         let apps = agents.apps
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "puzzlepiece.extension")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Other agents")
-                    .font(style: .headline)
-                Text(apps.isEmpty
-                     ? "Copy the command that starts BriefBar, and add it to another agent's MCP servers."
-                     : "Install BriefBar in another agent on this Mac, or copy the command that starts it.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
+        AgentRow(
+            title: "Other agents",
+            caption: apps.isEmpty
+                ? "Copy the command that starts BriefBar, and add it to another agent's MCP servers."
+                : "Install BriefBar in another agent on this Mac, or copy the command that starts it."
+        ) {
+            EmptyView()
+        } control: {
             if apps.isEmpty {
                 Button("Copy Command", action: copyCommand)
             } else {
@@ -1336,46 +1328,11 @@ private struct OtherAgentsRow: View {
     }
 }
 
-/// Agents, among the sources on the General page.
-struct AgentsSummaryRow: View {
-    @ObservedObject var agents: AgentsModel
-    var open: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: AgentsText.symbol)
-                .font(style: .title2)
-                .frame(width: 30)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Agents")
-                    .font(style: .headline)
-                Text(AgentsText.summary)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            switch agents.state {
-            case .on:
-                Label("On", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Button("Settings…", action: open)
-            case .needsReview:
-                Label("Paused", systemImage: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-                Button("Review…", action: open)
-            case .off:
-                Button("Turn On…", action: open)
-            }
-        }
-    }
-}
-
 /// Agents, in the Settings window's sidebar.
 struct AgentsSidebarRow: View {
     @ObservedObject var agents: AgentsModel
 
     var body: some View {
-        SidebarSourceRow(name: "Agents", symbol: AgentsText.symbol, state: agents.state)
+        SettingsSidebarRow(info: .agents, state: agents.state)
     }
 }
