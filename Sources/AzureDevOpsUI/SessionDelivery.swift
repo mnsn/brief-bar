@@ -322,7 +322,9 @@ extension CopilotTasksStore {
         // Sending to it while Copilot works in it would fork its history; while Copilot works in the checkout it works in
         // now, their work would mix.
         if let busy = busyReason(for: choice, in: currentFolder(of: choice) ?? choice.folder) { return .notSent(busy) }
-        guard !delivering.contains(id) else { return .notSent("BriefBar is sending it a prompt already.") }
+        guard !delivering.contains(id) else {
+            return .notSent(startingFrom.contains(id) ? Self.startingFromIt : "BriefBar is sending it a prompt already.")
+        }
         delivering.insert(id)
         defer { delivering.remove(id) }
         // Whether BriefBar could send prompts to sessions as you sent this one: once it could, turning that off stops it.

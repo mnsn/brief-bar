@@ -3273,7 +3273,12 @@ starts with the CLI, in a worktree of BriefBar's at its latest commit.
   about 10 seconds for BriefBar's own repository (`SessionSender.create`).
 
 It's the app's session, not a task of BriefBar's: nothing runs with the CLI, and no task is listed for it.
-BriefBar starts one at a time for each work item, so sending it again meanwhile starts no other.
+BriefBar starts one at a time for each work item, so sending it again meanwhile starts no other. And one at
+a time from each session it starts from, which BriefBar sends nothing else meanwhile, as when it sends that
+session a prompt (`CopilotTasksStore.delivering`): its extension carries out one request at a time, so
+another start's request would wait behind the first, and could run out of time to be taken. The next one
+waits for the first to start before its request is written, and a prompt for that session doesn't go, saying
+why (`startingFrom`).
 **Send with …** starts it the same way, and opens the composer to say why when it doesn't start, where you
 can run it with the CLI instead. Closing the composer as it starts takes the request back unless the
 extension took it already: then the session starts all the same, but BriefBar doesn't show it.
