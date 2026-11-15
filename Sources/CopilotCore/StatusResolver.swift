@@ -86,6 +86,17 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
         default: return false
         }
     }
+
+    /// Whether its detail is what the session wrote, its question, plan, the command it asks to run, what it's doing or
+    /// how it ended, rather than what's said about it, such as how many of the sessions it started need you: the lists
+    /// show it stronger, as content, but an idle one's stays quiet.
+    public var detailIsWritten: Bool {
+        guard detail != nil, phase != .idle else { return false }
+        switch reason {
+        case .question, .planApproval, .permission, .working, .relayed, .finished, .failed: return true
+        case .starting, .waitingForChildren, .interrupted, .unresponsive, .idle: return false
+        }
+    }
 }
 
 extension SessionSnapshot {

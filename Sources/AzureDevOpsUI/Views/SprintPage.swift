@@ -353,7 +353,7 @@ private struct SprintHero: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(daysLeft(left))
                     .font(size: 13, weight: .semibold)
-                    .foregroundStyle(urgent ? Color.orange : .primary)
+                    .foregroundStyle(urgent ? TextTint.orange.color : .primary)
                 if let day = sprint.day(now: now), let length = sprint.length {
                     Text("Day \(day) of \(length)")
                         .font(size: 11.5)

@@ -207,6 +207,12 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
         set { detailText = newValue.map(BranchText.init(_:)) }
     }
 
+    /// Whether its detail is what someone wrote, the comment that needs you, rather than what's said about it, such as who
+    /// it's by or which checks failed: the lists show it stronger, as content.
+    public var detailIsWritten: Bool {
+        detailText != nil && group == .needsYou && [.mentioned, .replied, .commented].contains(reason)
+    }
+
     /// Its detail, with the branches it names written as `naming` writes them: as agents get them, say, in single quotes
     /// when a shell would read something in them (`QuotedText.commandWord`).
     public func detail(naming: (String) -> String) -> String? {

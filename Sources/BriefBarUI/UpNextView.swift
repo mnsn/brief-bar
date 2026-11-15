@@ -237,10 +237,12 @@ private struct UpNextSlotView: View {
                 select(ref)
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
+                    // On two lines where it needs them, as on a slot a third as wide as the window's page.
                     Text([ref.shortOrderLabel, title].compactMap { $0 }.joined(separator: " "))
                         .font(size: 13, weight: .semibold)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text(shownWhy)
                             .lineLimit(1)
@@ -443,8 +445,9 @@ private struct StartNextSlotView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name)
                         .font(size: 13, weight: .semibold)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(why)
                         .font(size: 12)
                         .lineLimit(1)

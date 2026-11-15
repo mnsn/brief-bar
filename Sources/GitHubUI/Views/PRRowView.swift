@@ -64,7 +64,7 @@ struct PRRowView: View {
                         HStack(spacing: 6) {
                             Text(subtitle)
                                 .font(size: options.rowReasonSize, weight: .medium)
-                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
+                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
                                 .lineLimit(1)
                             LinkCapsules(linkRef)
                             if let order { OrderCapsule(order) }
@@ -121,21 +121,16 @@ struct CountChips: View {
         if options.clearerStates {
             AttentionSummary(states: counts.states)
         } else {
-            HStack(spacing: 8) {
-                ForEach(GitHubPRGroup.allCases, id: \.self) { group in
-                    if counts[group] > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: group.symbol)
-                                .foregroundStyle(group.color)
-                            Text("\(counts[group])")
-                                .monospacedDigit()
-                        }
-                        .font(size: 11, weight: .semibold)
-                        .help("\(counts[group]) \(group.countLabel)")
-                    }
+            StateCountChips(GitHubPRGroup.allCases.filter { counts[$0] > 0 }, leastUrgentFirst: GitHubPRGroup.allCases.reversed()) { group in
+                HStack(spacing: 3) {
+                    Image(systemName: group.symbol)
+                        .foregroundStyle(group.color)
+                    Text("\(counts[group])")
+                        .monospacedDigit()
                 }
+                .font(size: 11, weight: .semibold)
+                .help("\(counts[group]) \(group.countLabel)")
             }
-            .accessibilityElement(children: .combine)
         }
     }
 }

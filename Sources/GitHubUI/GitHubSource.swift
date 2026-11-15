@@ -144,7 +144,8 @@ package final class GitHubSource: BriefBarSource {
             let pullRequest = item.pullRequest
             return LinkedItem(
                 ref: .gitHubPullRequest(repository: pullRequest.repository, number: pullRequest.number), label: "#\(pullRequest.number)",
-                title: pullRequest.title, symbol: "arrow.triangle.pull", color: item.group.color, state: item.group.state,
+                title: pullRequest.title, symbol: "arrow.triangle.pull", color: item.group.color, textColor: item.group.textColor,
+                state: item.group.state,
                 status: item.headline, place: pullRequest.repository,
                 hint: pullRequest.branch.map { BranchHint(branch: $0, repositories: BranchHint.repositories([], gitHub: pullRequest.repository)) },
                 date: item.since, open: { store.open(store.items.first { $0.id == item.id } ?? item) }

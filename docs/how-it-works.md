@@ -267,7 +267,8 @@ on the page itself or in a widget, and only while a window has that page (`AppSe
 tabs only switch lists, so a click meant for a tab never opens a window.
 
 **Widgets** (`WidgetHost`) show their sections one above the other: each source draws its section's
-header and rows, and the widget is as wide as its widest section needs. A widget's size gives each
+header and rows, and the widget is as wide as its widest section needs. A header keeps its counts whole: its title
+gives way first, then the least urgent counts (`StateCountChips`). A widget's size gives each
 section 2, 4 or 8 rows, or 2, 3 or 5 when it shares the widget. Each widget keeps its own position and
 size (`widgetOptions`). Widgets were once each source's own: the first time, BriefBar brings over
 their settings and positions (`WidgetMigration`).
@@ -341,6 +342,13 @@ Every section counts its things in four states that mean the same for every sour
 | ✕ Something's wrong | | Failing; failed pipelines | Stopped: interrupted, failed or not responding | Failing |
 | ⚡ Running | | Pipelines running or queued | Running | |
 | ✓ Done or ready | | Ready to Complete | Done | Ready to Merge |
+
+Each state, and each source's group, has a bright color for its symbols, and its words take a darker shade of it in
+light mode and, for red, blue, pink, purple and gray, a lighter one in dark mode (`TextTint`, `ItemState.textColor`), to
+read at 4.5:1 or more on a list and on the window's tinted backdrop, also in a capsule tinted with the bright color, such
+as a link's or a stage's; with **Quieter Colors and Surfaces** on, they're
+gray. Under a row's title, what someone wrote, such as a comment or what a session asks, is a stronger gray
+(`rowContent`) than what's said about it, such as who it's by or when.
 
 What the menu bar doesn't count, such as an answered, waiting or idle pull request, an idle session or
 the sprint's work, is in no state. Each section reports its counts in `MenuBarSegment.states`, as it
@@ -1771,7 +1779,8 @@ then lets what comes after it merge, or holds it until you check the order. A mi
 other missions have waited, as Up Next does.
 
 Up Next's slots go as many to a line as fit, each at least 176 points wide and at most 664, both times Text Size in
-Windows, spread evenly over the lines (`UpNextGrid`). 664 is the page's width beside the sidebar in a 946-point window:
+Windows, spread evenly over the lines (`UpNextGrid`), each with its title on up to two lines, as tall as the tallest on
+its line. 664 is the page's width beside the sidebar in a 946-point window:
 in a wider one, a line ends short rather than each slot stretching across it. With nothing in them, it says what they're
 for: "Nothing to fix, review or follow up", or, on My Work with + Sprint Tasks or + All My Tasks, "Nothing to fix,
 review, follow up or start" (`UpNext.nothingNext`).
@@ -3169,7 +3178,8 @@ sent are known, and no pull request.
 
 **Pipelines.** A pinned pipeline shows its twelve latest runs, or its latest runs of one branch. Its
 latest run's stages come from the run's timeline: its stages in order or, for a pipeline without
-stages, its jobs. A stage waiting for an approval or a check is shown as waiting. When the run
+stages, its jobs, joined in a chain that goes on to another line rather than past its card's edge (`StageFlow`). A stage
+waiting for an approval or a check is shown as waiting. When the run
 failed, it names the first task that failed, the stage it's in and its first error. Runs started by
 Azure DevOps itself, such as scheduled ones, don't name who started them. The timelines never read
 go first, then the ones read longest ago; one that fails is tried again on the next refresh, then

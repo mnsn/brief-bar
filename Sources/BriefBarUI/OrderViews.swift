@@ -62,6 +62,11 @@ extension OrderCapsuleTone {
         case .warning: return .orange
         }
     }
+
+    /// Its color for words: `color` is for its capsule's fill (`TextTint`).
+    var textColor: Color {
+        self == .warning ? TextTint.orange.color : color
+    }
 }
 
 /// A row's order capsule, beside its links: "Next to merge", "After !4103 · stacked", "Any time", "Check the order"; with ✎
@@ -88,7 +93,7 @@ package struct OrderCapsule: View {
             }
             .font(size: 10, weight: .semibold)
             .lineLimit(1)
-            .foregroundStyle(tone.color)
+            .foregroundStyle(tone.textColor)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
             .background(Capsule().fill(tone.color.opacity(tone == .quiet ? 0.10 : 0.14)))
@@ -282,7 +287,7 @@ package struct MissionHeader: View {
             }
             if !details.isEmpty {
                 Text("· " + details.joined(separator: " · "))
-                    .foregroundStyle(mission.isStale ? Color.orange : Color.secondary)
+                    .foregroundStyle(mission.isStale ? TextTint.orange.color : Color.secondary)
                     .lineLimit(1)
             }
         }

@@ -12,6 +12,8 @@ package struct LinkedItem {
     package var title: String
     package var symbol: String
     package var color: Color
+    /// Its color for words, such as its number on a capsule: `color` is for its symbol (`TextTint`).
+    package var textColor: Color
     /// What it means for you now, so the one that needs you most shows first.
     package var state: ItemState?
     /// Where it stands, briefly: "Active", "Failing", "Waiting for your answer".
@@ -46,16 +48,17 @@ package struct LinkedItem {
     package var show: (() -> Bool)?
 
     package init(
-        ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
-        sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        openItself: (perform: () -> Void, help: String)? = nil, menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil,
-        url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
+        ref: ItemRef, label: String, title: String, symbol: String, color: Color, textColor: Color? = nil, state: ItemState? = nil,
+        status: String? = nil, sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil,
+        open: (() -> Void)? = nil, openItself: (perform: () -> Void, help: String)? = nil, menu: (() -> AnyView)? = nil,
+        sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
     ) {
         self.ref = ref
         self.label = label
         self.title = title
         self.symbol = symbol
         self.color = color
+        self.textColor = textColor ?? color
         self.state = state
         self.status = status
         self.sharedStatus = sharedStatus
@@ -126,10 +129,11 @@ package struct SentToCopilot: Equatable, Sendable {
 extension LinkedItem: Equatable {
     package static func == (lhs: LinkedItem, rhs: LinkedItem) -> Bool {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
-            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
-            && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil) && lhs.openItself?.help == rhs.openItself?.help && lhs.sent == rhs.sent
-            && lhs.url == rhs.url && lhs.parts == rhs.parts && (lhs.show == nil) == (rhs.show == nil)
+            && lhs.color == rhs.color && lhs.textColor == rhs.textColor && lhs.state == rhs.state && lhs.status == rhs.status
+            && lhs.sharedStatus == rhs.sharedStatus && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date
+            && (lhs.menu == nil) == (rhs.menu == nil) && (lhs.open == nil) == (rhs.open == nil)
+            && lhs.openItself?.help == rhs.openItself?.help && lhs.sent == rhs.sent && lhs.url == rhs.url && lhs.parts == rhs.parts
+            && (lhs.show == nil) == (rhs.show == nil)
     }
 }
 

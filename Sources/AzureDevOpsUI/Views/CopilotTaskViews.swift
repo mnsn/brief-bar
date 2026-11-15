@@ -24,6 +24,16 @@ extension RunPhase {
         }
     }
 
+    /// Its color for words: `color` is for symbols and fills (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .preparing, .stopped: return .secondary
+        case .working: return TextTint.blue.color
+        case .finished: return TextTint.green.color
+        case .failed: return TextTint.orange.color
+        }
+    }
+
     var title: String {
         switch self {
         case .preparing: return "Getting Ready"
@@ -120,7 +130,7 @@ struct CopilotRunBadge: View {
                 }
             }
             .font(size: 10.5, weight: .semibold)
-            .foregroundStyle(phase.color)
+            .foregroundStyle(phase.textColor)
             .padding(.horizontal, compact ? 4 : 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(phase.color.opacity(0.14)))
@@ -413,7 +423,7 @@ struct PullRequestCopilotStatus: View {
                 Image(systemName: phase.symbol)
             }
             .font(size: 10, weight: .semibold)
-            .foregroundStyle(phase.color)
+            .foregroundStyle(phase.textColor)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
             .background(Capsule().fill(phase.color.opacity(0.14)))

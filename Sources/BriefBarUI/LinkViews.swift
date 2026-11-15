@@ -78,7 +78,7 @@ struct LinkCapsule: View {
         }
         .font(size: 10, weight: .semibold)
         .lineLimit(1)
-        .foregroundStyle(first.color)
+        .foregroundStyle(first.textColor)
         .padding(.horizontal, 5)
         .padding(.vertical, 1.5)
         .background(Capsule().fill(first.color.opacity(0.14)))

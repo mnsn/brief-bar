@@ -123,8 +123,13 @@ private struct PullRequestPipelinesCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         switch pullRequest.revision(of: status) {
                         case .outdated:
-                            Label("Outdated - built an earlier commit", systemImage: "clock.arrow.circlepath")
-                                .foregroundStyle(.orange)
+                            Label {
+                                Text("Outdated - built an earlier commit")
+                                    .foregroundStyle(TextTint.orange.color)
+                            } icon: {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .foregroundStyle(.orange)
+                            }
                         case .unknown:
                             Label("Commit not verified", systemImage: "questionmark.circle")
                                 .foregroundStyle(.secondary)

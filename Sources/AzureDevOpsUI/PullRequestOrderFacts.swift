@@ -391,7 +391,8 @@ final class PullRequestOrderFacts {
         return LinkedItem(
             ref: key.linkRef, label: "!\(key.number)", title: item.title,
             symbol: item.group == .done ? "arrow.triangle.merge" : "arrow.triangle.pull", color: item.rowColor,
-            state: item.group.state(showToReview: showToReview), status: item.group.title, place: item.repository,
+            textColor: item.rowTextColor, state: item.group.state(showToReview: showToReview), status: item.group.title,
+            place: item.repository,
             date: item.since,
             open: { [weak store] in
                 // As it is when you click it.

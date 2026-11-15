@@ -176,6 +176,7 @@ struct PullRequestBoardCard: View {
                     ForEach(flags, id: \.text) { flag in
                         HStack(alignment: .firstTextBaseline, spacing: 3) {
                             Image(systemName: flag.symbol)
+                                .foregroundStyle(flag.symbolColor ?? flag.color)
                             Text(flag.text)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -191,11 +192,12 @@ struct PullRequestBoardCard: View {
             if let worker = Self.worker(on: card.ref, besides: reading, ordering: ordering) {
                 HStack(spacing: 3) {
                     Image(systemName: "waveform.path.ecg")
+                        .foregroundStyle(worker.color)
                     Text("‘\(worker.label)’ works on it")
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .font(size: 11, weight: .semibold)
-                .foregroundStyle(worker.color)
+                .foregroundStyle(worker.textColor)
                 .help("‘\(worker.label)’ told BriefBar it works on it")
             }
             FlowLayout(spacing: 6, lineSpacing: 4) {
@@ -255,7 +257,10 @@ struct PullRequestBoardCard: View {
     struct Flag {
         var symbol: String
         var text: String
+        /// For its words (`TextTint`), and its symbol unless `symbolColor` says otherwise.
         var color: Color
+        /// Its symbol's, bright as symbols are.
+        var symbolColor: Color? = nil
     }
 
     /// What it shows whatever its stage, as marks under why it's there: on yours, its flags, which never move it
@@ -271,9 +276,19 @@ struct PullRequestBoardCard: View {
         return switch flag {
         case .asksYou: Flag(symbol: "bubble.left.fill", text: text, color: PullRequestStage.inProgress.textColor)
         case .working: Flag(symbol: PullRequestStage.inProgress.symbol, text: text, color: PullRequestStage.inProgress.textColor)
-        case .failing: Flag(symbol: "xmark.circle.fill", text: text, color: PRGroup.failing.color)
-        case .changesWanted: Flag(symbol: "hand.raised.fill", text: text, color: PRGroup.needsYou.color)
+        case .failing: failingFlag(text)
+        case .changesWanted: needsYouFlag(text)
         }
+    }
+
+    /// ✕ and what failed, in Failing's colors.
+    private static func failingFlag(_ text: String) -> Flag {
+        Flag(symbol: "xmark.circle.fill", text: text, color: PRGroup.failing.textColor, symbolColor: PRGroup.failing.color)
+    }
+
+    /// ✋ and what needs you, in Needs You's colors.
+    private static func needsYouFlag(_ text: String) -> Flag {
+        Flag(symbol: "hand.raised.fill", text: text, color: PRGroup.needsYou.textColor, symbolColor: PRGroup.needsYou.color)
     }
 
     /// Its marks besides its flags, as its row says them: what needs you, but changes someone wants, which ✋ says already;
@@ -288,10 +303,10 @@ struct PullRequestBoardCard: View {
         }())
         var flags: [Flag] = []
         if item.group == .needsYou, !(wantsChanges && [.changesRequested, .rejected].contains(item.reason)) {
-            flags.append(Flag(symbol: "hand.raised.fill", text: item.headline, color: PRGroup.needsYou.color))
+            flags.append(needsYouFlag(item.headline))
         }
         if item.group == .failing, !failing {
-            flags.append(Flag(symbol: "xmark.circle.fill", text: item.headline, color: PRGroup.failing.color))
+            flags.append(failingFlag(item.headline))
         }
         if item.isDraft, reading.why != .draft {
             flags.append(Flag(symbol: "pencil.circle", text: "Draft", color: .secondary))
