@@ -78,6 +78,18 @@ import Testing
         #expect(size(row(doneOnly), width: 2_000) == size(row(nothing), width: 2_000))
     }
 
+    /// What its reason says already isn't said again: a pull request whose reason is its merge conflicts is as wide as one
+    /// with what else is left alone.
+    @Test func itDoesntRepeatItsReason() throws {
+        let conflicts = PRReadiness.Item(kind: .conflicts, state: .failing, label: "Merge conflicts")
+        var repeated = try Self.item(readiness: [conflicts] + Self.left)
+        repeated.headline = "Merge conflicts"
+        var rest = try Self.item(readiness: Self.left)
+        rest.headline = "Merge conflicts"
+        let row = { (item: PRSnapshot) in PRRowView(item: item, now: Self.now) {} }
+        #expect(size(row(repeated)) == size(row(rest)))
+    }
+
     /// Why it's in its stage is in its pill's menu, not on the row, so where its order puts it shows on every stage, Can
     /// merge and Waits too, whose words used to say it.
     @Test func itsOrderShowsOnEveryStage() throws {

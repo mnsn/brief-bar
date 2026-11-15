@@ -7,9 +7,10 @@
 - **What's left, without what's done.** A pull request's row says only what still holds it up, on one line, with **+2**
   for what doesn't fit. What's done, such as **Build passed**, is in its details' **What's Left** and the row's
   tooltip.
-- **Actions when you need them.** A row's **⋯** menu, and **Finished My Review**, show while you point at the row or it
-  has the keyboard's focus, rather than **⋯ Actions** on every row of the window's pages. In the menu bar's lists, **⋯**
-  and **✨** take the time's place, so titles get the row's whole width. Every action stays in the row's right-click menu
-  and in VoiceOver's actions, and **Visible Row and Widget Actions** keeps ⋯ and Finished My Review in view.
+- **Actions when you need them.** Every row's **⋯** menu, and **Finished My Review**, show while you point at the row
+  or it has the keyboard's focus, rather than **⋯ Actions** on every row of the Pull Requests page and Finished My
+  Review on every pull request in Your review. In the menu bar's lists, **⋯** and **✨** take the time's place, so
+  titles get the row's whole width. Every action stays in the row's right-click menu and in VoiceOver's actions, and
+  **Visible Row and Widget Actions** keeps ⋯ and Finished My Review in view.
 - **Order capsules are easier to read.** **After !4079**, **Next to merge** and the other capsules that say where a pull
   request's order puts it have more contrast, in light and dark. **Next to merge** is blue, whatever your accent color.
