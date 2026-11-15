@@ -32,11 +32,12 @@ package struct StateListGroup: Identifiable {
         case nil: state.title
         }
     }
+    /// After how many it has, as in "1 needs you" or "3 need you".
     package var countLabel: String {
         switch completion {
         case .ready: "ready to merge"
         case .finished: "finished"
-        case nil: state.countLabel
+        case nil: state.countLabel(entries.count)
         }
     }
     package var symbol: String { completion == .ready ? "arrow.triangle.merge" : state.symbol }

@@ -46,15 +46,9 @@ struct SessionsPage: View {
 
     /// "3 need you · 6 running · 2 finished · 1 stopped": the groups with a card, as the menu bar counts them.
     static func subtitle(_ counts: PhaseCounts, hasLoaded: Bool) -> String {
-        let parts = shownPhases.filter { counts[$0] > 0 }.map { "\(counts[$0]) \(countLabel($0, count: counts[$0]))" }
+        let parts = shownPhases.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }
         if !parts.isEmpty { return parts.joined(separator: " · ") }
         return hasLoaded ? "Nothing needs you" : "Your GitHub Copilot sessions, and which ones need you"
-    }
-
-    /// After a count, as in "3 need you".
-    private static func countLabel(_ phase: DisplayPhase, count: Int) -> String {
-        guard phase == .needsYou else { return phase.title.lowercased() }
-        return count == 1 ? "needs you" : "need you"
     }
 
     @ViewBuilder

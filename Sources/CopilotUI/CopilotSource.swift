@@ -303,7 +303,7 @@ package final class CopilotSource: BriefBarSource {
             title.append(MenuBarDrawing.symbol(phase.symbol, color: phase.nsColor, font: font, sizeDelta: -2, monochrome: true))
             title.append(MenuBarDrawing.count(counts[phase], font: font))
         }
-        let spoken = Self.shownPhases.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.title.lowercased())" }
+        let spoken = Self.shownPhases.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }
         return MenuBarSegment(
             glyph: symbol,
             title: title,

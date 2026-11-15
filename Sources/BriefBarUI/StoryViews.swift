@@ -97,7 +97,7 @@ package struct WhereItStandsSection: View {
         let parts = ItemState.allCases.compactMap { state -> (state: ItemState, text: String)? in
             let count = counts[state]
             guard count > 0 else { return nil }
-            return (state, "\(count) \(state == .needsYou && count == 1 ? "needs you" : state.countLabel)")
+            return (state, "\(count) \(state.countLabel(count))")
         }
         return parts.isEmpty ? nil : parts
     }

@@ -268,7 +268,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         if let problem = loaded.problem { print("! \(problem)") }
         let now = Date()
         let counts = GroupCounts(loaded.items)
-        print(PRGroup.allCases.map { "\($0.countLabel) \(counts[$0])" }.joined(separator: " · "))
+        print(PRGroup.allCases.map { "\($0.countLabel(counts[$0])) \(counts[$0])" }.joined(separator: " · "))
         print(row("GROUP", "STATUS", "SINCE", "PULL REQUEST", "DETAIL"))
         for item in loaded.items {
             print(row(

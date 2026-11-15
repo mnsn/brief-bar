@@ -187,7 +187,7 @@ struct PullRequestsPage: View {
 
     private var subtitle: String {
         let counts = store.counts
-        let parts = [PRGroup.needsYou, .failing, .ready, .toReview].filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel)" }
+        let parts = [PRGroup.needsYou, .failing, .ready, .toReview].filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }
         if !parts.isEmpty { return parts.joined(separator: " · ") }
         return store.hasLoaded ? "Nothing needs you" : "Your pull requests, and the ones you review"
     }

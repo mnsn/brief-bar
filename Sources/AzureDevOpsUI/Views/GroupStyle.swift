@@ -18,10 +18,10 @@ extension PRGroup {
         }
     }
 
-    /// For counts: "2 failing", "1 ready to complete".
-    var countLabel: String {
+    /// After `count`: "1 needs you", "4 need you", "2 failing", "1 ready to complete".
+    func countLabel(_ count: Int) -> String {
         switch self {
-        case .needsYou: return "need you"
+        case .needsYou: return ItemState.needsYou.countLabel(count)
         case .toReview: return "to review"
         default: return title.lowercased()
         }

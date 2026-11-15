@@ -52,7 +52,7 @@ struct ChatsPage: View {
 
     /// "2 need you", as the window's other pages count what needs you: unread chats do.
     static func subtitle(_ group: ChatGroup, unread: Int, hasLoaded: Bool) -> String {
-        if unread > 0 { return unread == 1 ? "1 needs you" : "\(unread) need you" }
+        if unread > 0 { return "\(unread) \(ItemState.needsYou.countLabel(unread))" }
         guard hasLoaded else { return group == .chats ? "Your unread Teams chats" : "Your unread group and meeting chats" }
         return "Nothing needs you"
     }

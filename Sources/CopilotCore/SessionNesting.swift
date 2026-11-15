@@ -35,7 +35,7 @@ public enum SessionNesting {
             snapshots[index].reason = .waitingForChildren
             snapshots[index].headline = StatusReason.waitingForChildren.headline
             snapshots[index].detail = [
-                needsYou > 0 ? "\(needsYou) needs you" : nil,
+                needsYou > 0 ? "\(needsYou) \(needsYou == 1 ? "needs you" : "need you")" : nil,
                 running > 0 ? "\(running) running" : nil,
             ].compactMap { $0 }.joined(separator: " · ")
             snapshots[index].since = active.compactMap(\.since).min()

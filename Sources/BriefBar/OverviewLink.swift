@@ -53,7 +53,7 @@ struct OverviewLinkView: View {
     var body: some View {
         if link.window != nil {
             let needsYou = link.needsYou
-            let count = needsYou > 0 ? "\(needsYou) \(ItemState.needsYou.countLabel)" : nil
+            let count = needsYou > 0 ? "\(needsYou) \(ItemState.needsYou.countLabel(needsYou))" : nil
             VStack(spacing: 0) {
                 Button {
                     link.open()

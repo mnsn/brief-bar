@@ -28,6 +28,18 @@ import Testing
         #expect(groups[2].entries.map(\.section) == [.copilotSessions])
     }
 
+    /// What the Overview's counts line says after each group's count: "1 needs you", but "2 need you"; the other states'
+    /// words don't change with the count.
+    @Test func saysOneNeedsYouButTwoNeedYou() {
+        let one = StateList.groups([entry(.teamsChats, "avery", .needsYou, 1), entry(.copilotSessions, "tests", .failing, 2)])
+        #expect(one.map(\.countLabel) == ["needs you", "went wrong"])
+        let two = StateList.groups([
+            entry(.teamsChats, "avery", .needsYou, 1), entry(.teamsGroupChats, "launch", .needsYou, 2),
+            entry(.copilotSessions, "tests", .failing, 3), entry(.azureDevOpsPipelines, "shop-web", .failing, 4),
+        ])
+        #expect(two.map(\.countLabel) == ["need you", "went wrong"])
+    }
+
     @Test func putsThingsWithoutADateLastInTheOrderTheyCame() {
         let groups = StateList.groups([
             entry(.teamsChats, "a", .needsYou, nil),

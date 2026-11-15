@@ -88,6 +88,19 @@ private func outline(_ snapshots: [SessionSnapshot]) -> [String] {
         #expect(sessions[2].depth == 0)
     }
 
+    /// Two children that need you: "2 need you", not "2 needs you".
+    @Test func aFinishedParentCountsChildrenThatNeedYou() {
+        var lead = snapshot("lead", .done, since: 0)
+        lead.reason = .finished
+        lead.headline = StatusReason.finished.headline
+        let sessions = nested([
+            lead, snapshot("colors", .needsYou, since: 10), snapshot("fonts", .needsYou, since: 20),
+        ], parents: ["colors": "lead", "fonts": "lead"])
+
+        #expect(sessions[0].reason == .waitingForChildren)
+        #expect(sessions[0].detail == "2 need you")
+    }
+
     /// A session whose parent is in another group stays where it was, and knows its parent, for its tag.
     @Test func aSessionWhoseParentIsInAnotherGroupStaysInItsPlace() {
         let snapshots = [
