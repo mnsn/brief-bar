@@ -109,32 +109,96 @@ package struct SettingRow<Control: View>: View {
     let title: String
     let caption: String?
     let info: String?
+    let keepsControlBeside: Bool
     let control: Control
 
     /// - Parameters:
     ///   - caption: what it does for you, in a line of about 90 characters at most.
     ///   - info: the rest, behind ⓘ.
-    package init(_ title: String, caption: String?, info: String? = nil, @ViewBuilder control: () -> Control) {
+    ///   - keepsControlBeside: whether its control stays beside its name however wide it is, the caption wrapping to
+    ///     make room, where a form would put a wide one under it: for rows that should look alike, and for rows outside
+    ///     a form, as in a box that asks before a setting turns on.
+    package init(
+        _ title: String, caption: String?, info: String? = nil, keepsControlBeside: Bool = false,
+        @ViewBuilder control: () -> Control
+    ) {
         self.title = title
         self.caption = caption
         self.info = info
+        self.keepsControlBeside = keepsControlBeside
         self.control = control()
     }
 
     package var body: some View {
-        LabeledContent {
-            HStack(spacing: 10) {
-                if let info {
-                    SettingInfoButton(title: title, text: info)
+        if keepsControlBeside {
+            ControlBesideLayout(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let caption {
+                        Text(caption)
+                            .font(style: .subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                control
+                controls
             }
-        } label: {
-            Text(title)
-            if let caption {
-                Text(caption)
+        } else {
+            LabeledContent {
+                controls
+            } label: {
+                Text(title)
+                if let caption {
+                    Text(caption)
+                }
             }
         }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            if let info {
+                SettingInfoButton(title: title, text: info)
+            }
+            control
+        }
+    }
+}
+
+/// A row's label and its control as a form lays out a row whose control fits beside it: the control on the right, at its
+/// own size, its text on the line of the label's name, and as far past the label's top as it's taller, which a form's row
+/// lets it be; the label takes the rest of the width, wrapping in it.
+private struct ControlBesideLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let control = subviews[1].sizeThatFits(.unspecified)
+        let width = proposal.width ?? subviews[0].sizeThatFits(.unspecified).width + spacing + control.width
+        let label = labelProposal(width: width, control: control)
+        return CGSize(
+            width: width,
+            height: max(subviews[0].sizeThatFits(label).height, controlTop(subviews, label: label) + control.height)
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let control = subviews[1].sizeThatFits(.unspecified)
+        let label = labelProposal(width: bounds.width, control: control)
+        subviews[0].place(at: bounds.origin, anchor: .topLeading, proposal: label)
+        subviews[1].place(
+            at: CGPoint(x: bounds.maxX - control.width, y: bounds.minY + controlTop(subviews, label: label)),
+            anchor: .topLeading, proposal: .unspecified
+        )
+    }
+
+    private func labelProposal(width: CGFloat, control: CGSize) -> ProposedViewSize {
+        ProposedViewSize(width: max(0, width - spacing - control.width), height: nil)
+    }
+
+    /// Where the control's top goes, below the label's: above it, for one taller than the label's first line.
+    private func controlTop(_ subviews: Subviews, label: ProposedViewSize) -> CGFloat {
+        subviews[0].dimensions(in: label)[.firstTextBaseline] - subviews[1].dimensions(in: .unspecified)[.firstTextBaseline]
     }
 }
 
@@ -246,9 +310,18 @@ package struct DescriptionBox: View {
     }
 
     let entries: [Entry]
+    let footer: AnyView?
 
     package init(entries: [Entry]) {
         self.entries = entries
+        footer = nil
+    }
+
+    /// - Parameter footer: what to choose in the box, under what it says, such as the model that decides where it sends
+    ///   what: as rows, as a form has them.
+    package init<Footer: View>(entries: [Entry], @ViewBuilder footer: () -> Footer) {
+        self.entries = entries
+        self.footer = AnyView(footer())
     }
 
     package init(description: SourceDescription) {
@@ -263,6 +336,10 @@ package struct DescriptionBox: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(entries.indices, id: \.self) { index in
                 entry(entries[index])
+            }
+            if let footer {
+                Divider()
+                footer
             }
         }
         .padding(14)
@@ -327,6 +404,8 @@ package struct ConsentToggle<Extra: View>: View {
             }))
             .labelsHidden()
             .toggleStyle(.switch)
+            // Shown on while it asks, but not yet on.
+            .accessibilityValue(Text("Waiting for you to confirm"), isEnabled: isAsking)
         }
         if isAsking {
             ConsentBox(title: title, entries: entries, extra: extra) {
@@ -377,8 +456,11 @@ package struct ConsentBox<Extra: View>: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            DescriptionBox(entries: entries)
-            extra
+            if Extra.self == EmptyView.self {
+                DescriptionBox(entries: entries)
+            } else {
+                DescriptionBox(entries: entries) { extra }
+            }
             HStack {
                 Spacer()
                 Button("Cancel", action: cancel)

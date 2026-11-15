@@ -106,7 +106,7 @@ struct PullRequestSettingsNotice: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(ItemState.needsYou.color)
                 .accessibilityHidden(true)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)

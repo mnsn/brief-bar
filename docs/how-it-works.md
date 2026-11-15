@@ -29,9 +29,10 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 
 Settings' sidebar (`SettingsView`) has General, then a page for each source, with its settings while it's on, under
 Sources; Menu Bar, Widgets, Windows and Appearance, under Display; and, under Features, the pages for what BriefBar does
-across sources: Pull Requests, Links & Summaries, Notifications, Send to Copilot and Agents. Every page is one grouped
-form, its header first (`SettingsPageHeader`, `settingsForm()` in `Sources/BriefBarUI/SettingsStyle.swift`), and each
-setting a row with what it does for you in a line, and the rest behind ⓘ (`SettingRow`, `SettingInfoButton`). The
+across sources: Pull Requests, Links & Summaries, Notifications, Send to Copilot and Agents. The window keeps its width,
+so a row's line stays beside its control, and the height you give it (`SettingsWindowController`). Every page is one
+grouped form, its header first (`SettingsPageHeader`, `settingsForm()` in `Sources/BriefBarUI/SettingsStyle.swift`), and
+each setting a row with what it does for you in a line, and the rest behind ⓘ (`SettingRow`, `SettingInfoButton`). The
 settings about pull requests are on **Settings › Pull Requests** (`PullRequestsSettingsPage`), from every source that
 has some, each there and nowhere else in the window, under the sources whose pull requests it works with
 (`PullRequestSettings`): Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, which its page

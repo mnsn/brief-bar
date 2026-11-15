@@ -324,7 +324,7 @@ struct SignInStatusView: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(ok ? .green : .orange)
+                .foregroundStyle(ok ? ItemState.done.color : ItemState.needsYou.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(style: .headline)

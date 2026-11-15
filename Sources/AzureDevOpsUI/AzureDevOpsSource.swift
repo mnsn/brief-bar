@@ -242,6 +242,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         self.chats = chats
         self.summarizer = summarizer
         settings = AppSettings(defaults: services.defaults)
+        // The demo watches its organization, as you would yours, so Settings says so.
+        if services.isDemo { settings.organizations = [DemoData.organization] }
     }
 
     /// The groups counted in the menu bar: what to act on. Waiting and Done only show in the list.
@@ -2337,7 +2339,7 @@ struct SignInStatusView: View {
     private func row(ok: Bool, title: String, detail: String, action: String?, perform: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(ok ? .green : .orange)
+                .foregroundStyle(ok ? ItemState.done.color : ItemState.needsYou.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(style: .headline)

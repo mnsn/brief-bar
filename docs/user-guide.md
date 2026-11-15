@@ -1522,11 +1522,12 @@ has the details.
 ## Settings
 
 **Settings** has a sidebar in four parts. **General** has **Launch BriefBar at Login**, **Check for Updates
-Automatically** in a copy that updates itself, each source in a line with whether it's on and a way to its page, and
+Automatically** in a copy that updates itself, each source in a line that says whether it's on and opens its page, and
 BriefBar's version, with **Check for Updates…** and **Quit BriefBar**. Then come a page for each source, under
 **Sources**; where things show, and how, under **Display**: **Menu Bar**, **Widgets**, **Windows** and **Appearance**;
 and what BriefBar does across sources, under **Features**: **Pull Requests**, **Links & Summaries**, **Notifications**,
-**Send to Copilot** and **Agents**. The window opens at its smallest size; make it bigger, and it keeps its size.
+**Send to Copilot** and **Agents**. The window keeps its width, so each setting's line stays beside its switch; make it
+taller, and it keeps its height.
 
 Each setting says what it does in a line under it and, where there's more to say, **ⓘ** beside it says the rest. A
 setting that reads or sends more than its source does, **Summaries**, **Send Work to Copilot**, **Make Changes in Azure

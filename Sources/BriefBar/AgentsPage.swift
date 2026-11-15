@@ -703,11 +703,13 @@ struct AgentsPage: View {
                 }
             case .needsReview:
                 Section {
-                    Label("""
-                        Agents are paused: since you let them use BriefBar, an update gave them more. Here's what they get now.
-                        """, systemImage: "exclamationmark.circle.fill")
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label {
+                        Text("Agents are paused: since you let them use BriefBar, an update gave them more. Here's what they get now.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(ItemState.needsYou.color)
+                    }
                     DescriptionRows(entries: AgentsDescription.entries)
                 } footer: {
                     HStack {
@@ -769,7 +771,7 @@ private struct AgentsLeftoversRow: View {
         } else if let leftovers = agents.leftovers {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ItemState.needsYou.color)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("BriefBar couldn't leave the Copilot CLI")
@@ -832,6 +834,25 @@ private struct AgentRow<Status: View, Control: View>: View {
     }
 }
 
+/// How something stands when it's as it should be: the sentence in secondary, and ✓ in the color of what's done.
+private struct DoneLine: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Label {
+            Text(text)
+                .foregroundStyle(.secondary)
+        } icon: {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(ItemState.done.color)
+        }
+    }
+}
+
 /// What agents get, where it goes, and what they can change.
 enum AgentsDescription {
     static let entries: [DescriptionBox.Entry] = [
@@ -886,9 +907,7 @@ private struct CopilotCLIRow: View {
         case .known(let status):
             switch status {
             case .added(enabled: true):
-                Label("Added as \(CopilotMCPRegistration.name), so its agents and the GitHub Copilot app's sessions can use BriefBar.",
-                      systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                DoneLine("Added as \(CopilotMCPRegistration.name), so its agents and the GitHub Copilot app's sessions can use BriefBar.")
             case .added(enabled: false):
                 Text("Added as \(CopilotMCPRegistration.name), but turned off in the Copilot CLI: copilot mcp enable \(CopilotMCPRegistration.name) turns it on.")
                     .foregroundStyle(.secondary)
@@ -946,8 +965,12 @@ private struct CopilotPluginRow: View {
         ) {
             status
             if needsTheServer {
-                Text("Its skill uses BriefBar's MCP server: add BriefBar to the Copilot CLI too.")
-                    .foregroundStyle(.orange)
+                Label {
+                    Text("Its skill uses BriefBar's MCP server: add BriefBar to the Copilot CLI too.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(ItemState.needsYou.color)
+                }
             }
         } control: {
             action
@@ -977,9 +1000,7 @@ private struct CopilotPluginRow: View {
         case .known(let status):
             switch status {
             case .installed(enabled: true):
-                Label("Installed, as \(CopilotPluginRegistration.name). It updates with BriefBar.",
-                      systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                DoneLine("Installed, as \(CopilotPluginRegistration.name). It updates with BriefBar.")
             case .installed(enabled: false):
                 Text("Installed, but turned off in Copilot.")
                     .foregroundStyle(.secondary)
@@ -1096,11 +1117,10 @@ private struct SessionPromptsRow: View {
                          : "On, from the copy of BriefBar at \(UserPath.abbreviate(path)).")
                         .foregroundStyle(.secondary)
                 } else {
-                    Label("""
+                    DoneLine("""
                         On, as \(CopilotPluginRegistration.Plugin.sessions.rawValue). Sessions get it as they start: \
                         one that's open now, once it starts again.
-                        """, systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        """)
                 }
             case .installed(enabled: false), .absent:
                 if !agents.hasPlugin {
@@ -1210,8 +1230,7 @@ private struct SettingSkillStatus: View {
                     Button("Remove") { agents.settingChanged(skill, isOn: false) }
                 }
             case .installed(enabled: true), .installedElsewhere:
-                Label("On, as \(skill.plugin.rawValue). Sessions get it as they start: \(skill.purpose)", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                DoneLine("On, as \(skill.plugin.rawValue). Sessions get it as they start: \(skill.purpose)")
             case .installed(enabled: false), .absent, .taken, .noCLI:
                 HStack(alignment: .firstTextBaseline) {
                     Text(isOn ? "Not in the Copilot CLI." : "Off, with \(skill.title).")

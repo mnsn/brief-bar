@@ -4,7 +4,8 @@ import BriefBarUI
 import SwiftUI
 
 /// BriefBar's Settings window: General; a page for each source; where sections show, and how; and what BriefBar does across
-/// sources. You can make it bigger than it opens, and it keeps its size and place.
+/// sources. As System Settings does, it gets taller but not wider, so its rows keep their width; it keeps its height and
+/// place.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private unowned let model: AppModel
@@ -26,17 +27,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let host = NSHostingController(rootView: SettingsView(model: model, navigation: navigation)
                 .environmentObject(model.services)
                 .environmentObject(model.services.loginItem))
-            // The window keeps the size you give it, down to the smallest the view takes.
+            // The window keeps the height you give it, down to the smallest the view takes.
             host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
             window.title = "BriefBar Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.contentMinSize = SettingsView.size
+            window.contentMaxSize = NSSize(width: SettingsView.size.width, height: .greatestFiniteMagnitude)
             window.setContentSize(SettingsView.size)
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.setFrameAutosaveName("BriefBarSettings")
-            if !window.setFrameUsingName("BriefBarSettings") {
+            if window.setFrameUsingName("BriefBarSettings") {
+                // Its width, whatever was saved; its height, as you left it.
+                let height = max(window.contentRect(forFrameRect: window.frame).height, SettingsView.size.height)
+                window.setContentSize(NSSize(width: SettingsView.size.width, height: height))
+            } else {
                 window.center()
             }
             self.window = window
@@ -120,10 +126,10 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var navigation: SettingsNavigation
 
-    /// How big it opens, and the smallest it gets.
+    /// How big it opens: its width, always, and the smallest it gets.
     static let size = CGSize(width: 740, height: 560)
     static let sidebarWidth: CGFloat = 200
-    /// How wide a page is, beside the sidebar and its divider, in the window's smallest size.
+    /// How wide a page is, beside the sidebar and its divider.
     static let pageWidth = size.width - sidebarWidth - 1
 
     @Environment(\.isRendering) private var isRendering
@@ -176,10 +182,8 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .frame(
-            minWidth: Self.size.width, idealWidth: Self.size.width, maxWidth: .infinity,
-            minHeight: Self.size.height, idealHeight: Self.size.height, maxHeight: .infinity
-        )
+        .frame(width: Self.size.width)
+        .frame(minHeight: Self.size.height, idealHeight: Self.size.height, maxHeight: .infinity)
         .interfaceOptions(from: model.services)
     }
 
@@ -253,7 +257,7 @@ struct SettingsSidebarRow: View {
                     .foregroundStyle(.secondary)
             case .needsReview:
                 Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ItemState.needsYou.color)
                     .help("Waiting for you to look at what it reads now")
                     .accessibilityLabel("Paused")
             case .off, nil:
@@ -263,18 +267,29 @@ struct SettingsSidebarRow: View {
     }
 }
 
-/// Whether a source, or agents, is on, in words and a symbol of its color.
+/// Whether a source, or agents, is on, in a page's header: its symbol in its state's color, and the word in the color
+/// that reads on the page.
 struct SourceStateLabel: View {
     let state: SourceState
 
     var body: some View {
         switch state {
         case .on:
-            Label("On", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            Label {
+                Text("On")
+                    .foregroundStyle(ItemState.done.textColor)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(ItemState.done.color)
+            }
         case .needsReview:
-            Label("Paused", systemImage: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
+            Label {
+                Text("Paused")
+                    .foregroundStyle(ItemState.needsYou.textColor)
+            } icon: {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(ItemState.needsYou.color)
+            }
         case .off:
             Text("Off")
                 .foregroundStyle(.secondary)
@@ -299,15 +314,22 @@ struct SettingsLinkRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(style: .footnote, weight: .semibold)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                SettingsChevron()
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens \(title) in Settings")
+    }
+}
+
+/// The › at the end of a row that opens another page.
+struct SettingsChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(style: .footnote, weight: .semibold)
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 }
 
@@ -419,7 +441,8 @@ private struct AboutRow: View {
     }
 }
 
-/// A source on General: its symbol, name and state, in a line, with the way to its page.
+/// A source on General, in a line that opens its page, as the rows that open another page do: its symbol, its name,
+/// whether it's on, and ›.
 struct SourceSummaryRow: View {
     let source: any BriefBarSource
     let state: SourceState
@@ -427,22 +450,28 @@ struct SourceSummaryRow: View {
 
     var body: some View {
         let info = SettingsPageInfo.source(source)
-        HStack(spacing: 10) {
-            SymbolTile(symbol: info.symbol, tint: info.tint, size: 26)
-            Text(source.name)
-            Spacer(minLength: 8)
-            SourceStateLabel(state: state)
-            switch state {
-            case .on:
-                Button("Settings…", action: open)
-                    .accessibilityLabel("\(source.name) Settings…")
-            case .needsReview:
-                Button("Review…", action: open)
-                    .accessibilityLabel("Review \(source.name)…")
-            case .off:
-                Button("Turn On…", action: open)
-                    .accessibilityLabel("Turn On \(source.name)…")
+        Button(action: open) {
+            HStack(spacing: 10) {
+                SymbolTile(symbol: info.symbol, tint: info.tint, size: 26)
+                Text(source.name)
+                Spacer(minLength: 8)
+                Text(stateWord)
+                    .foregroundStyle(state == .needsReview ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.secondary))
+                SettingsChevron()
             }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(source.name)
+        .accessibilityValue(stateWord)
+        .accessibilityHint("Opens its page in Settings")
+    }
+
+    private var stateWord: String {
+        switch state {
+        case .on: "On"
+        case .needsReview: "Paused"
+        case .off: "Off"
         }
     }
 }
@@ -624,12 +653,13 @@ struct SourcePage: View {
                 }
             case .needsReview:
                 Section {
-                    Label(
-                        "\(source.name) is paused: since you turned it on, an update changed what it reads. Here's what it reads now.",
-                        systemImage: "exclamationmark.circle.fill"
-                    )
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Label {
+                        Text("\(source.name) is paused: since you turned it on, an update changed what it reads. Here's what it reads now.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(ItemState.needsYou.color)
+                    }
                     DescriptionRows(description: source.description)
                 } footer: {
                     HStack {

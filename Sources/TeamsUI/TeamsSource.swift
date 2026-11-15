@@ -312,7 +312,7 @@ struct AccessStatusView: View {
         let granted = store.access == .granted
         HStack(spacing: 10) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(granted ? .green : .orange)
+                .foregroundStyle(granted ? ItemState.done.color : ItemState.needsYou.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(granted ? "Full Disk Access is on" : "BriefBar can't read Notification Center yet")
                     .font(style: .headline)

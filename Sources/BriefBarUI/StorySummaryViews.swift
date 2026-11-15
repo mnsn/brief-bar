@@ -656,17 +656,15 @@ package struct SummariesSettingRows: View {
                 + (summaries.modelDependsOnCLI ? [Self.withoutCLI] : []),
             isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) })
         ) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text("Writes")
+            // As they are once on, each a row.
+            VStack(alignment: .leading, spacing: 12) {
+                SettingRow("Writes", caption: Self.writesCaption, keepsControlBeside: true) {
                     writesPicker
                 }
-                HStack(spacing: 8) {
-                    Text("Model")
+                SettingRow("Model", caption: onDevice ? Self.onDeviceCaption : Self.copilotCaption, keepsControlBeside: true) {
                     modelPicker
                 }
             }
-            .padding(.horizontal, 14)
         }
         .disabled(!links.isOn)
         if summaries.isOn {
@@ -691,15 +689,21 @@ package struct SummariesSettingRows: View {
                 refreshOnDeviceAvailability()
             }
             if summaries.isAvailable, onDevice, let unavailableReason {
-                Label(unavailableReason + " Choose a model through Copilot to write them instead.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                Self.warning(unavailableReason + " Choose a model through Copilot to write them instead.")
             } else if summaries.isAvailable, !onDevice, summaries.hasCLI == false {
-                Label("Copilot CLI not found. Install it, or open the GitHub Copilot app once.", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                Self.warning("Copilot CLI not found. Install it, or open the GitHub Copilot app once.")
             }
+        }
+    }
+
+    /// What keeps them from being written, in words that read on the page, after ⚠ in the color of what needs you.
+    private static func warning(_ text: String) -> some View {
+        Label {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(ItemState.needsYou.color)
         }
     }
 

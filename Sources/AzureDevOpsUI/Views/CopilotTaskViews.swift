@@ -496,13 +496,14 @@ private struct CopilotOptionsForm: View {
             .labelsHidden()
             .fixedSize()
         }
-        SettingRow("Model", caption: "What work is sent with, unless you choose otherwise.") {
+        // Both with their menus beside them, however wide the model's name.
+        SettingRow("Model", caption: "What work is sent with, unless you choose otherwise.", keepsControlBeside: true) {
             HStack(spacing: 8) {
                 CopilotModelMenu(model: $settings.copilotOptions.model)
                 CopilotEffortPicker(effort: $settings.copilotOptions.effort)
             }
         }
-        SettingRow("Model for Easy Work", caption: "A second choice, in a work item's right-click menu.") {
+        SettingRow("Model for Easy Work", caption: "A second choice, in a work item's right-click menu.", keepsControlBeside: true) {
             HStack(spacing: 8) {
                 CopilotModelMenu(model: $settings.copilotQuickOptions.model)
                 CopilotEffortPicker(effort: $settings.copilotQuickOptions.effort)
@@ -524,7 +525,7 @@ private struct CopilotOptionsForm: View {
                 set: { settings.copilotPrompt = $0 == PromptTemplate.standard ? nil : $0 }
             ))
             .font(size: 12)
-            .frame(height: 190)
+            .frame(height: Self.promptHeight)
             Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from.")
                 .font(style: .caption)
                 .foregroundStyle(.secondary)
@@ -542,6 +543,11 @@ private struct CopilotOptionsForm: View {
                 Button("Choose…", action: chooseFolder)
             }
         }
+    }
+
+    /// Twelve whole lines of the prompt, as its editor has no margin above them: none cut through at the bottom.
+    private static var promptHeight: CGFloat {
+        12 * NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: 12))
     }
 
     private func chooseFolder() {
