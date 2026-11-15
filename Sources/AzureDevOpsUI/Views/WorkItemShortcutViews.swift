@@ -147,7 +147,9 @@ struct StateChip: View {
     var body: some View {
         let choices = states.choices(for: item)
         if choices.isEmpty {
-            let chip = Chip(text: item.state, color: item.stateColor, symbol: symbol, fitsWidth: fitsWidth)
+            let chip = Chip(
+                text: item.state, color: item.stateColor, textColor: item.stateTextColor, symbol: symbol, fitsWidth: fitsWidth
+            )
             if states.needsSetting(item) {
                 chip.help(StateChangeText.help(item, canChange: false, needsSetting: true))
             } else {
@@ -157,8 +159,11 @@ struct StateChip: View {
             Menu {
                 StateChoices(item: item, choices: choices)
             } label: {
-                Chip(text: item.state, color: item.stateColor, symbol: symbol, fitsWidth: fitsWidth, isMenu: true)
-                    .contentShape(Capsule())
+                Chip(
+                    text: item.state, color: item.stateColor, textColor: item.stateTextColor, symbol: symbol,
+                    fitsWidth: fitsWidth, isMenu: true
+                )
+                .contentShape(Capsule())
             }
             .menuStyle(.button)
             .buttonStyle(.plain)

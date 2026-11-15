@@ -42,7 +42,7 @@ extension PRGroup {
         }
     }
 
-    /// Its color for words, such as a heading's or a row's reason: `color` is for symbols (`TextTint`).
+    /// Its color for words, such as a row's reason: `color` is for symbols (`TextTint`).
     var textColor: Color {
         switch self {
         case .needsYou: return TextTint.orange.color

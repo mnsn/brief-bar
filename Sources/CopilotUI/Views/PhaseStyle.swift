@@ -24,17 +24,6 @@ extension DisplayPhase {
         }
     }
 
-    /// Its color for words, such as a heading's: `color` is for symbols (`TextTint`).
-    var textColor: Color {
-        switch self {
-        case .needsYou: return TextTint.orange.color
-        case .running: return TextTint.blue.color
-        case .done: return TextTint.green.color
-        case .stopped: return TextTint.red.color
-        case .idle: return .secondary
-        }
-    }
-
     /// Symbol used for count chips in the menu bar and widget header.
     var symbol: String {
         switch self {
