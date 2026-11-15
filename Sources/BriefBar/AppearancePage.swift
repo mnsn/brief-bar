@@ -148,8 +148,9 @@ private extension InterfaceOption {
         case .visibleActions:
             """
             A row's ⋯ menu, with its actions and where each one goes, shows while you point at the row or it has keyboard \
-            focus, and so does Finished My Review on a pull request in Your review: this keeps them in view on every row, \
-            widgets' too. Widgets get View All, or, for a section you've hidden from windows, Show in a Window…, which opens \
+            focus, in the menu bar's lists in its time's place, and so does Finished My Review on a pull request in Your \
+            review: this keeps them in view on every row, widgets' too, with ⋯ beside the time. Its right-click menu always \
+            has them. Widgets get View All, or, for a section you've hidden from windows, Show in a Window…, which opens \
             its layout settings. Opening something still marks it read or seen as its source always did, and nothing \
             approves or completes work for you.
             """

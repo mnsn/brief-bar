@@ -303,6 +303,18 @@ from a list, it hands over to the Dock, which has no windows to bring forward, a
 a menu-bar app, so a menu opened from a list over an app in full screen would open out of sight: while a menu is
 open, BriefBar puts each of its menu windows on every Space (`MenusOverFullScreen`).
 
+**Rows** say what's under their title in the same parts, whichever source draws them (`RowLines` in `Sources/BriefBarUI`):
+why it's there, in its state's readable color, then where, after "·", such as its repository, which is cut short
+first, with the work items, pull requests and sessions linked to it at that line's end, or, where they don't fit
+beside it, at the end of the last line, never left out; what someone wrote, on up to two lines; and a quiet last line,
+such as a pull request's stage, its order's capsule and what's left. A part with nothing to say takes no room. A row's
+**⋯** menu (`rowActions`) and its other buttons, ✨ and Finished My Review, show while the pointer's over it, or the
+keyboard's or VoiceOver's focus is on it or on one of them (`RowActivity`): in the menu bar's lists in its time's
+place, which makes room for them only then (`RowTimeSlot`, `RowTimeSpot`), so a title has the row's width at rest; on
+a page in a column of their own, so nothing moves as they come and go; not in widgets, whose rows keep two lines.
+Visible Row and Widget Actions keeps ⋯ and Finished My Review in view, ⋯ in a column, widgets' rows too. The
+right-click menu and the accessibility actions always have them all.
+
 ### Appearance options
 
 **Settings › Appearance** exposes eight independent `InterfaceOption`s, each a switch with a line on
@@ -747,10 +759,11 @@ line staying while it shows; and **✕**, which hides the line for good (`summar
 the card will be, so turning summaries on there doesn't move it.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
-(`StorySummaries.canSummarize`, while a source describes it), only when you ask, never as they show: pointing at its row
-puts **✨** in its time's place (`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its
-actions, and while it's written a spinner takes that place, so a second click there doesn't open the row. Its
-right-click and Actions menus have, in a group of its own right after opening it, **Summarize with Apple
+(`StorySummaries.canSummarize`, while a source describes it), only when you ask, never as they show: pointing at its row,
+or giving it the keyboard's focus, puts **✨** in its time's place (`RowTime`, on `RowTimeSlot`, which makes room for it
+while the row's in use, and `rowSummarizeButton`), unless Visible Row and Widget Actions is on, and while it's written a
+spinner takes that place, so a second click there doesn't open the row. Its
+right-click and **⋯** menus have, in a group of its own right after opening it, **Summarize with Apple
 Intelligence** or **Summarize with Copilot**, then
 **Stop Summarizing**, **Hide Summary** or **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do
 its accessibility actions. Its summary shows under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨
@@ -1432,6 +1445,11 @@ push or a vote, until its policies are read again, it says what was read last, a
 enough people approved but a **Minimum number of reviewers** policy still isn't met, as when the last one
 to push can't approve, it says **Approval policy pending**: BriefBar doesn't read who the policy counts.
 
+A row says what's left on its last line (`PRQuietLine`), in that order, as many by name as fit, then how many more,
+"+2", or only "3 left", the rest in its tooltip; not what's done, nor an item its reason says already, such as
+**Merge conflicts** under a pull request failing for them. Its tooltip, VoiceOver and its details' **What's Left** say
+all of it, what's done too.
+
 **Sorting.** The list, in the menu bar and on the window's page, is by status unless you sort it by
 date (`PROrder`, in the preferences as `ado.pullRequestOrder`): then every pull request but Done's and
 Idle's is in one list, by when it was created, the newest or the oldest first, and each row's time is
@@ -1613,7 +1631,8 @@ to This Mission doesn't, and the mission is asked its name again once it shows.
 ### A pull request's stage
 
 With Pull Request Order on, each Azure DevOps pull request also has a stage (`PullRequestStage`), where it is in its
-flow, which a row's colored label shows, in the window, the menu bar's list and the Overview, and its details as a
+flow, which a row's colored label shows at the start of its last line, in the window, the menu bar's list and the
+Overview, with why and who set it in its tooltip (`StageText.sentence`), and its details as a
 track. `StageRules` works it out from what the lists already read (`PullRequestOrderFacts.stageFacts`), the Copilot
 sessions on it (the tasks BriefBar sent to Copilot, and the Copilot app's sessions that opened it or say they work on
 it; a task you went on with in the Copilot app does what the app says since, unless the app can't tell how it ended),
@@ -1650,7 +1669,7 @@ required item that failed or expired, conflicts or a merge Azure DevOps couldn't
 where why doesn't say it already; the session that set its In progress writes it too, whether or not BriefBar sees it on
 it otherwise, which **‘Cart’ is on it** says, so that Fix next doesn't offer it while that session may be fixing it.
 They're its flags (`StageFlag`): after its reason, **Maria approved it · build failed**, **‘Cart’ finished · ‘Cart’ asks
-you**, wherever its words show: its row, its tooltip and its details, Up Next, and what its mission waits for, VoiceOver
+you**, wherever its words show: its row's and its label's tooltips and its details, Up Next, and what its mission waits for, VoiceOver
 hearing each after a pause; and marks on its card, **✕ Build failed**, **✋ Sam wants changes**. Fix next has what they
 say needs you, from every column (below). Someone else's pull request that asks nothing of you has no stage.
 
@@ -1677,7 +1696,8 @@ its stage comes from what Azure DevOps shows alone. Without an account BriefBar 
 it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused, and
 Forget Stages… is there for it then: while it's on, what it keeps comes back at once, or goes after 30 days on its own.
 
-Beside Can merge and Waits, whose words say where its order puts it, a row or a card shows its order capsule only where
+A row shows its order capsule after its label, whatever its stage, since its label's words are in its tooltip. Beside
+Can merge and Waits, whose words say where its order puts it, a card shows its order capsule only where
 a change of yours speaks of it (`OrderRowContext.isSaid(by:)`): ✎ **Next to merge** for one you set as next, or, for one
 an order went against yours, its capsule, which says so in its tooltip and to VoiceOver, with Put Yours Back in its
 menu. You can set In progress, Your review or Teammate's review; Approved, Can merge, Waits and Merged come only from
@@ -1697,7 +1717,7 @@ start fixing one of yours, Your review once they've pushed their work, Teammate'
 reviewed it.
 The latest of what you and the sessions set counts (`StageRules.counted`), while it stands as yours would, whoever set
 it, and its words say who, naming the session once (`StageText.namesWhoSetIt`): **‘Cart’ says it's ready · set 5m ago**,
-on its row and card, in its details and tooltips, and to VoiceOver, and they say after you where it replaced yours,
+on its card, in its details and tooltips, its row's too, and to VoiceOver, and they say after you where it replaced yours,
 whose menu then has **Put Yours Back**, which sets yours again, as a new change. A session's own In progress also ends
 as that session finishes, whether or not BriefBar sees it on the pull request otherwise, even one BriefBar sent work to
 that you haven't opened in the Copilot app (`activitiesSince`); working on afterwards, at something else, it doesn't put
@@ -3363,8 +3383,8 @@ can run it with the CLI instead. Closing the composer as it starts takes the req
 extension took it already: then the session starts all the same, but BriefBar doesn't show it.
 
 **Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
-(`PullRequestAction`). In the main window, every row has a visible **Actions** menu; the same actions
-remain available by right-clicking, including in the menu-bar popover and widgets.
+(`PullRequestAction`). A row's **⋯** menu has them, in the menu bar's lists and the window, while you point at the
+row or it has the keyboard's focus, and so does its right-click menu, in widgets too.
 BriefBar writes the prompt from what it read of the pull request
 (`PullRequestPrompt`): the unresolved comment threads, those that wait on you first, word for word,
 each with its file, line and thread; for a failed build, each run's link, where it failed and its
@@ -4343,7 +4363,7 @@ pull request seen.
 
 With **Send Work to Copilot** on, a notification about your pull request that says what Copilot can fix
 (`PulseNotification.Fix`), a build that failed, merge conflicts, or a comment, a reply, a mention or a vote that
-wants changes, has a button, **Fix with Copilot…**, while the pull request's Actions menu would offer that task
+wants changes, has a button, **Fix with Copilot…**, while the pull request's menu would offer that task
 (`PRStore.copilotCan`): never on someone else's, nor while Copilot's last task on it is under way. Notification
 Center shows a button through the notification's category, one for each button, which BriefBar registers as Azure
 DevOps starts, before it posts any (`Notifier.register`). Clicking it

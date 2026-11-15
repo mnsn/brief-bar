@@ -2,55 +2,6 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-/// A row's last line, quiet and one line high, as a pull request's is: what the row says of itself there, such as the
-/// session that started it, then its links. Nothing without either, so a row without them keeps its lines.
-package struct RowLinksLine<Leading: View>: View {
-    private let ref: ItemRef?
-    private let hasLeading: Bool
-    private let leading: () -> Leading
-
-    @EnvironmentObject private var services: AppServices
-
-    /// - Parameters:
-    ///   - ref: whose links show; nil for none.
-    ///   - hasLeading: whether `leading` shows anything.
-    package init(_ ref: ItemRef?, hasLeading: Bool = false, @ViewBuilder leading: @escaping () -> Leading) {
-        self.ref = ref
-        self.hasLeading = hasLeading
-        self.leading = leading
-    }
-
-    package var body: some View {
-        Content(ref: ref, hasLeading: hasLeading, leading: leading, links: services.links)
-    }
-
-    private struct Content: View {
-        let ref: ItemRef?
-        let hasLeading: Bool
-        let leading: () -> Leading
-        @ObservedObject var links: Links
-
-        var body: some View {
-            let hasLinks = ref.map { !links.connections(of: $0).isEmpty } ?? false
-            if hasLeading || hasLinks {
-                HStack(spacing: 6) {
-                    leading()
-                    if let ref { LinkCapsules(ref) }
-                }
-                .lineLimit(1)
-                .padding(.top, 2)
-            }
-        }
-    }
-}
-
-extension RowLinksLine where Leading == EmptyView {
-    /// Its links alone.
-    package init(_ ref: ItemRef?) {
-        self.init(ref) { EmptyView() }
-    }
-}
-
 /// The links on a thing's row: a capsule for its work items, one for its pull requests and one for its Copilot sessions,
 /// each in the color of the one that needs you most, with a sessions' state in a word when there's one. Nothing while Show
 /// Links is off, or it has no links.

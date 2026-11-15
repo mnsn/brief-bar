@@ -96,6 +96,15 @@ even after BriefBar restarts, and the first time at the one that needs you. You 
 you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever you
 didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 
+**Every row reads the same way**, in the menu bar's lists, on the window's pages and in the Overview: first its title
+and how long ago; then why it's there, who or what and where, such as **Maria replied · shop-web**, in its state's
+color, with the work items, pull requests and sessions linked to it at the end of that line; then what someone wrote,
+on up to two lines; and last, a quiet line with a pull request's stage, where its order puts it and what's still left
+before you can complete it. What's done, such as **Build passed**, is in its details. While you point at a row, or it
+has the keyboard's focus, its **⋯** menu shows, in its time's place in the menu bar's lists and at its right on a
+page, with **✨** where it can be summarized, and **Finished My Review** on a pull request in Your review. Its
+right-click menu and VoiceOver's actions always have them. Widgets' rows keep their two lines.
+
 A menu-bar item that shows several sections can instead add its counts up by state, the same for
 every source: set its **Counts** to **Added Up** in Settings › Menu Bar, as a new install's item has
 it. With everything in one item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
@@ -167,7 +176,7 @@ and Settings keep their size.
 | **Compact Briefs** | Off | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
 | **Quieter Colors and Surfaces** | Off | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
 | **Compact Menu Bar** | Off | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
-| **Visible Row and Widget Actions** | Off | Adds a row's **…** menu with explicitly named destinations and its existing actions. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
+| **Visible Row and Widget Actions** | Off | Keeps each row's **⋯** menu, with its actions and where each one goes, and **Finished My Review** in view, rather than only while you point at the row or it has the keyboard's focus, and gives widgets' rows a ⋯ too. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
 
 Turning an appearance option off restores its usual presentation. Compact Menu Bar never rewrites
 your saved grouping or unhides sections: turning it off restores your saved arrangement. Choosing a
@@ -198,7 +207,8 @@ why.
 ## Links
 
 **Show Links**, in **Settings › Links & Summaries**, shows which work items, pull requests and Copilot sessions
-go together, on their own rows: small capsules next to what's going on, for a pull request's work items
+go together, on their own rows: small capsules at the end of the line that says what's going on, or of the row's last
+line where they don't fit beside it, for a pull request's work items
 and the sessions working on it, a work item's pull requests and their sessions, and a session's pull
 request and work item. A capsule shows a number, or how many, and the sessions' capsule says how the
 one that needs you most stands, in its color, so you see when the session on a pull request is waiting
@@ -267,7 +277,8 @@ restarts or updates.
 
 Each chat shows its newest unread message (with the sender in group chats), how long ago it arrived
 and how many are unread; hover for the last few. Click a chat to open it in Teams at its oldest unread
-message. Click ✨ for a one-sentence summary from Apple's on-device model.
+message. Point at it, or give it the keyboard's focus, and click ✨, in its time's place, for a one-sentence summary
+from Apple's on-device model.
 
 Notification Center doesn't record what you've read, so BriefBar decides:
 
@@ -318,14 +329,16 @@ Apple Intelligence sums up the newest of each.
 | **Done** | Completed or abandoned in the last day, and while the pipelines that run after it merged are still going or wait for an approval |
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
 
-**What's left.** Under each of your open pull requests, Idle's too, a line says what Azure DevOps still
-requires before you can complete it, from its blocking policies, its reviewers' votes and its merge, the
-most pressing first: ✋ what you have to do, such as **Resolve 2 comments**, **Link a work item**,
+**What's left.** Under each of your open pull requests, Idle's too, its last line says what Azure DevOps
+still requires before you can complete it, from its blocking policies, its reviewers' votes and its merge,
+the most pressing first: ✋ what you have to do, such as **Resolve 2 comments**, **Link a work item**,
 **Publish the draft** or **Sam wants changes**; ✕ what failed, such as **Build failed** or **Merge
-conflicts**; ↻ builds and checks still running; a clock for what waits on others, such as **1 of 2
-approvals** or **Waiting on Sam**, a reviewer it requires; then ✓ what's done, such as **Build passed**
-or **Approved**. Open comments that no policy requires resolving are said too, without holding it up.
-Point at the row for who approved, which builds ran and where one failed. A person it requires as a
+conflicts**; ↻ builds and checks still running; and a clock for what waits on others, such as **1 of 2
+approvals** or **Waiting on Sam**, a reviewer it requires. Open comments that no policy requires resolving
+are said too, without holding it up. What doesn't fit is counted, such as **+2**, and named in its tooltip,
+and what the row's reason says already, such as **Merge conflicts**, isn't said twice. What's done, such as
+**Build passed** or **Approved**, is in its details' **What's Left**. Point at the row for all of it, who
+approved, which builds ran and where one failed. A person it requires as a
 reviewer, whether a policy or someone added them, holds it up until they approve, as Azure DevOps does:
 until then, it waits for reviewers. A team it requires counts as its policy says.
 
@@ -336,7 +349,8 @@ what it waits for and what's left, and its time says how long ago it was created
 it, are in the same order, and Done's stay apart, the latest first. BriefBar keeps your choice.
 
 **Each pull request's stage**, with **Pull Request Order** on in Settings › Pull Requests: a colored label opens each
-row's second line, in the window, the menu bar's list and the Overview, and says where it is in its flow. **In
+row's last line, in the window, the menu bar's list and the Overview, and says where it is in its flow; point at it for
+why, and who set it. **In
 progress** while yours is a draft, or while the Copilot session that opened it still writes it, before anyone else has
 voted on it; **Your review** once a session that wrote it finished, until someone else approves it, or when someone
 asks you or sends it to you, or new commits come after your vote, also while Copilot's pre-review of it runs;
@@ -347,20 +361,21 @@ order puts before it merge; **Waits for another PR** while its order puts it aft
 retarget one still targeting the branch of one that merged; and **Merged**. BriefBar works it out from Azure DevOps and
 your Copilot sessions, as far as what it shows takes yours, and never moves one of yours back on its own: a failed or
 expired build, conflicts, a merge Azure DevOps couldn't make, changes someone wants, and a Copilot session that writes
-it or asks you something are marks on it, wherever it is, after its label's words, **Maria approved it · build
-failed**, and on its card. Only losing what its stage stands for moves it back: its approval, as when a push resets the
+it or asks you something are marks on it, wherever it is, after why it's there, in its label's tooltip, **Maria
+approved it · build failed**, and on its card. Only losing what its stage stands for moves it back: its approval, as when a push resets the
 votes or Azure DevOps requires another reviewer, from Approved, Can merge or Waits back to Teammate's review; and Azure
 DevOps' readiness while it's still approved, as when its build fails or expires, from Can merge or Waits back to
 Approved. For that, BriefBar keeps how far each of yours got, for the Azure DevOps account you're signed in with, until
 it merges, closes or is a draft again, or no list has had it for 30 days. With [agents](#agents) on too, the Copilot sessions that work on
 your pull requests tell BriefBar their stages themselves, without you asking, such as Your review once they've pushed
 their work, or Teammate's review once you tell them you've reviewed it: **‘Cart’ says it's ready**. The latest stage
-set wins, yours or a session's, and the label says who set it; where a session's replaced yours, **Put Yours Back** is
-in its menu. What a session set counts only while the Copilot app lists the session, so a session you run in a
+set wins, yours or a session's, and the label's tooltip says who set it; where a session's replaced yours, **Put Yours
+Back** is in its menu. What a session set counts only while the Copilot app lists the session, so a session you run in a
 terminal sets none. Where a stage you or a session set decides it, its marks still show: **‘Cart’ says it's ready ·
 build failed**. Click the label to pick
-another, or the one it's in to keep it there until you change it, or **Finished My Review** beside it to send it to
-your teammates; **Stage** in a row's Actions and right-click menus, and VoiceOver's actions, do the same. What you or
+another, or the one it's in to keep it there until you change it, or **Finished My Review**, at the end of the line
+while you point at the row or it has the keyboard's focus, to send it to your teammates; **Stage** in a row's **⋯** and
+right-click menus, and VoiceOver's actions, do the same. What you or
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
 progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
 set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, as
@@ -584,7 +599,8 @@ only where it's clear, and a split applies whole: to take part of one, Keep Toge
 
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
-it, and **✨ Summarize**, with the actions beside it (below); **What's Left**, as its row's line says it, each item saying when it's **Your
+it, and **✨ Summarize**, with the actions beside it (below); **What's Left**, as its row's last line says it, with what's
+done too, each item saying when it's **Your
 turn**, and taking you to its merge conflicts, comments, builds or reviewers; the files that conflict with
 its target branch, while it has conflicts (below); its comment threads, by file, in the order
 its change lists them, those on the pull request itself first, and in each file the ones that wait on you
@@ -951,7 +967,7 @@ a comment that waits on you, such as a reply to you, a mention or a comment on y
 there and in the menu bar's count, no longer marked new. It leaves once you reply in its thread or the
 thread is resolved, once you mark the thread as read in the pull request's details, once you send the comments
 to Copilot with **Fix Comments** or **Push & Reply**, or when you choose **Remove from Needs You** in its menu
-(right-click it, or **Actions** in the window); anything after that needs you again. A pull request without activity for two weeks goes to Idle, as
+(right-click it, or its **⋯**); anything after that needs you again. A pull request without activity for two weeks goes to Idle, as
 before. The first time, only the last three days count as new, and each account you sign in to the Azure
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
@@ -1046,7 +1062,8 @@ that couldn't be written again keeps the one before. When Apple Intelligence can
 why and never tries Copilot instead.
 
 The lists have it too, when you ask: point at a pull request or a Copilot session, in Azure DevOps',
-GitHub's or Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize** with
+GitHub's or Copilot's list, or give it the keyboard's focus, and **✨** takes its time's place, or right-click it for
+**Summarize** with
 the model you chose. Its summary shows under its row, as a chat's does, from what's known of it and
 what's linked to it: its headline, what's next, and the first three lines of its points; **Show More**
 shows all of them. **✕** hides it, and **Show Summary**, in its menu, shows it again without writing

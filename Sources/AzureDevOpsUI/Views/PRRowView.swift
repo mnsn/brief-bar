@@ -3,10 +3,11 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// One pull request, in four lines at most: an icon for why it's here, its title and how long ago it happened; why, and
-/// where; what someone wrote, such as the comment that needs you; and one quiet line with its stage, what's left before you
-/// can complete it, and its links. In Needs You, a dot marks what's new. Its ⋯ menu, and Finished My Review in Your review,
-/// show while you're at it (`RowActivity`); what's done, and why it's in its stage, are in its details and its pill's menu.
+/// One pull request, in four parts at most: an icon for why it's here, its title and how long ago it happened; why, and
+/// where, with Copilot's task on it and its links; what someone wrote, such as the comment that needs you; and one quiet
+/// line with its stage, where its order puts it, and what's left before you can complete it (`RowLines`). In Needs You, a
+/// dot marks what's new. Its ⋯ menu, ✨ Summarize, and Finished My Review in Your review, show while you're at it
+/// (`RowActivity`); what's done, and why it's in its stage, are in its details and its pill's menu.
 struct PRRowView: View {
     let item: PRSnapshot
     let now: Date
@@ -70,7 +71,7 @@ struct PRRowView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .rowFocus(activity, .row)
+            .rowKeyboardFocus(activity)
             .help(helpText)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(item.title), \(item.headline)")
@@ -78,6 +79,7 @@ struct PRRowView: View {
             .accessibilityHint(clickShows == nil ? "Opens the pull request in Azure DevOps"
                 : showsInWindow ? "Shows its details in BriefBar's window" : "Shows its details")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .rowVoiceOverFocus(activity)
             .accessibilityActions {
                 SummarizeMenuItems(item.key.linkRef, divided: false)
                 if let open = order?.open { Button("Show Its Mission", action: open) }
@@ -91,7 +93,7 @@ struct PRRowView: View {
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
-        .rowSummarizeButton(item.key.linkRef)
+        .rowSummarizeButton(item.key.linkRef, activity: activity)
         .rowActions(for: item.title, openTitle: clickShows == nil ? "Open in Azure DevOps" : detailsTitle, open: clickShows ?? action,
                     activity: activity) {
             if clickShows != nil {
@@ -131,7 +133,7 @@ struct PRRowView: View {
                             .frame(width: 7, height: 7)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     }
-                    RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isHovered: activity.isPointedAt)
+                    RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isActive: activity.isActive)
                 }
                 if compact {
                     // With what someone wrote, it reads as content does.
@@ -140,27 +142,54 @@ struct PRRowView: View {
                         .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
                         .lineLimit(1)
                     PRQuietLine(item: item, left: left)
+                        .padding(.top, 2)
                 } else {
-                    // Why it's here, and where: its links and Copilot's task are on its quiet line.
-                    Text(item.subtitle)
-                        .font(size: options.rowReasonSize, weight: .medium)
-                        .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowTextColor)
-                        .lineLimit(1)
-                    if let detail = item.detail {
-                        Text(detail)
-                            .font(size: options.rowDetailSize)
-                            .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                    RowLines {
+                        reason(item.headline)
+                            .rowLine(.reason)
+                        if !item.repository.isEmpty {
+                            reason(" · " + item.repository)
+                                .rowLine(.place)
+                        }
+                        HStack(spacing: 6) {
+                            PullRequestCopilotStatus(key: item.key)
+                            PullRequestLinks(key: item.key)
+                        }
+                        .rowLine(.chips)
+                        if let detail = item.detail {
+                            Text(detail)
+                                .font(size: options.rowDetailSize)
+                                .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .rowLine(.detail)
+                        }
+                        PRQuietLine(item: item, stage: stage, ordering: ordering, order: order, left: left)
+                            .rowLine(.quiet)
+                        // In room the quiet line makes for it as it shows, folding what's left if it must.
+                        if offersFinishedReview, activity.isActive || options.visibleActions {
+                            FinishedReviewLabel()
+                                .stageSpot(.finishedReview)
+                                .rowLine(.trailing)
+                        }
                     }
-                    PRQuietLine(
-                        item: item, stage: stage, ordering: ordering, order: order, left: left, showsLinks: true,
-                        showsFinishedReview: activity.isActive
-                    )
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Why it's here, and where, in its state's color for words.
+    private func reason(_ words: String) -> some View {
+        Text(words)
+            .font(size: options.rowReasonSize, weight: .medium)
+            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowTextColor)
+            .lineLimit(1)
+    }
+
+    /// In Your review, on your board: Finished My Review moves it to Teammate's review.
+    private var offersFinishedReview: Bool {
+        ordering != nil && stage?.isOnBoard == true && stage?.stage == .yourReview
     }
 
     /// What's left before you can complete it, for your own: never what's done, which its details list, nor what its reason
@@ -262,12 +291,11 @@ struct RowIcon: View {
     }
 }
 
-/// A row's last line, quiet and one line high: its stage's pill, where it stands in its order, what's left before you can
-/// complete it, the most pressing first, then Copilot's task on it and its links; at its end, Finished My Review, while
-/// you're at a row in Your review, or always with Visible Row and Widget Actions. Where it doesn't all fit, what's left
-/// shows its first few and "+2" for the rest, then the links go, then all but how many are left: the row's tooltip,
-/// VoiceOver and its details say all of it. What's done is in its details alone, and why it's in its stage in its pill's
-/// menu.
+/// A row's quiet line, one line high: its stage's pill, where its order puts it, and what's left before you can complete it,
+/// the most pressing first. Where it doesn't all fit, what's left shows its first few and "+2" for the rest, then only how
+/// many are left: the row's tooltip, VoiceOver and its details say all of it. What's done is in its details alone, and why
+/// it's in its stage in its pill's menu. Its links, where its reason's line has no room for them, and Finished My Review go
+/// after it (`RowLines`).
 /// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their spots
 /// are (`stageControls`). Someone else's that you finished reviewing says so in words, without a pill: it's off your board.
 struct PRQuietLine: View {
@@ -277,119 +305,60 @@ struct PRQuietLine: View {
     var order: OrderRowContext? = nil
     /// What's left before you can complete it: nothing that's done.
     let left: [PRReadiness.Item]
-    /// Copilot's task on it and its links: not on a row of one line.
-    var showsLinks = false
-    /// Finished My Review shows, in Your review: while you're at the row.
-    var showsFinishedReview = false
 
-    @EnvironmentObject private var services: AppServices
-    @EnvironmentObject private var copilot: CopilotTasksStore
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        Line(
-            item: item, stage: stage, ordering: ordering, order: order, left: left, showsLinks: showsLinks,
-            showsFinishedReview: showsFinishedReview, links: services.links,
-            copilotTask: showsLinks && copilot.isOn ? copilot.latest(forPullRequest: item.key) : nil
-        )
+        if !isEmpty {
+            ViewThatFits(in: .horizontal) {
+                ForEach(shownCounts, id: \.self) { shown in
+                    line(shown: shown)
+                }
+            }
+            .font(size: options.rowDetailSize)
+        }
     }
 
-    private struct Line: View {
-        let item: PRSnapshot
-        let stage: StageReading?
-        let ordering: PullRequestOrder?
-        let order: OrderRowContext?
-        let left: [PRReadiness.Item]
-        let showsLinks: Bool
-        let showsFinishedReview: Bool
-        @ObservedObject var links: Links
-        let copilotTask: CopilotTaskEntry?
+    /// What the line tries, the first that fits: everything that's left by name, then fewer, down to one; then only how
+    /// many are left.
+    private var shownCounts: [Int] {
+        left.isEmpty ? [0] : Array((0...left.count).reversed())
+    }
 
-        @Environment(\.interfaceOptions) private var options
+    private var isEmpty: Bool {
+        stage == nil && order?.showsCapsule != true && left.isEmpty
+    }
 
-        var body: some View {
-            if !isEmpty {
-                ViewThatFits(in: .horizontal) {
-                    ForEach(Array(candidates.enumerated()), id: \.offset) { _, candidate in
-                        line(shown: candidate.shown, withLinks: candidate.links)
-                    }
+    /// - Parameter shown: how many of what's left show by name; "+2" says the rest.
+    private func line(shown: Int) -> some View {
+        HStack(spacing: 6) {
+            if let stage {
+                if stage.isOnBoard {
+                    StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
+                        .stageSpot(.pill)
+                } else if let ordering {
+                    Text(StageText.why(stage, name: { ordering.name(of: $0) }))
+                        .foregroundStyle(.secondary)
+                        .truncationMode(.tail)
                 }
-                .font(size: options.rowDetailSize)
-                .padding(.top, 2)
             }
-        }
-
-        /// What the line tries, the first that fits: everything that's left by name with its links, then fewer by name,
-        /// down to one; then without its links, the same; then only how many are left.
-        private var candidates: [(shown: Int, links: Bool)] {
-            let counts = left.isEmpty ? [0] : Array((1...left.count).reversed())
-            var candidates: [(shown: Int, links: Bool)] = []
-            if hasLinks { candidates += counts.map { ($0, true) } }
-            candidates += counts.map { ($0, false) }
+            if let order { OrderCapsule(order) }
             if !left.isEmpty {
-                if hasLinks { candidates.append((0, true)) }
-                candidates.append((0, false))
-            }
-            return candidates
-        }
-
-        /// Copilot's task on it, or a link: its own capsule each.
-        private var hasLinks: Bool {
-            guard showsLinks else { return false }
-            return copilotTask != nil
-                || !links.connections(of: item.key.linkRef).filter { !PullRequestLinks.session(of: copilotTask).contains($0.item.ref) }.isEmpty
-        }
-
-        private var isEmpty: Bool {
-            stage == nil && order?.showsCapsule != true && left.isEmpty && !hasLinks
-        }
-
-        /// In Your review, on your board: Finished My Review moves it to Teammate's review.
-        private var offersFinishedReview: Bool {
-            ordering != nil && stage?.isOnBoard == true && stage?.stage == .yourReview
-        }
-
-        /// - Parameter shown: how many of what's left show by name; "+2" says the rest.
-        private func line(shown: Int, withLinks: Bool) -> some View {
-            HStack(spacing: 6) {
-                if let stage {
-                    if stage.isOnBoard {
-                        StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
-                            .stageSpot(.pill)
-                    } else if let ordering {
-                        Text(StageText.why(stage, name: { ordering.name(of: $0) }))
-                            .foregroundStyle(.secondary)
-                            .truncationMode(.tail)
+                HStack(spacing: 8) {
+                    ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in
+                        LeftItem(item: item, isQuiet: self.item.group == .idle)
+                    }
+                    if shown < left.count {
+                        let rest = left.dropFirst(shown)
+                        Text(shown == 0 ? "\(rest.count) left" : "+\(rest.count)")
+                            .foregroundStyle(self.item.group == .idle ? Color.secondary : .rowContent)
+                            .fixedSize()
+                            .help(rest.map(\.described).joined(separator: "\n"))
                     }
                 }
-                if let order { OrderCapsule(order) }
-                if !left.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in
-                            LeftItem(item: item, isQuiet: self.item.group == .idle)
-                        }
-                        if shown < left.count {
-                            let rest = left.dropFirst(shown)
-                            Text(shown == 0 ? "\(rest.count) left" : "+\(rest.count)")
-                                .foregroundStyle(self.item.group == .idle ? Color.secondary : .rowContent)
-                                .fixedSize()
-                                .help(rest.map(\.described).joined(separator: "\n"))
-                        }
-                    }
-                }
-                if withLinks {
-                    PullRequestCopilotStatus(key: item.key)
-                    PullRequestLinks(key: item.key)
-                }
-                // At its end, in room the line makes for it as it shows, folding what's left into "+2" if it must: it
-                // covers nothing, and nothing else moves.
-                if offersFinishedReview && (showsFinishedReview || options.visibleActions) {
-                    Spacer(minLength: 8)
-                    FinishedReviewLabel()
-                        .stageSpot(.finishedReview)
-                }
             }
-            .lineLimit(1)
         }
+        .lineLimit(1)
     }
 
     /// One thing that's left, as its details list it: its symbol in its color, then its words, readable as content.

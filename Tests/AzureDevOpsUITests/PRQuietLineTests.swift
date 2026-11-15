@@ -6,8 +6,8 @@ import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
-/// A pull request's row in four lines at most: its last, quiet line is one line high, says what's left but never what's
-/// done, shows where its order puts it on every stage, and Finished My Review only while you're at the row.
+/// A pull request's row in four parts at most: its last, quiet line is one line high, says what's left but never what's
+/// done, and shows where its order puts it on every stage.
 @MainActor
 @Suite struct PRQuietLineTests {
     private static let now = Date(timeIntervalSince1970: 1_792_000_000)
@@ -61,7 +61,7 @@ import Testing
     @Test func itKeepsToOneLineHoweverNarrow() throws {
         let item = try Self.item(readiness: Self.left)
         let stage = StageReading(stage: .yourReview, why: .awaitsYourReview)
-        let line = PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: Self.left, showsLinks: true)
+        let line = PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: Self.left)
         #expect(size(line, width: 2_000).height > 10)
         #expect(abs(size(line, width: 180).height - size(line, width: 2_000).height) < 0.5)
     }
@@ -91,20 +91,5 @@ import Testing
             let without = PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: [])
             #expect(size(with).width > size(without).width + 10, "\(stage.stage)")
         }
-    }
-
-    /// Finished My Review shows only while you're at a row in Your review, or has it with Visible Row and Widget Actions.
-    @Test func finishedMyReviewShowsOnlyWhileYouReAtTheRow() throws {
-        let item = try Self.item(readiness: [])
-        let review = StageReading(stage: .yourReview, why: .awaitsYourReview)
-        let atRest = PRQuietLine(item: item, stage: review, ordering: Self.ordering(), left: [])
-        let inUse = PRQuietLine(item: item, stage: review, ordering: Self.ordering(), left: [], showsFinishedReview: true)
-        #expect(size(inUse).width > size(atRest).width + 60)
-        let visible = atRest.environment(\.interfaceOptions, InterfaceOptions(enabled: [.visibleActions]))
-        #expect(abs(size(visible).width - size(inUse).width) < 0.5)
-        let approved = StageReading(stage: .approved, why: .approvedBy("Priya"))
-        let elsewhere = PRQuietLine(item: item, stage: approved, ordering: Self.ordering(), left: [], showsFinishedReview: true)
-        let elsewhereAtRest = PRQuietLine(item: item, stage: approved, ordering: Self.ordering(), left: [])
-        #expect(abs(size(elsewhere).width - size(elsewhereAtRest).width) < 0.5)
     }
 }

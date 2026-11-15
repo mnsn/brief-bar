@@ -59,19 +59,30 @@ package struct OrderRowContext {
 }
 
 extension OrderCapsuleTone {
-    var color: Color {
+    /// Its capsule's fill: gray for what needs nothing or waits, blue for what can merge next, orange to warn.
+    var nsColor: NSColor {
         switch self {
-        case .quiet: return .secondary
-        case .next: return .accentColor
-        case .waiting: return .secondary
-        case .warning: return .orange
+        case .quiet, .waiting: .systemGray
+        case .next: .systemBlue
+        case .warning: .systemOrange
         }
     }
 
-    /// Its color for words: `color` is for its capsule's fill (`TextTint`).
-    var textColor: Color {
-        self == .warning ? TextTint.orange.color : color
+    var color: Color { Color(nsColor: nsColor) }
+
+    /// Its words' color, which reads at 4.5:1 or more on its fill (`TextTint`).
+    var tint: TextTint {
+        switch self {
+        case .quiet, .waiting: .gray
+        case .next: .blue
+        case .warning: .orange
+        }
     }
+
+    var textColor: Color { tint.color }
+
+    /// How much of its color fills its capsule.
+    var fillOpacity: CGFloat { self == .quiet ? 0.10 : 0.14 }
 }
 
 /// A row's order capsule, beside its links: "Next to merge", "After !4103 · stacked", "Any time", "Check the order"; with ✎
@@ -101,7 +112,7 @@ package struct OrderCapsule: View {
             .foregroundStyle(tone.textColor)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(Capsule().fill(tone.color.opacity(tone == .quiet ? 0.10 : 0.14)))
+            .background(Capsule().fill(tone.color.opacity(tone.fillOpacity)))
             .contentShape(Capsule())
             .fixedSize()
             .help(help)
@@ -110,10 +121,10 @@ package struct OrderCapsule: View {
         } else if context.step.notes.contains(where: \.isAboutYourChanges), let sentence = context.sentence {
             Image(systemName: "pencil")
                 .font(size: 10, weight: .semibold)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OrderCapsuleTone.quiet.textColor)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1.5)
-                .background(Capsule().fill(Color.secondary.opacity(0.10)))
+                .background(Capsule().fill(OrderCapsuleTone.quiet.color.opacity(OrderCapsuleTone.quiet.fillOpacity)))
                 .contentShape(Capsule())
                 .fixedSize()
                 .help(sentence + (context.open == nil ? "" : "\nClick to show it By Mission"))

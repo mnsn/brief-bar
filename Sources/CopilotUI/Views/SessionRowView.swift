@@ -3,11 +3,11 @@ import BriefBarUI
 import CopilotCore
 import SwiftUI
 
-/// One session, in four lines at most, as a pull request's row: status icon, name, how long it's been in that state and,
-/// if turned on, how full its context window is; what it's doing and where; its detail, such as what it asks you; and one
-/// quiet line with its links. A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens what it's for, and has
-/// its own menu. With Nest Sessions Under Their Parents, a session is indented under the one that started it, or, where it
-/// isn't, has a ↳ tag on its quiet line that names that session and opens it. Its ⋯ menu shows while you're at it
+/// One session, as a pull request's row: status icon, name, how long it's been in that state and, if turned on, how full
+/// its context window is; what it's doing and where, with its links; and its detail, such as what it asks you, on two lines
+/// at most (`RowLines`). A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens what it's for, and has its own
+/// menu. With Nest Sessions Under Their Parents, a session is indented under the one that started it, or, where it isn't,
+/// has a ↳ tag before its links that names that session and opens it. Its ⋯ menu and ✨ Summarize show while you're at it
 /// (`RowActivity`). Under it, what you asked it with Ask… and what it answered, and its summary.
 struct SessionRowView: View {
     let session: SessionSnapshot
@@ -110,7 +110,7 @@ struct SessionRowView: View {
                         if let contextUsage {
                             ContextUsageView(usage: contextUsage)
                         }
-                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isHovered: activity.isPointedAt)
+                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isActive: activity.isActive)
                     }
                     if compact {
                         if let taggedParent {
@@ -130,22 +130,30 @@ struct SessionRowView: View {
                             compactText(compactLine, isContent: detailIsWritten(task))
                         }
                     } else {
-                        // What it's doing and where: its links, and the session that started it, are on its quiet line.
-                        subtitle
-                        if let detail = session.detail {
-                            Text(detail)
-                                .font(size: options.rowDetailSize)
-                                .foregroundStyle(detailIsWritten(task) ? .rowContent : Color.secondary)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        RowLinksLine(ref, hasLeading: taggedParent != nil) {
-                            if let taggedParent {
-                                // In full if it fits beside the links, or else cut short.
-                                ViewThatFits(in: .horizontal) {
-                                    parentTag(taggedParent)
+                        // What it's doing and where, with the session that started it and its links.
+                        RowLines {
+                            reason(session.headline)
+                                .rowLine(.reason)
+                            if let place = session.place {
+                                reason(" · " + place)
+                                    .rowLine(.place)
+                            }
+                            HStack(spacing: 6) {
+                                if let taggedParent {
                                     parentTag(taggedParent, truncates: true)
                                 }
+                                if let ref {
+                                    LinkCapsules(ref)
+                                }
+                            }
+                            .rowLine(.chips)
+                            if let detail = session.detail {
+                                Text(detail)
+                                    .font(size: options.rowDetailSize)
+                                    .foregroundStyle(detailIsWritten(task) ? .rowContent : Color.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .rowLine(.detail)
                             }
                         }
                     }
@@ -157,15 +165,16 @@ struct SessionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .rowFocus(activity, .row)
+        .rowKeyboardFocus(activity)
         // The ↳ tag's click, outside the row's button, which takes every click on its label.
         .overlayPreferenceValue(ParentTag.Bounds.self) { bounds in
             if let bounds, let parent = taggedParent {
-                ParentTag.Target(parent: parent, bounds: bounds) { store.openParent(of: session) }
+                ParentTag.Target(parent: parent, bounds: bounds, activity: activity) { store.openParent(of: session) }
             }
         }
         .help(helpText(task))
         .accessibilityElement(children: .ignore)
+        .rowVoiceOverFocus(activity)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue(
             [session.detail, contextUsage.map(ContextUsageView.description), otherParent.map { "Started by “\($0.name)”" }]
@@ -199,7 +208,7 @@ struct SessionRowView: View {
                 LinkMenuItems(ref)
             }
         }
-        .rowSummarizeButton(ref)
+        .rowSummarizeButton(ref, activity: activity)
     }
 
     /// How far it's indented under the session that started it, where the list nests it.
@@ -207,9 +216,9 @@ struct SessionRowView: View {
         nests ? CGFloat(min(session.depth, Self.maxIndentLevels)) * Self.indentStep : 0
     }
 
-    /// What it's doing and where, colored by its state.
-    private var subtitle: some View {
-        Text(session.subtitle)
+    /// What it's doing, or where, colored by its state.
+    private func reason(_ words: String) -> some View {
+        Text(words)
             .font(size: options.rowReasonSize, weight: .medium)
             .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowTextColor)
             .lineLimit(1)
@@ -354,10 +363,12 @@ struct ParentTag: View {
         }
     }
 
-    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip.
+    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip. Its focus is
+    /// its row's too (`activity`), so the row's buttons stay while it has it.
     struct Target: View {
         let parent: RelatedSession
         let bounds: Anchor<CGRect>
+        var activity: RowActivity? = nil
         let open: () -> Void
 
         var body: some View {
@@ -367,6 +378,7 @@ struct ParentTag: View {
                     Color.clear.contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .rowFocus(activity, .control)
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: frame.minX, y: frame.minY)
                 .help("Started by “\(parent.name)”: click to open it")

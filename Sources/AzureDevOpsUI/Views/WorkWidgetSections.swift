@@ -319,10 +319,7 @@ struct WidgetPipelineRow: View {
                             .font(size: 13, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        Text(Elapsed.short(since: status.latest?.changedAt, now: now))
-                            .font(size: 11).monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        RowTimeSlot(Elapsed.short(since: status.latest?.changedAt, now: now), summarizes: false, isActive: activity.isActive)
                     }
                     HStack(spacing: 6) {
                         Text(status.headline)

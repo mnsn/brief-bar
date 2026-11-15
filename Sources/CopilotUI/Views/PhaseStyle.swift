@@ -107,8 +107,12 @@ extension SessionSnapshot {
     }
 
     var subtitle: String {
-        var parts = [headline]
-        if let projectName, !projectName.isEmpty { parts.append(projectName) } else if isChat { parts.append("Chat") }
-        return parts.joined(separator: " · ")
+        ([headline] + [place].compactMap { $0 }).joined(separator: " · ")
+    }
+
+    /// Where it works: its project, or Chat for a chat; nil for neither.
+    var place: String? {
+        if let projectName, !projectName.isEmpty { return projectName }
+        return isChat ? "Chat" : nil
     }
 }

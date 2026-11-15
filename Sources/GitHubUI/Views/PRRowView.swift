@@ -4,8 +4,8 @@ import GitHubCore
 import SwiftUI
 
 /// One pull request, as Azure DevOps' rows are: its title and how long since it changed; why it's in its group, who, and
-/// where it is; and, on a quiet line, where it stands in its mission and its links. Its ⋯ menu shows while you're at it
-/// (`RowActivity`).
+/// where it is, with its links; and, on a quiet line, where it stands in its mission (`RowLines`). Its ⋯ menu and ✨
+/// Summarize show while you're at it (`RowActivity`).
 struct PRRowView: View {
     let item: GitHubPRSnapshot
     let now: Date
@@ -55,7 +55,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: activity.isPointedAt)
+                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isActive: activity.isActive)
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
@@ -63,19 +63,19 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        // Why, who, and where, the reference cut short in its middle before the rest: its order capsule and
-                        // links are on its quiet line.
-                        HStack(spacing: 0) {
-                            Text(subtitle)
-                                .layoutPriority(1)
-                            Text(" · " + item.pullRequest.reference)
+                        // Why, who, and where, with its links: where it is, cut short in its middle first.
+                        RowLines {
+                            reason(subtitle)
+                                .rowLine(.reason)
+                            reason(" · " + item.pullRequest.reference)
                                 .truncationMode(.middle)
-                        }
-                        .font(size: options.rowReasonSize, weight: .medium)
-                        .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
-                        .lineLimit(1)
-                        RowLinksLine(linkRef, hasLeading: order?.showsCapsule == true) {
-                            if let order { OrderCapsule(order) }
+                                .rowLine(.place)
+                            LinkCapsules(linkRef)
+                                .rowLine(.chips)
+                            if let order {
+                                OrderCapsule(order)
+                                    .rowLine(.quiet)
+                            }
                         }
                     }
                 }
@@ -86,9 +86,10 @@ struct PRRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .rowFocus(activity, .row)
+        .rowKeyboardFocus(activity)
         .help(helpText)
         .accessibilityElement(children: .ignore)
+        .rowVoiceOverFocus(activity)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference, order?.sentence].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
@@ -100,7 +101,15 @@ struct PRRowView: View {
             SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)
         }
-        .rowSummarizeButton(linkRef)
+        .rowSummarizeButton(linkRef, activity: activity)
+    }
+
+    /// Why it's here, who, and where, in its group's color for words.
+    private func reason(_ words: String) -> some View {
+        Text(words)
+            .font(size: options.rowReasonSize, weight: .medium)
+            .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
+            .lineLimit(1)
     }
 
     private var subtitle: String {

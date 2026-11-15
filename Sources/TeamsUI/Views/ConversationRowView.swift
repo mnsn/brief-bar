@@ -3,7 +3,8 @@ import TeamsCore
 import SwiftUI
 
 /// One chat: avatar, name, the latest message, how long ago, how many messages are unread and, on
-/// request, a one-sentence summary from Apple's on-device model. Its ⋯ menu shows while you're at it (`RowActivity`).
+/// request, a one-sentence summary from Apple's on-device model. Its ⋯ menu, and ✨ for a chat without a summary yet, show
+/// while you're at it (`RowActivity`).
 struct ConversationRowView: View {
     let conversation: ConversationSummary
     let now: Date
@@ -38,11 +39,7 @@ struct ConversationRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        Text(RelativeTime.short(lastMessageDate, now: now))
-                            .font(size: 11).monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
-                            .opacity(showsSummarizeButton ? 0 : 1)
+                        RowTimeSlot(RelativeTime.short(lastMessageDate, now: now), summarizes: showsSummarizeButton, isActive: activity.isActive)
                         if showsSummaryOnly, conversation.unreadCount > 0 {
                             CountBadge(count: conversation.unreadCount, color: conversation.group.color)
                         }
@@ -72,22 +69,26 @@ struct ConversationRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .rowFocus(activity, .row)
-        .overlay(alignment: .topTrailing) {
-            if showsSummarizeButton, let summarize {
+        .rowKeyboardFocus(activity)
+        // In its time's place, over the row's button, which would take its click.
+        .rowTimeSummarizeButton {
+            if let summarize {
                 Button(action: summarize) {
                     Image(systemName: "sparkles")
                         .font(size: 11, weight: .semibold)
                         .foregroundStyle(.purple)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .rowFocus(activity, .summarize)
                 .help("Summarize with Apple Intelligence, on this Mac")
-                .padding(.top, 7)
-                .padding(.trailing, 10)
+                .accessibilityLabel("Summarize")
             }
         }
         .help(helpText)
         .accessibilityElement(children: .ignore)
+        .rowVoiceOverFocus(activity)
         .accessibilityLabel(conversation.name)
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens the chat in Microsoft Teams")
@@ -124,9 +125,9 @@ struct ConversationRowView: View {
         }
     }
 
-    /// The sparkles button replaces the time while the pointer is over a chat that has no summary yet.
+    /// The sparkles button takes the time's place while you're at a chat that has no summary yet.
     private var showsSummarizeButton: Bool {
-        activity.isPointedAt && showPreview && summarize != nil && summary == nil && !options.visibleActions
+        activity.isActive && showPreview && summarize != nil && summary == nil && !options.visibleActions
     }
 
     private var lastMessageDate: Date {

@@ -341,75 +341,61 @@ private struct SummarizeMenuContent: View {
     }
 }
 
-/// A row's time, "41m", whose place ✨ takes while you point at a row that has no summary yet, and a spinner while one is
-/// written, which takes a second click there rather than the row (`rowSummarizeButton`).
+/// A row's time, "41m", whose place ✨ takes while you're at a row that has no summary yet, and a spinner while one is
+/// written, which takes a second click there rather than the row (`rowSummarizeButton`); and, in a list of the menu bar,
+/// the row's ⋯ too (`RowTimeSlot`).
 package struct RowTime: View {
     private let text: String
     private let subject: ItemRef?
-    private let isHovered: Bool
+    private let isActive: Bool
 
     @EnvironmentObject private var services: AppServices
 
-    package init(_ text: String, subject: ItemRef?, isHovered: Bool) {
+    /// - Parameter isActive: you're at the row: the pointer's over it, or it or one of its buttons has focus (`RowActivity`).
+    package init(_ text: String, subject: ItemRef?, isActive: Bool) {
         self.text = text
         self.subject = subject
-        self.isHovered = isHovered
+        self.isActive = isActive
     }
 
     package var body: some View {
-        RowTimeContent(text: text, subject: subject, isHovered: isHovered, summaries: services.summaries)
+        RowTimeContent(text: text, subject: subject, isActive: isActive, summaries: services.summaries)
     }
 }
 
 private struct RowTimeContent: View {
     let text: String
     let subject: ItemRef?
-    let isHovered: Bool
+    let isActive: Bool
     @ObservedObject var summaries: StorySummaries
 
     @Environment(\.interfaceOptions) private var options
     @Environment(\.offersSummaries) private var offersSummaries
 
-    /// ✨ shows instead while you point at it, when it can be summed up and nothing is yet, unless the row's actions show;
-    /// and a spinner while one is written.
-    private var givesUpItsPlace: Bool {
+    /// ✨ shows instead while you're at the row, when it can be summed up and nothing is yet, unless the row's actions stay
+    /// in view, whose ⋯ has Summarize; and a spinner while one is written.
+    private var summarizes: Bool {
         guard offersSummaries, let subject, summaries.canSummarize(subject) else { return false }
         switch summaries.state(for: subject) {
         case .writing?: return true
-        case nil: return isHovered && !options.visibleActions
+        case nil: return isActive && !options.visibleActions
         default: return false
         }
     }
 
     var body: some View {
-        Text(text)
-            .font(size: 11).monospacedDigit()
-            .foregroundStyle(.secondary)
-            .fixedSize()
-            .opacity(givesUpItsPlace ? 0 : 1)
-            .anchorPreference(key: RowSummarizeSpot.self, value: .bounds) { givesUpItsPlace ? $0 : nil }
-    }
-}
-
-/// Where a row keeps ✨: its time's place, while `RowTime` gives it up.
-private struct RowSummarizeSpot: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? { nil }
-
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = value ?? nextValue()
+        RowTimeSlot(text, summarizes: summarizes, isActive: isActive)
     }
 }
 
 extension View {
-    /// ✨ Summarize, or a spinner while it's written, where the row's `RowTime` is, while it gives its
-    /// place up.
-    package func rowSummarizeButton(_ subject: ItemRef?) -> some View {
-        overlayPreferenceValue(RowSummarizeSpot.self) { spot in
-            if let spot, let subject {
-                GeometryReader { proxy in
-                    RowSummarizeButton(subject: subject)
-                        .position(x: proxy[spot].midX, y: proxy[spot].midY)
-                }
+    /// ✨ Summarize, or a spinner while it's written, where the row's `RowTime` is, while it gives its place up; with the
+    /// row's `activity`, its focus is the row's too, so the row's buttons stay while it has it.
+    package func rowSummarizeButton(_ subject: ItemRef?, activity: RowActivity? = nil) -> some View {
+        rowTimeSummarizeButton {
+            if let subject {
+                RowSummarizeButton(subject: subject)
+                    .rowFocus(activity, .summarize)
             }
         }
     }
@@ -436,7 +422,7 @@ private struct RowSummarizeButtonContent: View {
             // A second click lands here, not on the row.
             ProgressView()
                 .controlSize(.mini)
-                .frame(width: 22, height: 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .onTapGesture {}
                 .help(SummaryCard.writing(summaries))
@@ -448,7 +434,7 @@ private struct RowSummarizeButtonContent: View {
                 Image(systemName: "sparkles")
                     .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
-                    .frame(width: 22, height: 22)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
