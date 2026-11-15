@@ -325,7 +325,8 @@ Every section counts its things in four states that mean the same for every sour
 
 Each state, and each source's group, has a bright color for its symbols, and its words take a darker shade of it in
 light mode and, for red, blue, pink, purple and gray, a lighter one in dark mode (`TextTint`, `ItemState.textColor`), to
-read at 4.5:1 or more on a list and on the window's tinted backdrop; with **Quieter Colors and Surfaces** on, they're
+read at 4.5:1 or more on a list and on the window's tinted backdrop, also in a capsule tinted with the bright color, such
+as a link's or a stage's; with **Quieter Colors and Surfaces** on, they're
 gray. Under a row's title, what someone wrote, such as a comment or what a session asks, is a stronger gray
 (`rowContent`) than what's said about it, such as who it's by or when.
 

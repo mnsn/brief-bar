@@ -1,4 +1,5 @@
 import AppKit
+import BriefBarCore
 import SwiftUI
 import Testing
 @testable import BriefBarUI
@@ -18,6 +19,40 @@ struct TextTintTests {
         #expect(Self.contrast(light, Self.white) >= 4.5)
         #expect(Self.contrast(light, Self.backdrop) >= 4.5)
         #expect(Self.contrast(Self.resolved(tint.nsColor, in: .darkAqua), Self.darkCard) >= 4.5)
+    }
+
+    /// The system color each tint's capsules are filled with, where states draw them: magenta's are only work items'.
+    private static let fills: [TextTint: NSColor] = [
+        .orange: .systemOrange, .red: .systemRed, .blue: .systemBlue, .green: .systemGreen, .teal: .systemTeal,
+        .purple: .systemPurple, .pink: .systemPink, .mint: .systemMint, .gray: .systemGray, .yellow: .systemYellow,
+        .cyan: .systemCyan,
+    ]
+    /// The lightest card the window draws in dark mode.
+    private static let darkWindowCard = NSColor(srgbRed: 0x35 / 255, green: 0x27 / 255, blue: 0x36 / 255, alpha: 1)
+
+    /// In a capsule, on 14% of its symbol's color, as a link's, a chip's or an order's is filled.
+    @Test(arguments: TextTint.allCases.filter { $0 != .magenta })
+    func eachTintReadsInACapsuleOfItsColor(_ tint: TextTint) throws {
+        try Self.expectReadable(tint.nsColor, on: #require(Self.fills[tint]), opacity: 0.14)
+    }
+
+    /// A stage's name in its pill, on 17% of its color.
+    @Test(arguments: PullRequestStage.allCases)
+    func eachStageReadsInItsPill(_ stage: PullRequestStage) {
+        Self.expectReadable(NSColor(stage.textColor), on: stage.nsColor, opacity: 0.17)
+    }
+
+    /// Words on a fill of a color, over a list's white and the darkest backdrop in light mode, and over the lightest card
+    /// in dark mode.
+    private static func expectReadable(
+        _ words: NSColor, on fill: NSColor, opacity: CGFloat, sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        for background in [white, backdrop] {
+            let capsule = over(resolved(fill, in: .aqua), opacity: opacity, background)
+            #expect(contrast(resolved(words, in: .aqua), capsule) >= 4.5, "on \(background)", sourceLocation: sourceLocation)
+        }
+        let darkCapsule = over(resolved(fill, in: .darkAqua), opacity: opacity, darkWindowCard)
+        #expect(contrast(resolved(words, in: .darkAqua), darkCapsule) >= 4.5, "in dark mode", sourceLocation: sourceLocation)
     }
 
     @Test func contentReadsAndStaysStrongerThanWhatsSaidAboutIt() {
@@ -42,8 +77,13 @@ struct TextTintTests {
     /// A resolved color with its opacity, laid over a background.
     private static func over(_ color: Color.Resolved, _ background: NSColor) -> NSColor {
         let top = NSColor(cgColor: color.cgColor)?.usingColorSpace(.sRGB) ?? .black
+        return over(top, opacity: top.alphaComponent, background)
+    }
+
+    /// A color at an opacity, laid over a background.
+    private static func over(_ color: NSColor, opacity alpha: CGFloat, _ background: NSColor) -> NSColor {
+        let top = color.usingColorSpace(.sRGB) ?? color
         let bottom = background.usingColorSpace(.sRGB) ?? background
-        let alpha = top.alphaComponent
         return NSColor(
             srgbRed: top.redComponent * alpha + bottom.redComponent * (1 - alpha),
             green: top.greenComponent * alpha + bottom.greenComponent * (1 - alpha),

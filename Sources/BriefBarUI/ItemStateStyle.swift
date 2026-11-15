@@ -78,8 +78,8 @@ extension ItemState {
 
 /// Words in one of the colors that symbols are drawn in: the symbols' colors, such as `ItemState.color`, are too light for
 /// words on a light background, so in light mode these are darker, to read at 4.5:1 or more on a list's white and on the
-/// window's tinted backdrop; in dark mode, red, blue, pink, purple and gray are lighter, to read on a raised card too.
-/// Symbols keep their bright colors.
+/// window's tinted backdrop, also in a capsule tinted with the symbol's color, such as a link's or a stage's; in dark mode,
+/// red, blue, pink, purple and gray are lighter, to read on a raised card too. Symbols keep their bright colors.
 package enum TextTint: CaseIterable, Sendable {
     case orange, red, blue, green, teal, purple, pink, mint, gray, yellow, cyan, magenta
 
@@ -93,17 +93,17 @@ package enum TextTint: CaseIterable, Sendable {
 
     private var light: NSColor {
         switch self {
-        case .orange: return NSColor(srgbRed: 0.67, green: 0.26, blue: 0.02, alpha: 1)
-        case .red: return NSColor(srgbRed: 0.77, green: 0.09, blue: 0.11, alpha: 1)
-        case .blue: return NSColor(srgbRed: 0.04, green: 0.35, blue: 0.79, alpha: 1)
-        case .green: return NSColor(srgbRed: 0.10, green: 0.44, blue: 0.19, alpha: 1)
-        case .teal: return NSColor(srgbRed: 0, green: 0.42, blue: 0.50, alpha: 1)
+        case .orange: return NSColor(srgbRed: 0.63, green: 0.24, blue: 0.02, alpha: 1)
+        case .red: return NSColor(srgbRed: 0.70, green: 0.08, blue: 0.10, alpha: 1)
+        case .blue: return NSColor(srgbRed: 0.04, green: 0.33, blue: 0.75, alpha: 1)
+        case .green: return NSColor(srgbRed: 0.10, green: 0.42, blue: 0.18, alpha: 1)
+        case .teal: return NSColor(srgbRed: 0, green: 0.41, blue: 0.49, alpha: 1)
         case .purple: return NSColor(srgbRed: 0.47, green: 0.20, blue: 0.66, alpha: 1)
-        case .pink: return NSColor(srgbRed: 0.70, green: 0.08, blue: 0.34, alpha: 1)
-        case .mint: return NSColor(srgbRed: 0, green: 0.43, blue: 0.40, alpha: 1)
+        case .pink: return NSColor(srgbRed: 0.66, green: 0.07, blue: 0.32, alpha: 1)
+        case .mint: return NSColor(srgbRed: 0, green: 0.41, blue: 0.38, alpha: 1)
         case .gray: return NSColor(srgbRed: 0.33, green: 0.33, blue: 0.36, alpha: 1)
         case .yellow: return NSColor(srgbRed: 0.48, green: 0.36, blue: 0, alpha: 1)
-        case .cyan: return NSColor(srgbRed: 0, green: 0.40, blue: 0.62, alpha: 1)
+        case .cyan: return NSColor(srgbRed: 0, green: 0.38, blue: 0.59, alpha: 1)
         case .magenta: return NSColor(srgbRed: 0.60, green: 0.16, blue: 0.50, alpha: 1)
         }
     }
