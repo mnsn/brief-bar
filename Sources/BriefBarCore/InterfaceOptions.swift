@@ -1,18 +1,20 @@
 import Foundation
 
+/// In the order Settings › Appearance lists them: first those a new install starts with on (`NewInstall`), then the others.
 public enum InterfaceOption: String, CaseIterable, Sendable {
+    case clearerStates
+    case readableRows
+    case simpleLayoutControls
     case compactBriefs
     case quietAppearance
-    case readableRows
     case compactMenuBar
-    case clearerStates
     case visibleActions
-    case simpleLayoutControls
 
     public var defaultsKey: String { "interface.\(rawValue)" }
 }
 
-/// Presentation choices only: none are enabled implicitly or stored in a source's settings or layout.
+/// Presentation choices only: none is stored in a source's settings or layout. Each is off until you turn it on, but for
+/// those a new install starts with on (`NewInstall`).
 public struct InterfaceOptions: Equatable, Sendable {
     private var enabled: Set<InterfaceOption>
 

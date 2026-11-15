@@ -53,9 +53,10 @@
 
 ## See what needs you at a glance
 
-Each source gets its own item in the menu bar, with its counts: pull requests that need you, failed or are ready to
-complete, and Copilot sessions waiting for you, running, done or stopped. Click an item for its list, add them all up in
-one item, put a widget on your desktop, or open the window for everything, with a page for each source.
+BriefBar starts with one item in the menu bar that adds up every source's counts: pull requests that need you, failed or
+are ready to complete, and Copilot sessions waiting for you, done or stopped. Click it for one list of everything by
+state, or give each source an item of its own, with its own counts and list, as here; an update keeps the items you
+have. Put a widget on your desktop, or open the window for everything, with a page for each source.
 
 <p align="center">
   <picture>
@@ -72,7 +73,9 @@ one item, put a widget on your desktop, or open the window for everything, with 
 | **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |
 
 Hide what you don't need. To read long descriptions and comments, hold **⌘** and scroll in a window to
-make its text bigger.
+make its text bigger. A new install starts with **Clearer States and Counts**, **Aligned, Easier-to-Read Rows** and
+**Simple Layout Choices** on, in **Settings › Appearance**; an update keeps the look you have, so turn them on there for
+the same.
 [Layouts and appearance options →](docs/user-guide.md#menu-bar-widgets-and-windows)
 
 ## Know what's next

@@ -39,8 +39,8 @@ final class AppModel: ObservableObject {
     /// ⌘-scrolling in a window, which changes the text size of windows' pages.
     private var scrollMonitor: Any?
     private var textSizeScrolling = TextSizeScrolling()
-
-    private static let launchedKey = "hasLaunched"
+    /// BriefBar's first launch with these preferences (`NewInstall`), which opens Settings.
+    private let isNewInstall: Bool
 
     /// - Parameters:
     ///   - demo: made-up data for every source, which are all on.
@@ -55,6 +55,10 @@ final class AppModel: ObservableObject {
         } else {
             defaults = .standard
         }
+        // A new install starts with its own look, saved before anything reads it: so does the demo, whose preferences are
+        // new each time.
+        isNewInstall = NewInstall.isNew(defaults)
+        NewInstall.saveLook(to: defaults)
         services = AppServices(defaults: defaults, isDemo: demo)
         // Only the app itself asks the Copilot CLI.
         agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering, sessionUpdates: services.sessionUpdates)
@@ -91,6 +95,16 @@ final class AppModel: ObservableObject {
             for source in sources { choices.turnOn(source.id, version: source.description.version) }
         }
         self.choices = choices
+        // And with one menu-bar item, which every source you turn on joins. The demo keeps one for each section, so that its
+        // pictures show each source's list.
+        if !demo {
+            let menuBarSections = sources.flatMap { $0.sections.filter { $0.surfaces.contains(.menuBar) } }
+            NewInstall.saveMenuBar(
+                sections: menuBarSections.map(\.id),
+                hidden: Set(menuBarSections.filter { $0.hiddenAtFirst.contains(.menuBar) }.map(\.id)),
+                to: defaults
+            )
+        }
         WidgetMigration.run(defaults)
         widgetOptions = WidgetOptions.load(from: defaults)
         menuBarItemOptions = MenuBarItemOptions.load(from: defaults)
@@ -645,12 +659,11 @@ final class AppModel: ObservableObject {
         updateSurfaces()
         watchTextSizeScrolling()
 
-        let firstLaunch = !services.defaults.bool(forKey: Self.launchedKey)
-        services.defaults.set(true, forKey: Self.launchedKey)
+        NewInstall.launched(services.defaults)
         if let review = sources.first(where: { state(of: $0.id) == .needsReview }) {
             // It reads more since you turned it on: it waits for you to look.
             openSettings(.source(review.id))
-        } else if firstLaunch && !services.isDemo {
+        } else if isNewInstall && !services.isDemo {
             openSettings(.general)
         }
         Log.app.info("Launched from \(Bundle.main.bundlePath, privacy: .public) with \(self.onSources.map(\.id.rawValue).joined(separator: ", "), privacy: .public) on")

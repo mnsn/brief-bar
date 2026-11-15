@@ -69,8 +69,10 @@ Each source has sections: **Chats** and **Group Chats** for Teams, **Pull Reques
 **Pipelines** for Azure DevOps, **Sessions** for Copilot, and **Pull Requests** for GitHub. BriefBar
 shows them in three places, each arranged in Settings:
 
-- **The menu bar** (Settings › Menu Bar): each section starts with an item of its own, but Sprint and
-  Pipelines start hidden there. Click one for its list.
+- **The menu bar** (Settings › Menu Bar): a new install starts with one BriefBar item, which each
+  source you turn on joins, with its counts added up and one list of everything by state, as below.
+  Sprint and Pipelines start hidden there. **Give Each Its Own Item** gives each section an item of its
+  own, as BriefBar started with before; an update keeps the items you have. Click an item for its list.
 - **Desktop widgets** (Settings › Widgets): Azure DevOps' pull requests, Copilot and GitHub each start
   with a widget, behind your windows or floating above them, in three sizes. Teams' widgets, Sprint and
   Pipelines start hidden, and so does the **Overview** widget: every source's counts, the brief's
@@ -88,15 +90,15 @@ shows them in three places, each arranged in Settings:
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again: in Settings, each item is a card with a chip for
-each of its sections, and you drag a chip onto another card. Items that share sections show their
-counts side by side, with a tab for each in the list. The list opens at the tab you looked at last,
+each of its sections, and you drag a chip onto another card. Items you put together show their counts
+side by side, with a tab for each in the list. The list opens at the tab you looked at last,
 even after BriefBar restarts, and the first time at the one that needs you. You can also hide a section
 you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever you
 didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 
 A menu-bar item that shows several sections can instead add its counts up by state, the same for
-every source: set its **Counts** to **Added Up** in Settings › Menu Bar. With everything in one
-item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
+every source: set its **Counts** to **Added Up** in Settings › Menu Bar, as a new install's item has
+it. With everything in one item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
 
 | | Teams | Azure DevOps | Copilot | GitHub |
 |---|---|---|---|---|
@@ -107,10 +109,14 @@ item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
 
 ⚡ is off until you turn it on there. A source that can't show what it should, such as Teams without
 Full Disk Access or Azure DevOps without a sign-in, adds a small ⚠, and the item's tooltip says
-what's in each count. Its **List** can also show **Everything by State**: under a brief, what needs
-you, what's wrong, what's running, then what's done or ready, from every section, the newest first,
-each with the actions its own list has. Each item keeps its counts and its list as they were until you
-switch them.
+what's in each count. Its **List** can also show **Everything by State**, as a new install's item
+does: under a brief, what needs you, what's wrong, what's running, then what's done or ready, from
+every section, the newest first, each with the actions its own list has. Each item keeps its counts
+and its list as they were until you switch them.
+
+To have one item after an update, as a new install does, click **Put All in One Item** in Settings ›
+Menu Bar (under **Custom**, with **Simple Layout Choices** on), then set its **Counts** to **Added Up**
+and its **List** to **Everything by State**.
 
 <p align="center">
   <picture>
@@ -138,25 +144,28 @@ switch them.
   </picture>
 </p>
 
-## Optional appearance improvements
+## Appearance options
 
-**Settings › Appearance** has seven independent options. **All start off**, including after an
-update. Turn on only the changes you want; none enables a source, grants permissions or starts an agent.
+**Settings › Appearance** has seven independent options. A new install starts with the first three
+on, **Clearer States and Counts**, **Aligned, Easier-to-Read Rows** and **Simple Layout Choices**, and
+the other four off. An update keeps your choices: an install from before keeps each option as it was,
+off unless you turned it on, so turn those three on for the look a new install has. None of them turns
+a source on, grants permissions or starts an agent.
 
 **Text Size in Windows**, at the top of the page, makes the text on the pages of BriefBar's windows
 bigger, from its usual size up to 150%, for reading long descriptions and comments. In a window, hold
 **⌘** and scroll up to make it bigger, or down to make it smaller. The menu bar's lists, the widgets
 and Settings keep their size.
 
-| Option | When you turn it on |
-|---|---|
-| **Compact Briefs** | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
-| **Quieter Colors and Surfaces** | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
-| **Aligned, Easier-to-Read Rows** | Aligns titles across sources and makes reasons and previews larger. Widgets grow slightly to fit complete rows. |
-| **Compact Menu Bar** | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
-| **Clearer States and Counts** | Separates **Ready to Merge** from **Finished** in the overview. Sidebar badges and list headers count items needing you or failing, while remaining sprint work is labeled **left**. |
-| **Visible Row and Widget Actions** | Adds a row's **…** menu with explicitly named destinations and its existing actions. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
-| **Simple Layout Choices** | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. |
+| Option | New install | When it's on |
+|---|---|---|
+| **Clearer States and Counts** | On | Separates **Ready to Merge** from **Finished** in the overview. Sidebar badges and list headers count items needing you or failing, while remaining sprint work is labeled **left**. |
+| **Aligned, Easier-to-Read Rows** | On | Aligns titles across sources and makes reasons and previews larger. Widgets grow slightly to fit complete rows. |
+| **Simple Layout Choices** | On | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. |
+| **Compact Briefs** | Off | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
+| **Quieter Colors and Surfaces** | Off | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
+| **Compact Menu Bar** | Off | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
+| **Visible Row and Widget Actions** | Off | Adds a row's **…** menu with explicitly named destinations and its existing actions. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
 
 Turning an appearance option off restores its usual presentation. Compact Menu Bar never rewrites
 your saved grouping or unhides sections: turning it off restores your saved arrangement. Choosing a
@@ -1594,12 +1603,15 @@ In **Settings › Menu Bar**, **Widgets** and **Windows**, each item is a card w
 section it shows. Drag a chip onto another card to put them together, onto **New Item** (or **New
 Widget**, **New Window**) to give it one of its own, or onto **Hidden**; click **New Item** to choose a
 section instead, or right-click a chip for the same moves. **Put All in One** and **Give Each Its Own**
-change them all at once. Settings › Menu Bar starts with your menu bar as it is now, BriefBar's items
-left to right with your counts, and each card shows its item the same way. A menu-bar item that shows
-several sections has **Counts**, **Side by Side** or **Added Up** with the states it adds up, and
-**List**, **A Tab for Each Section** or **Everything by State**. Each widget has its own **Position**
-(on the desktop or floating above windows) and **Size** (compact, medium or large), there and in its
-right-click menu, and Settings › Widgets turns on the **Overview** widget.
+change them all at once. With **Simple Layout Choices** on, as on a new install, these pages start with
+**Together**, **Separate** and **Custom**, and the cards are under **Custom**. Settings › Menu Bar
+starts with your menu bar as it is now, BriefBar's items left to right with your counts, and each card
+shows its item the same way. A menu-bar item that shows several sections has **Counts**, **Side by
+Side** or **Added Up** with the states it adds up, and **List**, **A Tab for Each Section** or
+**Everything by State**: a new install's one item starts with **Added Up** and **Everything by State**.
+Each widget has its own **Position** (on the desktop or floating above windows) and **Size** (compact,
+medium or large), there and in its right-click menu, and Settings › Widgets turns on the **Overview**
+widget.
 
 ## Privacy
 

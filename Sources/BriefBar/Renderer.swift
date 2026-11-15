@@ -111,8 +111,8 @@ enum Renderer {
         all.combineAll(items.flatMap(\.sections))
         let allItems = all.visibleItems(showing: shown)
         let merged = allItems.first.map { [$0.id: MenuBarItemOptions(byState: true)] } ?? [:]
-        // And with everything in one list by state.
-        let byState = allItems.first.map { [$0.id: MenuBarItemOptions(byState: true, listByState: true)] } ?? [:]
+        // And with everything in one list by state, as a new install's one item starts.
+        let byState = allItems.first.map { [$0.id: NewInstall.menuBarItemOptions] } ?? [:]
         // The Menu Bar settings' example: Azure DevOps with Copilot, and Group Chats hidden.
         var example = combined
         example.hide(.teamsGroupChats)
@@ -220,7 +220,7 @@ enum Renderer {
                 }
             }
 
-            // The desktop the README's tour plays on: an item for each source's section, as BriefBar starts, beside a widget
+            // The desktop the README's tour plays on: an item for each source's section, as the demo starts, beside a widget
             // with every section; then with Copilot's sessions open, and Azure DevOps' pull requests; and bare, for the
             // tour's window to open over.
             if items.count > 1, shownWidgetSections.count > 1 {
@@ -437,11 +437,11 @@ enum Renderer {
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(view, appearance: appearance), "settings-\(name)-whole-\(suffix)")
             }
-            // General, the sources' pages and those about what BriefBar does across sources, whole.
+            // General, the sources' pages, Appearance and those about what BriefBar does across sources, whole.
             let wholePages: [(String, SettingsDestination)] = [("general", .general)]
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
-                + [("pull-requests", .pullRequests), ("links-and-summaries", .linksAndSummaries), ("notifications", .notifications),
-                   ("send-to-copilot", .sendToCopilot)]
+                + [("appearance", .appearance), ("pull-requests", .pullRequests), ("links-and-summaries", .linksAndSummaries),
+                   ("notifications", .notifications), ("send-to-copilot", .sendToCopilot)]
             for (name, destination) in wholePages {
                 wholePage(SettingsPage(model: model, destination: destination) { _ in }, name: name)
             }
@@ -579,7 +579,9 @@ enum Renderer {
             if demo {
                 let savedInterface = model.services.interfaceOptions
                 let savedTextSize = model.services.textSize
-                func interfaceExample(_ enabled: Set<InterfaceOption>, name: String) {
+                /// - Parameter windowOnly: only the window, as for a text size, which the menu bar's lists and the widgets don't
+                ///   take.
+                func interfaceExample(_ enabled: Set<InterfaceOption>, name: String, windowOnly: Bool = false) {
                     for option in InterfaceOption.allCases {
                         model.services.setInterfaceOption(option, enabled: enabled.contains(option))
                     }
@@ -595,6 +597,7 @@ enum Renderer {
                             .frame(width: 980, height: 680)
                         write(Snapshot.render(view, appearance: appearance), "interface-\(name)-window-\(suffix)")
                     }
+                    guard !windowOnly else { return }
                     if enabled.contains(.compactMenuBar), let first = model.presentedMenuBarItems.first {
                         picture(of: [first], pressed: 0, name: "interface-\(name)-menubar")
                     }
@@ -605,12 +608,13 @@ enum Renderer {
                         page(.layout(.menuBar), name: "interface-\(name)-layout")
                     }
                 }
+                // Each option on its own.
                 for option in InterfaceOption.allCases {
                     interfaceExample([option], name: option.rawValue)
                 }
-                // The largest text, on its own and with every option.
+                // The largest text, with the demo's look, which is a new install's, and with every option.
                 model.services.setTextSize(TextSize(percent: TextSize.percentages.last ?? 100))
-                interfaceExample([], name: "textSize")
+                interfaceExample(Set(InterfaceOption.allCases.filter { savedInterface[$0] }), name: "textSize", windowOnly: true)
                 interfaceExample(Set(InterfaceOption.allCases), name: "all")
                 page(.appearance, name: "appearance-enabled")
                 for option in InterfaceOption.allCases {

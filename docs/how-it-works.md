@@ -217,8 +217,11 @@ each with a layout of its own (`SectionLayout` in `Sources/BriefBarCore`, saved 
 `widgetLayout` and `windowLayout`): its items, in order (menu-bar items, widgets or windows), the
 sections each one shows, and the sections you've hidden from it.
 
-- Each section starts in a menu-bar item and a widget of its own, and every section starts in one
-  window. Teams' widgets start hidden, so an update doesn't put your chats on the desktop.
+- Each section starts in a widget of its own, and every section starts in one window. Teams' widgets
+  start hidden, so an update doesn't put your chats on the desktop. In the menu bar, a new install
+  ([below](#a-new-install)) starts with every section in one item, Sprint and Pipelines hidden in it;
+  an install that launched before keeps its items, where a section that isn't placed yet gets one of
+  its own.
 - In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), each item is a card with a
   chip for each section it shows. You drag a chip onto another card, onto **New Item** or onto
   **Hidden**, or pick the same move from its right-click menu, or a section from New Item's
@@ -300,13 +303,16 @@ from a list, it hands over to the Dock, which has no windows to bring forward, a
 a menu-bar app, so a menu opened from a list over an app in full screen would open out of sight: while a menu is
 open, BriefBar puts each of its menu windows on every Space (`MenusOverFullScreen`).
 
-### Optional presentation
+### Appearance options
 
-**Settings › Appearance** exposes seven independent `InterfaceOption`s. `InterfaceOptions` loads
-each boolean from `interface.<option>` and defaults every missing value to false. `AppServices`
-publishes changes to the shared SwiftUI environment, so existing windows, lists and widgets update
-without changing a source's consent or its settings. The app also refreshes menu-bar items and widget
-sizes; rendering never starts these live surfaces.
+**Settings › Appearance** exposes seven independent `InterfaceOption`s, each a switch with a line on
+what it does and **ⓘ** for the rest (`SettingToggle`), those a new install starts with on first.
+`InterfaceOptions` loads each boolean from `interface.<option>` and defaults every missing value to
+false: a new install saves its own before anything loads them ([below](#a-new-install)), and an
+install that launched before keeps what it has. `AppServices` publishes changes to the shared SwiftUI
+environment, so existing windows, lists and widgets update without changing a source's consent or its
+settings. The app also refreshes menu-bar items and widget sizes; rendering never starts these live
+surfaces.
 
 Compact Menu Bar derives one temporary item from the sections already visible in the saved layout.
 It never saves that item into `SectionLayout`, changes hidden sections, or removes the original items'
@@ -328,6 +334,30 @@ Dynamic Type, so a text style scales from its fixed size there. ⌘-scrolling ch
 event monitor, only over a BriefBar window or a sheet over one (`WindowHost.owns`): `TextSizeScrolling`
 turns each notch of a wheel, or each 40 points of a swipe, into a step, ignores momentum, and takes up
 as bigger, as toward the top of a page, whichever way your scrolling goes.
+
+### A new install
+
+BriefBar's first launch, before it saved anything of its own, is a new install (`NewInstall` in
+`Sources/BriefBarCore`), which it tells by `hasLaunched`: `AppModel.launch` has saved it at every
+launch since BriefBar's first version, so every install that ever launched has it, and an update
+never counts as new. A new install saves what it starts with before anything reads it, as Settings
+saves what you choose, so it's yours from then on: an update never writes it again, and a later
+version doesn't change it.
+
+- **Its look**: Clearer States and Counts, Aligned, Easier-to-Read Rows and Simple Layout Choices on,
+  and the other options off, each in `interface.<option>`. An option that's somehow saved already
+  keeps its value.
+- **Its menu bar**, unless one is saved: one item with every section that can show there, those of
+  the sources that are off too, as **Put All in One** puts them (`SectionLayout.combineAll`), so each
+  source you turn on joins it; the sections that start hidden there (`SectionInfo.hiddenAtFirst`),
+  Sprint and Pipelines, hidden in it; and that item's options, **Added Up** with ✋, ✕ and ✓, and
+  **Everything by State** (`NewInstall.menuBarItemOptions`). **Give Each Its Own** splits it as it
+  would any item, the sections of sources that are off included, so those you turn on afterwards get
+  items of their own. A section a later version adds isn't in the item yet, so it gets one of its own,
+  as on any install.
+
+The demo's preferences are new each time, so it starts with a new install's look, but it keeps an
+item for each section, so that `make screenshots` draws each source's list.
 
 ## Everything by state
 
@@ -360,8 +390,9 @@ section, and `make demo-check` checks them, each section's and their sum.
 A menu-bar item that shows several sections has options of its own (`MenuBarItemOptions`, saved as
 `menuBarItemOptions` by the item's ID, like a widget's): **Counts** side by side or added up, with
 the states it shows, and its **List**. They start as items always were, side by side with a tab per
-section, with ✋, ✕ and ✓ but not ⚡, and an item that goes away takes its options with it, so one
-that later gets its ID starts over. Added up, the item draws one symbol and count per state, in
+section, with ✋, ✕ and ✓ but not ⚡, but for a new install's one item, which starts added up, with one
+list by state ([A new install](#a-new-install)); and an item that goes away takes its options with it,
+so one that later gets its ID starts over. Added up, the item draws one symbol and count per state, in
 Azure DevOps' and Copilot's colors (`MenuBarItemContent`), then a small ⚠ if a section can't show what
 it should (`MenuBarSegment.problem`, such as Teams without Full Disk Access). Its tooltip and VoiceOver
 say what's in each count: "Needs you: 2 chats, 2 group chats, 4 pull requests, 3 Copilot sessions"
