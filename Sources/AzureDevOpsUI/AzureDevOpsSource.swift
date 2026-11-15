@@ -1256,7 +1256,8 @@ package final class AzureDevOpsSource: BriefBarSource {
             .environmentObject(moved.states)
             .environment(\.panelStyle, .page)
             .textSize(from: services)
-            .frame(width: 1_600, height: 1_300)
+            // As `my-work-sprint-tasks` is, which shows the board before the move.
+            .frame(width: 1_600, height: 2_050)
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
             renderings.append((name: "my-work-state-moved", view: environment(page)))
