@@ -85,11 +85,15 @@ package enum TextTint: CaseIterable, Sendable {
 
     package var color: Color { Color(nsColor: nsColor) }
 
-    package var nsColor: NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        }
-    }
+    /// The same color each time, as SwiftUI tells apart two made alike: views and links compare what they draw in it to
+    /// tell what changed.
+    package var nsColor: NSColor { Self.colors[self] ?? light }
+
+    private static let colors = Dictionary(uniqueKeysWithValues: allCases.map { tint in
+        (tint, NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? tint.dark : tint.light
+        })
+    })
 
     private var light: NSColor {
         switch self {

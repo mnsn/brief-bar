@@ -1,4 +1,5 @@
 import BriefBarCore
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -71,6 +72,25 @@ import Testing
         #expect(Links.fallback(gitHubPullRequest).open != nil)
         #expect(Links.fallback(session).open != nil)
         #expect(Links.fallback(workItem).open == nil)
+    }
+
+    /// A source lists its things again on every refresh: as they were, nothing is redrawn, but in a new color for their
+    /// words they are, as they are when anything else they show changes.
+    @Test func listingAThingAgainAsItWasRedrawsNothingButANewColorForItsWordsDoes() {
+        let links = on()
+        func listed(_ tint: TextTint) -> LinkedItem {
+            LinkedItem(ref: workItem, label: "5101", title: "Round coupons half up", symbol: "circle", color: .orange, textColor: tint.color)
+        }
+        links.publish(.azureDevOps, links: [], items: [listed(.orange)])
+        var changes = 0
+        let watching = links.objectWillChange.sink { changes += 1 }
+
+        links.publish(.azureDevOps, links: [], items: [listed(.orange)])
+        #expect(changes == 0)
+        links.publish(.azureDevOps, links: [], items: [listed(.red)])
+        #expect(changes > 0)
+        #expect(links.describe(workItem).textColor == TextTint.red.color)
+        withExtendedLifetime(watching) {}
     }
 
     @Test func unlinkingWhatAzureDevOpsLinksHidesItHereAndYourOwnLinksGo() {

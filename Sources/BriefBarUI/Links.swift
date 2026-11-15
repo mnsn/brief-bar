@@ -129,10 +129,11 @@ package struct SentToCopilot: Equatable, Sendable {
 extension LinkedItem: Equatable {
     package static func == (lhs: LinkedItem, rhs: LinkedItem) -> Bool {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
-            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
-            && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil) && lhs.openItself?.help == rhs.openItself?.help && lhs.sent == rhs.sent
-            && lhs.url == rhs.url && lhs.parts == rhs.parts && (lhs.show == nil) == (rhs.show == nil)
+            && lhs.color == rhs.color && lhs.textColor == rhs.textColor && lhs.state == rhs.state && lhs.status == rhs.status
+            && lhs.sharedStatus == rhs.sharedStatus && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date
+            && (lhs.menu == nil) == (rhs.menu == nil) && (lhs.open == nil) == (rhs.open == nil)
+            && lhs.openItself?.help == rhs.openItself?.help && lhs.sent == rhs.sent && lhs.url == rhs.url && lhs.parts == rhs.parts
+            && (lhs.show == nil) == (rhs.show == nil)
     }
 }
 
