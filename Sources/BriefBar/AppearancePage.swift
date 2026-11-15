@@ -101,7 +101,7 @@ private extension InterfaceOption {
         case .compactBriefs: "Shortens the brief to two highlights, and shows a chat's summary in place of its preview."
         case .quietAppearance: "Keeps color for status symbols, with neutral navigation, avatars and backgrounds."
         case .compactMenuBar: "Shows one menu-bar icon that counts what needs you or failed, and keeps your arrangement."
-        case .visibleActions: "Adds a ⋯ menu to each row, and View All to widgets."
+        case .visibleActions: "Keeps each row's ⋯ menu and Finished My Review in view, and adds View All to widgets."
         }
     }
 
@@ -147,9 +147,11 @@ private extension InterfaceOption {
             """
         case .visibleActions:
             """
-            Adds a ⋯ menu to each row, with its actions and where each one goes. Widgets get View All, or, for a section \
-            you've hidden from windows, Show in a Window…, which opens its layout settings. Opening something still marks \
-            it read or seen as its source always did, and nothing approves or completes work for you.
+            A row's ⋯ menu, with its actions and where each one goes, shows while you point at the row or it has keyboard \
+            focus, and so does Finished My Review on a pull request in Your review: this keeps them in view on every row, \
+            widgets' too. Widgets get View All, or, for a section you've hidden from windows, Show in a Window…, which opens \
+            its layout settings. Opening something still marks it read or seen as its source always did, and nothing \
+            approves or completes work for you.
             """
         }
     }

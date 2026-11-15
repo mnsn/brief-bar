@@ -29,11 +29,14 @@ extension View {
         modifier(InterfaceEnvironment(services: services))
     }
 
+    /// The row's ⋯ menu, at the end of its first line: what a click does, then `actions`. It shows while the row is in use
+    /// (`activity`), and always with Visible Row and Widget Actions on; a row without an activity, as in a widget, has it
+    /// only then.
     package func rowActions<Actions: View>(
-        for title: String, openTitle: String, open: @escaping () -> Void,
+        for title: String, openTitle: String, open: @escaping () -> Void, activity: RowActivity? = nil,
         @ViewBuilder actions: @escaping () -> Actions
     ) -> some View {
-        modifier(RowActions(title: title, openTitle: openTitle, open: open, actions: actions))
+        modifier(RowActions(title: title, openTitle: openTitle, open: open, activity: activity, actions: actions))
     }
 }
 
@@ -49,12 +52,14 @@ private struct RowActions<Actions: View>: ViewModifier {
     let title: String
     let openTitle: String
     let open: () -> Void
+    let activity: RowActivity?
     @ViewBuilder var actions: () -> Actions
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
+    @Environment(\.offersRowActions) private var offersRowActions
 
     func body(content: Content) -> some View {
-        if options.visibleActions {
+        if options.visibleActions || (activity != nil && offersRowActions) {
             HStack(alignment: .top, spacing: 0) {
                 content.frame(maxWidth: .infinity, alignment: .leading)
                 Menu {
@@ -63,19 +68,33 @@ private struct RowActions<Actions: View>: ViewModifier {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(size: 13, weight: .semibold)
-                        .frame(width: 28 * textScale, height: 28 * textScale)
+                        .frame(width: side, height: side)
+                        .background {
+                            // Under the pointer, as its own spot, the way a toolbar's button shows it can be pressed.
+                            if !options.visibleActions {
+                                Circle().fill(Color.primary.opacity(0.07))
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .labelMenuStyle()
                 .fixedSize()
-                .padding(.top, 5)
-                .padding(.trailing, 4)
+                .rowFocus(activity, .actions)
+                .modifier(RowActionVisibility(isShown: options.visibleActions || activity?.isActive == true))
+                .padding(.top, options.visibleActions ? 5 : 3)
+                .padding(.trailing, options.visibleActions ? 4 : 2)
                 .help("\(openTitle) and other actions")
                 .accessibilityLabel("Actions for \(title)")
             }
         } else {
             content
         }
+    }
+
+    /// As big as Visible Row and Widget Actions makes it, an easy target; smaller where it shows only while you're at the
+    /// row, so that it takes less from the title.
+    private var side: CGFloat {
+        (options.visibleActions ? 28 : 22) * textScale
     }
 }
 

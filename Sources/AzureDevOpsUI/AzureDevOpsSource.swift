@@ -1238,7 +1238,40 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
         }
         renderings += stateRenderings()
+        renderings += rowActionsRenderings()
         return renderings
+    }
+
+    /// One of the Pull Requests page's rows, on its card, as wide as the page in a window as it opens: as it is, and while
+    /// you point at it or it has focus, its ⋯ and Finished My Review showing. The richest one in Your review: one of yours,
+    /// with what's left, its order and its links.
+    private func rowActionsRenderings() -> [(name: String, view: AnyView)] {
+        let ordering = services.pullRequestOrder
+        guard let store, ordering.isOn else { return [] }
+        let inReview = store.items.filter { ordering.stage(of: $0.key.linkRef)?.stage == .yourReview }
+        guard let item = inReview.first(where: { $0.readiness != nil && $0.detailIsWritten }) ?? inReview.first else { return [] }
+        func row(active: Bool) -> AnyView {
+            let row = PRRowView(
+                item: item, now: store.now, showDetails: {},
+                order: OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, open: { _ in }, names: ordering.names),
+                mission: MissionMenuContext.of(item.key.linkRef, order: ordering, mission: nil, undo: .top),
+                stage: ordering.stage(of: item.key.linkRef), ordering: ordering
+            ) {}
+                .environment(\.showsRowActions, active)
+                // The row alone, without the summary the demo keeps under it for its page's pictures.
+                .environment(\.offersSummaries, false)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 7)
+                .background(GlassCard(cornerRadius: 18))
+                .padding(24)
+                .frame(width: 780)
+                .environment(\.panelStyle, .page)
+                .textSize(from: services)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            return environment(row)
+        }
+        return [(name: "pull-requests-row", view: row(active: false)), (name: "pull-requests-row-actions", view: row(active: true))]
     }
 
     /// The Sprint page with Make Changes in Azure DevOps on, once Task 5112's state changed, with its details beside the

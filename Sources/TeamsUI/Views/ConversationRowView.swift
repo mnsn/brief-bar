@@ -3,7 +3,7 @@ import TeamsCore
 import SwiftUI
 
 /// One chat: avatar, name, the latest message, how long ago, how many messages are unread and, on
-/// request, a one-sentence summary from Apple's on-device model.
+/// request, a one-sentence summary from Apple's on-device model. Its ⋯ menu shows while you're at it (`RowActivity`).
 struct ConversationRowView: View {
     let conversation: ConversationSummary
     let now: Date
@@ -14,7 +14,7 @@ struct ConversationRowView: View {
     /// Nil when summaries are off or unavailable.
     var summarize: (() -> Void)?
 
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
 
@@ -69,13 +69,10 @@ struct ConversationRowView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .rowFocus(activity, .row)
         .overlay(alignment: .topTrailing) {
             if showsSummarizeButton, let summarize {
                 Button(action: summarize) {
@@ -87,16 +84,6 @@ struct ConversationRowView: View {
                 .help("Summarize with Apple Intelligence, on this Mac")
                 .padding(.top, 7)
                 .padding(.trailing, 10)
-            }
-        }
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            Button("Open in Teams", action: open)
-            if let markRead, conversation.isUnread {
-                Button("Mark as Read", action: markRead)
-            }
-            if let summarize, showPreview {
-                Button("Summarize with Apple Intelligence", action: summarize)
             }
         }
         .help(helpText)
@@ -112,7 +99,7 @@ struct ConversationRowView: View {
                 Button("Summarize", action: summarize)
             }
         }
-        .rowActions(for: conversation.name, openTitle: "Open in Teams", open: open) {
+        .rowActions(for: conversation.name, openTitle: "Open in Teams", open: open, activity: activity) {
             if let markRead, conversation.isUnread {
                 Button("Mark as Read", action: markRead)
             }
@@ -120,11 +107,26 @@ struct ConversationRowView: View {
                 Button("Summarize", action: summarize)
             }
         }
+        // The row and its ⋯, together.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { activity.isHovered = $0 }
+        .contextMenu {
+            Button("Open in Teams", action: open)
+            if let markRead, conversation.isUnread {
+                Button("Mark as Read", action: markRead)
+            }
+            if let summarize, showPreview {
+                Button("Summarize with Apple Intelligence", action: summarize)
+            }
+        }
     }
 
     /// The sparkles button replaces the time while the pointer is over a chat that has no summary yet.
     private var showsSummarizeButton: Bool {
-        isHovered && showPreview && summarize != nil && summary == nil && !options.visibleActions
+        activity.isPointedAt && showPreview && summarize != nil && summary == nil && !options.visibleActions
     }
 
     private var lastMessageDate: Date {

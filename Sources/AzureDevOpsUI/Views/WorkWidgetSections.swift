@@ -298,13 +298,14 @@ private struct WidgetWorkRow: View {
     private var opensDetails: Bool { services.hasPage(.azureDevOpsSprint) }
 }
 
-/// A pinned pipeline in the widget, and in a list by state: how its latest run went, and its stages as dots.
+/// A pinned pipeline in the widget, and in a list by state: how its latest run went, and its stages as dots. In a list, its
+/// ⋯ shows while you're at it, as other rows' do (`RowActivity`).
 struct WidgetPipelineRow: View {
     let status: PipelineStatus
     let now: Date
     let action: () -> Void
 
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
@@ -342,15 +343,16 @@ struct WidgetPipelineRow: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .rowFocus(activity, .row)
         .help("\(status.pipeline.name): \(status.headline)\nClick to open the latest run in Azure DevOps")
-        .rowActions(for: status.pipeline.name, openTitle: "Open in Azure DevOps", open: action) { EmptyView() }
+        .rowActions(for: status.pipeline.name, openTitle: "Open in Azure DevOps", open: action, activity: activity) { EmptyView() }
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { activity.isHovered = $0 }
     }
 }

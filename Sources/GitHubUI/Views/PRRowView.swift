@@ -3,7 +3,9 @@ import BriefBarUI
 import GitHubCore
 import SwiftUI
 
-/// One pull request: why it's in its group, its title, where it is and how long since it changed.
+/// One pull request, as Azure DevOps' rows are: its title and how long since it changed; why it's in its group, who, and
+/// where it is; and, on a quiet line, where it stands in its mission and its links. Its ⋯ menu shows while you're at it
+/// (`RowActivity`).
 struct PRRowView: View {
     let item: GitHubPRSnapshot
     let now: Date
@@ -12,7 +14,7 @@ struct PRRowView: View {
     var order: OrderRowContext? = nil
     var action: () -> Void
 
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
 
@@ -27,9 +29,9 @@ struct PRRowView: View {
         // The row and its summary, together.
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                .fill(activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
         )
-        .onHover { isHovered = $0 }
+        .onHover { activity.isHovered = $0 }
         .contextMenu {
             Button("Open on GitHub", action: action)
             SummarizeMenuItems(linkRef)
@@ -53,7 +55,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: isHovered)
+                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: activity.isPointedAt)
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
@@ -61,19 +63,20 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        HStack(spacing: 6) {
+                        // Why, who, and where, the reference cut short in its middle before the rest: its order capsule and
+                        // links are on its quiet line.
+                        HStack(spacing: 0) {
                             Text(subtitle)
-                                .font(size: options.rowReasonSize, weight: .medium)
-                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
-                                .lineLimit(1)
-                            LinkCapsules(linkRef)
+                                .layoutPriority(1)
+                            Text(" · " + item.pullRequest.reference)
+                                .truncationMode(.middle)
+                        }
+                        .font(size: options.rowReasonSize, weight: .medium)
+                        .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
+                        .lineLimit(1)
+                        RowLinksLine(linkRef, hasLeading: order?.showsCapsule == true) {
                             if let order { OrderCapsule(order) }
                         }
-                        Text(item.pullRequest.reference)
-                            .font(size: options.rowDetailSize)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                     }
                 }
             }
@@ -83,6 +86,7 @@ struct PRRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .rowFocus(activity, .row)
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
@@ -92,7 +96,7 @@ struct PRRowView: View {
             SummarizeMenuItems(linkRef, divided: false)
             if let open = order?.open { Button("Show Its Mission", action: open) }
         }
-        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action, activity: activity) {
             SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)
         }

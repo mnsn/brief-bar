@@ -278,7 +278,7 @@ struct PullRequestsPage: View {
     private func row(_ item: PRSnapshot, showsCreated: Bool = false, order: OrderRowContext? = nil) -> PRRowView {
         let stage = ordering.isOn ? ordering.stage(of: item.key.linkRef) : nil
         return PRRowView(
-            item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
+            item: item, now: store.now, showsCreated: showsCreated, isSelected: isSelected(item),
             openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) },
             order: order ?? rowOrder(item), mission: missionMenu(item, in: order?.mission), stage: stage,
             ordering: ordering.isOn ? ordering : nil
@@ -298,7 +298,7 @@ struct PullRequestsPage: View {
                 if showIdle {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true, showsActions: true, showsCreated: shownOrder.isByDate,
+                            PRRowView(item: item, now: store.now, compact: true, showsCreated: shownOrder.isByDate,
                                       isSelected: isSelected(item), openSource: source(item), stopWatching: watching(item),
                                       showDetails: { select(item) }, order: rowOrder(item), mission: missionMenu(item)) { store.open(item) }
                                 .padding(.horizontal, 6)

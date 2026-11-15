@@ -33,6 +33,11 @@ package struct OrderRowContext {
         OrderText.sentence(of: step, isReady: isReady, names: names)
     }
 
+    /// Whether its capsule shows anything: where it stands, or the quiet ✎ of a change of yours.
+    package var showsCapsule: Bool {
+        OrderText.capsule(step) != nil || (step.notes.contains(where: \.isAboutYourChanges) && sentence != nil)
+    }
+
     /// Whether this stage's words already say where its order puts it, so that its capsule would only repeat them: Can merge
     /// and Waits, for one its order places. Never where a change of yours speaks of it, such as that you set it as next, with
     /// ✎, or that an order went against yours, in its tooltip and to VoiceOver, which no stage says; nor for one with no
