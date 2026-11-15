@@ -264,9 +264,9 @@ package final class StorySummaries: ObservableObject {
     }
 
     /// While they're off and you haven't chosen a model, turning them on looks for the Copilot CLI, which then decides the
-    /// model (`lookForCLI`), unless it's known not to be here.
+    /// model (`lookForCLI`): again, even where it wasn't found before, as it may be there by now.
     package var modelDependsOnCLI: Bool {
-        !isOn && !hasChosenModel && findCLI != nil && hasCLI != false
+        !isOn && !hasChosenModel && findCLI != nil
     }
 
     /// The model they'd write with once on, which Settings' box names as you turn them on: Claude Haiku 5.5 through

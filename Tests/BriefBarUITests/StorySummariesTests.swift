@@ -772,12 +772,20 @@ import Testing
         await summaries.lookForCLI()
         #expect(summaries.model == StorySummaries.copilotDefaultModel)
         #expect(summaries.modelOnceOn == summaries.model)
-        // Known not to be here, Apple Intelligence, which turning them on again keeps.
+        // Not found, Apple Intelligence; but turning them on again looks again, so the box names what the CLI, installed
+        // meanwhile, means.
         summaries.findCLI = { false }
         await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
         summaries.setOn(false)
-        #expect(!summaries.modelDependsOnCLI)
-        #expect(summaries.modelOnceOn == StorySummaries.appleIntelligenceModel)
+        #expect(summaries.modelDependsOnCLI)
+        let named = summaries.modelOnceOn
+        #expect(named == StorySummaries.copilotDefaultModel)
+        summaries.findCLI = { true }
+        summaries.setOn(true)
+        await summaries.lookForCLI()
+        #expect(summaries.model == named)
+        summaries.setOn(false)
         // Chosen, whatever's found.
         summaries.findCLI = { true }
         summaries.setModel("claude-opus-5.5")
