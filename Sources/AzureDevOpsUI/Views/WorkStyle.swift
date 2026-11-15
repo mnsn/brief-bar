@@ -67,6 +67,15 @@ extension SprintBoard.Column {
         }
     }
 
+    /// Its color for words: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .toDo: return TextTint.gray.color
+        case .inProgress: return TextTint.blue.color
+        case .done: return TextTint.green.color
+        }
+    }
+
     var symbol: String {
         switch self {
         case .toDo: return "circle.dashed"
@@ -82,12 +91,29 @@ extension WorkItem {
         category == .resolved ? .orange : (category.column ?? .toDo).color
     }
 
+    /// The state's color for words, such as its chip's.
+    var stateTextColor: Color {
+        category == .resolved ? TextTint.orange.color : (category.column ?? .toDo).textColor
+    }
+
     var stateSymbol: String {
         category == .resolved ? "checkmark.circle" : (category.column ?? .toDo).symbol
     }
 
     /// The type's color, close to Azure DevOps's own, so cards are recognizable at a glance.
     var typeColor: Color { Self.typeColor(of: type) }
+
+    /// The type's color for words, such as its number on a link's capsule: `typeColor` is for symbols (`TextTint`).
+    static func typeTextColor(of type: String) -> Color {
+        switch type.lowercased() {
+        case "bug": return TextTint.red.color
+        case "task": return TextTint.yellow.color
+        case "feature": return TextTint.purple.color
+        case "epic": return TextTint.orange.color
+        case "issue", "impediment": return TextTint.magenta.color
+        default: return TextTint.cyan.color
+        }
+    }
 
     var typeSymbol: String { Self.typeSymbol(of: type) }
 
@@ -151,6 +177,17 @@ extension PipelineRun.Status {
         }
     }
 
+    /// Its color for words: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .queued, .canceled: return TextTint.gray.color
+        case .running: return TextTint.blue.color
+        case .succeeded: return TextTint.green.color
+        case .partiallySucceeded: return TextTint.orange.color
+        case .failed: return TextTint.red.color
+        }
+    }
+
     /// Drawn white on a circle of the status's color.
     var symbol: String {
         switch self {
@@ -206,10 +243,10 @@ extension PipelineStage.State {
 extension PipelineStatus {
     var color: Color { latest?.status.color ?? Color(nsColor: .systemGray) }
 
-    /// The headline's color: the status's, but orange while a stage waits for approval.
+    /// The headline's color, for its words: the status's, but orange while a stage waits for approval.
     var headlineColor: Color {
         latest?.status == .running && stages.contains(where: { $0.state == .waiting }) && !stages.contains(where: { $0.state == .running })
-            ? .orange : color
+            ? TextTint.orange.color : latest?.status.textColor ?? TextTint.gray.color
     }
 }
 
@@ -277,6 +314,8 @@ struct Avatar: View {
 struct Chip: View {
     let text: String
     var color: Color = .secondary
+    /// Its words' and symbol's color, where `color`, its fill's, is a symbol's (`TextTint`): `color` for nil.
+    var textColor: Color? = nil
     var symbol: String? = nil
     /// Takes no more than the width it's offered, cutting its text short, with all of it in its tooltip: for a chip that
     /// may be long, such as a tag.
@@ -292,7 +331,7 @@ struct Chip: View {
                 .font(size: 10.5, weight: .semibold)
                 .lineLimit(1)
         }
-        .foregroundStyle(color)
+        .foregroundStyle(textColor ?? color)
         .padding(.horizontal, 7)
         .padding(.vertical, 2.5)
         .background(Capsule().fill(color.opacity(0.14)))

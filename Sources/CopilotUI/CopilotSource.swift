@@ -209,7 +209,8 @@ package final class CopilotSource: BriefBarSource {
             let store = self.store
             items.append(LinkedItem(
                 ref: ref, label: session.displayName, title: session.displayName, symbol: session.rowSymbol,
-                color: session.phase == .idle ? .secondary : session.rowColor, state: session.phase.state, status: session.headline,
+                color: session.phase == .idle ? .secondary : session.rowColor, textColor: session.rowTextColor,
+                state: session.phase.state, status: session.headline,
                 place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: session.branchHint,
                 date: session.since,
                 open: {

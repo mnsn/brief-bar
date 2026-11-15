@@ -42,6 +42,19 @@ extension PRGroup {
         }
     }
 
+    /// Its color for words, such as a heading's or a row's reason: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .needsYou: return TextTint.orange.color
+        case .answered, .ready: return TextTint.green.color
+        case .failing: return TextTint.red.color
+        case .toReview: return TextTint.teal.color
+        case .waiting: return TextTint.blue.color
+        case .done: return TextTint.purple.color
+        case .idle: return .secondary
+        }
+    }
+
     /// Symbol for count chips in the menu bar, the panel header and the widget.
     var symbol: String {
         switch self {
@@ -104,6 +117,8 @@ extension PRSnapshot {
     /// Symbol and tint for a row; idle rows are greyed out.
     var rowSymbol: String { reason.symbol }
     var rowColor: Color { group == .idle ? .secondary : group.color }
+    /// The row's reason in its color, readable as words.
+    var rowTextColor: Color { group.textColor }
 
     var subtitle: String {
         [headline, repository].filter { !$0.isEmpty }.joined(separator: " · ")

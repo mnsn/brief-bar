@@ -68,6 +68,7 @@ struct WidgetSectionView: View {
                 .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("Pull Requests")
                 .font(size: 13, weight: .semibold)
+                .lineLimit(1)
             if let problem = store.problem {
                 if problem.offersSignIn {
                     // The list may show other organizations' pull requests, without the placeholder's button.

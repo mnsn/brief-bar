@@ -51,6 +51,7 @@ struct WidgetSectionView: View {
                 .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("GitHub")
                 .font(size: 13, weight: .semibold)
+                .lineLimit(1)
             if let problem = store.problem, !problem.needsSignIn {
                 Image(systemName: "exclamationmark.triangle")
                     .font(size: 11)

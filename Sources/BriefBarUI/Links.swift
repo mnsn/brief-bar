@@ -12,6 +12,8 @@ package struct LinkedItem {
     package var title: String
     package var symbol: String
     package var color: Color
+    /// Its color for words, such as its number on a capsule: `color` is for its symbol (`TextTint`).
+    package var textColor: Color
     /// What it means for you now, so the one that needs you most shows first.
     package var state: ItemState?
     /// Where it stands, briefly: "Active", "Failing", "Waiting for your answer".
@@ -46,16 +48,17 @@ package struct LinkedItem {
     package var show: (() -> Bool)?
 
     package init(
-        ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
-        sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        openItself: (perform: () -> Void, help: String)? = nil, menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil,
-        url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
+        ref: ItemRef, label: String, title: String, symbol: String, color: Color, textColor: Color? = nil, state: ItemState? = nil,
+        status: String? = nil, sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil,
+        open: (() -> Void)? = nil, openItself: (perform: () -> Void, help: String)? = nil, menu: (() -> AnyView)? = nil,
+        sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0, show: (() -> Bool)? = nil
     ) {
         self.ref = ref
         self.label = label
         self.title = title
         self.symbol = symbol
         self.color = color
+        self.textColor = textColor ?? color
         self.state = state
         self.status = status
         self.sharedStatus = sharedStatus

@@ -208,7 +208,7 @@ struct OrderMapGrid: View {
         } else {
             "On \(what)"
         }
-        return (text, item?.color ?? .secondary)
+        return (text, item?.textColor ?? .secondary)
     }
 
     private func columnTitles(_ metrics: Metrics) -> some View {

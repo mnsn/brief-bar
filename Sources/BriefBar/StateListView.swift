@@ -141,7 +141,7 @@ struct StateListView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(group.title) (\(group.entries.count))")
                         .font(size: 11, weight: .semibold)
-                        .foregroundStyle(options.quietAppearance ? Color.primary : group.state.color)
+                        .foregroundStyle(options.quietAppearance ? Color.primary : group.state.textColor)
                         .padding(.horizontal, 8)
                     ForEach(group.entries) { entry in
                         HStack(alignment: .top, spacing: 0) {

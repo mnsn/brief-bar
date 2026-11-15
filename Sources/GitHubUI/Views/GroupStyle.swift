@@ -1,4 +1,5 @@
 import AppKit
+import BriefBarUI
 import GitHubCore
 import SwiftUI
 
@@ -33,6 +34,16 @@ extension GitHubPRGroup {
         case .failing: return .systemRed
         case .ready: return .systemGreen
         case .waiting: return .systemBlue
+        }
+    }
+
+    /// Its color for words, such as a heading's or a row's reason: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .toReview, .changesRequested: return TextTint.orange.color
+        case .failing: return TextTint.red.color
+        case .ready: return TextTint.green.color
+        case .waiting: return TextTint.blue.color
         }
     }
 

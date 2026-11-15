@@ -337,7 +337,7 @@ final class WorkLinksStore {
             items.append(LinkedItem(
                 ref: .pullRequest(organization: item.key.organization, number: item.key.number), label: "!\(item.key.number)",
                 title: item.title, symbol: item.group == .done ? "arrow.triangle.merge" : "arrow.triangle.pull", color: item.rowColor,
-                state: item.group.state(showToReview: showToReview), status: item.group.title,
+                textColor: item.rowTextColor, state: item.group.state(showToReview: showToReview), status: item.group.title,
                 sharedStatus: PullRequestStory.sharedStatus(item), place: item.repository,
                 hint: record.map { Self.hint($0.pullRequest) }, date: item.since,
                 open: { [weak store] in
@@ -373,7 +373,8 @@ final class WorkLinksStore {
                 // Without how long it's been at it, which its date says: its row stays the same while it works.
                 items.append(LinkedItem(
                     ref: session, label: copilot.subject(of: entry), title: "Copilot: \(copilot.subject(of: entry))",
-                    symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: nil),
+                    symbol: "paperplane.fill", color: phase.color, textColor: phase.textColor, state: phase.state,
+                    status: entry.sentence(now: nil),
                     date: entry.status.since ?? entry.startedAt,
                     menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) },
                     sent: SentToCopilot(action: entry.action?.title, from: from, label: fromLabel, title: fromTitle)
@@ -575,16 +576,17 @@ final class WorkLinksStore {
 
     /// A pull request that's linked but not in your lists, such as a teammate's on a sprint's work item.
     static func item(_ pullRequest: PullRequest) -> LinkedItem {
-        let (status, color): (String, Color) = switch pullRequest.status {
-        case .active: (pullRequest.isDraft ? "Draft" : "Active", .blue)
-        case .completed: ("Completed", Color(nsColor: .systemPurple))
-        case .abandoned: ("Abandoned", .secondary)
-        case .other: ("Closed", .secondary)
+        let (status, color, textColor): (String, Color, Color) = switch pullRequest.status {
+        case .active: (pullRequest.isDraft ? "Draft" : "Active", .blue, TextTint.blue.color)
+        case .completed: ("Completed", Color(nsColor: .systemPurple), TextTint.purple.color)
+        case .abandoned: ("Abandoned", .secondary, .secondary)
+        case .other: ("Closed", .secondary, .secondary)
         }
         return LinkedItem(
             ref: .pullRequest(organization: pullRequest.key.organization, number: pullRequest.key.number),
             label: "!\(pullRequest.key.number)", title: pullRequest.title,
-            symbol: pullRequest.status == .completed ? "arrow.triangle.merge" : "arrow.triangle.pull", color: color, status: status,
+            symbol: pullRequest.status == .completed ? "arrow.triangle.merge" : "arrow.triangle.pull", color: color,
+            textColor: textColor, status: status,
             place: pullRequest.repositoryName, hint: hint(pullRequest), date: pullRequest.closedAt ?? pullRequest.createdAt,
             open: { AzureDevOps.open(pullRequest.webURL) }, url: pullRequest.webURL
         )
@@ -594,7 +596,8 @@ final class WorkLinksStore {
     static func item(_ workItem: WorkItem, tasks: Int = 0) -> LinkedItem {
         LinkedItem(
             ref: .workItem(organization: workItem.organization, id: workItem.id), label: String(workItem.id), title: workItem.title,
-            symbol: workItem.typeSymbol, color: workItem.typeColor, status: workItem.state, place: workItem.project,
+            symbol: workItem.typeSymbol, color: workItem.typeColor, textColor: WorkItem.typeTextColor(of: workItem.type),
+            status: workItem.state, place: workItem.project,
             date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }, url: workItem.webURL, parts: tasks
         )
     }

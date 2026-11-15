@@ -24,6 +24,17 @@ extension DisplayPhase {
         }
     }
 
+    /// Its color for words, such as a heading's: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .needsYou: return TextTint.orange.color
+        case .running: return TextTint.blue.color
+        case .done: return TextTint.green.color
+        case .stopped: return TextTint.red.color
+        case .idle: return .secondary
+        }
+    }
+
     /// Symbol used for count chips in the menu bar and widget header.
     var symbol: String {
         switch self {
@@ -75,6 +86,19 @@ extension StatusReason {
         case .idle: return .secondary
         }
     }
+
+    /// Its color for words, such as a row's reason: `color` is for symbols (`TextTint`).
+    var textColor: Color {
+        switch self {
+        case .question, .planApproval, .permission: return TextTint.orange.color
+        case .working, .starting, .relayed, .waitingForChildren: return TextTint.blue.color
+        case .finished: return TextTint.green.color
+        case .interrupted: return TextTint.gray.color
+        case .failed: return TextTint.red.color
+        case .unresponsive: return TextTint.yellow.color
+        case .idle: return .secondary
+        }
+    }
 }
 
 extension SessionSnapshot {
@@ -84,6 +108,13 @@ extension SessionSnapshot {
         guard phase != .idle else { return .secondary }
         if reason == .waitingForChildren { return phase == .needsYou ? .orange : .blue }
         return reason.color
+    }
+
+    /// The row's reason in its color, readable as words.
+    var rowTextColor: Color {
+        guard phase != .idle else { return .secondary }
+        if reason == .waitingForChildren { return phase == .needsYou ? TextTint.orange.color : TextTint.blue.color }
+        return reason.textColor
     }
 
     var subtitle: String {

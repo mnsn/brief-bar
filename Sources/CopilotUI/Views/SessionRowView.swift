@@ -116,7 +116,7 @@ struct SessionRowView: View {
                             // With the detail if both fit, or else instead of it, the tag's name cut short if need be.
                             ViewThatFits(in: .horizontal) {
                                 HStack(spacing: 6) {
-                                    compactText(compactLine)
+                                    compactText(compactLine, isContent: detailIsWritten(task))
                                     parentTag(taggedParent)
                                 }
                                 HStack(spacing: 6) {
@@ -126,7 +126,7 @@ struct SessionRowView: View {
                                 }
                             }
                         } else {
-                            compactText(compactLine)
+                            compactText(compactLine, isContent: detailIsWritten(task))
                         }
                     } else {
                         if let taggedParent {
@@ -154,7 +154,7 @@ struct SessionRowView: View {
                         if let detail = session.detail {
                             Text(detail)
                                 .font(size: options.rowDetailSize)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(detailIsWritten(task) ? .rowContent : Color.secondary)
                                 .lineLimit(session.phase == .needsYou ? 3 : 2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -220,7 +220,7 @@ struct SessionRowView: View {
     private var subtitle: some View {
         Text(session.subtitle)
             .font(size: options.rowReasonSize, weight: .medium)
-            .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
+            .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowTextColor)
             .lineLimit(1)
     }
 
@@ -232,10 +232,17 @@ struct SessionRowView: View {
         }
     }
 
-    private func compactText(_ text: String) -> some View {
+    /// Its detail is what the session wrote, as content (`SessionSnapshot.detailIsWritten`): a task BriefBar sent says how
+    /// it stands in BriefBar's words, but for the step it's at.
+    private func detailIsWritten(_ task: SentTask?) -> Bool {
+        session.detailIsWritten && (task == nil || session.reason == .working)
+    }
+
+    /// A compact row's line: with what it asks or says, it reads as content does.
+    private func compactText(_ text: String, isContent: Bool = false) -> some View {
         Text(text)
             .font(size: options.rowDetailSize)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(isContent ? .rowContent : Color.secondary)
             .lineLimit(1)
     }
 
@@ -406,13 +413,15 @@ struct ContextUsageView: View {
             .frame(width: 9 * textScale, height: 9 * textScale)
             Text("\(usage.percent)%")
                 .font(size: 11).monospacedDigit()
-                .foregroundStyle(color)
+                .foregroundStyle(isWarning ? TextTint.orange.color : .secondary)
         }
         .fixedSize()
     }
 
+    private var isWarning: Bool { usage.fraction >= Self.warningFraction }
+
     private var color: Color {
-        usage.fraction >= Self.warningFraction ? .orange : .secondary
+        isWarning ? .orange : .secondary
     }
 
     static func description(_ usage: ContextUsage) -> String {
@@ -432,21 +441,17 @@ struct CountChips: View {
         if options.clearerStates {
             AttentionSummary(states: counts.states)
         } else {
-            HStack(spacing: 8) {
-                ForEach(phases, id: \.self) { phase in
-                    if counts[phase] > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: phase.symbol)
-                                .foregroundStyle(phase.color)
-                            Text("\(counts[phase])")
-                                .monospacedDigit()
-                        }
-                        .font(size: 11, weight: .semibold)
-                        .help("\(counts[phase]) \(phase.title.lowercased())")
-                    }
+            // What's at work goes first, then what's finished: what went wrong and what needs you stay.
+            StateCountChips(phases.filter { counts[$0] > 0 }, leastUrgentFirst: [.running, .done, .stopped, .needsYou]) { phase in
+                HStack(spacing: 3) {
+                    Image(systemName: phase.symbol)
+                        .foregroundStyle(phase.color)
+                    Text("\(counts[phase])")
+                        .monospacedDigit()
                 }
+                .font(size: 11, weight: .semibold)
+                .help("\(counts[phase]) \(phase.title.lowercased())")
             }
-            .accessibilityElement(children: .combine)
         }
     }
 }

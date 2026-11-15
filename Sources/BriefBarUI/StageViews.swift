@@ -22,25 +22,17 @@ extension PullRequestStage {
 
     package var color: Color { Color(nsColor: nsColor) }
 
-    /// Its color for words, such as its pill's name: `color` is for symbols and fills, and too light for words on a light
-    /// background, so in light mode it's darker, and in dark mode lighter, to read on its own fill.
+    /// Its color for words, such as its pill's name: `color` is for symbols and fills (`TextTint`).
     package var textColor: Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            switch self {
-            case .inProgress: return isDark ? NSColor(srgbRed: 1, green: 0.56, blue: 0.70, alpha: 1)
-                : NSColor(srgbRed: 0.70, green: 0.08, blue: 0.34, alpha: 1)
-            case .yourReview: return isDark ? .systemOrange : NSColor(srgbRed: 0.71, green: 0.28, blue: 0.03, alpha: 1)
-            case .teammateReview: return isDark ? NSColor(srgbRed: 0.42, green: 0.71, blue: 1, alpha: 1)
-                : NSColor(srgbRed: 0.04, green: 0.35, blue: 0.79, alpha: 1)
-            case .approved: return isDark ? .systemMint : NSColor(srgbRed: 0, green: 0.45, blue: 0.42, alpha: 1)
-            case .canMerge: return isDark ? .systemGreen : NSColor(srgbRed: 0.12, green: 0.48, blue: 0.21, alpha: 1)
-            case .waits: return isDark ? NSColor(srgbRed: 0.76, green: 0.76, blue: 0.79, alpha: 1)
-                : NSColor(srgbRed: 0.33, green: 0.33, blue: 0.36, alpha: 1)
-            case .merged: return isDark ? NSColor(srgbRed: 0.80, green: 0.63, blue: 1, alpha: 1)
-                : NSColor(srgbRed: 0.47, green: 0.20, blue: 0.66, alpha: 1)
-            }
-        })
+        switch self {
+        case .inProgress: TextTint.pink.color
+        case .yourReview: TextTint.orange.color
+        case .teammateReview: TextTint.blue.color
+        case .approved: TextTint.mint.color
+        case .canMerge: TextTint.green.color
+        case .waits: TextTint.gray.color
+        case .merged: TextTint.purple.color
+        }
     }
 }
 

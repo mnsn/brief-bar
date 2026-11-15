@@ -26,26 +26,26 @@ struct RunStatusBadge: View {
     }
 }
 
-/// A run's stages, in order, joined by lines, sideways when they don't fit.
+/// A run's stages, in order, joined by lines, on as many lines as they need, rather than cut off at the card's edge: a
+/// line that goes on to the next ends with its join.
 struct StageFlow: View {
     let stages: [PipelineStage]
     let now: Date
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(Array(stages.enumerated()), id: \.element.id) { index, stage in
-                    if index > 0 {
+        FlowLayout(spacing: 0, lineSpacing: 6) {
+            ForEach(Array(stages.enumerated()), id: \.element.id) { index, stage in
+                HStack(spacing: 0) {
+                    StagePill(stage: stage, now: now)
+                    if index < stages.count - 1 {
                         Rectangle()
-                            .fill(stages[index - 1].state == .succeeded ? Color.green.opacity(0.5) : Color.primary.opacity(0.15))
+                            .fill(stage.state == .succeeded ? Color.green.opacity(0.5) : Color.primary.opacity(0.15))
                             .frame(width: 14, height: 1.5)
                     }
-                    StagePill(stage: stage, now: now)
                 }
             }
-            .padding(.vertical, 1)
         }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .padding(.vertical, 1)
     }
 }
 
@@ -55,6 +55,7 @@ struct StagePill: View {
 
     var body: some View {
         let quiet = stage.state == .pending || stage.state == .skipped || stage.state == .canceled
+        // As wide as it needs, or, alone on a line narrower than that, its name cut short: the tooltip says it all.
         HStack(spacing: 5) {
             Image(systemName: stage.state.symbol)
                 .font(size: 11.5, weight: .semibold)
@@ -62,17 +63,20 @@ struct StagePill: View {
             Text(stage.name)
                 .font(size: 11.5, weight: .medium)
                 .foregroundStyle(quiet ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
             if let duration {
                 Text(duration)
                     .font(size: 10.5).monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(Capsule().fill(stage.state.color.opacity(quiet ? 0.07 : 0.13)))
         .overlay(Capsule().strokeBorder(stage.state.color.opacity(quiet ? 0.18 : 0.30), lineWidth: 1))
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .help("\(stage.name): \(stage.state.title)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(stage.name): \(stage.state.title)" + (stage.startedAt == nil ? "" : duration.map { ", \($0)" } ?? ""))

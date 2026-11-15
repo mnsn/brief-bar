@@ -173,7 +173,7 @@ struct MenuPanelView: View {
             HStack {
                 Text("\(group.title) (\(items.count))")
                     .font(size: 11, weight: .semibold)
-                    .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : group.textColor)
                     .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
                 Spacer()
                 if group == .done || group == .needsYou && items.contains(where: \.hasNews) {

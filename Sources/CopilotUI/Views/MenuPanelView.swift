@@ -103,7 +103,7 @@ struct MenuPanelView: View {
             HStack {
                 Text("\(phase.title) (\(sessions.count))")
                     .font(size: 11, weight: .semibold)
-                    .foregroundStyle(options.quietAppearance ? Color.primary : phase.color)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : phase.textColor)
                 Spacer()
                 if phase == .done || phase == .stopped {
                     Button("Clear") { store.clear(phase) }

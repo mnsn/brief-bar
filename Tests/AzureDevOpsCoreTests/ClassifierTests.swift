@@ -210,6 +210,7 @@ import BriefBarCore
         #expect(snapshot.reason == .replied)
         #expect(snapshot.headline == "Sam Rivera replied")
         #expect(snapshot.detail == "Makes sense, but cap it")
+        #expect(snapshot.detailIsWritten)
         #expect(snapshot.since == t(-10 * minute))
         #expect(snapshot.url == pr.threadURL(5))
         #expect(snapshot.events.map(\.id) == ["c5.3"])
@@ -402,6 +403,7 @@ import BriefBarCore
         #expect(fresh.group == .needsYou)
         #expect(fresh.reason == .reviewRequested)
         #expect(fresh.detail == "Required reviewer")
+        #expect(!fresh.detailIsWritten)
         #expect(fresh.since == t(-hour))
 
         // Once seen, it waits in To Review.

@@ -341,7 +341,7 @@ struct WorkItemDetailsPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
-                Chip(text: item.state, color: item.stateColor, symbol: item.stateSymbol, fitsWidth: true)
+                Chip(text: item.state, color: item.stateColor, textColor: item.stateTextColor, symbol: item.stateSymbol, fitsWidth: true)
                 if let reason = details.details?.reason, reason.caseInsensitiveCompare(item.state) != .orderedSame {
                     Text(reason)
                         .font(size: 11.5)
