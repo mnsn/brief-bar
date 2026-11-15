@@ -11,7 +11,8 @@ import Foundation
 struct WorkItemShortcuts {
     /// The tasks you sent it to Copilot, the newest first, while Send Work to Copilot is on; then the other sessions Show
     /// Links links to it, directly or through one of its pull requests, the one that needs you most first: each as available
-    /// as it is now (`CopilotTasksStore.availability`).
+    /// as it is now (`CopilotTasksStore.availability`). BriefBar's tasks only while their worktrees are still there, as a
+    /// pull request's are (`CopilotTasksStore.taskChoices(for:)`).
     var sessions: [SessionChoice]
     /// The pull requests Show Links links to it, the one that needs you most first.
     var pullRequests: [LinkedItem]
@@ -21,10 +22,8 @@ struct WorkItemShortcuts {
         var sessions: [SessionChoice] = []
         var seen: Set<String> = []
         if copilot.isOn {
-            let reference = item.copilotTask.reference
-            for entry in copilot.entries where entry.workItem?.matches(reference) == true {
-                guard let run = entry.run, run.isValid, seen.insert(run.id).inserted else { continue }
-                sessions.append(task(entry, run: run, reason: .earlierTask, copilot: copilot))
+            for choice in copilot.taskChoices(for: .workItem(item.copilotTask)) where seen.insert(choice.id).inserted {
+                sessions.append(choice)
             }
         }
         let connections = links.connections(of: item.linkRef)
@@ -33,7 +32,9 @@ struct WorkItemShortcuts {
             guard seen.insert(linked.ref.id).inserted else { continue }
             if copilot.isOn, let entry = copilot.entries.first(where: { $0.id == linked.ref.id }), let run = entry.run, run.isValid {
                 // A task BriefBar sent, such as one on its pull request: as the task, which goes on in Terminal when it runs with
-                // the Copilot CLI.
+                // the Copilot CLI, while its worktree is still there, as a pull request's tasks are. Once it's gone, Terminal
+                // would have nowhere to go on with it, and it isn't one of the Copilot app's sessions either.
+                guard FileManager.default.fileExists(atPath: run.worktree.path) else { continue }
                 sessions.append(task(entry, run: run, reason: .linked, copilot: copilot))
             } else if linked.sent == nil {
                 // One of the Copilot app's, or the Copilot CLI's, as Copilot's source tells it; not a task BriefBar sent that

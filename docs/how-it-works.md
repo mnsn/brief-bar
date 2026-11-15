@@ -3126,8 +3126,9 @@ request's. Its Copilot session and its pull request are a click away too (`WorkI
 `WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**, and beside **Open in
 Azure DevOps** in its details, from what BriefBar knows already, reading nothing more for them. Its
 sessions are the tasks you sent it to Copilot, the newest first, while Send Work to Copilot is on, then the sessions Show
-Links links to it, directly or through one of its pull requests, the one that needs you most first, each once; each
-opens as a pull request's session does (`SessionOpening`): **Open in Copilot**, in the Copilot app, or, for a task
+Links links to it, directly or through one of its pull requests, the one that needs you most first, each once; BriefBar's
+tasks only while their worktrees are still there, as a pull request's are. Each opens as a pull request's session does
+(`SessionOpening`): **Open in Copilot**, in the Copilot app, or, for a task
 BriefBar runs with the Copilot CLI, **Continue in Terminal**, neither while Copilot works in it, or in its checkout, for
 a task BriefBar sent. Its pull requests are those Show Links links to it: **Show Pull Request** shows one over the work
 item's details, as Where It Stands does, else in BriefBar's window, for one that shows there, else where it lives. With

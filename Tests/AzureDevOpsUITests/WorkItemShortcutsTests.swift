@@ -28,13 +28,25 @@ import Testing
         return CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
     }
 
-    /// The task you sent it with, which ran with the CLI and finished without a pull request.
-    private func run() -> CopilotRun {
+    /// A folder of its own, for a task's worktree.
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarWorkItemShortcuts-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// The task you sent it with, which ran with the CLI in `worktree` and finished without a pull request; or, with
+    /// `pullRequest`, a task BriefBar ran on that pull request, as Fix the Build does.
+    private func run(_ id: String? = nil, onPullRequest pullRequest: Int? = nil, in worktree: URL) -> CopilotRun {
         CopilotRun(
-            id: sent, workItem: WorkItemReference(organization: DemoData.organization, project: "Storefront", id: 5104),
-            options: CopilotModel.standard, repository: URL(fileURLWithPath: "/Users/robin/dev/Storefront"),
-            worktree: URL(fileURLWithPath: "/Users/robin/dev/copilot-worktrees/Storefront/wi-5104"), startedAt: now,
-            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished
+            id: id ?? sent,
+            workItem: pullRequest == nil ? WorkItemReference(organization: DemoData.organization, project: "Storefront", id: 5104) : nil,
+            onPullRequest: pullRequest.map {
+                PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web", id: $0,
+                                     sourceBranch: "coupon-rounding")
+            },
+            options: CopilotModel.standard, repository: URL(fileURLWithPath: "/Users/robin/dev/Storefront"), worktree: worktree,
+            startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished
         )
     }
 
@@ -74,7 +86,9 @@ import Testing
         let off = Links(defaults: MemoryDefaults(), isDemo: false)
         #expect(WorkItemShortcuts.of(item, links: off, copilot: copilot).sessions.isEmpty)
 
-        copilot.settings.copilotRuns = [run()]
+        let worktree = try folder()
+        defer { try? FileManager.default.removeItem(at: worktree) }
+        copilot.settings.copilotRuns = [run(in: worktree)]
         // Without Show Links, the task you sent it, and no pull request.
         var shortcuts = WorkItemShortcuts.of(item, links: off, copilot: copilot)
         #expect(shortcuts.sessions.map(\.id) == [sent])
@@ -99,6 +113,32 @@ import Testing
         // A link you hid isn't offered.
         links.unlink(item.linkRef, try #require(ItemRef.session(inApp)))
         #expect(WorkItemShortcuts.of(item, links: links, copilot: copilot).sessions.map(\.id) == [onBranch])
+    }
+
+    /// A task BriefBar ran with the CLI whose worktree is gone has nowhere to go on in Terminal: it isn't offered, neither the
+    /// work item's own nor one on its pull request that Show Links links to it, and not as one of the Copilot app's sessions
+    /// either, as a pull request's tasks aren't.
+    @Test func leavesOutTasksWhoseWorktreesAreGone() throws {
+        let item = try task()
+        let copilot = copilot()
+        let worktrees = try folder()
+        defer { try? FileManager.default.removeItem(at: worktrees) }
+        let ownWorktree = worktrees.appendingPathComponent("wi-5104", isDirectory: true)
+        let pullRequestWorktree = worktrees.appendingPathComponent("pr-4091", isDirectory: true)
+        for worktree in [ownWorktree, pullRequestWorktree] {
+            try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        }
+        // The session on the pull request's branch is BriefBar's task on it.
+        copilot.settings.copilotRuns = [run(in: ownWorktree), run(onBranch, onPullRequest: 4091, in: pullRequestWorktree)]
+        let links = try links(for: item)
+        let shortcuts = WorkItemShortcuts.of(item, links: links, copilot: copilot)
+        #expect(shortcuts.sessions.map(\.id) == [sent, inApp, onBranch])
+        #expect(shortcuts.sessions.map { SessionOpening.way(of: $0) } == [.terminal, .copilot, .terminal])
+
+        try FileManager.default.removeItem(at: ownWorktree)
+        try FileManager.default.removeItem(at: pullRequestWorktree)
+        #expect(WorkItemShortcuts.of(item, links: links, copilot: copilot).sessions.map(\.id) == [inApp])
+        #expect(WorkItemShortcuts.of(item, links: Links(defaults: MemoryDefaults(), isDemo: false), copilot: copilot).sessions.isEmpty)
     }
 
     /// A pull request shows over the work item's details where they take it; else in BriefBar's window, for one that shows
