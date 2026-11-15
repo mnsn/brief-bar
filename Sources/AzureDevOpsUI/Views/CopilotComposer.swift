@@ -468,13 +468,18 @@ struct CopilotComposerView: View {
     }
 
     private var busyNote: some View {
-        Label("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").", systemImage: "exclamationmark.triangle.fill")
-            .font(size: 12, weight: .medium)
-            .foregroundStyle(.orange)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.12)))
+        Label {
+            Text("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").")
+                .foregroundStyle(TextTint.orange.color)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+        .font(size: 12, weight: .medium)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.12)))
     }
 
     /// Copilot works on it already, in a task BriefBar sent.

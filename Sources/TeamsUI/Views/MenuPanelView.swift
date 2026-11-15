@@ -156,9 +156,14 @@ struct ProblemView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(problem.title, systemImage: "exclamationmark.triangle.fill")
-                .font(size: 12, weight: .semibold)
-                .foregroundStyle(.orange)
+            Label {
+                Text(problem.title)
+                    .foregroundStyle(TextTint.orange.color)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .font(size: 12, weight: .semibold)
             Text(message)
                 .font(size: 11)
                 .foregroundStyle(.secondary)

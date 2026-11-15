@@ -1074,7 +1074,7 @@ struct AzureDevOpsAgent: Sendable {
 
     func copilotTasks(now: Date = Date()) async throws -> String {
         guard await reader.sendsToCopilot else {
-            throw MCPToolError("Send Work to Copilot is off in BriefBar: it's in Azure DevOps' settings.")
+            throw MCPToolError("Send Work to Copilot is off in BriefBar: it's in Settings › Send to Copilot.")
         }
         let tasks = await reader.copilotTasks(now: now)
         guard !tasks.isEmpty else { return "BriefBar hasn't sent any work to Copilot." }

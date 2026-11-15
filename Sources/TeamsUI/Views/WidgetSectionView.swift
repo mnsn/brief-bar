@@ -139,7 +139,7 @@ struct CompactConversationRow: View {
                     }
                     Text(previewText)
                         .font(size: options.rowDetailSize)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(showPreview && conversation.isUnread ? .rowContent : Color.secondary)
                         .lineLimit(1)
                 }
             }

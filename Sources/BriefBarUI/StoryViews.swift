@@ -432,7 +432,7 @@ private struct StandingContent: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Don't show this again: Show Links is in Settings › General")
+            .help("Don't show this again: Show Links is in Settings › Links & Summaries")
             .accessibilityLabel("Dismiss")
         }
         .font(size: 12)

@@ -78,7 +78,7 @@ struct LinkCapsule: View {
         }
         .font(size: 10, weight: .semibold)
         .lineLimit(1)
-        .foregroundStyle(first.color)
+        .foregroundStyle(first.textColor)
         .padding(.horizontal, 5)
         .padding(.vertical, 1.5)
         .background(Capsule().fill(first.color.opacity(0.14)))
@@ -427,7 +427,8 @@ private struct LinkPickerRow: View {
 
 // MARK: - The setting
 
-/// Show Links, off by default: in Settings, with what it does and reads.
+/// Show Links, off by default, with what it does: in the popover that Turn On… opens where links would show. Settings'
+/// Links & Summaries page has it as a row, its caption under it and all it does and reads behind ⓘ.
 package struct LinksSetting: View {
     @ObservedObject private var links: Links
     /// In a popover, where it says only what it's for.
@@ -439,6 +440,7 @@ package struct LinksSetting: View {
     }
 
     package static let title = "Show Links"
+    package static let caption = "Shows which work items, pull requests and sessions go together, on their rows."
     package static let explanation = """
         Shows which work items, pull requests and Copilot sessions go together, on their rows: the work items linked to \
         your pull requests in Azure DevOps and the pull requests linked to the sprint's work items, the work item or pull \
@@ -449,7 +451,7 @@ package struct LinksSetting: View {
         """
     package static let brief = """
         Shows the pull requests, pipelines and Copilot sessions that go with a work item, from their links in Azure DevOps \
-        and Copilot. Links you add stay in BriefBar. It's in Settings › General.
+        and Copilot. Links you add stay in BriefBar. It's in Settings › Links & Summaries.
         """
 
     package var body: some View {

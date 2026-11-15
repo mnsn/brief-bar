@@ -156,6 +156,7 @@ struct ComposerMenuRow<Tile: View, Items: View>: View {
                         if isWarning {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(size: 10)
+                                .foregroundStyle(.orange)
                         }
                         Text(caption)
                             .lineLimit(2)
@@ -163,7 +164,7 @@ struct ComposerMenuRow<Tile: View, Items: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .font(size: 11.5)
-                    .foregroundStyle(isWarning ? Color.orange : .secondary)
+                    .foregroundStyle(isWarning ? TextTint.orange.color : .secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

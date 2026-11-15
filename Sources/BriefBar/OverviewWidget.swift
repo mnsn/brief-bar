@@ -189,18 +189,23 @@ struct OverviewWidgetView: View {
                 .foregroundStyle(.secondary)
             Text("Overview")
                 .font(size: 13, weight: .semibold)
+                .lineLimit(1)
             Spacer(minLength: 4)
-            ForEach(list.groups) { group in
-                HStack(spacing: 2) {
-                    Image(systemName: group.symbol)
-                        .font(size: 10, weight: .semibold)
-                    Text("\(group.entries.count)")
-                        .font(size: 12, weight: .semibold).monospacedDigit()
+            let groups = list.groups
+            StateCountChips(groups.map(\.id), leastUrgentFirst: groups.map(\.id).reversed(), spacing: 6) { id in
+                if let group = groups.first(where: { $0.id == id }) {
+                    HStack(spacing: 2) {
+                        Image(systemName: group.symbol)
+                            .font(size: 10, weight: .semibold)
+                            .foregroundStyle(group.state.color)
+                        Text("\(group.entries.count)")
+                            .font(size: 12, weight: .semibold).monospacedDigit()
+                            .foregroundStyle(group.state.textColor)
+                    }
+                    .help("\(group.title): \(group.entries.count)")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(group.title): \(group.entries.count)")
                 }
-                .foregroundStyle(group.state.color)
-                .help("\(group.title): \(group.entries.count)")
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(group.title): \(group.entries.count)")
             }
         }
         .padding(.horizontal, 14)

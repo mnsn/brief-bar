@@ -116,9 +116,9 @@ struct NotificationsPage: View {
             Text("BriefBar keeps them for \(Self.duration(recent.keepHours)), in memory only: this page starts empty when it restarts.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Change…") { model.openSettings(.general) }
+            Button("Change…") { model.openSettings(.notifications) }
                 .buttonStyle(.borderless)
-                .help("Choose how long, in Settings › General")
+                .help("Choose how long, in Settings › Notifications")
         }
         .font(size: 11.5)
         .padding(.horizontal, 4)

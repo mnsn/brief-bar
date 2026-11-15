@@ -19,7 +19,7 @@ package final class TeamsSource: BriefBarSource {
     package let symbol = "bubble.left.and.text.bubble.right"
     package let description = SourceDescription(
         version: TeamsSource.descriptionVersion,
-        summary: "Your unread Teams chats: 1:1 chats, and group and meeting chats",
+        summary: "Your unread Teams chats: 1:1, group and meeting chats",
         reads: "The notifications Teams sends to Notification Center, from Notification Center's database on this Mac, read-only. BriefBar keeps only your unread chats (each chat's name, and its unread messages' sender and text), encrypted with a key in your login keychain, until they're read. It also reads how far you've read each chat in Teams, from Teams' own data on this Mac, read-only, keeping only that, in memory, so chats you read in Teams are read here too (you can turn this off); and Teams' dock badge, to see when you've read everything in Teams. With Show Message Previews and Summarize with Apple Intelligence on, Apple's on-device model writes summaries on your Mac: a chat's when you ask for one, and the brief's while a list by state or the window's Overview shows your chats.",
         network: "None. Nothing about your chats leaves your Mac.",
         needs: "Full Disk Access, which macOS requires to read Notification Center's database and Teams' own data. macOS has no prompt for it, so BriefBar walks you through System Settings. It's for all of BriefBar, once: only sources you turn on that read Notification Center use it.",
@@ -303,7 +303,7 @@ package final class TeamsSource: BriefBarSource {
     }
 }
 
-/// Whether BriefBar can read Notification Center, on Teams' page in Settings.
+/// Whether BriefBar can read Notification Center, on Teams' page in Settings: a row of its form.
 struct AccessStatusView: View {
     @EnvironmentObject private var store: ConversationStore
     @EnvironmentObject private var access: FullDiskAccess
@@ -312,7 +312,7 @@ struct AccessStatusView: View {
         let granted = store.access == .granted
         HStack(spacing: 10) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(granted ? .green : .orange)
+                .foregroundStyle(granted ? ItemState.done.color : ItemState.needsYou.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(granted ? "Full Disk Access is on" : "BriefBar can't read Notification Center yet")
                     .font(style: .headline)
@@ -326,8 +326,6 @@ struct AccessStatusView: View {
                 Button("Set Up Full Disk Access…") { access.show() }
             }
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

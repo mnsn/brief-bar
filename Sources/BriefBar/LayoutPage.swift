@@ -51,18 +51,30 @@ struct LayoutPage: View {
     var body: some View {
         let items = model.visibleItems(surface)
         let hidden = model.hiddenSections(surface)
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: surface.symbol)
-                    .font(style: .largeTitle)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(surface.title)
-                        .font(style: .title2, weight: .semibold)
-                    Text(surface.subtitle)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // The header, as every page of Settings has it: the first box of a form.
+            Form {
+                Section {
+                    SettingsPageHeader(.layout(surface))
                 }
             }
+            .settingsForm()
+            editor(items: items, hidden: hidden)
+                // The page's text and buttons on the edge a form's headings and rows start at, inside its boxes.
+                .padding(.horizontal, Self.textInset)
+                .padding(.bottom, Self.formInset)
+        }
+    }
+
+    /// How far a grouped form sets its boxes in from its edges.
+    private static let formInset: CGFloat = 20
+    /// How far a form's headings and rows start inside its boxes' edges.
+    fileprivate static let rowInset: CGFloat = 10
+    /// Where the page's own text and buttons start: as a form's headings do.
+    private static let textInset = formInset + rowInset
+
+    private func editor(items: [SectionLayout.Item], hidden: [SectionID]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
             Text(options.simpleLayoutControls && layoutChoice != .custom
                  ? "Choose a layout, or use Custom to arrange individual sections."
                  : surface.explanation)
@@ -137,6 +149,8 @@ struct LayoutPage: View {
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Its boxes on the header's edges.
+                    .padding(.horizontal, -Self.textInset)
                 } else {
                     note("\(items.count) \(items.count == 1 ? surface.itemNoun.lowercased() : surface.itemNoun.lowercased() + "s"), \(hidden.count) hidden sections")
                     Button("Customize Arrangement…") { editingCustom = true }
@@ -183,6 +197,7 @@ struct LayoutPage: View {
         .scrollContentBackground(.hidden)
         .scrollDisabled(true)
         .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, -Self.textInset)
     }
 
     // MARK: Chips
@@ -538,6 +553,8 @@ private struct MenuBarLine: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // A box, on the edges of the page's other boxes, under words on the edge of their headings.
+            .padding(.horizontal, -LayoutPage.rowInset)
         }
     }
 }

@@ -84,6 +84,11 @@ private func outline(_ snapshots: [SessionSnapshot]) -> [String] {
         #expect(sessions[0].phase == .needsYou)
         #expect(sessions[0].reason == .waitingForChildren)
         #expect(sessions[0].detail == "1 needs you · 1 running")
+        // Counts of its children, not what it wrote; a question is.
+        #expect(!sessions[0].detailIsWritten)
+        var asking = snapshot("asking", .needsYou, since: 0)
+        asking.detail = "Should dark mode follow the system appearance?"
+        #expect(asking.detailIsWritten)
         #expect(sessions[1].depth == 1)
         #expect(sessions[2].depth == 0)
     }

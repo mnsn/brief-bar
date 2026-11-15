@@ -46,7 +46,7 @@ struct SprintWidgetSection: View {
                     if let days = sprint.board?.sprint.daysLeft(now: store.now) {
                         Text(days == 1 ? "· last day" : "· \(days)d left")
                             .font(size: 11)
-                            .foregroundStyle(days <= 2 ? Color.orange : .secondary)
+                            .foregroundStyle(days <= 2 ? TextTint.orange.color : .secondary)
                             .fixedSize()
                     }
                 }

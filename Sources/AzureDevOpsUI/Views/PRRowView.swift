@@ -153,9 +153,10 @@ struct PRRowView: View {
                     RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isHovered: isHovered)
                 }
                 if compact {
+                    // With what someone wrote, it reads as content does.
                     Text(compactLine)
                         .font(size: options.rowDetailSize)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
                         .lineLimit(1)
                 } else {
                     if let stage, let ordering {
@@ -164,7 +165,7 @@ struct PRRowView: View {
                     HStack(spacing: 6) {
                         Text(item.subtitle)
                             .font(size: options.rowReasonSize, weight: .medium)
-                            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowColor)
+                            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowTextColor)
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
                         PullRequestLinks(key: item.key)
@@ -174,7 +175,7 @@ struct PRRowView: View {
                     if let detail = item.detail {
                         Text(detail)
                             .font(size: options.rowDetailSize)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
                             .lineLimit(item.group == .needsYou ? 3 : 2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -321,21 +322,16 @@ struct CountChips: View {
         if options.clearerStates {
             AttentionSummary(states: counts.states(showToReview: showToReview))
         } else {
-            HStack(spacing: 8) {
-                ForEach(groups, id: \.self) { group in
-                    if counts[group] > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: group.symbol)
-                                .foregroundStyle(group.color)
-                            Text("\(counts[group])")
-                                .monospacedDigit()
-                        }
-                        .font(size: 11, weight: .semibold)
-                        .help("\(counts[group]) \(group.countLabel(counts[group]))")
-                    }
+            StateCountChips(groups.filter { counts[$0] > 0 }, leastUrgentFirst: groups.reversed()) { group in
+                HStack(spacing: 3) {
+                    Image(systemName: group.symbol)
+                        .foregroundStyle(group.color)
+                    Text("\(counts[group])")
+                        .monospacedDigit()
                 }
+                .font(size: 11, weight: .semibold)
+                .help("\(counts[group]) \(group.countLabel(counts[group]))")
             }
-            .accessibilityElement(children: .combine)
         }
     }
 }
