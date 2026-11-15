@@ -757,6 +757,33 @@ import Testing
         #expect(summaries.model == StorySummaries.appleIntelligenceModel)
     }
 
+    /// Settings' box, shown as you turn summaries on, names the model they'll write with once on: Claude Haiku 5.5 through
+    /// Copilot while that depends on finding the Copilot CLI, as turning them on does; Apple Intelligence where the CLI is
+    /// known not to be, or nothing's looked for; and a model you chose. So it never says "on this Mac" for one that goes to
+    /// Copilot.
+    @Test func settingsNamesTheModelTheyllWriteWithOnceOn() async {
+        let (_, _, summaries) = hub(on: false)
+        #expect(!summaries.modelDependsOnCLI)
+        #expect(summaries.modelOnceOn == StorySummaries.appleIntelligenceModel)
+        summaries.findCLI = { true }
+        #expect(summaries.modelDependsOnCLI)
+        #expect(summaries.modelOnceOn == StorySummaries.copilotDefaultModel)
+        summaries.setOn(true)
+        await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.copilotDefaultModel)
+        #expect(summaries.modelOnceOn == summaries.model)
+        // Known not to be here, Apple Intelligence, which turning them on again keeps.
+        summaries.findCLI = { false }
+        await summaries.lookForCLI()
+        summaries.setOn(false)
+        #expect(!summaries.modelDependsOnCLI)
+        #expect(summaries.modelOnceOn == StorySummaries.appleIntelligenceModel)
+        // Chosen, whatever's found.
+        summaries.findCLI = { true }
+        summaries.setModel("claude-opus-5.5")
+        #expect(summaries.modelOnceOn == "claude-opus-5.5")
+    }
+
     /// Until the model's known, nothing's written as something opens, nor said to be about to be, so a card never says
     /// "on this Mac" for one that goes to Copilot; once it is, it's written with it. ✨ writes with the model it names.
     @Test func nothingsWrittenAsItOpensUntilTheModelIsKnown() async {

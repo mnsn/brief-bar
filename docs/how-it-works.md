@@ -558,8 +558,11 @@ sources' order: a task Azure DevOps sent to Copilot says how it went, and Copilo
 Links is on (`StorySummaries` in `Sources/BriefBarUI`). As you turn it on, its box says, a line each, what it uses or
 sends, where, what it costs, which for a Copilot model follows that choice, and what the model can do, with **Writes**:
 **As you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`), and
-the model, to choose before it's on (`SummariesSettingRows`); once it's on, Writes and the model are rows of their own,
-the model's line saying where it runs and what that costs. The popover that **Turn On…** opens where a summary would be
+the model, to choose before it's on (`SummariesSettingRows`). Until you choose one, the box names the model they'd write
+with once on (`StorySummaries.modelOnceOn`): Claude Haiku 5.5 through Copilot while turning them on would look for the
+Copilot CLI, saying that Apple Intelligence writes them where it isn't, so the box never says "on this Mac" for summaries
+that go to Copilot. Once it's on, Writes and the model are rows of their own, the model's line saying where it runs and
+what that costs. The popover that **Turn On…** opens where a summary would be
 has it all at once, as it did in Settings (`StorySummariesSetting`). The model's choices come under what they cost
 (`StorySummariesSetting.onDeviceSection`, `copilotSection` and `choiceTitle`): "On this Mac: free, less accurate", Apple Intelligence, "(not on this Mac)" where this Mac can't run
 it; then "Through Copilot: a request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5

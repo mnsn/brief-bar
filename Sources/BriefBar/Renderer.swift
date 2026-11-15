@@ -457,6 +457,9 @@ enum Renderer {
                 defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: false
             )
             summariesAsked.models = model.services.summaries.models
+            // As in the app, where turning them on looks for the Copilot CLI: the box names the model that would choose.
+            // The picture never turns them on, so this looks for nothing.
+            summariesAsked.findCLI = { true }
             wholePage(
                 LinksAndSummariesPage(links: model.services.links, summaries: summariesAsked)
                     .environment(\.consentShown, StorySummariesSetting.title),

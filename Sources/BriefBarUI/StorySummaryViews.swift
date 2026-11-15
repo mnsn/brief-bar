@@ -646,11 +646,14 @@ package struct SummariesSettingRows: View {
     package static let writesCaption = "As you open a work item, pull request or session, or only when you click ✨."
 
     package var body: some View {
-        let onDevice = summaries.usesOnDeviceModel
+        // The box names the model they'd write with once on, which, unless you chose one, turning them on looks for the
+        // Copilot CLI to decide: what it says it sends where is what they'll do.
+        let onDevice = summaries.modelOnceOn == StorySummaries.appleIntelligenceModel
         let lines = StorySummariesSetting.lines(onDevice: onDevice, writesWhenOpened: summaries.writesWhenOpened)
         ConsentToggle(
             StorySummariesSetting.title, caption: Self.caption, info: info(lines),
-            entries: lines.map { DescriptionBox.Entry(title: $0.label, symbol: $0.symbol, text: Self.sentence($0.text)) },
+            entries: lines.map { DescriptionBox.Entry(title: $0.label, symbol: $0.symbol, text: Self.sentence($0.text)) }
+                + (summaries.modelDependsOnCLI ? [Self.withoutCLI] : []),
             isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) })
         ) {
             VStack(alignment: .leading, spacing: 8) {
@@ -700,6 +703,12 @@ package struct SummariesSettingRows: View {
         }
     }
 
+    /// What happens where the Copilot CLI isn't, while the model they'd use depends on finding it.
+    private static let withoutCLI = DescriptionBox.Entry(
+        title: "Without the Copilot CLI", symbol: "desktopcomputer",
+        text: "Unless you choose a model, Apple Intelligence writes them on this Mac where the Copilot CLI isn't installed."
+    )
+
     /// Where the model it uses runs, and what that costs.
     package static let onDeviceCaption = "On this Mac with Apple Intelligence: free, but it often gets details wrong."
     package static let copilotCaption = "Through GitHub Copilot: a request on your plan, at the model's rate, for each."
@@ -709,7 +718,8 @@ package struct SummariesSettingRows: View {
     private func info(_ lines: [(label: String, symbol: String, text: String)]) -> String {
         ([StorySummariesSetting.explanation(writesWhenOpened: summaries.writesWhenOpened)]
             + lines.map { "\($0.label) \($0.text)" }
-            + (summaries.usesOnDeviceModel ? [StorySummariesSetting.onDeviceAccuracy] : []))
+            + (summaries.modelDependsOnCLI ? [Self.withoutCLI.text] : [])
+            + (summaries.modelOnceOn == StorySummaries.appleIntelligenceModel ? [StorySummariesSetting.onDeviceAccuracy] : []))
             .joined(separator: "\n\n")
     }
 
@@ -728,9 +738,9 @@ package struct SummariesSettingRows: View {
         .fixedSize()
     }
 
-    /// On this Mac, then through Copilot, each with what it costs.
+    /// On this Mac, then through Copilot, each with what it costs: the model they'd write with once on, or the one they use.
     private var modelPicker: some View {
-        Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
+        Picker("Model", selection: Binding(get: { summaries.modelOnceOn }, set: { summaries.setModel($0) })) {
             Section(StorySummariesSetting.onDeviceSection) {
                 ForEach(choices.filter { $0.id == StorySummaries.appleIntelligenceModel }) { model in
                     Text(StorySummariesSetting.choiceTitle(model, canRunOnDevice: summaries.canRunOnDevice())).tag(model.id)
@@ -747,11 +757,12 @@ package struct SummariesSettingRows: View {
         .fixedSize()
     }
 
-    /// The models to choose from, with the one chosen even when it isn't among them.
+    /// The models to choose from, with the one shown even when it isn't among them.
     private var choices: [StorySummaries.Model] {
         var choices = summaries.models
-        if !choices.contains(where: { $0.id == summaries.model }) {
-            choices.append(StorySummaries.Model(id: summaries.model, name: summaries.model))
+        let shown = summaries.modelOnceOn
+        if !choices.contains(where: { $0.id == shown }) {
+            choices.append(StorySummaries.Model(id: shown, name: shown))
         }
         return choices
     }
