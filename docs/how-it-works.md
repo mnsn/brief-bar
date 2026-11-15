@@ -1885,9 +1885,10 @@ keyboard navigation, and it keeps it as it moves: drawn anew in its new column, 
 the board takes to draw it, up to ten seconds, unless you went to another card, or a field you type in, by then; each
 move that takes it to another column owes it that, so that a key that comes just as the last move's wait ends doesn't
 lose it (`OwedFocus`), and one that leaves it in its column, as one that still waits, owes it nothing. As its old place
-goes, SwiftUI lets go of the focus and AppKit gives it to the next card by itself: a card that goes then tells the Board
-(`MovingFocus`), which counts the next card that gets the focus from none, while you were last on the moved one, as
-that, a click saying where you were first, and the moved card takes the focus back from it. ⌘→ and
+goes, SwiftUI lets go of the focus and AppKit gives it to the next card by itself, in one change or in two, by way of
+none: a card that goes then tells the Board (`MovingFocus`), which counts the next card that gets the focus from none,
+while you were last on the moved one, or on none since it let go of it, as that, a click saying where you were first,
+and the moved card takes the focus back from it. ⌘→ and
 ⌘← move it to the next or previous stage you can set, and from Waits, ⌘← to Can merge. Return or Space shows its
 details, as a click does. Where the details cover the Board (`DetailsSplit`),
 it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
@@ -3300,8 +3301,12 @@ card's menu has State, with Undo, and VoiceOver's actions each state (`StateMenu
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved
 state; while Make Changes in Azure DevOps is off, saying how to turn it on, or another change is on its way
-(`BoardTaskStates`). On a joined column whose columns would each set the same state, as In review's, it goes on the
-first rather than ask you to choose. Your work outside the sprint, with + All My Tasks, which isn't on the sprint's
+(`BoardTaskStates`); the line under its lane that says so goes once what moving it would do changes, as its state does
+or the change on its way ends (`BoardNotice.work`), since a work item has no stage whose change would take it away. On a
+joined column whose columns would each set the same state, as In review's, it goes on the first rather than ask you to
+choose. A key that leaves a story's work all resolved or done keeps its lane open, as if you'd opened it, rather than
+fold it under the card, which keeps the keyboard there (`BoardLane.finishesStory(moving:to:)`); a drop leaves it to
+fold, as a finished story's lane does. Your work outside the sprint, with + All My Tasks, which isn't on the sprint's
 board, says to move it there first (`MyWorkText.stateStays`); a type whose states the team's configuration doesn't map
 moves only by itself (`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull
 request linked to it.

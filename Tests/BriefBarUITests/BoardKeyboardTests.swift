@@ -132,10 +132,14 @@ import Testing
             }
         }
 
+        /// What moving a card does: nothing while a change is on its way, one state changing at a time, as on My Work.
         func states(of task: BoardTask) -> BoardTaskStates {
             guard let current = first[task.work.progress] else { return .fixed(BoardText.workStays) }
-            return .changes(current: current, first: first, held: nil)
+            return .changes(current: current, first: first, held: unanswered.isEmpty ? nil : Self.oneAtATime)
         }
+
+        /// Why a card doesn't move while a change is on its way.
+        static let oneAtATime = "One state changes at a time"
 
         func set(_ ref: ItemRef, to state: String) {
             changes.append((ref, state))
@@ -465,6 +469,69 @@ import Testing
                 return details.shown != nil
             }
             #expect(details.shown == task, "The draft's card kept the keyboard AppKit gave it as the task's card left To start")
+        }
+    }
+
+    /// ⌘→ that leaves a story's work all done keeps its lane open, as if you opened it, rather than fold it under the card:
+    /// the card, drawn in Completed, keeps the keyboard, and ⌘← starts it again.
+    @Test func aKeyThatFinishesAStorysWorkKeepsItsLaneOpenWithTheCardAndTheKeyboard() async throws {
+        let order = Self.order()
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, story: story, progress: .inProgress)], stories: [story])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            let before = drawn.frames[task]?.minX
+            try await Self.pressUntil("⌘→ to close it, the story's last work") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            #expect(states.changes.last?.state == "Closed")
+            try await until("its card drawn in Completed, its lane still open") {
+                drawn.isDrawn(task) && drawn.frames[task]?.minX != before
+            }
+            await Self.queuedWorkDone()
+            try await Self.pressUntil("⌘← on the card, which kept the keyboard, to start it again") {
+                Self.press(.leftArrow, command: true, in: window)
+                return states.changes.count == 2
+            }
+            #expect(states.changes.last?.state == "Active")
+        }
+    }
+
+    /// Why a work item's card couldn't move, which its lane says, goes once what held it ends: ⌘→ while its change is on its
+    /// way says one state changes at a time, and once Azure DevOps answers, the card moves and the lane says it no more.
+    @Test func aLanesLineOfWhyAWorkItemsCardCouldntMoveGoesOnceItsChangeIsDone() async throws {
+        let order = Self.order()
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        states.answersLater = true
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, story: story, progress: .toDo)], stories: [story])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            try await Self.pressUntil("⌘→ to start it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            let withoutIt = host.fittingSize.height
+            try await Self.pressUntil("⌘→ again, before Azure DevOps answers, for its lane to say why it waits") {
+                Self.press(.rightArrow, command: true, in: window)
+                return host.fittingSize.height > withoutIt + 8
+            }
+            #expect(states.changes.count == 1)
+            let withIt = host.fittingSize.height
+            let before = drawn.frames[task]?.minX
+            states.answer()
+            try await until("its card drawn in In progress") { drawn.frames[task]?.minX != before }
+            try await until("its lane's line to go") { host.fittingSize.height < withIt - 8 }
         }
     }
 

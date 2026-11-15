@@ -553,7 +553,8 @@ backlog configuration maps them, so that it may be **To Do**, **In Progress** or
 next column, past Merged for a type with no resolved state. Its card goes to its new column once
 Azure DevOps has it, keeping the keyboard after ⌘→ or ⌘←; the line under **Show** says what changed, with **Undo**, as
 on the Sprint page, or why it didn't, with **Try Again** where it may help. Its right-click menu has **State** too, with
-every state its type has, which VoiceOver offers as actions. As you drag it, a column that wouldn't change it says why:
+every state its type has, which VoiceOver offers as actions. A key that finishes a story's last work keeps its lane
+open, with the card and the keyboard on it, until you fold it. As you drag it, a column that wouldn't change it says why:
 another lane; one whose kind of state it's in already, such as To start for one still New while Copilot works on it;
 Merged for a type with no resolved state; anything while another change is on its way, or with the setting off, which
 says how to turn it on. Your work outside the sprint, with + All My Tasks, says to move it there first: only the sprint's

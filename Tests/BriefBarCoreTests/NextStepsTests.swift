@@ -1812,6 +1812,21 @@ import Testing
         #expect(toStart.keyTarget(forward: true, states: .fixed("Outside")) == .stage(.inProgress))
     }
 
+    /// A move that leaves a story's work all resolved or done finishes its lane, which would fold under the card: not one
+    /// that leaves work to do, nor in a lane that's no story's, or was finished already.
+    @Test func aMoveFinishesAStorysLaneOnlyWhereItLeavesNoWorkToDo() {
+        let started = BoardTask(Self.work(5103, .inProgress, story: 5001))
+        let done = BoardTask(Self.work(5104, .completed, story: 5001))
+        let lane = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [started, done])
+        #expect(lane.finishesStory(moving: started, to: .completed))
+        #expect(lane.finishesStory(moving: started, to: .stage(.merged)))
+        #expect(!lane.finishesStory(moving: started, to: .stage(.yourReview)))
+        #expect(!lane.finishesStory(moving: done, to: .toStart))
+        let finished = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [done])
+        #expect(!finished.finishesStory(moving: done, to: .stage(.merged)))
+        #expect(!BoardLane(kind: .notInAMission, columns: [:], tasks: [started, done]).finishesStory(moving: started, to: .completed))
+    }
+
     /// With your work on the board, a merged pull request's card is in Completed once it's out and every work item of yours
     /// it names is done, one that names none too; else in Merged, with your resolved work. Its stage stays Merged, and
     /// Merged and Completed count each card once, whatever lanes show it. Pull requests alone have no Completed.

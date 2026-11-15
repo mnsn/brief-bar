@@ -227,9 +227,14 @@ extension BoardTask {
     /// The column its card goes to once its work item is in the state of a column's work (`BoardColumn.workProgress`), as
     /// its pull requests and a Copilot task still have it.
     public func column(movedTo column: BoardColumn) -> Column {
+        moved(to: column).column
+    }
+
+    /// Its card once its work item is in the state of a column's work.
+    func moved(to column: BoardColumn) -> BoardTask {
         var work = self.work
         work.progress = column.workProgress
-        return BoardTask(work).column
+        return BoardTask(work)
     }
 }
 
@@ -341,6 +346,15 @@ extension BoardLane {
     /// mission's does, until you open it.
     public var isFinishedStory: Bool {
         story != nil && !tasks.isEmpty && !hasWorkToDo
+    }
+
+    /// Whether moving one of its work items' cards to a column, which puts it in that column's state, makes it a finished
+    /// story's lane (`isFinishedStory`), which would fold under the card: as for its last work still to do, set done.
+    public func finishesStory(moving task: BoardTask, to column: BoardColumn) -> Bool {
+        guard !isFinishedStory, tasks.contains(where: { $0.ref == task.ref }) else { return false }
+        var moved = self
+        moved.tasks = tasks.map { $0.ref == task.ref ? $0.moved(to: column) : $0 }
+        return moved.isFinishedStory
     }
 
     /// What a finished story's lane holds, on its folded line: "3 completed", "1 merged · 2 completed".

@@ -161,6 +161,9 @@ private struct BoardNotice: Equatable {
     /// name for a mission its stage's words name is no change (`StageReading.readTheSame`).
     var ref: ItemRef
     var reading: StageReading?
+    /// For a work item's card, which has no stage, what moving it would do then, from its state and why it can't change
+    /// now: once that changes, as its state does, or a change on its way ends, it's said no more. Nil for a pull request's.
+    var work: BoardTaskStates?
     /// Why it didn't move; false for where it still waits once it did.
     var isRefusal = true
 }
@@ -170,36 +173,6 @@ private struct BoardNotice: Equatable {
 private struct KeyOpened: Equatable {
     var column: BoardColumn
     var spot: CardSpot
-}
-
-/// A card a key, or a drop, takes to another column while it has the keyboard's focus, until it has the focus back there.
-/// As its old place goes from the board, AppKit gives the focus to the next card by itself: that card, which you didn't
-/// choose, is where the moved card takes it back from as it's drawn anew (`OrderBoardView.mayTakeFocus(from:to:)`). A
-/// work item's card goes once Azure DevOps has its new state, so you may well have gone elsewhere meanwhile: only the
-/// focus going to a card right as its old place goes counts.
-private struct MovingFocus: Equatable {
-    var spot: CardSpot
-    /// Its move, as `OwedFocus` counts them: once that move's wait ends, it's done with.
-    var move: Int
-    /// Its old place went from the board.
-    var left = false
-    /// The card AppKit gave the focus to as it went.
-    var handedOn: CardSpot?
-
-    /// As the keyboard's focus goes from one card to another, or to none: done with, once it has it back where it went,
-    /// not while its old place is still there, as a work item's waits for Azure DevOps; the card the focus went to by
-    /// itself, where it went from no card right as its old place went while you were last on it, as a click on a card
-    /// says where you were last first; done with too, once you went on from that one.
-    /// - Parameter last: the card you were last on, before this change.
-    func focusChanged(from old: CardSpot?, to new: CardSpot?, last: CardSpot?) -> MovingFocus? {
-        if new == spot { return left ? nil : self }
-        if let new, left, handedOn == nil, old == nil || old == spot, last == spot {
-            var handed = self
-            handed.handedOn = new
-            return handed
-        }
-        return handedOn == nil || new == handedOn ? self : nil
-    }
 }
 
 /// What decides how long the column a key moved a card to stays open: which card has the keyboard's focus, whether the
@@ -587,7 +560,7 @@ package struct OrderBoardView: View {
     /// focus back as it appears, so that the next key moves it on.
     @LocalState private var refocus = OwedFocus<CardSpot>()
     /// That card, while a move takes it to another column, until it has the focus back (`MovingFocus`).
-    @LocalState private var movingFocus: MovingFocus?
+    @LocalState private var movingFocus: MovingFocus<CardSpot>?
     /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
     /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
     @LocalState private var lastFocus: CardSpot?
@@ -666,6 +639,11 @@ package struct OrderBoardView: View {
                 order.stageRefusal = nil
             }
             if let notice, !StageReading.readTheSame(stages[notice.ref], notice.reading) { self.notice = nil }
+        }
+        // A work item's card has no stage: once what moving it would do changes, as its state does, or a change on its way
+        // ends, or it leaves the board, its lane says why it couldn't move no more.
+        .onChange(of: noticedWork) { _, work in
+            if let notice, notice.work != nil, notice.work != work { self.notice = nil }
         }
         .onDisappear {
             if order.stageRefusal != nil { order.stageRefusal = nil }
@@ -2079,6 +2057,17 @@ package struct OrderBoardView: View {
         work?.states(task) ?? .fixed(BoardText.workStays)
     }
 
+    /// A work item's own card, as the board has it now; nil for a pull request's, and once it left the board.
+    private func boardTask(_ ref: ItemRef) -> BoardTask? {
+        board.lanes.lazy.flatMap(\.tasks).first { $0.ref == ref }
+    }
+
+    /// What moving the card a lane's line is about would do now, for a work item's (`BoardNotice.work`): nil for a pull
+    /// request's, and once it left the board.
+    private var noticedWork: BoardTaskStates? {
+        notice.flatMap { boardTask($0.ref) }.map(workStates(of:))
+    }
+
     /// ⌘→ and ⌘← on a work item's card: the next or previous column that would change its state (`BoardTask.keyTarget`), or
     /// why it can't go there; a beep at either end. It keeps the keyboard's focus, drawn anew in its new column.
     private func taskKey(_ ref: ItemRef, in lane: BoardLane, forward: Bool) {
@@ -2103,12 +2092,16 @@ package struct OrderBoardView: View {
     /// - Parameters:
     ///   - keepsFocus: it has the keyboard's focus, which it keeps, drawn anew in its new column.
     ///   - opensColumn: a key moved it, and the column it goes to opens, folded or not, while it keeps the keyboard's focus,
-    ///     so that the next key moves it on from there.
+    ///     so that the next key moves it on from there; and a story's lane whose work it leaves all done stays open, as if
+    ///     you opened it, rather than fold under the card, which takes the keyboard back there, where ⌘← moves it back.
     private func setState(
         of task: BoardTask, to state: String, column: BoardColumn, in lane: BoardLane.Kind, keepsFocus: Bool, opensColumn: Bool
     ) -> Bool {
         guard let work else { return false }
         notice = nil
+        if opensColumn, board.lanes.first(where: { $0.kind == lane })?.finishesStory(moving: task, to: column) == true {
+            unfolded.insert(lane)
+        }
         work.setState(task, state)
         let goes = task.column(movedTo: column)
         guard goes != task.column else { return true }
@@ -2202,7 +2195,9 @@ package struct OrderBoardView: View {
     /// details cover the board, which hides that line, under its stage in them.
     private func say(_ why: String, about ref: ItemRef, in lane: BoardLane.Kind, isRefusal: Bool = true) {
         let reading = order.stage(of: ref)
-        notice = BoardNotice(lane: lane, text: why, ref: ref, reading: reading, isRefusal: isRefusal)
+        notice = BoardNotice(
+            lane: lane, text: why, ref: ref, reading: reading, work: boardTask(ref).map(workStates(of:)), isRefusal: isRefusal
+        )
         if !isEnabled, let reading {
             order.stageRefusal = StageRefusal(ref: ref, why: why, reading: reading, isRefusal: isRefusal)
         }
