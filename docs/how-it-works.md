@@ -3120,9 +3120,11 @@ remote link, opens there, in your browser: its ID names another work item in thi
 menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no
 window shows that page: then it opens in Azure DevOps.
 
-**What a work item opens.** A work item's Copilot session and its pull request are a click away (`WorkItemShortcuts`,
-`WorkItemOpenItems`, `WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**,
-and beside **Open in Azure DevOps** in its details, from what BriefBar knows already, reading nothing more for them. Its
+**What a work item opens.** ↗ at the top of its details opens it in Azure DevOps, as **Open in Azure DevOps** under its
+title does, and as a pull request's ↗ opens it from its own details; on a pull request's page over them, ↗ is that pull
+request's. Its Copilot session and its pull request are a click away too (`WorkItemShortcuts`, `WorkItemOpenItems`,
+`WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**, and beside **Open in
+Azure DevOps** in its details, from what BriefBar knows already, reading nothing more for them. Its
 sessions are the tasks you sent it to Copilot, the newest first, while Send Work to Copilot is on, then the sessions Show
 Links links to it, directly or through one of its pull requests, the one that needs you most first, each once; each
 opens as a pull request's session does (`SessionOpening`): **Open in Copilot**, in the Copilot app, or, for a task

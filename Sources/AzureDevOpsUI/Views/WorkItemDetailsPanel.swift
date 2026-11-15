@@ -189,8 +189,22 @@ struct WorkItemDetailsPanel: View {
                 .buttonStyle(.borderless)
                 .help("Read it again")
             }
+            // ↗: the work item in Azure DevOps, as on a pull request's details; on a pull request's page over it, that pull
+            // request. A page of anything else has its own, beside its title.
             if let page = details.pages.last {
                 PullRequestPageOpener(ref: page, details: pageDetails)
+            } else {
+                Button {
+                    details.openInAzureDevOps()
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(size: 13)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Open in Azure DevOps")
+                .accessibilityLabel("Open in Azure DevOps")
             }
             Menu {
                 if let page = details.pages.last {

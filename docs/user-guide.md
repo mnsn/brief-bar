@@ -1039,8 +1039,8 @@ shows all of them. **✕** hides it, and **Show Summary**, in its menu, shows it
 another. A pull request's or a session's page writes the same summary as it opens, as a work item's
 details do. Widgets never show one.
 
-**Open in Azure DevOps** opens the work item there, to change it; right-clicking it on the board does
-too. Drag the details' left edge to make them wider, to read a long description or summary, or
+**Open in Azure DevOps**, or **↗** at the top of its details, as on a pull request's, opens the work item there,
+to change it; right-clicking it on the board does too. Drag the details' left edge to make them wider, to read a long description or summary, or
 narrower again: BriefBar keeps the width, as far as the window has room for it beside the board, and
 double-clicking the edge brings back the usual one. In a narrow window the details cover the board,
 until **✕** or Esc closes them. Clicking one of your work items in the Sprint list or widget opens its

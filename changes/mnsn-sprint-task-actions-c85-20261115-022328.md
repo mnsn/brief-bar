@@ -5,7 +5,8 @@
   says what changed, with **Undo**.
 - **Open a work item's Copilot session or pull request in a click.** On the Sprint page, a work item's right-click and
   **⋯** menus, and its details, have **Open in Copilot**, for the Copilot session that goes with it, and **Show Pull
-  Request**, which shows its pull request over its details.
+  Request**, which shows its pull request over its details. **↗** at the top of its details opens it in Azure DevOps,
+  as on a pull request's details.
 
 ## Descriptions
 
