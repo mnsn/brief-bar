@@ -199,7 +199,8 @@ work or a new one, and the model.
   changed nothing for gets a reply saying why.
 - **Or do it yourself.** With **Make Changes in Azure DevOps** on, reply to comments, resolve threads, edit or delete
   your own comments and change tags, as you, without opening Azure DevOps; on the Sprint page, set a story, bug or
-  task to **New**, **Active**, **Closed** or another of its states from its state's menu.
+  task to **New**, **Active**, **Closed** or another of its states from its state's menu, and on My Work, drag your
+  sprint work's card to another column, such as **In progress** or **Completed**, to set its state there.
 
 Fixes don't push unless you ask, and Pre-review changes and posts nothing. Turn on **Send Prompts to Copilot
 Sessions** in **Settings › Agents**, and BriefBar sends a prompt to one of the Copilot app's sessions itself, or to a
@@ -266,7 +267,8 @@ unless you add `--greedy`), and keep Full Disk Access.
 Sources are read-only, but for one opt-in: with **Make Changes in Azure DevOps**, off by default,
 BriefBar posts your replies in pull requests' threads, sets threads' statuses, edits and deletes your own
 comments, adds and removes pull requests' tags, moves a task or bug of yours to your team's current or next
-sprint on My Work, and sets the state you choose for a work item on the Sprint page, as you, only when you click.
+sprint on My Work, and sets the state you choose for a work item on the Sprint page, or by moving its card on My
+Work's Board, as you, only when you click or move it.
 Azure DevOps and GitHub use
 your existing CLI sign-ins, and Teams and Copilot tracking reads files on your Mac. Full Disk Access is needed for
 Teams and the optional **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.

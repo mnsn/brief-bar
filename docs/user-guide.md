@@ -14,7 +14,7 @@ For a quick tour and download, see the [README](../README.md).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, pull requests' tags, on My Work, the sprint a task or bug of yours is in, and, on the Sprint page, a work item's state, each when you click it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only, but, only if you turn on **Make Changes in Azure DevOps**, your replies in pull requests' threads, their statuses, your own comments, edited or deleted, pull requests' tags, on My Work, the sprint a task or bug of yours is in, and the state of your sprint work whose card you move to another column, and, on the Sprint page, a work item's state, each when you click it or move it; and, only if you turn on **Summaries** and choose a Copilot model, as you open a work item's details or a page, or ask, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI; and, when you ask a Copilot session about a comment, its conversation, the comment and its code go there too, and, when you ask one with **Ask…**, its conversation and your question; and, when you choose a Copilot model for **Fix Grammar** and use it, the reply or comment you're writing |
 | **GitHub Copilot** | Which Copilot sessions are running, need you, or have finished or stopped; local CLI sessions when the app isn't installed; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's and CLI's own files under `~/.copilot` | Local Copilot session files | None for tracking; optional Copilot summaries send the selected work's details through the CLI, and **Ask…**, with Send Work to Copilot on, a session's conversation and your question, as described in [Privacy](#privacy) |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in, as each account it's signed in to: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query for each account each refresh |
 
@@ -503,8 +503,9 @@ Tasks, those outside the sprint come after the sprint's, each card saying where 
 38**, or **No sprint**. Stories, features and epics assigned to you outside the sprint aren't shown; a story of yours in
 the sprint whose tasks of yours are outside it has no card of its own then: those tasks are its work. Click a card, or
 press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its
-menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, so dragging it, ⌘→ and ⌘←
-say so instead.
+menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, and, with **Make Changes
+in Azure DevOps** on, as you move it, which sets its state (**Set your work's state**, below); otherwise
+dragging it, ⌘→ and ⌘← say so instead.
 On My Work, **2 more ›** scrolls the Board to its column, opened if it's folded, a pull request's mission in its details
 shows its lane, and **Show By Status** shows Pull Requests by status. To start, Completed and work items' cards are only
 on the Board, and in Start next: stages, Up Next's other slots, groups, counts and what agents are told stay as they
@@ -540,6 +541,25 @@ until BriefBar quits, first in its lane's To start too, unless it's in your orde
 Fix next's does in In progress; it waits while that work item isn't in To start, and **Let BriefBar Choose** gives the
 slot back to that order. Click the slot for the work item's details, or right-click it for its card's menu; **2 more ›**
 shows the next on the Board, with the keyboard on it, its column opened for the moment if it's folded.
+
+**Set your work's state.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
+default), move a task, story or bug of yours in the sprint to another column of its lane on My Work's Board: drag it
+there, or click it, or Tab to it, and press **⌘→** or **⌘←**. BriefBar sets its state in Azure DevOps, as you, so that
+your team sees your work there too: **To start** sets it **New**; **In progress**, or any column after it up to
+**Waits**, **Active**, though its card shows in In progress, as started work with no pull request on your board does;
+**Merged** **Resolved**, where its type has a resolved state, as bugs and stories have in the Agile process; and
+**Completed** **Closed**. Each is the first state of that kind its type has in your team's process, as your team's
+backlog configuration maps them, so that it may be **To Do**, **In Progress** or **Done** instead. ⌘→ and ⌘← go to the
+next column, past Merged for a type with no resolved state. Its card goes to its new column once
+Azure DevOps has it, keeping the keyboard after ⌘→ or ⌘←; the line under **Show** says what changed, with **Undo**, as
+on the Sprint page, or why it didn't, with **Try Again** where it may help. Its right-click menu has **State** too, with
+every state its type has, which VoiceOver offers as actions. A key that finishes a story's last work keeps its lane
+open, with the card and the keyboard on it, until you fold it. As you drag it, a column that wouldn't change it says why:
+another lane; one whose kind of state it's in already, such as To start for one still New while Copilot works on it;
+Merged for a type with no resolved state; anything while another change is on its way, or with the setting off, which
+says how to turn it on. Your work outside the sprint, with + All My Tasks, says to move it there first: only the sprint's
+work changes state here. BriefBar sets a state only as you move a card or choose one: not when you send a task to Copilot,
+nor when a pull request is linked to it.
 
 **Move a task to a sprint.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), a task or bug of yours outside the sprint, on My Work with + All My Tasks, moves to your team's current sprint
@@ -1075,7 +1095,9 @@ and **⋯** menus too. The states are those your team's backlog configuration ma
 already; **Removed** isn't offered, since it takes a work item off the board: remove one in Azure DevOps. It changes
 only from the state BriefBar read it in: when someone changed it meanwhile, Azure DevOps refuses it, as it does a
 change its process doesn't allow, and the line under the Sprint page's header says why, with **Try Again** where it
-may help. Once it changed, the line says so, with **Undo**, which sets it back while it's still in that state.
+may help. Once it changed, the line says so, with **Undo**, which sets it back while it's still in that state. On My
+Work, moving its card to another column on the Board sets its state too ([My Work](#azure-devops), **Set your work's
+state**).
 
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
@@ -1593,7 +1615,7 @@ DevOps' gear menu has **Watch a Pull Request…** too: it's the same setting.
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move and the last state you changed, and stops a change that hasn't gone yet |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration, and a sprint work item's card moved to another column on the Board, which sets that column's state; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move and the last state you changed, and stops a change that hasn't gone yet |
 
 **Settings › Send to Copilot** has Send Work to Copilot, which sends Azure DevOps' work items and pull requests' fixes:
 while Azure DevOps is off, or paused, it shows all the same, disabled, saying so, with **Turn On…** or **Review…**.
@@ -1636,14 +1658,14 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
   in place (never copied, and without taking its lock), the Copilot app's files, Azure DevOps
   through GET requests, and GitHub through a query that only reads. It never changes any of them,
   but for these in Azure DevOps, only if you turn on **Make Changes in Azure DevOps**, and only when
-  you click them: in a pull request's details, your reply in a comment thread, a thread's status, your
-  own comment, edited or deleted, and a tag you add to the pull request or remove; on My Work, the
-  sprint a task or bug of yours is in, its iteration, moved to your team's current sprint or its next
-  once you confirm it, after which BriefBar reads the sprint and your work outside it again; and, on the
-  Sprint page, the state you choose for one of its stories, bugs or tasks, after which BriefBar reads the
-  sprint again. They go as you, with
-  your Azure CLI sign-in, and nothing else does, never by itself, and not from agents or the command
-  line. What you write in a reply, or in place of your comment, stays in memory only, until you send or
+  you click them, or move a card: in a pull request's details, your reply in a comment thread, a
+  thread's status, your own comment, edited or deleted, and a tag you add to the pull request or
+  remove; on My Work, the sprint a task or bug of yours is in, its iteration, moved to your team's
+  current sprint or its next once you confirm it, after which BriefBar reads the sprint and your work
+  outside it again; and, on the Sprint page, the state you choose for one of its stories, bugs or
+  tasks, or, on My Work, that of the column you move its card to on the Board, for one of yours, after
+  which BriefBar reads the sprint again. They go as you, with your Azure CLI sign-in, and nothing else
+  does, never by itself, and not from agents or the command line. What you write in a reply, or in place of your comment, stays in memory only, until you send or
   save it. The tags you add are kept in its settings, up to 20 for each project, by the project's ID, to
   suggest them, until you turn the setting off.
   **Fix Grammar** corrects what you write with Apple Intelligence, on your Mac, unless you choose a

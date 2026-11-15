@@ -1751,6 +1751,82 @@ import Testing
         #expect(task(Self.work(5102, .completed, copilot: true)) == (.completed, "Closed"))
     }
 
+    /// Moving a work item's card to another column of its lane puts it in the state of that column's work, the first of that
+    /// kind its type has: To start's, any stage's before Merged, where its card then shows in In progress, Merged's
+    /// resolved, where its type has one, and Completed's; back as well as on. It refuses, saying why, another lane, a column
+    /// whose kind of state it's in already, one its type has no state for, and any while its state can't change, or can't
+    /// now. ⌘→ and ⌘← go to the next column its type has a state for.
+    @Test func movingAWorkItemsCardPutsItInTheStateOfItsColumnsWork() {
+        let task: [SprintWork.Progress: String] = [.toDo: "New", .inProgress: "Active", .completed: "Closed"]
+        var bug = task
+        bug[.resolved] = "Resolved"
+        let states = { (first: [SprintWork.Progress: String], progress: SprintWork.Progress) in
+            BoardTaskStates.changes(current: first[progress] ?? "Removed", first: first, held: nil)
+        }
+        let toStart = BoardTask(Self.work(5104, .toDo))
+        let new = states(task, .toDo)
+        #expect(toStart.move(to: .stage(.inProgress), sameLane: true, states: new) == .setState("Active"))
+        #expect(toStart.move(to: .stage(.yourReview), sameLane: true, states: new) == .setState("Active"))
+        #expect(toStart.column(movedTo: .stage(.yourReview)) == .inProgress)
+        #expect(toStart.move(to: .completed, sameLane: true, states: new) == .setState("Closed"))
+        #expect(toStart.move(to: .stage(.merged), sameLane: true, states: new)
+            == .refused("Its type has no resolved state in your team's process: Completed sets it Closed"))
+        #expect(BoardTask(Self.work(5110, .toDo)).move(to: .stage(.merged), sameLane: true, states: states(bug, .toDo))
+            == .setState("Resolved"))
+        #expect(toStart.move(to: .toStart, sameLane: true, states: new) == .stays)
+        #expect(toStart.move(to: .stage(.inProgress), sameLane: false, states: new) == .refused(BoardText.workOtherLane))
+
+        // Back, from done, and from started.
+        let done = BoardTask(Self.work(5102, .completed))
+        #expect(done.move(to: .stage(.inProgress), sameLane: true, states: states(task, .completed)) == .setState("Active"))
+        #expect(done.move(to: .toStart, sameLane: true, states: states(task, .completed)) == .setState("New"))
+        // In In progress while Copilot works on it, it's still New: To start has nothing to change, and its card stays there.
+        let copilot = BoardTask(Self.work(5103, .toDo, copilot: true))
+        #expect(copilot.move(to: .toStart, sameLane: true, states: new) == .refused("It's New already"))
+        #expect(copilot.move(to: .stage(.yourReview), sameLane: true, states: new) == .setState("Active"))
+        #expect(copilot.column(movedTo: .completed) == .completed)
+
+        // Held, it says why, but not over what it wouldn't change anyway; and one whose state doesn't change here says why.
+        let held = BoardTaskStates.changes(current: "New", first: task, held: "Turn it on")
+        #expect(toStart.move(to: .stage(.inProgress), sameLane: true, states: held) == .refused("Turn it on"))
+        #expect(copilot.move(to: .toStart, sameLane: true, states: held) == .refused("It's New already"))
+        #expect(toStart.move(to: .completed, sameLane: true, states: .fixed("Outside")) == .refused("Outside"))
+        #expect(toStart.move(to: .toStart, sameLane: true, states: .fixed("Outside")) == .stays)
+
+        // ⌘→ past Merged for a task, onto it for a bug; ⌘← onto a column whose kind of state it's in, which says so, as for
+        // one its merged pull request holds in Merged, which would otherwise go on changing state there; nothing at either
+        // end.
+        let started = BoardTask(Self.work(5104, .inProgress))
+        #expect(started.keyTarget(forward: true, states: states(task, .inProgress)) == .completed)
+        #expect(BoardTask(Self.work(5110, .inProgress)).keyTarget(forward: true, states: states(bug, .inProgress)) == .stage(.merged))
+        #expect(done.keyTarget(forward: false, states: states(task, .completed)) == .stage(.inProgress))
+        #expect(copilot.keyTarget(forward: true, states: new) == .completed)
+        #expect(copilot.keyTarget(forward: false, states: new) == .toStart)
+        let kept = BoardTask(Self.work(5103, .inProgress, linked: [Self.linked(4120, .merged)]))
+        #expect(kept.column == .merged)
+        let back = kept.keyTarget(forward: false, states: states(task, .inProgress))
+        #expect(back == .stage(.inProgress))
+        #expect(back.map { kept.move(to: $0, sameLane: true, states: states(task, .inProgress)) } == .refused("It's Active already"))
+        #expect(toStart.keyTarget(forward: false, states: new) == nil)
+        #expect(done.keyTarget(forward: true, states: states(task, .completed)) == nil)
+        #expect(toStart.keyTarget(forward: true, states: .fixed("Outside")) == .stage(.inProgress))
+    }
+
+    /// A move that leaves a story's work all resolved or done finishes its lane, which would fold under the card: not one
+    /// that leaves work to do, nor in a lane that's no story's, or was finished already.
+    @Test func aMoveFinishesAStorysLaneOnlyWhereItLeavesNoWorkToDo() {
+        let started = BoardTask(Self.work(5103, .inProgress, story: 5001))
+        let done = BoardTask(Self.work(5104, .completed, story: 5001))
+        let lane = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [started, done])
+        #expect(lane.finishesStory(moving: started, to: .completed))
+        #expect(lane.finishesStory(moving: started, to: .stage(.merged)))
+        #expect(!lane.finishesStory(moving: started, to: .stage(.yourReview)))
+        #expect(!lane.finishesStory(moving: done, to: .toStart))
+        let finished = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [done])
+        #expect(!finished.finishesStory(moving: done, to: .stage(.merged)))
+        #expect(!BoardLane(kind: .notInAMission, columns: [:], tasks: [started, done]).finishesStory(moving: started, to: .completed))
+    }
+
     /// With your work on the board, a merged pull request's card is in Completed once it's out and every work item of yours
     /// it names is done, one that names none too; else in Merged, with your resolved work. Its stage stays Merged, and
     /// Merged and Completed count each card once, whatever lanes show it. Pull requests alone have no Completed.

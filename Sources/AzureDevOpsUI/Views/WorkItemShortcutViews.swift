@@ -6,7 +6,7 @@ import SwiftUI
 
 // What a work item on the Sprint page offers a click away: its Copilot sessions and its pull requests, to open
 // (`WorkItemShortcuts`), and, with Make Changes in Azure DevOps on, the states it can be put in (`StateChanges`): in its
-// menus, from its state, and in its details.
+// menus, from its state, and in its details; and on its card on My Work's Board, in its menu and VoiceOver's actions.
 
 /// A work item's menus' items for what it opens: Open in Copilot, for its Copilot session, or Continue in Terminal, for a
 /// task BriefBar runs with the Copilot CLI (`SessionOpening`), or, with two or more, a menu of them; and Show Pull Request,
@@ -93,6 +93,24 @@ struct StateChoices: View {
                 CheckedMenuLabel(title: choice.name, isChecked: StateChanges.isSame(choice.name, item.state))
             }
             .disabled(states.isBusy)
+        }
+    }
+}
+
+/// A work item's states as VoiceOver's actions, on a card VoiceOver reads as one, as on My Work's Board, with Make Changes in
+/// Azure DevOps on: Change State to each it can be put in but its own, and Undo, while it's the one whose state you changed
+/// last.
+struct StateActions: View {
+    let item: WorkItem
+
+    @EnvironmentObject private var states: StateChanges
+
+    var body: some View {
+        ForEach(states.choices(for: item).filter { !StateChanges.isSame($0.name, item.state) }, id: \.name) { choice in
+            Button("Change State to \(choice.name)") { Task { await states.change(item, to: choice.name) } }
+        }
+        if let undo = states.undoable, undo.key == item.key {
+            Button(StateChangeText.undo(undo)) { Task { await states.undo() } }
         }
     }
 }
@@ -269,9 +287,9 @@ struct WorkItemOpenButtons: View {
     }
 }
 
-/// What became of changing a work item's state, under the Sprint page's header, where it stays as the page scrolls: while
-/// it's on its way; once it changed, with Undo, while it's in that state; why it didn't, with Try Again where it may help;
-/// each with ✕, but while it's on its way.
+/// What became of changing a work item's state, under the Sprint page's header, and My Work's, where it stays as the page
+/// scrolls: while it's on its way; once it changed, with Undo, while it's in that state; why it didn't, with Try Again where
+/// it may help; each with ✕, but while it's on its way.
 struct StateChangeLine: View {
     @ObservedObject var changes: StateChanges
 

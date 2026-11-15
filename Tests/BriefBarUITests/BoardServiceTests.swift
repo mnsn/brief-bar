@@ -1344,6 +1344,31 @@ import Testing
         #expect(owed.spot == nil, "Not drawn anew, it was still owed the focus once its wait ended")
     }
 
+    /// A card a move takes to another column takes the keyboard back from the card AppKit gave it to as its old place went,
+    /// whether the focus went there in one change or in two, by way of none: not from a card you clicked, which says where
+    /// you were first, nor from one the focus went to while its old place was still there, as a work item's waits for
+    /// Azure DevOps. It's done with once it has the focus back where it went, or you go on from the card it was handed to.
+    @Test func aMovedCardTakesTheFocusBackOnlyFromTheCardItWasHandedTo() throws {
+        let moved = Self.ref(4093), next = Self.ref(4088), clicked = Self.ref(4102)
+        let left = { (moving: MovingFocus<ItemRef>) in
+            var gone = moving
+            gone.left = true
+            return gone
+        }
+        let one = try #require(left(MovingFocus(spot: moved, move: 1)).focusChanged(from: nil, to: next, last: moved))
+        #expect(one.handedOn == next, "In one change, from none to the next card, while you were last on the moved one")
+        let dropped = try #require(MovingFocus(spot: moved, move: 1).focusChanged(from: moved, to: nil, last: moved))
+        let two = try #require(left(dropped).focusChanged(from: nil, to: next, last: nil))
+        #expect(two.handedOn == next, "In two, to none as its old place goes, which leaves you on no card, then to the next")
+
+        #expect(try #require(left(dropped).focusChanged(from: nil, to: clicked, last: clicked)).handedOn == nil)
+        #expect(try #require(dropped.focusChanged(from: nil, to: next, last: nil)).handedOn == nil)
+
+        #expect(two.focusChanged(from: next, to: moved, last: next) == nil)
+        #expect(MovingFocus(spot: moved, move: 1).focusChanged(from: nil, to: moved, last: moved) != nil)
+        #expect(two.focusChanged(from: next, to: clicked, last: next) == nil)
+    }
+
     // MARK: Undo, once a card leaves the board
 
     /// Finished My Review on someone else's card, the only one in no mission, takes it off the board, and its lane with it:

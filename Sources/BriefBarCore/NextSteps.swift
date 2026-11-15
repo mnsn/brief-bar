@@ -1213,13 +1213,15 @@ public enum BoardMove: Equatable, Sendable {
     case setStage(PullRequestStage)
     /// Set as Next to Merge in this mission, which holds it: it no longer waits there.
     case setAsNext(MissionKey)
+    /// A work item's own card, on My Work: puts its work item in that state, as you (`BoardTask.move(to:sameLane:states:)`).
+    case setState(String)
     /// Why it can't go there.
     case refused(String)
 
     /// Whether the column takes it.
     public var isTaken: Bool {
         switch self {
-        case .setStage, .setAsNext: true
+        case .setStage, .setAsNext, .setState: true
         case .stays, .refused: false
         }
     }
