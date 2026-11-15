@@ -264,6 +264,9 @@ final class CopilotTasksStore: ObservableObject {
     /// What BriefBar starts a new session in the Copilot app for now, by `startKey`: one at a time, each, so that sending it
     /// again meanwhile doesn't start another (`startInApp`).
     @Published var startingInApp: Set<String> = []
+    /// The sessions that new sessions in the Copilot app start from now, which BriefBar sends nothing else meanwhile, as it
+    /// keeps them in `delivering`: for why a prompt for one doesn't go (`startInApp`, `startingFromIt`).
+    var startingFrom: Set<String> = []
     /// Where each session that BriefBar sends a prompt to now works, by the session's ID: no task starts there, and git
     /// removes no worktree there, until the prompt has gone or been taken back (`busyFolders`).
     var deliveringFolders: [String: URL] = [:]

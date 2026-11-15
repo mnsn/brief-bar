@@ -2315,6 +2315,52 @@ private final class TakenAt: Sendable {
         ))
     }
 
+    /// The session a new session starts from takes nothing else from BriefBar meanwhile: its extension carries out one
+    /// request at a time, and one waiting behind the app starting a session could run out of time to be claimed. Another
+    /// new session's request is written only once that one started, and a prompt for the session doesn't go.
+    @Test func startsOneSessionAtATimeFromASession() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.showForTests = { _ in true }
+        let repository = home.appendingPathComponent("shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        var other = workItem
+        other.id = 4218
+        let second = "f9999999-9999-4999-8999-99999999999a"
+        try appDatabase(at: home, repository: repository, sessions: [
+            (session, project, "Fix the totals", "2026-10-01T09:00:00.000Z"),
+            (started, project, NewSession.name(CopilotCommand.sessionName(for: workItem)), afterTheRequest()),
+            (second, project, NewSession.name(CopilotCommand.sessionName(for: other)), afterTheRequest()),
+        ])
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen(kinds: ["send", "fork", "create"])
+        // The app takes its time to start the first, until the stand-in starts again below.
+        ext.start(after: .seconds(60)) { [started] _ in ["ok": true, "createdSessionId": started] }
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        let first = Task { await store.startInApp(.workItem(workItem), prompt: "Fix it", options: CopilotModel.standard, repository: repository) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while ext.received.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let then = Task { await store.startInApp(.workItem(other), prompt: "Fix that", options: CopilotModel.standard, repository: repository) }
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(CopilotTasksStore.startingFromIt))
+        while !store.isStartingInApp(.workItem(other)), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        // Only the first's request, which the stand-in took.
+        #expect(requests(home).filter { !$0.hasPrefix(".") }.isEmpty)
+
+        // Started again, the stand-in answers the first at once, then takes the second.
+        ext.start { [second] _ in ["ok": true, "createdSessionId": second] }
+        #expect(await first.value == .started(started))
+        #expect(await then.value == .started(second))
+        #expect(ext.received == ["create", "create"])
+        #expect(store.delivering.isEmpty)
+    }
+
     /// The demo sends nothing, and reads nothing of yours.
     @Test func theDemoSendsNothing() async {
         let store = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)

@@ -127,6 +127,21 @@ extension CopilotTasksStore {
         }
         // Again, after that read: it may have been turned off meanwhile.
         guard maySendToSessions else { return .notStarted(Self.cantSendNow) }
+        // The host's extension carries out one request at a time, so one written while it starts another session, or takes a
+        // prompt, would wait behind that, and could run out of time to be claimed: a start waits until BriefBar sends the
+        // host nothing else, and keeps it meanwhile, as a send keeps its session (`delivering`), saying why a prompt for it
+        // doesn't go (`startingFrom`).
+        while delivering.contains(plan.host) {
+            try? await Task.sleep(for: (deliveryTimingForTests ?? SessionSender.Timing()).poll)
+            if Task.isCancelled { return .notStarted(SendFailure.cancelled.description) }
+            guard maySendToSessions else { return .notStarted(Self.cantSendNow) }
+        }
+        delivering.insert(plan.host)
+        startingFrom.insert(plan.host)
+        defer {
+            delivering.remove(plan.host)
+            startingFrom.remove(plan.host)
+        }
         switch subject {
         case .workItem(let item): settings.copilotRepositories[item.reference.projectKey] = repository.path
         case .pullRequest(let pullRequest, _): settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.path
@@ -188,6 +203,9 @@ extension CopilotTasksStore {
     }
 
     static let startingAlready = "BriefBar is starting a session for it in the Copilot app already."
+
+    /// Why a prompt for one of the app's sessions doesn't go while a new session starts from it (`startingFrom`).
+    static let startingFromIt = "BriefBar is starting another session in the Copilot app from it. Try again once that's done."
 
     /// Whether BriefBar starts a new session in the Copilot app for the subject now.
     func isStartingInApp(_ subject: TaskSubject) -> Bool {
