@@ -139,9 +139,7 @@ struct StateListView: View {
             }
             ForEach(list.groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(group.title) (\(group.entries.count))")
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(options.quietAppearance ? Color.primary : group.state.textColor)
+                    SectionHeading(symbol: group.symbol, color: group.state.color, title: group.title, count: group.entries.count)
                         .padding(.horizontal, 8)
                     ForEach(group.entries) { entry in
                         HStack(alignment: .top, spacing: 0) {
@@ -229,18 +227,8 @@ struct OverviewPage: View {
 
     private func section(_ group: StateListGroup) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: group.symbol)
-                    .foregroundStyle(group.state.color)
-                Text(group.title)
-                    .foregroundStyle(.primary)
-                Text("\(group.entries.count)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                Spacer()
-            }
-            .font(size: 12, weight: .semibold)
-            .padding(.horizontal, 4)
+            SectionHeading(symbol: group.symbol, color: group.state.color, title: group.title, count: group.entries.count)
+                .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
                     if index > 0 {

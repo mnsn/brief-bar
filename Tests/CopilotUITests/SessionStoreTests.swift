@@ -431,4 +431,22 @@ import Testing
         #expect(defaults.object(forKey: "copilot.clearedSessions") == nil)
         #expect(defaults.object(forKey: "copilot.acknowledgedSessions") == nil)
     }
+
+    /// The Sessions page's counts line counts the groups with a card, as the menu bar does, not Idle: "1 needs you", but
+    /// "2 need you"; and once nothing's in them, that nothing needs you, though it's still loading at first.
+    @Test func thePagesCountsLineCountsTheGroupsWithACard() {
+        var counts = PhaseCounts()
+        counts.needsYou = 1
+        counts.running = 6
+        counts.stopped = 1
+        counts.idle = 9
+        #expect(SessionsPage.subtitle(counts, hasLoaded: true) == "1 needs you · 6 running · 1 stopped")
+        counts.needsYou = 3
+        counts.done = 2
+        #expect(SessionsPage.subtitle(counts, hasLoaded: true) == "3 need you · 6 running · 2 finished · 1 stopped")
+        var idle = PhaseCounts()
+        idle.idle = 9
+        #expect(SessionsPage.subtitle(idle, hasLoaded: true) == "Nothing needs you")
+        #expect(SessionsPage.subtitle(PhaseCounts(), hasLoaded: false) == "Your GitHub Copilot sessions, and which ones need you")
+    }
 }

@@ -217,15 +217,7 @@ struct PullRequestsPage: View {
 
     private func section(_ group: PRGroup, _ items: [PRSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: group.symbol)
-                    .foregroundStyle(group.color)
-                Text(group.title)
-                    .foregroundStyle(.primary)
-                Text("\(items.count)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                Spacer()
+            SectionHeading(symbol: group.symbol, color: group.color, title: group.title, count: items.count) {
                 if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
@@ -233,7 +225,6 @@ struct PullRequestsPage: View {
                         .help(group == .needsYou ? MenuPanelView.markAsSeenHelp : "Remove these from the list")
                 }
             }
-            .font(size: 12, weight: .semibold)
             .padding(.horizontal, 4)
             card(items)
         }
@@ -245,15 +236,7 @@ struct PullRequestsPage: View {
         let listed = store.dateList(shownOrder)
         if !listed.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .foregroundStyle(.secondary)
-                    Text(shownOrder.title)
-                        .foregroundStyle(.primary)
-                    Text("\(listed.count)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Spacer()
+                SectionHeading(symbol: "arrow.up.arrow.down", color: .secondary, title: shownOrder.title, count: listed.count) {
                     if listed.contains(where: { $0.group == .needsYou && $0.hasNews }) {
                         Button("Mark as Seen") { store.clear(.needsYou) }
                             .buttonStyle(.borderless)
@@ -261,7 +244,6 @@ struct PullRequestsPage: View {
                             .help(MenuPanelView.markAsSeenHelp)
                     }
                 }
-                .font(size: 12, weight: .semibold)
                 .padding(.horizontal, 4)
                 card(listed, showsCreated: true)
             }
@@ -310,23 +292,9 @@ struct PullRequestsPage: View {
         }
         if !idle.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) { showIdle.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(size: 9, weight: .bold)
-                            .rotationEffect(.degrees(showIdle ? 90 : 0))
-                        Text("Idle")
-                        Text("\(idle.count)").monospacedDigit()
-                    }
-                    .font(size: 12, weight: .semibold)
-                    .foregroundStyle(.secondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 4)
-                .help("Drafts, pull requests without recent activity, and reviews you've approved or declined")
+                FoldingSectionHeading(title: "Idle", count: idle.count, isExpanded: $showIdle)
+                    .padding(.horizontal, 4)
+                    .help("Drafts, pull requests without recent activity, and reviews you've approved or declined")
                 if showIdle {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in

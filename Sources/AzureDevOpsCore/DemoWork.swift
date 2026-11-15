@@ -32,6 +32,16 @@ extension DemoData {
         )
     }
 
+    /// The states of the demo's work item types, by the category of each, as an Agile project's backlog configuration maps
+    /// them: what a work item's state menu offers in the demo.
+    public static let stateCategories: [String: [String: String]] = {
+        let story = ["New": "Proposed", "Active": "InProgress", "Resolved": "Resolved", "Closed": "Completed", "Removed": "Removed"]
+        return [
+            "User Story": story, "Bug": story,
+            "Task": ["New": "Proposed", "Active": "InProgress", "Closed": "Completed", "Removed": "Removed"],
+        ]
+    }()
+
     /// The sprint's task board: stories and a bug with their tasks, a story without tasks yet, a finished one,
     /// and a task without a story.
     public static func sprintBoard(now: Date = Date(), calendar: Calendar = .current) -> SprintBoard {
@@ -42,7 +52,7 @@ extension DemoData {
         ) -> WorkItem {
             WorkItem(
                 id: id, organization: organization, project: team.projectName, type: type, title: title, state: state,
-                category: WorkItem.Category(category: nil, state: state), assignedTo: who, parentId: parent,
+                category: WorkItem.Category(category: stateCategories[type]?[state], state: state), assignedTo: who, parentId: parent,
                 remainingWork: state == "Closed" ? 0 : hours, rank: rank, changedAt: now.addingTimeInterval(-changed * 60)
             )
         }
@@ -82,7 +92,8 @@ extension DemoData {
             }
         }
         return SprintBoard.build(
-            team: team, sprint: sprint(now: now, calendar: calendar), me: me.id, relations: relations, items: items, taskTypes: ["Task"]
+            team: team, sprint: sprint(now: now, calendar: calendar), me: me.id, relations: relations, items: items, taskTypes: ["Task"],
+            stateCategories: stateCategories
         )
     }
 

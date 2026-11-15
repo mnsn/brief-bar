@@ -97,9 +97,7 @@ struct MenuPanelView: View {
 
     private func section(_ group: GitHubPRGroup, _ items: [GitHubPRSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(group.title) (\(items.count))")
-                .font(size: 11, weight: .semibold)
-                .foregroundStyle(options.quietAppearance ? Color.primary : group.textColor)
+            SectionHeading(symbol: group.symbol, color: group.color, title: group.title, count: items.count)
                 .padding(.horizontal, 8)
             ForEach(items) { item in
                 PullRequestRow(item: item)

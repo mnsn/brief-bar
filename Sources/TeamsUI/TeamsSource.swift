@@ -228,6 +228,11 @@ package final class TeamsSource: BriefBarSource {
         return AnyView(environment(MenuPanelView(group: group(section)), store: store))
     }
 
+    package func page(for section: SectionID) -> AnyView {
+        guard let store else { return AnyView(EmptyView()) }
+        return AnyView(environment(ChatsPage(group: group(section)), store: store).environment(\.panelStyle, .page))
+    }
+
     package func panelWillShow(_ section: SectionID) {
         store?.refresh()
     }

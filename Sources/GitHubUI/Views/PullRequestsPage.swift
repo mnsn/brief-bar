@@ -144,19 +144,8 @@ struct PullRequestsPage: View {
 
     private func section(_ group: GitHubPRGroup, _ items: [GitHubPRSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: group.symbol)
-                    .foregroundStyle(group.color)
-                Text(group.title)
-                    .foregroundStyle(.primary)
-                Text("\(items.count)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            .font(size: 12, weight: .semibold)
-            .padding(.horizontal, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
+            SectionHeading(symbol: group.symbol, color: group.color, title: group.title, count: items.count)
+                .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if index > 0 {

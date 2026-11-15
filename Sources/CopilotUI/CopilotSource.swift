@@ -359,6 +359,10 @@ package final class CopilotSource: BriefBarSource {
         AnyView(environment(MenuPanelView()))
     }
 
+    package func page(for section: SectionID) -> AnyView {
+        AnyView(environment(SessionsPage()).environment(\.panelStyle, .page))
+    }
+
     package func panelWillShow(_ section: SectionID) {
         store.refresh()
     }

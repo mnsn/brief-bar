@@ -245,4 +245,15 @@ final class SprintStore: ObservableObject {
         guard let engine else { return }
         Task { await engine.moved(item) }
     }
+
+    // MARK: Changing a work item's state
+
+    /// A work item in the sprint whose state BriefBar changed, as Azure DevOps answered (`StateChanges`): it shows in its new
+    /// state at once; then the engine keeps it in it, over a read that started before, and reads the sprint again. The demo's
+    /// stays so until it's loaded again.
+    func changedState(_ item: WorkItem) {
+        board = board?.changingState(item)
+        guard let engine else { return }
+        Task { await engine.changedState(item) }
+    }
 }

@@ -124,6 +124,10 @@ public actor SprintEngine {
     /// started before then may have them where they were, so they're put where they went again after it, until a refresh
     /// that started after then has read them, on the sprint's board and, while My Work wants it, among your work outside it.
     private var moves: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
+    /// The work items in the sprint whose state BriefBar changed, on the Sprint page, as Azure DevOps answered, with when it
+    /// did (`changedState`): a read of the board that started before then may have them as they were, so they're put in
+    /// their new state again after it, until a refresh that started after then has read the board.
+    private var stateChanges: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
 
     public init(
         client: ADOClient, configuration: Configuration, now: @escaping @Sendable () -> Date = { Date() },
@@ -189,6 +193,30 @@ public actor SprintEngine {
         }
     }
 
+    /// A work item in the sprint whose state BriefBar changed, on the Sprint page, as Azure DevOps answered
+    /// (`ADOWrite.setState`): it shows in its new state at once, and the sprint is read again as soon as possible.
+    public func changedState(_ item: WorkItem) {
+        stateChanges[item.key] = (item, now())
+        applyStateChanges()
+        publish()
+        refresh()
+    }
+
+    /// Puts the work items whose state BriefBar changed in their new states, over what was read before.
+    private func applyStateChanges() {
+        for (item, _) in stateChanges.values {
+            board = board?.changingState(item)
+        }
+    }
+
+    /// A refresh that started at `date` read the sprint's board: what BriefBar changed the state of before then is in the
+    /// state Azure DevOps has it in, in what it read, and what it changed since is put in its new state again, over it.
+    private func settleStateChanges(readAt date: Date) {
+        guard !stateChanges.isEmpty else { return }
+        stateChanges = stateChanges.filter { $0.value.at > date }
+        applyStateChanges()
+    }
+
     /// Whether each refresh reads your open tasks and bugs outside the sprint too, for My Work, after the sprint. Once
     /// they're wanted, a refresh reads them as soon as something shows the sprint, unless a read got them less than half an
     /// interval ago; while they aren't, what was read stays, read no more.
@@ -218,6 +246,7 @@ public actor SprintEngine {
             board = nil
             outside = nil
             moves = [:]
+            stateChanges = [:]
             problem = nil
             forced = true
         } else if configuration.team == nil, old.team != nil {
@@ -226,6 +255,7 @@ public actor SprintEngine {
             board = nil
             outside = nil
             moves = [:]
+            stateChanges = [:]
             forced = true
         }
         publish()
@@ -316,8 +346,10 @@ public actor SprintEngine {
         }
         isRefreshing = false
         // What BriefBar moved since a read that replaced the board or your work outside the sprint started stays where it went,
-        // though the rest of the refresh failed, or stopped as nothing showed the sprint anymore.
+        // though the rest of the refresh failed, or stopped as nothing showed the sprint anymore; and what it changed the state
+        // of since, in its new state.
         applyMoves()
+        applyStateChanges()
         publish()
     }
 
@@ -369,6 +401,7 @@ public actor SprintEngine {
             if outsideTeam != team.id { outside = nil }
             do {
                 try await readBoard(of: team, at: date)
+                settleStateChanges(readAt: date)
                 // Your work outside the sprint that couldn't be read again, or no longer is, may still have what BriefBar moved
                 // where it was: it stays where it went until a refresh reads both.
                 switch readsOutside ? try await readOutside(of: team, at: date) : .all {
@@ -422,7 +455,7 @@ public actor SprintEngine {
         guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return }
         board = SprintBoard.build(
             team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes,
-            portfolioTypes: setup.portfolioTypes
+            portfolioTypes: setup.portfolioTypes, stateCategories: setup.categories
         )
     }
 
@@ -670,6 +703,7 @@ public actor SprintEngine {
         outside = nil
         outsideTeam = nil
         moves = [:]
+        stateChanges = [:]
     }
 
     /// A refresh that started at `date` read the sprint, and your work outside it while My Work wants it, both in full, or,

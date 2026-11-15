@@ -17,5 +17,8 @@ import Testing
         // Elsewhere, as wide as its text.
         let fixed = NSHostingController(rootView: Chip(text: tag)).sizeThatFits(in: offered)
         #expect(fixed.width > offered.width)
+        // A state that's a menu, with its chevron, fits too.
+        let menu = NSHostingController(rootView: Chip(text: tag, fitsWidth: true, isMenu: true)).sizeThatFits(in: offered)
+        #expect(menu.width <= offered.width)
     }
 }
