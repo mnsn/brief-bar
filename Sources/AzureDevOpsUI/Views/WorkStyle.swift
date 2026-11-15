@@ -281,6 +281,8 @@ struct Chip: View {
     /// Takes no more than the width it's offered, cutting its text short, with all of it in its tooltip: for a chip that
     /// may be long, such as a tag.
     var fitsWidth = false
+    /// Opens a menu, which a chevron after its text says.
+    var isMenu = false
 
     var body: some View {
         let chip = HStack(spacing: 3) {
@@ -291,6 +293,11 @@ struct Chip: View {
             Text(text)
                 .font(size: 10.5, weight: .semibold)
                 .lineLimit(1)
+            if isMenu {
+                Image(systemName: "chevron.down")
+                    .font(size: 7.5, weight: .bold)
+                    .accessibilityHidden(true)
+            }
         }
         .foregroundStyle(color)
         .padding(.horizontal, 7)

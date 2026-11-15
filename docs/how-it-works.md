@@ -1207,10 +1207,10 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the seven changes **Make Changes in Azure
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the eight changes **Make Changes in Azure
 DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status),
-[your comments](#editing-and-deleting-your-comments), [a pull request's tags](#a-pull-requests-tags) and
-[moving a task to a sprint](#moving-a-task-to-a-sprint)):
+[your comments](#editing-and-deleting-your-comments), [a pull request's tags](#a-pull-requests-tags),
+[moving a task to a sprint](#moving-a-task-to-a-sprint) and [a work item's state](#changing-a-work-items-state)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1252,6 +1252,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 | `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on My Work, when you confirm moving a task or bug of yours to your team's current sprint or its next, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its iteration alone: a test of the path it's in, then the path it goes to, so Azure DevOps refuses it if someone moved it meanwhile; Azure DevOps answers with the work item as it keeps it |
+| `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on the Sprint page, when you choose a state for a story, bug or task of the sprint's, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its state alone: a test of the state it's in, then the state it goes to, so Azure DevOps refuses it if someone changed it meanwhile; Azure DevOps answers with the work item as it keeps it |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -2355,8 +2356,9 @@ VoiceOver (`ThreadReadOnlyMark`), and a change that finds it so says so on the t
 `Sources/AzureDevOpsCore`): your reply in a thread, a `POST` of a comment, in reply to the thread's first, with the body
 Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, text), and a thread's status, a `PATCH` of
 only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
-([below](#editing-and-deleting-your-comments)), a pull request's tags ([below](#a-pull-requests-tags)), and, on My
-Work, the sprint a task or bug of yours is in ([Moving a task to a sprint](#moving-a-task-to-a-sprint)).
+([below](#editing-and-deleting-your-comments)), a pull request's tags ([below](#a-pull-requests-tags)), on My Work,
+the sprint a task or bug of yours is in ([Moving a task to a sprint](#moving-a-task-to-a-sprint)), and, on the Sprint
+page, a work item's state ([Changing a work item's state](#changing-a-work-items-state)).
 `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
 once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
 otherwise, or times out, isn't made twice. Once it
@@ -3048,7 +3050,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 |---|---|---|
 | `_apis/teams?$mine=true` | every six hours while the sprint shows | your teams, in every project |
 | `{project}/{team}/_apis/work/teamsettings/iterations?$timeframe=current` | every hour, and once per team to find one with a sprint today | the team's current sprint and its dates |
-| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each state's category |
+| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, which are features and epics (its portfolio backlogs'), and each type's states with their categories, which a work item's state menu offers with Make Changes in Azure DevOps on |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/work/predefinedqueries/AssignedToMe?includeCompleted=false&$top=500` | every refresh, only while My Work shows + Sprint Tasks or + All My Tasks | the work items assigned to you in the team's project, by ID, in any sprint or none, done ones left out |
@@ -3118,6 +3120,18 @@ remote link, opens there, in your browser: its ID names another work item in thi
 menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no
 window shows that page: then it opens in Azure DevOps.
 
+**What a work item opens.** A work item's Copilot session and its pull request are a click away (`WorkItemShortcuts`,
+`WorkItemOpenItems`, `WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**,
+and beside **Open in Azure DevOps** in its details, from what BriefBar knows already, reading nothing more for them. Its
+sessions are the tasks you sent it to Copilot, the newest first, while Send Work to Copilot is on, then the sessions Show
+Links links to it, directly or through one of its pull requests, the one that needs you most first, each once; each
+opens as a pull request's session does (`SessionOpening`): **Open in Copilot**, in the Copilot app, or, for a task
+BriefBar runs with the Copilot CLI, **Continue in Terminal**, neither while Copilot works in it, or in its checkout, for
+a task BriefBar sent. Its pull requests are those Show Links links to it: **Show Pull Request** shows one over the work
+item's details, as Where It Stands does, else in BriefBar's window, for one that shows there, else where it lives. With
+two or more of either, the item is a menu of them, each saying how it stands; without Show Links, only the tasks you
+sent are known, and no pull request.
+
 **Pipelines.** A pinned pipeline shows its twelve latest runs, or its latest runs of one branch. Its
 latest run's stages come from the run's timeline: its stages in order or, for a pipeline without
 stages, its jobs. A stage waiting for an approval or a check is shown as waiting. When the run
@@ -3153,6 +3167,39 @@ In a window, each section has a page of its own, in the translucent look of Brie
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines
 section each pinned pipeline's latest run. In a list, each one's title opens its page, one of your
 work items its details on the Sprint page, and the sprint's footer its task board in Azure DevOps.
+
+#### Changing a work item's state
+
+With **Make Changes in Azure DevOps** on, a story, bug or task on the sprint's board can be put in another of its
+type's states (`StateChanges`): those the team's backlog configuration maps to a category, which the board reads
+already (`SprintBoard.stateCategories`, `states(of:)`), in the order work goes through them, to start, in progress,
+resolved, then done, two of the same category as the default processes order them, such as New before Approved, then
+by name; never a removed one, which takes it off the board: remove one in Azure DevOps. A type the configuration
+doesn't map offers none. A task's state, the symbol at the start of its line, a story's or bug's on its card, and the
+state in a work item's details are then menus of them, its own checked (`StateSymbol`, `StateChip`), and its menus
+have **State** (`StateMenuItems`); with the setting off, the state's tooltip says how to turn it on. Nothing asks
+first: choosing a state is the change, as in Azure DevOps.
+
+The change is a `PATCH` of the work item (`ADOWrite.setState`), a JSON Patch (`application/json-patch+json`) of two
+operations: a `test` that its state is the one BriefBar read it in, then an `add` of the one you chose, so that Azure
+DevOps refuses it if someone changed it meanwhile, as it does a change its process doesn't allow from there; Azure
+DevOps gives it the reason its process gives that change, and nothing else of it changes. Its new state shows at once,
+as Azure DevOps answered, with when it changed, so that its details follow, and are read again while they show
+(`WorkItem.changing(state:answer:at:categories:)`, `SprintStore.changedState`), in its place on the board
+(`SprintBoard.changingState`), a task going where its card orders that state's tasks; the engine keeps it so over any
+read of the board that started before the change, until one that started after it has read the board
+(`SprintEngine.changedState`, `settleStateChanges`), and refreshes at once. The line under the Sprint page's header
+(`StateChangeLine`), which stays in sight as the page scrolls, says "Changed Task 5104 from New to Active.", with
+**Undo**, which sends the same change back, testing the state it went to, without asking, while the setting's on and
+the work item is in that state, as BriefBar last read it (`StateChanges.undoable`); the work item's menus have Undo
+too meanwhile. A change that didn't happen, or may not have, says why (`ADOWriteProblem.sentence`, for `.setState`),
+with **Try Again** where it may help, not when Azure DevOps refused it, nor for a work item that left the board or is
+in another state (`StateChanges.retries`), and the sprint is read again. One change goes at a time, as whom the sprint
+was read as when you chose it, and only while BriefBar reads the work item in the state it was in then, as you choose
+it and again before each try, once its token came (`StateChanges.send`, `isStillWanted`); turning the setting off,
+Azure DevOps stopping or someone else signing in calls off one that hasn't gone (`StateChanges.forgetAll`). Only the
+board's work items change: a linked one followed in the details shows its state as it was read. The demo changes only
+its made-up sprint, and sends nothing.
 
 ### Send work to Copilot
 

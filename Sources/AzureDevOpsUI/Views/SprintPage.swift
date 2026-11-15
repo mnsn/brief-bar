@@ -11,6 +11,7 @@ struct SprintPage: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var details: WorkItemDetailsStore
+    @EnvironmentObject private var stateChanges: StateChanges
     @Environment(\.textScale) private var textScale
 
     @LocalState private var showDone = false
@@ -19,6 +20,15 @@ struct SprintPage: View {
         VStack(spacing: 0) {
             PageHeader(title: sprint.board?.sprint.name ?? "Sprint", subtitle: subtitle) {
                 controls
+            }
+            // What a change of a work item's state is doing, or did, under the header: in sight wherever the page is
+            // scrolled, and beside the details too.
+            if stateChanges.line != nil {
+                StateChangeLine(changes: stateChanges)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 14)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 10)
             }
             DetailsSplit(showsDetails: details.selected != nil, preferredWidth: $settings.sprintDetailsWidth) {
                 content
@@ -411,8 +421,9 @@ enum DisplayName {
     }
 }
 
-/// A story or bug: what it is, where it stands and who has it, how far along its tasks are, and the tasks. A click on it,
-/// or on one of its tasks, shows its details.
+/// A story or bug: what it is, where it stands, which, with Make Changes in Azure DevOps on, is a menu of the states it can
+/// be put in, and who has it, how far along its tasks are, and the tasks. A click on it, or on one of its tasks, shows its
+/// details; its menus, and each task's, open its Copilot session and its pull request.
 private struct StoryCard: View {
     let row: SprintBoard.Row
     let me: String
@@ -497,7 +508,7 @@ private struct StoryCard: View {
                     Spacer(minLength: 6)
                     WorkItemLinks(item: parent)
                     CopilotTaskControl(item: parent, isHovered: isHovered)
-                    Chip(text: parent.state, color: parent.stateColor)
+                    StateChip(item: parent)
                 }
                 Button { open(parent) } label: {
                     Text(parent.title)
@@ -514,11 +525,15 @@ private struct StoryCard: View {
                 .contextMenu {
                     Button("Show Details") { open(parent) }
                     Button("Open in Azure DevOps") { sprint.open(parent) }
+                    WorkItemOpenItems(item: parent)
+                    StateMenuItems(item: parent)
                     CopilotSendMenuItems(item: parent)
                     LinkMenuItems(parent.linkRef)
                 }
                 .rowActions(for: parent.title, openTitle: "Show Details", open: { open(parent) }) {
                     Button("Open in Azure DevOps") { sprint.open(parent) }
+                    WorkItemOpenItems(item: parent)
+                    StateMenuItems(item: parent)
                     CopilotSendMenuItems(item: parent)
                     LinkMenuItems(parent.linkRef)
                 }
@@ -544,8 +559,9 @@ private struct StoryCard: View {
     }
 }
 
-/// A task in its story's card: where it stands, what it is, the hours left and who has it; and, with Send Work to
-/// Copilot on, a button that sends it to Copilot, or how its send stands. A click shows its details.
+/// A task in its story's card: where it stands, which, with Make Changes in Azure DevOps on, is a menu of the states it can
+/// be put in, what it is, the hours left and who has it; and, with Send Work to Copilot on, a button that sends it to
+/// Copilot, or how its send stands. A click shows its details; its menus open its Copilot session and its pull request.
 private struct TaskLine: View {
     let task: WorkItem
     let isMine: Bool
@@ -561,13 +577,10 @@ private struct TaskLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            StateSymbol(item: task, open: open)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             Button(action: open) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: task.stateSymbol)
-                        .font(size: 13, weight: .medium)
-                        .foregroundStyle(task.stateColor)
-                        .frame(width: 16)
-                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     if task.type.lowercased() != "task" {
                         Image(systemName: task.typeSymbol)
                             .font(size: 10)
@@ -623,11 +636,15 @@ private struct TaskLine: View {
         .contextMenu {
             Button("Show Details", action: open)
             Button("Open in Azure DevOps") { sprint.open(task) }
+            WorkItemOpenItems(item: task)
+            StateMenuItems(item: task)
             CopilotSendMenuItems(item: task)
             LinkMenuItems(task.linkRef)
         }
         .rowActions(for: task.title, openTitle: "Show Details", open: open) {
             Button("Open in Azure DevOps") { sprint.open(task) }
+            WorkItemOpenItems(item: task)
+            StateMenuItems(item: task)
             CopilotSendMenuItems(item: task)
             LinkMenuItems(task.linkRef)
         }
@@ -682,6 +699,7 @@ private struct DoneStrip: View {
                     .contextMenu {
                         Button("Show Details") { open(parent) }
                         Button("Open in Azure DevOps") { sprint.open(parent) }
+                        StateMenuItems(item: parent)
                     }
                 }
             }

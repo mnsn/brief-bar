@@ -7,7 +7,9 @@ import SwiftUI
 
 /// A work item's details, beside the sprint: what it is and where it stands, with the pull requests, pipelines and Copilot
 /// sessions that go with it, what it's about, its tasks and the work items it links to, its attachments and its
-/// discussion, read from Azure DevOps when you open it. Open in Azure DevOps opens it there, to change it.
+/// discussion, read from Azure DevOps when you open it. Open in Azure DevOps opens it there, to change it; with Make Changes
+/// in Azure DevOps on, its state is a menu that changes it here, for one on the sprint's board; and its Copilot session and
+/// its pull request open a click away.
 struct WorkItemDetailsPanel: View {
     @EnvironmentObject private var details: WorkItemDetailsStore
     @EnvironmentObject private var sprint: SprintStore
@@ -277,8 +279,12 @@ struct WorkItemDetailsPanel: View {
     @ViewBuilder
     private func menuItems(_ item: WorkItem) -> some View {
         Button("Open in Azure DevOps") { details.openInAzureDevOps() }
+        // A pull request shows over the details, as from Where It Stands.
+        WorkItemOpenItems(item: item)
+            .environment(\.itemNavigation, navigation(item))
         Button("Copy Link") { Self.copy(item.webURL.absoluteString) }
         Button("Copy ID and Title") { Self.copy("\(item.id) \(item.title)") }
+        StateMenuItems(item: item)
         if copilot.isOn {
             Divider()
             CopilotSendMenuItems(item: item)
@@ -341,7 +347,7 @@ struct WorkItemDetailsPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
-                Chip(text: item.state, color: item.stateColor, symbol: item.stateSymbol, fitsWidth: true)
+                StateChip(item: item, symbol: item.stateSymbol, fitsWidth: true)
                 if let reason = details.details?.reason, reason.caseInsensitiveCompare(item.state) != .orderedSame {
                     Text(reason)
                         .font(size: 11.5)
@@ -353,22 +359,27 @@ struct WorkItemDetailsPanel: View {
         }
     }
 
+    /// Open in Azure DevOps, its Copilot session and its pull request, and Send to Copilot… or how its send stands: each with
+    /// its title where there's room; else only Open in Azure DevOps with its title; else each its symbol alone.
     private func actions(_ item: WorkItem) -> some View {
         ViewThatFits(in: .horizontal) {
             actionButtons(item, compact: false)
             actionButtons(item, compact: true)
+            actionButtons(item, compact: true, opensCompact: true)
         }
     }
 
-    private func actionButtons(_ item: WorkItem, compact: Bool) -> some View {
+    private func actionButtons(_ item: WorkItem, compact: Bool, opensCompact: Bool = false) -> some View {
         HStack(spacing: 8) {
             Button {
                 details.openInAzureDevOps()
             } label: {
-                ControlLabel("Open in Azure DevOps", systemImage: "arrow.up.forward.app")
+                ControlLabel(opensCompact ? nil : "Open in Azure DevOps", systemImage: "arrow.up.forward.app")
             }
             .glassButtonStyle()
             .help("Open it in Azure DevOps, to change it there")
+            .accessibilityLabel("Open in Azure DevOps")
+            WorkItemOpenButtons(item: item, compact: compact)
             if copilot.isOn {
                 if let entry = copilot.latest(for: item) {
                     // Where It Stands lists the task, with its actions, unless its link is hidden.
