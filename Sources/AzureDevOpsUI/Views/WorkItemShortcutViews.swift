@@ -157,13 +157,13 @@ struct StateChip: View {
             Menu {
                 StateChoices(item: item, choices: choices)
             } label: {
-                Chip(text: item.state, color: item.stateColor, symbol: symbol, isMenu: true)
+                Chip(text: item.state, color: item.stateColor, symbol: symbol, fitsWidth: fitsWidth, isMenu: true)
                     .contentShape(Capsule())
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .fixedSize()
+            .fixedSize(horizontal: !fitsWidth, vertical: true)
             .help(StateChangeText.help(item, canChange: true, needsSetting: false))
             .accessibilityLabel("State: \(item.state)")
             .accessibilityHint("Changes its state")

@@ -304,7 +304,8 @@ struct Chip: View {
         .padding(.vertical, 2.5)
         .background(Capsule().fill(color.opacity(0.14)))
         .fixedSize(horizontal: !fitsWidth, vertical: true)
-        if fitsWidth {
+        // A menu's tooltip says what it does, with all its text.
+        if fitsWidth && !isMenu {
             chip.help(text)
         } else {
             chip

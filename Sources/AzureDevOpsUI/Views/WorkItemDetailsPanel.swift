@@ -348,7 +348,10 @@ struct WorkItemDetailsPanel: View {
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
                 StateChip(item: item, symbol: item.stateSymbol, fitsWidth: true)
-                if let reason = details.details?.reason, reason.caseInsensitiveCompare(item.state) != .orderedSame {
+                // Why it's in its state, as read with its details: not why it was in the one before, as once BriefBar
+                // changed it, until they're read again.
+                if let read = details.details, let reason = read.reason, StateChanges.isSame(read.item.state, item.state),
+                   reason.caseInsensitiveCompare(item.state) != .orderedSame {
                     Text(reason)
                         .font(size: 11.5)
                         .foregroundStyle(.secondary)
