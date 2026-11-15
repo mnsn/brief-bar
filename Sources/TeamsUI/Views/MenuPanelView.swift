@@ -81,21 +81,15 @@ struct MenuPanelView: View {
 
             let recent = store.state.recent(in: group)
             if !recent.isEmpty {
-                DisclosureGroup(isExpanded: $showRecent) {
-                    VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    FoldingSectionHeading(title: "Recent", count: recent.count, isExpanded: $showRecent)
+                        .padding(.horizontal, 8)
+                    if showRecent {
                         ForEach(recent) { conversation in
                             ChatRow(conversation: conversation)
                         }
                     }
-                } label: {
-                    Text("Recent (\(recent.count))")
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showRecent.toggle() } }
                 }
-                .padding(.horizontal, 8)
                 .padding(.top, unread.isEmpty ? 0 : 6)
             }
         }

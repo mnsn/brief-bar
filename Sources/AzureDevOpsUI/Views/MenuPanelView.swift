@@ -148,34 +148,23 @@ struct MenuPanelView: View {
 
             let idle = store.items(by: shownOrder).filter { $0.group == .idle }
             if !idle.isEmpty {
-                DisclosureGroup(isExpanded: $showIdle) {
-                    VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    FoldingSectionHeading(title: "Idle", count: idle.count, isExpanded: $showIdle)
+                        .padding(.horizontal, 8)
+                        .help("Drafts, pull requests without recent activity, and reviews you've approved or declined")
+                    if showIdle {
                         ForEach(idle) { item in
                             PullRequestRow(item: item, compact: true, showsCreated: shownOrder.isByDate)
                         }
                     }
-                } label: {
-                    Text("Idle (\(idle.count))")
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showIdle.toggle() } }
                 }
-                .padding(.horizontal, 8)
-                .help("Drafts, pull requests without recent activity, and reviews you've approved or declined")
             }
         }
     }
 
     private func section(_ group: PRGroup, _ items: [PRSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text("\(group.title) (\(items.count))")
-                    .font(size: 11, weight: .semibold)
-                    .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
-                    .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
-                Spacer()
+            SectionHeading(symbol: group.symbol, color: group.color, title: group.title, count: items.count) {
                 if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
@@ -183,6 +172,7 @@ struct MenuPanelView: View {
                         .help(group == .needsYou ? Self.markAsSeenHelp : "Remove these from the list")
                 }
             }
+            .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
             .padding(.horizontal, 8)
             ForEach(items) { item in
                 PullRequestRow(item: item)
@@ -196,12 +186,7 @@ struct MenuPanelView: View {
         let listed = store.dateList(shownOrder)
         if !listed.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("\(shownOrder.title) (\(listed.count))")
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(.secondary)
-                        .help("By when each was created. Each says where it stands, and yours what's left before you can complete them.")
-                    Spacer()
+                SectionHeading(symbol: "arrow.up.arrow.down", color: .secondary, title: shownOrder.title, count: listed.count) {
                     if listed.contains(where: { $0.group == .needsYou && $0.hasNews }) {
                         Button("Mark as Seen") { store.clear(.needsYou) }
                             .buttonStyle(.borderless)
@@ -209,6 +194,7 @@ struct MenuPanelView: View {
                             .help(Self.markAsSeenHelp)
                     }
                 }
+                .help("By when each was created. Each says where it stands, and yours what's left before you can complete them.")
                 .padding(.horizontal, 8)
                 ForEach(listed) { item in
                     PullRequestRow(item: item, showsCreated: true)

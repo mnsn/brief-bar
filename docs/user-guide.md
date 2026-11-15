@@ -76,7 +76,10 @@ shows them in three places, each arranged in Settings:
   Pipelines start hidden, and so does the **Overview** widget: every source's counts, the brief's
   first line and what needs you. Drag a widget by its header, and right-click it for its settings.
 - **Windows** (Settings › Windows): one BriefBar window, which opens on an **Overview** of everything
-  by state, with the brief, then has a page for every section, and a sidebar with their counts. Open
+  by state, with the brief, then has a page for every section, and a sidebar with their counts. Every
+  page looks the same: its title, a line that counts what needs you there, its buttons at the top right,
+  and its groups in cards, each under the same heading as in the menu bar's lists, such as **✋ Needs
+  You 3**. Open
   it from the top of any list: **Overview** opens it on the Overview, with how many things need you
   there, and the list's title, such as **Pull Requests ›**, at the list's page. A widget's menu has
   **Open in Window** too. BriefBar shows a Dock icon while a window or Settings is open. With
