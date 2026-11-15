@@ -263,6 +263,18 @@ package final class StorySummaries: ObservableObject {
         defaults.string(forKey: Self.modelKey).map { !$0.isEmpty } ?? false
     }
 
+    /// While they're off and you haven't chosen a model, turning them on looks for the Copilot CLI, which then decides the
+    /// model (`lookForCLI`): again, even where it wasn't found before, as it may be there by now.
+    package var modelDependsOnCLI: Bool {
+        !isOn && !hasChosenModel && findCLI != nil
+    }
+
+    /// The model they'd write with once on, which Settings' box names as you turn them on: Claude Haiku 5.5 through
+    /// Copilot while that depends on finding the Copilot CLI, as it would be where the CLI is; else the model they have.
+    package var modelOnceOn: String {
+        modelDependsOnCLI ? Self.copilotDefaultModel : model
+    }
+
     /// Chooses the model: saved, so it stays, even the one that was the default.
     package func setModel(_ model: String) {
         guard !model.isEmpty, model != self.model || !hasChosenModel else { return }

@@ -8,7 +8,7 @@ package struct SourceDescription: Sendable {
     /// Goes up whenever the source starts reading more than it says here, so that it waits until you've
     /// seen the new description (see `SourceChoices`).
     package var version: Int
-    /// One line, for the list of sources.
+    /// What it shows, in a line under its name, at the top of its page in Settings.
     package var summary: String
     /// What BriefBar reads for it, and what it keeps.
     package var reads: String
@@ -163,7 +163,8 @@ package struct SectionViewer: Hashable, Sendable {
     package var name: String { "\(kind.rawValue).\(id)" }
 }
 
-/// Where the Settings window opens.
+/// Where the Settings window opens: General, a page for each source, those about what shows where, and those about what
+/// BriefBar does across sources.
 package enum SettingsDestination: Hashable, Sendable {
     case general
     case appearance
@@ -173,6 +174,12 @@ package enum SettingsDestination: Hashable, Sendable {
     /// The settings about pull requests, from every source that has some, each with where it works
     /// (`PullRequestSettings`).
     case pullRequests
+    /// Show Links, and Summaries, which build on its links.
+    case linksAndSummaries
+    /// The Notifications page in BriefBar's window, and how long it keeps what BriefBar notified you of.
+    case notifications
+    /// Send Work to Copilot, from every source that has it (`BriefBarSource.sendToCopilotSettingsView`): Azure DevOps.
+    case sendToCopilot
     /// Whether agents may use BriefBar (`--mcp`).
     case agents
 }
@@ -251,6 +258,11 @@ package protocol BriefBarSource: AnyObject {
     func pullRequestSettingsView(state: SourceState) -> AnyView?
     /// The names of those settings, in the order that view shows them, for the page to say where each works.
     var pullRequestSettings: [String] { get }
+    /// Its Send Work to Copilot settings, on the Settings window's Send to Copilot page rather than its own, whether it's
+    /// on or not: as they work while `state` is on, and disabled while it's off or paused. Nil for a source without them.
+    func sendToCopilotSettingsView(state: SourceState) -> AnyView?
+    /// Whether it has Send Work to Copilot settings, for its page to say where they are.
+    var hasSendToCopilotSettings: Bool { get }
     /// How what it needs stands (signed in, allowed…), above its settings while it's on. Nil for nothing.
     func statusView() -> AnyView?
     /// A click on one of its notifications.
@@ -274,6 +286,8 @@ extension BriefBarSource {
     package func statusView() -> AnyView? { nil }
     package func pullRequestSettingsView(state: SourceState) -> AnyView? { nil }
     package var pullRequestSettings: [String] { [] }
+    package func sendToCopilotSettingsView(state: SourceState) -> AnyView? { nil }
+    package var hasSendToCopilotSettings: Bool { false }
     package func openNotification(_ userInfo: [String: String]) {}
     package func openNotificationInWindow(_ userInfo: [String: String]) {
         openNotification(userInfo)

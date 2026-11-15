@@ -12,38 +12,51 @@ struct SettingsMenuContent: View {
     }
 }
 
-/// Copilot's settings and a way to open it, when it's on this Mac: in the gear menu, and in a widget's context menu.
+/// A way to open Copilot, when it's on this Mac: in the gear menu, and in a widget's context menu. Its settings are in
+/// Settings.
 struct SourceMenuContent: View {
     @EnvironmentObject private var store: SessionStore
 
     var body: some View {
-        CopilotSettings()
         if store.appInstalled {
-            Divider()
             Button("Open GitHub Copilot") { CopilotApp.activate() }
         }
     }
 }
 
-/// Copilot's own settings: in its menus, and on its page in Settings.
+/// Copilot's own settings, on its page in Settings, each with what it does for you.
 struct CopilotSettings: View {
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
-        Picker("Keep Finished Sessions For", selection: $settings.keepEndedMinutes) {
+        Picker(selection: $settings.keepEndedMinutes) {
             ForEach(AppSettings.keepEndedChoices, id: \.minutes) { Text($0.title).tag($0.minutes) }
+        } label: {
+            Text("Keep Finished Sessions For")
+            Text("How long finished and stopped sessions stay listed, unless you clear them.")
         }
         .pickerStyle(.menu)
 
-        Toggle("Move Viewed Sessions to Idle", isOn: $settings.moveViewedToIdle)
-            .help("Hide finished and stopped sessions after you open them or view them in Copilot. Off keeps them until Clear or the retention time expires.")
-
-        Toggle("Show Relayed Questions Once", isOn: $settings.showRelayedQuestionsOnce)
-            .help("When a session that coordinates another asks you that session's question or plan, show it once, on the coordinating session, where you answer it. Off shows both.")
-
-        Toggle("Nest Sessions Under Their Parents", isOn: $settings.nestSessions)
-            .help("Show a session that another session started under it, indented, as the Copilot app's sidebar does, when both are in the same group. Elsewhere, a ↳ tag names the session that started it and opens it. Off lists each session on its own.")
-
-        Toggle("Show Context Usage", isOn: $settings.showContextUsage)
+        SettingToggle(
+            "Move Viewed Sessions to Idle",
+            caption: "Moves a finished or stopped session to Idle once you've opened it.",
+            info: "Hide finished and stopped sessions after you open them or view them in Copilot. Off keeps them until Clear or the retention time expires.",
+            isOn: $settings.moveViewedToIdle
+        )
+        SettingToggle(
+            "Show Relayed Questions Once",
+            caption: "Shows a question one session relays for another once, where you answer it.",
+            info: "When a session that coordinates another asks you that session's question or plan, show it once, on the coordinating session, where you answer it. Off shows both.",
+            isOn: $settings.showRelayedQuestionsOnce
+        )
+        SettingToggle(
+            "Nest Sessions Under Their Parents",
+            caption: "Shows a session that another one started under it, as Copilot's sidebar does.",
+            info: "Show a session that another session started under it, indented, as the Copilot app's sidebar does, when both are in the same group. Elsewhere, a ↳ tag names the session that started it and opens it. Off lists each session on its own.",
+            isOn: $settings.nestSessions
+        )
+        SettingToggle(
+            "Show Context Usage", caption: "Shows how full each session's context window is.", isOn: $settings.showContextUsage
+        )
     }
 }

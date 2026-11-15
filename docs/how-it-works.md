@@ -27,13 +27,29 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
 
-Settings has a page for each source, with its settings while it's on, and one for the settings about pull
-requests, **Settings › Pull Requests** (`PullRequestsSettingsPage`), from every source that has some. Each shows
-there and nowhere else in the window, under the sources whose pull requests it works with (`PullRequestSettings`):
-Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, which its page leaves out
-(`AzureDevOpsSettings.Place`), and which its gear menu has too. They're kept where they always were, under the
-same keys. A source's settings work only while it's on: while it's off or paused, they show all the same,
-disabled, saying so, drawn from its settings alone, as a source that's off reads nothing for them.
+Settings' sidebar (`SettingsView`) has General, then a page for each source, with its settings while it's on, under
+Sources; Menu Bar, Widgets, Windows and Appearance, under Display; and, under Features, the pages for what BriefBar does
+across sources: Pull Requests, Links & Summaries, Notifications, Send to Copilot and Agents. The window keeps its width,
+so a row's line stays beside its control, and the height you give it (`SettingsWindowController`). Every page is one
+grouped form, its header first (`SettingsPageHeader`, `settingsForm()` in `Sources/BriefBarUI/SettingsStyle.swift`), and
+each setting a row with what it does for you in a line, and the rest behind ⓘ (`SettingRow`, `SettingInfoButton`). The
+settings about pull requests are on **Settings › Pull Requests** (`PullRequestsSettingsPage`), from every source that
+has some, each there and nowhere else in the window, under the sources whose pull requests it works with
+(`PullRequestSettings`): Pull Request Order, with Azure DevOps' and GitHub's, then Azure DevOps' own, which its page
+leaves out (`AzureDevOpsSettings.Place`). Send Work to Copilot is on **Settings › Send to Copilot** (`SendToCopilotPage`),
+from the sources that have it (`BriefBarSource.sendToCopilotSettingsView`): Azure DevOps. They're kept where they always
+were, under the same keys. A source's settings work only while it's on: while it's off or paused, those on the Pull
+Requests and Send to Copilot pages show all the same, disabled, saying so, drawn from its settings alone, as a source
+that's off reads nothing for them.
+
+A setting that reads or sends more than its source's consent covered, Summaries, Send Work to Copilot, Make Changes in
+Azure DevOps and Pull Requests Sent in Chats, says what as you turn it on, in a box under it, with Turn On and Cancel
+(`ConsentToggle`), and it's on only once you click Turn On; turning it off needs no box, and one that can't be changed
+meanwhile, as Summaries once Show Links is off, stops asking. A source's gear menu, and its widgets' right-click menus,
+have only what you'd change in the moment: Teams' Show Message Previews, for screen sharing; Azure DevOps' Notifications
+and Watch a Pull Request…; GitHub's Refresh Now; and the way to open each app. What you set once, such as a refresh
+interval, how long things are kept, organizations, a prompt or a model, and Launch BriefBar at Login, is in Settings
+only.
 
 Pull Request Order keeps the names you give missions with **Rename…** (`MissionNames`, under `order.names`), by what
 makes each mission: only names you typed, never one left as it was or set back to BriefBar's own, up to 200, of 80
@@ -404,7 +420,7 @@ a list or the window last had it worded.
 
 ### The Notifications page
 
-**Notifications Page**, in Settings › General (`RecentNotifications` in `Sources/BriefBarUI`, saved as
+**Notifications Page**, in Settings › Notifications (`RecentNotifications` in `Sources/BriefBarUI`, saved as
 `notifications.page`), is off until you turn it on. It lists what the sources posted
 (`NotificationHistory` in `Sources/BriefBarCore`), the newest first, by day, in the window that has the
 Overview, right after it (`WindowPages.notifications`), without a ⌘ number, so the sections' numbers stay
@@ -431,7 +447,7 @@ back to its Overview. The demo lists what its made-up pull requests would have n
 
 **Show Links** (`Links` in `Sources/BriefBarUI`, with `LinkGraph` and the rest in `Sources/BriefBarCore`) shows which
 work items, pull requests and Copilot sessions go together, on their own rows. It's off until you turn it on in
-Settings › General, and while it's off it shows nothing, and no source reads anything more for it.
+Settings › Links & Summaries, and while it's off it shows nothing, and no source reads anything more for it.
 
 **What a link joins.** Each thing has a reference (`ItemRef`) that says which one and nothing else: an Azure DevOps work
 item or pull request, by its organization and number; a GitHub pull request, by its repository and number; or a Copilot
@@ -551,12 +567,17 @@ sources' order: a task Azure DevOps sent to Copilot says how it went, and Copilo
 
 ### Summaries
 
-**Summaries**, in Settings › General, under Show Links, is off until you turn it on, and works only while Show Links is
-on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that, **Writes**: **As
-you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
-line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
-model can do, with the model, under what it costs (`StorySummariesSetting.onDeviceSection`, `copilotSection` and
-`choiceTitle`): "On this Mac: free, less accurate", Apple Intelligence, "(not on this Mac)" where this Mac can't run
+**Summaries**, in Settings › Links & Summaries, under Show Links, is off until you turn it on, and works only while Show
+Links is on (`StorySummaries` in `Sources/BriefBarUI`). As you turn it on, its box says, a line each, what it uses or
+sends, where, what it costs, which for a Copilot model follows that choice, and what the model can do, with **Writes**:
+**As you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`), and
+the model, to choose before it's on (`SummariesSettingRows`). Until you choose one, the box names the model they'd write
+with once on (`StorySummaries.modelOnceOn`): Claude Haiku 5.5 through Copilot while turning them on would look for the
+Copilot CLI, as it does each time, even where it wasn't found before, saying that Apple Intelligence writes them where it
+isn't, so the box never says "on this Mac" for summaries that go to Copilot. Once it's on, Writes and the model are rows of their own, the model's line saying where it runs and
+what that costs. The popover that **Turn On…** opens where a summary would be
+has it all at once, as it did in Settings (`StorySummariesSetting`). The model's choices come under what they cost
+(`StorySummariesSetting.onDeviceSection`, `copilotSection` and `choiceTitle`): "On this Mac: free, less accurate", Apple Intelligence, "(not on this Mac)" where this Mac can't run
 it; then "Through Copilot: a request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5
 (cheapest), Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs most)
 (`CopilotModel.forSummaries`), so you choose what a summary is worth; never Auto, which may choose any. The picker is as
@@ -2990,7 +3011,7 @@ announced. The Pipelines page lists them under **After Your Merges**, above the 
 When you turn on **Pull Requests Sent in Chats**, BriefBar reads Notification Center's database,
 `~/Library/Group Containers/group.com.apple.usernoted/db2/db`, which keeps the notifications every app
 has posted (about the latest hundred per app; for Teams, a couple of days). It's off by default, and
-from a menu, turning it on opens Settings › Pull Requests, which says what it reads.
+as you turn it on, in Settings › Pull Requests, it says what it reads.
 
 - It reads through `NotificationCenterDB`, the reader Teams uses, asking for every app's
   notifications rather than one app's. It opens the database with a read-only SQLite connection, for

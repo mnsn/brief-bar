@@ -1,8 +1,8 @@
 import BriefBarCore
 import SwiftUI
 
-/// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does and
-/// reads; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
+/// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does
+/// for you, and all it does and reads behind ⓘ; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
 /// pull requests, the mission you focus on, your changes to missions, the names you gave missions, the suggested splits
 /// you kept together and the order you put your work in on My Work; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
 /// got, and the pull requests you chose in Up Next.
@@ -53,14 +53,26 @@ package struct PullRequestOrderSettingView: View {
         to Azure DevOps or GitHub. Turning it off keeps them, unused, until you forget them.
         """
 
+    package static let caption = "Groups your pull requests by mission, in the order they should merge."
+
     package var body: some View {
-        Toggle(isOn: Binding(get: { order.isOn }, set: { on in
+        SettingToggle(Self.title, caption: Self.caption, info: Self.explanation, isOn: Binding(get: { order.isOn }, set: { on in
             order.setOn(on)
             changed(on)
-        })) {
-            Text(Self.title)
-            Text(Self.explanation)
+        }))
+        SettingRow("What It Keeps", caption: "Orders, missions and stages stay, even while it's off, until you forget them.") {
+            forgetButtons
         }
+    }
+
+    private var forgetButtons: some View {
+        HStack(spacing: 8) {
+            forgetOrders
+            forgetStages
+        }
+    }
+
+    private var forgetOrders: some View {
         Button("Forget All Orders…") { confirmsForget = true }
             .disabled(!order.keepsAnything)
             .confirmationDialog("Forget all orders?", isPresented: $confirmsForget) {
@@ -72,6 +84,9 @@ package struct PullRequestOrderSettingView: View {
                     and the order you put your work in on My Work. Sessions that name an order are told it's forgotten.
                     """)
             }
+    }
+
+    private var forgetStages: some View {
         Button("Forget Stages…") { confirmsForgetStages = true }
             .disabled(!order.keepsStages)
             .confirmationDialog("Forget the stages you and sessions set?", isPresented: $confirmsForgetStages) {
@@ -108,12 +123,13 @@ package struct MyWorkPageSettingView: View {
         may still change.
         """
     package static let needsOrder = "It needs Pull Request Order, above: turn that on first."
+    package static let caption = "Gives Up Next and the Board a page of their own, with your sprint work too."
 
     package var body: some View {
-        Toggle(isOn: Binding(get: { order.myWorkPage }, set: { order.setMyWorkPage($0) })) {
-            Text(Self.title)
-            Text(Self.explanation)
-        }
+        SettingToggle(
+            Self.title, caption: Self.caption, info: Self.explanation,
+            isOn: Binding(get: { order.myWorkPage }, set: { order.setMyWorkPage($0) })
+        )
         .disabled(!order.isOn)
         if !order.isOn {
             Label(Self.needsOrder, systemImage: "info.circle")

@@ -424,12 +424,10 @@ struct PullRequestCopilotStatus: View {
     }
 }
 
-/// Send Work to Copilot, off by default: Copilot then changes code and opens pull requests, as you. On Azure DevOps'
-/// page in Settings, it says what it does and has its options; in a menu, it opens that page until it's on.
+/// Send Work to Copilot, off by default: Copilot then changes code and opens pull requests, as you. On the Send to Copilot
+/// page in Settings, it says what it does as you turn it on, and has its options while it's on.
 struct CopilotSetting: View {
     @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var services: AppServices
-    @Environment(\.inSettingsForm) private var inSettingsForm
 
     nonisolated static let title = "Send Work to Copilot"
     static let explanation = """
@@ -442,22 +440,38 @@ struct CopilotSetting: View {
         for you. Choose a pull request repository's local clone once; BriefBar remembers it. BriefBar starts Copilot \
         only when you send something, and follows it from Copilot's own log of the session.
         """
+    /// What it adds, what Copilot then does as you, and when: the box that shows as you turn it on.
+    static let entries: [DescriptionBox.Entry] = [
+        .init(title: "What it adds", symbol: "paperplane", text: """
+            A button on the sprint's work items that sends one to Copilot on this Mac, with a prompt you can change and \
+            the model you choose: to a new session in the Copilot app, where you can follow and steer it, or to the \
+            Copilot CLI. Your pull requests' Actions menus in the window send their comments, failed builds and conflicts \
+            the same way, to be fixed without pushing, then pushed and answered with Push & Reply; and the menus of those \
+            you review, to be read and reviewed for you.
+            """),
+        .init(title: "What Copilot does, as you", symbol: "person.badge.key", text: """
+            It works on its own, in a new worktree of the repository you pick, with your sign-in, tools, MCP servers and \
+            instructions, then pushes a branch and opens a pull request, as you.
+            """),
+        .init(title: "When", symbol: "clock", text: """
+            BriefBar starts Copilot only when you send something, and follows it from Copilot's own log of the session. \
+            You choose a pull request repository's local clone once; BriefBar remembers it.
+            """),
+    ]
 
     var body: some View {
-        if inSettingsForm {
+        Section {
+            ConsentToggle(
+                Self.title, caption: AzureDevOpsSetting.copilot.caption, info: Self.explanation, entries: Self.entries,
+                isOn: $settings.copilotEnabled
+            )
+        }
+        if settings.copilotEnabled {
             Section {
-                Toggle(isOn: $settings.copilotEnabled) {
-                    Text(Self.title)
-                    Text(Self.explanation)
-                }
-                if settings.copilotEnabled {
-                    CopilotOptionsForm()
-                }
+                CopilotOptionsForm()
+            } header: {
+                Text("How It Sends Work")
             }
-        } else if settings.copilotEnabled {
-            Toggle(Self.title, isOn: $settings.copilotEnabled)
-        } else {
-            Button(Self.title + "…") { services.openSettings(.source(.azureDevOps)) }
         }
     }
 }
@@ -467,29 +481,42 @@ private struct CopilotOptionsForm: View {
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
-        Picker(selection: $settings.copilotNewSessionsInApp) {
-            Text("In the Copilot App").tag(true)
-            Text("With the Copilot CLI").tag(false)
-        } label: {
-            Text("New Sessions")
-            Text("Where a work item's new session starts, unless you choose otherwise as you send it. In the Copilot app, where you can follow and steer it, it starts while \(CopilotSessionPrompts.title) is on, in Agents, and the app has the repository; with the CLI, it works on its own, in a worktree of BriefBar's.")
+        SettingRow(
+            "New Sessions", caption: "Where a work item's session starts, unless you choose as you send it.",
+            info: """
+                In the Copilot app, where you can follow and steer it, it starts while \(CopilotSessionPrompts.title) is \
+                on, in Agents, and the app has the repository; with the CLI, it works on its own, in a worktree of \
+                BriefBar's.
+                """
+        ) {
+            Picker("New Sessions", selection: $settings.copilotNewSessionsInApp) {
+                Text("In the Copilot App").tag(true)
+                Text("With the Copilot CLI").tag(false)
+            }
+            .labelsHidden()
+            .fixedSize()
         }
-        LabeledContent("Model") {
+        // Both with their menus beside them, however wide the model's name.
+        SettingRow("Model", caption: "What work is sent with, unless you choose otherwise.", keepsControlBeside: true) {
             HStack(spacing: 8) {
                 CopilotModelMenu(model: $settings.copilotOptions.model)
                 CopilotEffortPicker(effort: $settings.copilotOptions.effort)
             }
         }
-        LabeledContent("Model for Easy Work") {
+        SettingRow("Model for Easy Work", caption: "A second choice, in a work item's right-click menu.", keepsControlBeside: true) {
             HStack(spacing: 8) {
                 CopilotModelMenu(model: $settings.copilotQuickOptions.model)
                 CopilotEffortPicker(effort: $settings.copilotQuickOptions.effort)
             }
         }
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Prompt")
-                Spacer()
+            SettingRow(
+                "Prompt", caption: "What Copilot is asked to do with a work item.",
+                info: """
+                    Until you change it, a new session in the Copilot app gets BriefBar's take on it for the app, whose \
+                    worktree is on a branch of the app's.
+                    """
+            ) {
                 Button("Reset") { settings.copilotPrompt = nil }
                     .disabled(settings.copilotPrompt == nil)
             }
@@ -498,23 +525,29 @@ private struct CopilotOptionsForm: View {
                 set: { settings.copilotPrompt = $0 == PromptTemplate.standard ? nil : $0 }
             ))
             .font(size: 12)
-            .frame(height: 190)
-            Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from. Until you change it, a new session in the Copilot app gets BriefBar's take on it for the app, whose worktree is on a branch of the app's.")
+            .frame(height: Self.promptHeight)
+            Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from.")
                 .font(style: .caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        LabeledContent("Worktrees") {
+        SettingRow(
+            "Worktrees",
+            caption: "Where Copilot's worktrees go: "
+                + (settings.copilotWorktreesFolder.map { UserPath.abbreviate($0) } ?? "in copilot-worktrees, next to each repository.")
+        ) {
             HStack(spacing: 8) {
-                Text(settings.copilotWorktreesFolder.map { UserPath.abbreviate($0) } ?? "In copilot-worktrees, next to each repository")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Button("Choose…", action: chooseFolder)
                 if settings.copilotWorktreesFolder != nil {
                     Button("Reset") { settings.copilotWorktreesFolder = nil }
                 }
+                Button("Choose…", action: chooseFolder)
             }
         }
+    }
+
+    /// Twelve whole lines of the prompt, as its editor has no margin above them: none cut through at the bottom.
+    private static var promptHeight: CGFloat {
+        12 * NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: 12))
     }
 
     private func chooseFolder() {

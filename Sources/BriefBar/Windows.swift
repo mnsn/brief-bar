@@ -468,23 +468,7 @@ private struct SidebarItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                if options.quietAppearance {
-                    Image(systemName: info.symbol)
-                        .font(size: 15, weight: .medium)
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                        .frame(width: 26, height: 26)
-                } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(LinearGradient(colors: [info.tint.opacity(0.85), info.tint], startPoint: .top, endPoint: .bottom))
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.5)
-                        Image(systemName: info.symbol)
-                            .font(size: 12, weight: .semibold)
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 26, height: 26)
-                }
+                SymbolTile(symbol: info.symbol, tint: info.tint, isSelected: isSelected)
                 Text(info.title)
                     .font(size: 13.5, weight: isSelected ? .semibold : .regular)
                     .lineLimit(1)
