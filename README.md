@@ -130,6 +130,9 @@ acts next: you, a reviewer or Copilot. Click through without leaving BriefBar:
   click to its Copilot session or to the worktree it works in, in your editor, a terminal or the Finder.
 - **Session:** its question or plan, progress notes, what's been done, what's next and its last response.
 
+A task's right-click menu, and its details, open its Copilot session with **Open in Copilot** and its pull request with
+**Show Pull Request**, a click away.
+
 Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilot.
 [How linking works →](docs/user-guide.md#links)
 
@@ -193,7 +196,8 @@ work or a new one, and the model.
   the same once it's fixed: the composer names any other fixes in the session that would go too, and a thread it
   changed nothing for gets a reply saying why.
 - **Or do it yourself.** With **Make Changes in Azure DevOps** on, reply to comments, resolve threads, edit or delete
-  your own comments and change tags, as you, without opening Azure DevOps.
+  your own comments and change tags, as you, without opening Azure DevOps; on the Sprint page, set a story, bug or
+  task to **New**, **Active**, **Closed** or another of its states from its state's menu.
 
 Fixes don't push unless you ask, and Pre-review changes and posts nothing. Turn on **Send Prompts to Copilot
 Sessions** in **Settings › Agents**, and BriefBar sends a prompt to one of the Copilot app's sessions itself, or to a
@@ -259,8 +263,9 @@ unless you add `--greedy`), and keep Full Disk Access.
 
 Sources are read-only, but for one opt-in: with **Make Changes in Azure DevOps**, off by default,
 BriefBar posts your replies in pull requests' threads, sets threads' statuses, edits and deletes your own
-comments, adds and removes pull requests' tags, and moves a task or bug of yours to your team's current or next
-sprint on My Work, as you, only when you click. Azure DevOps and GitHub use
+comments, adds and removes pull requests' tags, moves a task or bug of yours to your team's current or next
+sprint on My Work, and sets the state you choose for a work item on the Sprint page, as you, only when you click.
+Azure DevOps and GitHub use
 your existing CLI sign-ins, and Teams and Copilot tracking reads files on your Mac. Full Disk Access is needed for
 Teams and the optional **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 

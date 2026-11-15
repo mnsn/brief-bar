@@ -295,9 +295,14 @@ public struct SprintBoard: Sendable, Equatable {
     /// stories pull requests are for (`WorkItemStories`).
     public var taskTypes: Set<String>
     public var portfolioTypes: Set<String>
+    /// Each work item type's states, by the category of each, as the team's backlog configuration maps them, such as Task's
+    /// `["New": "Proposed", "Active": "InProgress", "Closed": "Completed", "Removed": "Removed"]`: for the states a work item
+    /// can be put in (`states(of:)`); empty when its configuration couldn't be read.
+    public var stateCategories: [String: [String: String]]
 
     public init(
-        team: TeamRef, sprint: Sprint, rows: [Row], me: String, taskTypes: Set<String> = ["Task"], portfolioTypes: Set<String> = []
+        team: TeamRef, sprint: Sprint, rows: [Row], me: String, taskTypes: Set<String> = ["Task"], portfolioTypes: Set<String> = [],
+        stateCategories: [String: [String: String]] = [:]
     ) {
         self.team = team
         self.sprint = sprint
@@ -305,15 +310,16 @@ public struct SprintBoard: Sendable, Equatable {
         self.me = me.lowercased()
         self.taskTypes = taskTypes
         self.portfolioTypes = portfolioTypes
+        self.stateCategories = stateCategories
     }
 
     /// Lays the sprint's work items out as a task board. `relations` are the sprint's (each work item at the top
     /// level, and each task under its parent); `taskTypes` are the types that are cards rather than rows, such as
-    /// Task (and Bug, for teams that track bugs as tasks); `portfolioTypes` are those of the team's portfolio backlogs.
-    /// Removed work items are left out.
+    /// Task (and Bug, for teams that track bugs as tasks); `portfolioTypes` are those of the team's portfolio backlogs;
+    /// `stateCategories` each type's states, by their categories. Removed work items are left out.
     public static func build(
         team: TeamRef, sprint: Sprint, me: String, relations: [ADOIterationWorkItems.Relation], items: [WorkItem],
-        taskTypes: Set<String>, portfolioTypes: Set<String> = []
+        taskTypes: Set<String>, portfolioTypes: Set<String> = [], stateCategories: [String: [String: String]] = [:]
     ) -> SprintBoard {
         var byId: [Int: WorkItem] = [:]
         for item in items where item.category != .removed {
@@ -357,7 +363,10 @@ public struct SprintBoard: Sendable, Equatable {
         if !unparented.isEmpty {
             rows.append(Row(parent: nil, tasks: unparented.sorted(by: WorkItem.ordered)))
         }
-        return SprintBoard(team: team, sprint: sprint, rows: rows, me: me, taskTypes: taskTypes, portfolioTypes: portfolioTypes)
+        return SprintBoard(
+            team: team, sprint: sprint, rows: rows, me: me, taskTypes: taskTypes, portfolioTypes: portfolioTypes,
+            stateCategories: stateCategories
+        )
     }
 
     /// Just Mine: your stories and bugs with all their tasks, and your tasks under anyone else's.
