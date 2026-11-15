@@ -26,26 +26,91 @@ struct RunStatusBadge: View {
     }
 }
 
-/// A run's stages, in order, joined by lines, on as many lines as they need, rather than cut off at the card's edge: a
-/// line that goes on to the next ends with its join.
+/// A run's stages, in order, joined by lines, on as many lines as they need, rather than cut off at the card's edge.
 struct StageFlow: View {
     let stages: [PipelineStage]
     let now: Date
 
     var body: some View {
-        FlowLayout(spacing: 0, lineSpacing: 6) {
+        StageChainLayout {
             ForEach(Array(stages.enumerated()), id: \.element.id) { index, stage in
-                HStack(spacing: 0) {
-                    StagePill(stage: stage, now: now)
-                    if index < stages.count - 1 {
-                        Rectangle()
-                            .fill(stage.state == .succeeded ? Color.green.opacity(0.5) : Color.primary.opacity(0.15))
-                            .frame(width: 14, height: 1.5)
-                    }
+                if index > 0 {
+                    Rectangle()
+                        .fill(stages[index - 1].state == .succeeded ? Color.green.opacity(0.5) : Color.primary.opacity(0.15))
+                        .layoutValue(key: StageJoin.self, value: true)
                 }
+                StagePill(stage: stage, now: now)
             }
         }
         .padding(.vertical, 1)
+    }
+}
+
+/// Marks the line between two stages, which `StageChainLayout` draws only where both are on one line.
+private struct StageJoin: LayoutValueKey {
+    static let defaultValue = false
+}
+
+/// Stages side by side, as many to a line as fit, each joined to the one before it on its line: a stage that starts a
+/// line has no join before it, so that no line leads off to nothing. A stage wider than a line cuts its name short.
+private struct StageChainLayout: Layout {
+    var joinWidth: CGFloat = 14
+    var joinThickness: CGFloat = 1.5
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = arrange(width: bounds.width, subviews: subviews).frames
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    /// Each subview's frame: a stage's where it goes; a join's between its two stages, centered on their line, or empty,
+    /// so that it draws nothing, before a stage that starts a line.
+    private func arrange(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+        var frames = Array(repeating: CGRect.zero, count: subviews.count)
+        var lines: [(y: CGFloat, height: CGFloat)] = []
+        var joins: [(index: Int, line: Int)] = []
+        var pendingJoin: Int?
+        var x: CGFloat = 0
+        var widest: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            if subview[StageJoin.self] {
+                pendingJoin = index
+                continue
+            }
+            var size = subview.sizeThatFits(.unspecified)
+            if size.width > width {
+                size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size.width = min(size.width, width)
+            }
+            let join = pendingJoin.map { _ in joinWidth } ?? 0
+            if lines.isEmpty {
+                lines.append((0, 0))
+            } else if x + join + size.width > width {
+                let last = lines[lines.count - 1]
+                lines.append((last.y + last.height + lineSpacing, 0))
+                x = 0
+            } else if let pendingJoin {
+                frames[pendingJoin] = CGRect(x: x, y: 0, width: joinWidth, height: joinThickness)
+                joins.append((pendingJoin, lines.count - 1))
+                x += joinWidth
+            }
+            pendingJoin = nil
+            let line = lines.count - 1
+            frames[index] = CGRect(origin: CGPoint(x: x, y: lines[line].y), size: size)
+            lines[line].height = max(lines[line].height, size.height)
+            x += size.width
+            widest = max(widest, x)
+        }
+        for join in joins {
+            frames[join.index].origin.y = lines[join.line].y + (lines[join.line].height - joinThickness) / 2
+        }
+        return (frames, CGSize(width: widest, height: lines.last.map { $0.y + $0.height } ?? 0))
     }
 }
 
