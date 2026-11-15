@@ -76,7 +76,7 @@ enum AzureDevOpsSetting: CaseIterable, Sendable {
         case .idle: "Pull requests with no activity for this long move to Idle."
         case .organizations: "Which of your organizations BriefBar reads."
         case .watchedPullRequests: "Pull requests you're not on, listed as if you reviewed them."
-        case .makesChanges: "Lets you reply, resolve, tag and move work from BriefBar, as you, when you click."
+        case .makesChanges: "Writes your replies, statuses, tags, sprints and states to Azure DevOps, when you click."
         case .copilot: "Sends work items, and fixes for your pull requests, to Copilot on this Mac."
         }
     }
@@ -320,15 +320,16 @@ struct MakeChangesSetting: View {
     static let entries: [DescriptionBox.Entry] = [
         .init(title: "What it adds", symbol: "plus.bubble", text: """
             Reply and a status menu on each comment thread in a pull request's details in BriefBar's window, Edit and \
-            Delete on your own comments, and Add Tag and ✕ on its tags; and, on My Work, Move to Sprint on your tasks and \
-            bugs outside the sprint.
+            Delete on your own comments, and Add Tag and ✕ on its tags; on My Work, Move to Sprint on your tasks and bugs \
+            outside the sprint; and, on the Sprint page, a menu of states, such as New, Active and Closed, on its \
+            stories, bugs and tasks.
             """),
         .init(title: "What it writes", symbol: "square.and.pencil", text: """
             To Azure DevOps, as you, with your Azure CLI sign-in, and only when you click: your reply in a thread, a \
             thread's status, such as Resolved or Won't Fix, your comment as you edited it, or deleted, a tag you add to a \
-            pull request or remove from it, and, on My Work, the sprint a task or bug of yours is in, moved to your team's \
-            current sprint or its next once you confirm. Nothing else, and never by itself: otherwise it only reads. Agents \
-            get none of it.
+            pull request or remove from it, on My Work, the sprint a task or bug of yours is in, moved to your team's \
+            current sprint or its next once you confirm, and, on the Sprint page, the state you choose for a work item. \
+            Nothing else, and never by itself: otherwise it only reads. Agents get none of it.
             """),
         .init(title: "Fix Grammar", symbol: "textformat.abc", text: """
             In a reply or an edit, it uses Apple Intelligence on this Mac unless you choose a Copilot model, which sends \
@@ -336,7 +337,7 @@ struct MakeChangesSetting: View {
             """),
         .init(title: "What it keeps", symbol: "tray", text: """
             The tags you add, for each project, to suggest them. Turning it off forgets the replies and edits you haven't \
-            sent, the tags you added, and Undo for the task you moved.
+            sent, the tags you added, and Undo for the task you moved and for the state you changed.
             """),
     ]
 
