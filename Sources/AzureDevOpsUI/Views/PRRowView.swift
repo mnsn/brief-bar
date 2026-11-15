@@ -315,9 +315,23 @@ struct PRQuietLine: View {
                 ForEach(shownCounts, id: \.self) { shown in
                     line(shown: shown)
                 }
-                // Too narrow even for only how many are left: on more lines, as its stage's line wrapped before.
-                FlowLayout(spacing: 6, lineSpacing: 3) {
-                    parts(shown: 0)
+                // Too narrow even for only how many are left: its stage on a line of its own, as its stage's line wrapped
+                // before, then the rest; then each on its own. Each line as wide as what's on it, so that a row too narrow
+                // even for those doesn't take them as fitting, as a layout that narrowed them to the row would.
+                VStack(alignment: .leading, spacing: 3) {
+                    stagePart
+                    if order != nil || !left.isEmpty {
+                        HStack(spacing: 6) {
+                            orderPart
+                            leftPart(shown: 0)
+                        }
+                    }
+                }
+                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    stagePart
+                    orderPart
+                    leftPart(shown: 0)
                 }
                 .lineLimit(1)
             }
@@ -338,14 +352,15 @@ struct PRQuietLine: View {
     /// - Parameter shown: how many of what's left show by name; "+2" says the rest.
     private func line(shown: Int) -> some View {
         HStack(spacing: 6) {
-            parts(shown: shown)
+            stagePart
+            orderPart
+            leftPart(shown: shown)
         }
         .lineLimit(1)
     }
 
-    /// Its stage, its order, and what's left, `shown` of them by name.
     @ViewBuilder
-    private func parts(shown: Int) -> some View {
+    private var stagePart: some View {
         if let stage {
             if stage.isOnBoard {
                 StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
@@ -356,7 +371,16 @@ struct PRQuietLine: View {
                     .truncationMode(.tail)
             }
         }
+    }
+
+    @ViewBuilder
+    private var orderPart: some View {
         if let order { OrderCapsule(order) }
+    }
+
+    /// What's left, `shown` of them by name.
+    @ViewBuilder
+    private func leftPart(shown: Int) -> some View {
         if !left.isEmpty {
             HStack(spacing: 8) {
                 ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in

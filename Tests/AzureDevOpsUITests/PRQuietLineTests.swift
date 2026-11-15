@@ -90,6 +90,11 @@ import Testing
         let line = ownSize(PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), order: order, left: Self.left), width: width)
         #expect(line.width < width + 0.5)
         #expect(line.height > pill.height + 2)
+
+        // Where even its pill alone doesn't fit, it says how wide it is, rather than as wide as the room, so that what
+        // follows it on the row goes under it rather than over it.
+        let alone = ownSize(PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: []), width: pill.width - 20)
+        #expect(alone.width > pill.width - 0.5)
     }
 
     /// In a narrow row, its quiet line keeps to one line: what's left that doesn't fit folds into "+2", rather than
