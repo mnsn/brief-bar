@@ -120,9 +120,10 @@ struct WidgetView: View {
         }
         .padding(.bottom, WidgetContent.bottomPadding)
         .frame(width: size.width, height: size.height, alignment: .top)
-        // No room for a summary under a row, nor for Ask… and what a session answered.
+        // No room for a summary under a row, nor for Ask… and what a session answered; and its rows keep their look.
         .environment(\.offersSummaries, false)
         .environment(\.offersAsks, false)
+        .environment(\.offersRowActions, false)
         .contextMenu {
             WidgetMenu(content: content)
                 .environment(\.shownSection, content.sections.first)

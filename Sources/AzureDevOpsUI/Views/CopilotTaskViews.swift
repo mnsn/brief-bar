@@ -410,7 +410,6 @@ struct PullRequestCopilotMenuItems: View {
 /// On a pull request's row: how Copilot's last task on it stands, while it works, and until you clear it.
 struct PullRequestCopilotStatus: View {
     let key: PRKey
-    var showsActions = false
 
     @EnvironmentObject private var copilot: CopilotTasksStore
 
@@ -428,7 +427,7 @@ struct PullRequestCopilotStatus: View {
             .padding(.vertical, 1.5)
             .background(Capsule().fill(phase.color.opacity(0.14)))
             .fixedSize()
-            .help("Copilot, with \(entry.options.title): \(entry.sentence(now: Date())). \(showsActions ? "Use Actions" : "Right-click") for its menu.")
+            .help("Copilot, with \(entry.options.title): \(entry.sentence(now: Date())). Right-click for its menu.")
             .accessibilityLabel("Copilot: \(entry.sentence(now: Date()))")
         }
     }

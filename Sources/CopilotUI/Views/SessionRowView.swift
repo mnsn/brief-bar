@@ -3,11 +3,12 @@ import BriefBarUI
 import CopilotCore
 import SwiftUI
 
-/// One session: status icon, name, state line, optional detail, how long it's been in that state, and,
-/// if turned on, how full its context window is. A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens
-/// what it's for, and has its own menu. With Nest Sessions Under Their Parents, a session is indented under the one
-/// that started it, or, where it isn't, has a ↳ tag that names that session and opens it. Under it, what you asked it
-/// with Ask… and what it answered, and its summary.
+/// One session, as a pull request's row: status icon, name, how long it's been in that state and, if turned on, how full
+/// its context window is; what it's doing and where, with its links; and its detail, such as what it asks you, on two lines
+/// at most (`RowLines`). A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens what it's for, and has its own
+/// menu. With Nest Sessions Under Their Parents, a session is indented under the one that started it, or, where it isn't,
+/// has a ↳ tag before its links that names that session and opens it. Its ⋯ menu and ✨ Summarize show while you're at it
+/// (`RowActivity`). Under it, what you asked it with Ask… and what it answered, and its summary.
 struct SessionRowView: View {
     let session: SessionSnapshot
     let now: Date
@@ -22,7 +23,7 @@ struct SessionRowView: View {
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: SessionStore
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
     @Environment(\.panelStyle) private var panelStyle
@@ -47,10 +48,10 @@ struct SessionRowView: View {
         // The row and its summary, together, indented under the session that started it.
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                .fill(activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
         )
         .padding(.leading, indent)
-        .onHover { isHovered = $0 }
+        .onHover { activity.isHovered = $0 }
         .contextMenu {
             if let task {
                 Button(task.clickTitle(inWindow: inWindow), action: action)
@@ -109,7 +110,7 @@ struct SessionRowView: View {
                         if let contextUsage {
                             ContextUsageView(usage: contextUsage)
                         }
-                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isHovered: isHovered)
+                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isActive: activity.isActive)
                     }
                     if compact {
                         if let taggedParent {
@@ -129,34 +130,31 @@ struct SessionRowView: View {
                             compactText(compactLine, isContent: detailIsWritten(task))
                         }
                     } else {
-                        if let taggedParent {
-                            // On the status line if it fits there in full, or else on a line of its own.
-                            ViewThatFits(in: .horizontal) {
-                                HStack(spacing: 6) {
-                                    subtitle
-                                    parentTag(taggedParent)
-                                    links
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
-                                        subtitle
-                                        links
-                                    }
-                                    parentTag(taggedParent)
-                                }
+                        // What it's doing and where, with the session that started it and its links.
+                        RowLines {
+                            reason(session.headline)
+                                .rowLine(.reason)
+                            if let place = session.place {
+                                reason(" · " + place)
+                                    .rowLine(.place)
                             }
-                        } else {
                             HStack(spacing: 6) {
-                                subtitle
-                                links
+                                if let taggedParent {
+                                    parentTag(taggedParent, truncates: true)
+                                }
+                                if let ref {
+                                    LinkCapsules(ref)
+                                }
                             }
-                        }
-                        if let detail = session.detail {
-                            Text(detail)
-                                .font(size: options.rowDetailSize)
-                                .foregroundStyle(detailIsWritten(task) ? .rowContent : Color.secondary)
-                                .lineLimit(session.phase == .needsYou ? 3 : 2)
-                                .fixedSize(horizontal: false, vertical: true)
+                            .rowLine(.chips)
+                            if let detail = session.detail {
+                                Text(detail)
+                                    .font(size: options.rowDetailSize)
+                                    .foregroundStyle(detailIsWritten(task) ? .rowContent : Color.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .rowLine(.detail)
+                            }
                         }
                     }
                 }
@@ -167,14 +165,16 @@ struct SessionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .rowKeyboardFocus(activity)
         // The ↳ tag's click, outside the row's button, which takes every click on its label.
         .overlayPreferenceValue(ParentTag.Bounds.self) { bounds in
             if let bounds, let parent = taggedParent {
-                ParentTag.Target(parent: parent, bounds: bounds) { store.openParent(of: session) }
+                ParentTag.Target(parent: parent, bounds: bounds, activity: activity) { store.openParent(of: session) }
             }
         }
         .help(helpText(task))
         .accessibilityElement(children: .ignore)
+        .rowVoiceOverFocus(activity)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue(
             [session.detail, contextUsage.map(ContextUsageView.description), otherParent.map { "Started by “\($0.name)”" }]
@@ -192,7 +192,7 @@ struct SessionRowView: View {
             SessionAskMenuItems(ref, divided: false)
             SummarizeMenuItems(ref, divided: false)
         }
-        .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
+        .rowActions(for: session.displayName, openTitle: openTitle(task), open: action, activity: activity) {
             if let task {
                 otherOpening(task)
                 task.menu()
@@ -208,7 +208,7 @@ struct SessionRowView: View {
                 LinkMenuItems(ref)
             }
         }
-        .rowSummarizeButton(ref)
+        .rowSummarizeButton(ref, activity: activity)
     }
 
     /// How far it's indented under the session that started it, where the list nests it.
@@ -216,20 +216,12 @@ struct SessionRowView: View {
         nests ? CGFloat(min(session.depth, Self.maxIndentLevels)) * Self.indentStep : 0
     }
 
-    /// What it's doing and where, colored by its state.
-    private var subtitle: some View {
-        Text(session.subtitle)
+    /// What it's doing, or where, colored by its state.
+    private func reason(_ words: String) -> some View {
+        Text(words)
             .font(size: options.rowReasonSize, weight: .medium)
             .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowTextColor)
             .lineLimit(1)
-    }
-
-    /// What Show Links links it to.
-    @ViewBuilder
-    private var links: some View {
-        if let ref = ItemRef.session(session.id) {
-            LinkCapsules(ref)
-        }
     }
 
     /// Its detail is what the session wrote, as content (`SessionSnapshot.detailIsWritten`): a task BriefBar sent says how
@@ -371,10 +363,12 @@ struct ParentTag: View {
         }
     }
 
-    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip.
+    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip. Its focus is
+    /// its row's too (`activity`), so the row's buttons stay while it has it.
     struct Target: View {
         let parent: RelatedSession
         let bounds: Anchor<CGRect>
+        var activity: RowActivity? = nil
         let open: () -> Void
 
         var body: some View {
@@ -384,6 +378,7 @@ struct ParentTag: View {
                     Color.clear.contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .rowFocus(activity, .control)
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: frame.minX, y: frame.minY)
                 .help("Started by “\(parent.name)”: click to open it")

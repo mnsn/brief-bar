@@ -56,7 +56,9 @@
 BriefBar starts with one item in the menu bar that adds up every source's counts: pull requests that need you, failed or
 are ready to complete, and Copilot sessions waiting for you, done or stopped. Click it for one list of everything by
 state, or give each source an item of its own, with its own counts and list, as here; an update keeps the items you
-have. Put a widget on your desktop, or open the window for everything, with a page for each source.
+have. Put a widget on your desktop, or open the window for everything, with a page for each source. Every row reads the
+same way: its title, why it's there and where, what someone wrote, and a quiet last line with a pull request's stage and
+what's still left; point at a row for its actions, which its right-click menu always has.
 
 <p align="center">
   <picture>
@@ -84,7 +86,7 @@ color: **In progress**, **Your review**, **Teammate's review**, **Approved**, **
 **Merged**. BriefBar works it out from Azure DevOps and your Copilot sessions, and with agents on, the sessions working
 on your pull requests update it as they go. A failed build, or changes someone wants, marks a pull request where it is:
 BriefBar moves one back itself only when it loses its approval, or Azure DevOps can no longer complete it. Click a
-stage to change it, or **Finished My Review** to pass a pull request on to your teammates.
+stage to change it, or **Finished My Review**, as you point at its row, to pass a pull request on to your teammates.
 
 <p align="center">
   <picture>

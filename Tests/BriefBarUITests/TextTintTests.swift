@@ -36,6 +36,12 @@ struct TextTintTests {
         try Self.expectReadable(tint.nsColor, on: #require(Self.fills[tint]), opacity: 0.14)
     }
 
+    /// Where an order puts a pull request, in its row's capsule, on its tone's fill: "After !4079", "Next to merge".
+    @Test(arguments: [OrderCapsuleTone.quiet, .next, .waiting, .warning])
+    func eachOrderCapsuleReads(_ tone: OrderCapsuleTone) {
+        Self.expectReadable(tone.tint.nsColor, on: tone.nsColor, opacity: tone.fillOpacity)
+    }
+
     /// A stage's name in its pill, on 17% of its color.
     @Test(arguments: PullRequestStage.allCases)
     func eachStageReadsInItsPill(_ stage: PullRequestStage) {

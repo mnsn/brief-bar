@@ -3,13 +3,15 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// One pull request: an icon for why it's here, the title, what's going on and where, a detail such as
-/// the comment that needs you, and how long ago it happened. In Needs You, a dot marks what's new.
+/// One pull request, in four parts at most: an icon for why it's here, its title and how long ago it happened; why, and
+/// where, with Copilot's task on it and its links; what someone wrote, such as the comment that needs you; and one quiet
+/// line with its stage, where its order puts it, and what's left before you can complete it (`RowLines`). In Needs You, a
+/// dot marks what's new. Its ⋯ menu, ✨ Summarize, and Finished My Review in Your review, show while you're at it
+/// (`RowActivity`); what's done, and why it's in its stage, are in its details and its pill's menu.
 struct PRRowView: View {
     let item: PRSnapshot
     let now: Date
     var compact = false
-    var showsActions = false
     /// Its time is how long ago it was created, as in a list by date, rather than since what it's there for.
     var showsCreated = false
     /// What's left before you can complete it, under it, for your own: in lists, folded Idle's too, but not in a widget,
@@ -36,8 +38,8 @@ struct PRRowView: View {
     var order: OrderRowContext? = nil
     /// Its Mission menu, and VoiceOver's actions for it, on a window's Pull Requests page with Pull Request Order on.
     var mission: MissionMenuContext? = nil
-    /// Its stage, on a line of its own under its title, while Pull Request Order is on: nil on a row of one line, such as a
-    /// widget's, which keeps one height. A value, so that the row draws again as it changes.
+    /// Its stage, on its quiet line, while Pull Request Order is on: nil on a row of one line, such as a widget's, which
+    /// keeps one height. A value, so that the row draws again as it changes.
     var stage: StageReading? = nil
     /// Pull Request Order, while it's on, for a full row: for its stage's menu and VoiceOver's actions, and Undo of your last
     /// change to it, which stay even once it has no stage left to show; and the names of the sessions its stage names.
@@ -45,7 +47,7 @@ struct PRRowView: View {
     /// Opens it in Azure DevOps.
     var action: () -> Void
 
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
 
@@ -60,67 +62,40 @@ struct PRRowView: View {
     private var detailsTitle: String { showsInWindow ? "Show in BriefBar" : "Show Details" }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // The row, and its summary under it, which ends where its time does, left of its actions.
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: clickShows ?? action) {
-                    content
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, compact ? 5 : 6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(helpText)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(item.title), \(item.headline)")
-                .accessibilityValue(accessibilityValue)
-                .accessibilityHint(clickShows == nil ? "Opens the pull request in Azure DevOps"
-                    : showsInWindow ? "Shows its details in BriefBar's window" : "Shows its details")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .accessibilityActions {
-                    SummarizeMenuItems(item.key.linkRef, divided: false)
-                    if let open = order?.open { Button("Show Its Mission", action: open) }
-                    if let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
-                }
-                .missionActions(item.key.linkRef, context: mission)
-                // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
-                .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now)
-                RowSummary(subject: item.key.linkRef)
-                    .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 6)
-            }
-            .rowSummarizeButton(item.key.linkRef)
-
-            if showsActions, !options.visibleActions {
-                Menu {
-                    menuItems
-                } label: {
-                    // As AppKit drew it, as a borderless menu, before it followed the text size.
-                    HStack(spacing: 3) {
-                        Label("Actions", systemImage: "ellipsis.circle")
-                            .labelStyle(MenuLabelStyle())
-                        MenuChevron()
-                    }
-                    .font(size: 13, weight: .medium)
+        // The row, and its summary under it, which ends where its time does, left of its ⋯.
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: clickShows ?? action) {
+                content
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, compact ? 5 : 6)
                     .contentShape(Rectangle())
-                }
-                .labelMenuStyle()
-                .fixedSize()
-                .help("Actions for this pull request")
-                .accessibilityLabel("Actions for \(item.title)")
-                .padding(.trailing, 8)
-                .padding(.top, compact ? 5 : 6)
             }
+            .buttonStyle(.plain)
+            .rowKeyboardFocus(activity)
+            .help(helpText)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(item.title), \(item.headline)")
+            .accessibilityValue(accessibilityValue)
+            .accessibilityHint(clickShows == nil ? "Opens the pull request in Azure DevOps"
+                : showsInWindow ? "Shows its details in BriefBar's window" : "Shows its details")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .rowVoiceOverFocus(activity)
+            .accessibilityActions {
+                SummarizeMenuItems(item.key.linkRef, divided: false)
+                if let open = order?.open { Button("Show Its Mission", action: open) }
+                if let ordering { StageAccessibilityActions(ref: item.key.linkRef, order: ordering) }
+            }
+            .missionActions(item.key.linkRef, context: mission)
+            // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
+            .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now, activity: activity)
+            RowSummary(subject: item.key.linkRef)
+                .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.22 : 0.16) : isHovered ? Color.primary.opacity(0.08) : .clear)
-        )
-        .onHover { isHovered = $0 }
-        .contextMenu { menuItems }
-        .rowActions(for: item.title, openTitle: clickShows == nil ? "Open in Azure DevOps" : detailsTitle, open: clickShows ?? action) {
+        .rowSummarizeButton(item.key.linkRef, activity: activity)
+        .rowActions(for: item.title, openTitle: clickShows == nil ? "Open in Azure DevOps" : detailsTitle, open: clickShows ?? action,
+                    activity: activity) {
             if clickShows != nil {
                 Button("Open in Azure DevOps", action: action)
             } else if let showDetails {
@@ -128,6 +103,14 @@ struct PRRowView: View {
             }
             additionalMenuItems
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(activity.isPointedAt ? 0.22 : 0.16)
+                    : activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { activity.isHovered = $0 }
+        .contextMenu { menuItems }
     }
 
     private var content: some View {
@@ -150,7 +133,7 @@ struct PRRowView: View {
                             .frame(width: 7, height: 7)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     }
-                    RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isHovered: isHovered)
+                    RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isActive: activity.isActive)
                 }
                 if compact {
                     // With what someone wrote, it reads as content does.
@@ -158,35 +141,62 @@ struct PRRowView: View {
                         .font(size: options.rowDetailSize)
                         .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
                         .lineLimit(1)
-                } else {
-                    if let stage, let ordering {
-                        RowStageLine(stage: stage, order: order, ordering: ordering, now: now)
-                    }
-                    HStack(spacing: 6) {
-                        Text(item.subtitle)
-                            .font(size: options.rowReasonSize, weight: .medium)
-                            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowTextColor)
-                            .lineLimit(1)
-                        PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
-                        PullRequestLinks(key: item.key)
-                        // With a stage, its capsule is on the stage's line.
-                        if let order, stage == nil || ordering == nil { OrderCapsule(order) }
-                    }
-                    if let detail = item.detail {
-                        Text(detail)
-                            .font(size: options.rowDetailSize)
-                            .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
-                            .lineLimit(item.group == .needsYou ? 3 : 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if showsReadiness, let readiness = item.readiness, !readiness.items.isEmpty {
-                    ReadinessLine(readiness: readiness, isQuiet: item.group == .idle)
+                    PRQuietLine(item: item, left: left)
                         .padding(.top, 2)
+                } else {
+                    RowLines {
+                        reason(item.headline)
+                            .rowLine(.reason)
+                        if !item.repository.isEmpty {
+                            reason(" · " + item.repository)
+                                .rowLine(.place)
+                        }
+                        HStack(spacing: 6) {
+                            PullRequestCopilotStatus(key: item.key)
+                            PullRequestLinks(key: item.key)
+                        }
+                        .rowLine(.chips)
+                        if let detail = item.detail {
+                            Text(detail)
+                                .font(size: options.rowDetailSize)
+                                .foregroundStyle(item.detailIsWritten ? .rowContent : Color.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .rowLine(.detail)
+                        }
+                        PRQuietLine(item: item, stage: stage, ordering: ordering, order: order, left: left)
+                            .rowLine(.quiet)
+                        // In room the quiet line makes for it as it shows, folding what's left if it must.
+                        if offersFinishedReview, activity.isActive || options.visibleActions {
+                            FinishedReviewLabel()
+                                .stageSpot(.finishedReview)
+                                .rowLine(.trailing)
+                        }
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Why it's here, and where, in its state's color for words.
+    private func reason(_ words: String) -> some View {
+        Text(words)
+            .font(size: options.rowReasonSize, weight: .medium)
+            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowTextColor)
+            .lineLimit(1)
+    }
+
+    /// In Your review, on your board: Finished My Review moves it to Teammate's review.
+    private var offersFinishedReview: Bool {
+        ordering != nil && stage?.isOnBoard == true && stage?.stage == .yourReview
+    }
+
+    /// What's left before you can complete it, for your own: never what's done, which its details list, nor what its reason
+    /// says already, such as Merge conflicts.
+    private var left: [PRReadiness.Item] {
+        guard showsReadiness else { return [] }
+        return (item.readiness?.left ?? []).filter { $0.label.localizedCaseInsensitiveCompare(item.headline) != .orderedSame }
     }
 
     /// What a click does first, then the other: its details, and opening it in Azure DevOps.
@@ -232,6 +242,8 @@ struct PRRowView: View {
     private var helpText: String {
         var lines = [item.title, "\(item.repository) · \(item.project) · !\(item.key.number) by \(item.author)", item.headline]
         if let detail = item.detail { lines.append(detail) }
+        // Why it's in its stage, which its pill's menu says too: its row shows the pill alone.
+        if let stage, let ordering { lines.append(StageText.sentence(stage, now: now, name: ordering.name(of:))) }
         if !item.approvals.isEmpty && item.group != .ready && item.readiness == nil {
             lines.append("Approved by " + item.approvals.joined(separator: ", "))
         }
@@ -242,15 +254,14 @@ struct PRRowView: View {
         }
         lines.append(clickShows == nil ? "Click to open in Azure DevOps"
             : showsInWindow ? "Click to see its details in BriefBar's window" : "Click to see its details")
-        let menu = showsActions ? "Use Actions" : "Right-click"
         if let source = item.chatSource {
-            lines.append(source.messageURL == nil ? "\(menu) to show \(source.appName)" : "\(menu) to open the message in \(source.appName)")
+            lines.append(source.messageURL == nil ? "Right-click to show \(source.appName)" : "Right-click to open the message in \(source.appName)")
         }
         if dismiss != nil {
-            lines.append("\(menu) to remove it from Needs You")
+            lines.append("Right-click to remove it from Needs You")
         }
         if item.isWatched {
-            lines.append(showsActions ? "You watch it: use Actions to stop" : "You watch it: right-click to stop")
+            lines.append("You watch it: right-click to stop")
         }
         return lines.joined(separator: "\n")
     }
@@ -280,34 +291,131 @@ struct RowIcon: View {
     }
 }
 
-/// What's left before you can complete one of your pull requests, the most pressing first, then what's done: "✕ Build
-/// failed  ✋ Resolve 2 comments  ◷ 1 of 2 approvals  ✓ Work item linked", on as many lines as it takes. Its symbols keep
-/// their colors with quieter colors on; what's done reads quieter than what's left.
-struct ReadinessLine: View {
-    let readiness: PRReadiness
-    /// Its words all quiet, as an idle row's title is.
-    var isQuiet = false
+/// A row's quiet line, one line high: its stage's pill, where its order puts it, and what's left before you can complete it,
+/// the most pressing first. Where it doesn't all fit, what's left shows its first few and "+2" for the rest, then only how
+/// many are left: the row's tooltip, VoiceOver and its details say all of it. Where even that doesn't fit, as a stage's pill
+/// and an order's capsule together can be too wide for a narrow row, it goes on as many lines as it needs, rather than past
+/// the row's edge. What's done is in its details alone, and why it's in its stage in its pill's menu. Its links, where its
+/// reason's line has no room for them, and Finished My Review go after it (`RowLines`).
+/// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their spots
+/// are (`stageControls`). Someone else's that you finished reviewing says so in words, without a pill: it's off your board.
+struct PRQuietLine: View {
+    let item: PRSnapshot
+    var stage: StageReading? = nil
+    var ordering: PullRequestOrder? = nil
+    var order: OrderRowContext? = nil
+    /// What's left before you can complete it: nothing that's done.
+    let left: [PRReadiness.Item]
 
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        FlowLayout(spacing: 10, lineSpacing: 2) {
-            ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
-                // As wide as it needs, or as the row has room for, its words cut short then: the tooltip says all of it.
-                HStack(spacing: 3) {
-                    Image(systemName: item.symbol)
-                        .font(size: options.rowDetailSize - 1.5, weight: .semibold)
-                        .foregroundStyle(item.color)
-                    Text(item.label)
-                        .foregroundStyle(item.isDone || isQuiet ? Color.secondary : Color.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+        if !isEmpty {
+            ViewThatFits(in: .horizontal) {
+                ForEach(shownCounts, id: \.self) { shown in
+                    line(shown: shown)
+                }
+                // Too narrow even for only how many are left: its stage on a line of its own, as its stage's line wrapped
+                // before, then the rest; then each on its own. Each line as wide as what's on it, so that a row too narrow
+                // even for those doesn't take them as fitting, as a layout that narrowed them to the row would.
+                VStack(alignment: .leading, spacing: 3) {
+                    stagePart
+                    if order != nil || !left.isEmpty {
+                        HStack(spacing: 6) {
+                            orderPart
+                            leftPart(shown: 0)
+                        }
+                    }
+                }
+                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    stagePart
+                    orderPart
+                    leftPart(shown: 0)
+                }
+                .lineLimit(1)
+            }
+            .font(size: options.rowDetailSize)
+        }
+    }
+
+    /// What the line tries, the first that fits: everything that's left by name, then fewer, down to one; then only how
+    /// many are left.
+    private var shownCounts: [Int] {
+        left.isEmpty ? [0] : Array((0...left.count).reversed())
+    }
+
+    private var isEmpty: Bool {
+        stage == nil && order?.showsCapsule != true && left.isEmpty
+    }
+
+    /// - Parameter shown: how many of what's left show by name; "+2" says the rest.
+    private func line(shown: Int) -> some View {
+        HStack(spacing: 6) {
+            stagePart
+            orderPart
+            leftPart(shown: shown)
+        }
+        .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private var stagePart: some View {
+        if let stage {
+            if stage.isOnBoard {
+                StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
+                    .stageSpot(.pill)
+            } else if let ordering {
+                Text(StageText.why(stage, name: { ordering.name(of: $0) }))
+                    .foregroundStyle(.secondary)
+                    .truncationMode(.tail)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var orderPart: some View {
+        if let order { OrderCapsule(order) }
+    }
+
+    /// What's left, `shown` of them by name.
+    @ViewBuilder
+    private func leftPart(shown: Int) -> some View {
+        if !left.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in
+                    LeftItem(item: item, isQuiet: self.item.group == .idle)
+                }
+                if shown < left.count {
+                    let rest = left.dropFirst(shown)
+                    Text(shown == 0 ? "\(rest.count) left" : "+\(rest.count)")
+                        .foregroundStyle(self.item.group == .idle ? Color.secondary : .rowContent)
+                        .fixedSize()
+                        .help(rest.map(\.described).joined(separator: "\n"))
                 }
             }
         }
-        .font(size: options.rowDetailSize)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(readiness.lines.joined(separator: ". "))
+    }
+
+    /// One thing that's left, as its details list it: its symbol in its color, then its words, readable as content.
+    private struct LeftItem: View {
+        let item: PRReadiness.Item
+        /// Its words quiet, as an idle row's title is.
+        let isQuiet: Bool
+
+        @Environment(\.interfaceOptions) private var options
+
+        var body: some View {
+            HStack(spacing: 3) {
+                Image(systemName: item.symbol)
+                    .font(size: options.rowDetailSize - 1.5, weight: .semibold)
+                    .foregroundStyle(item.color)
+                Text(item.label)
+                    .foregroundStyle(isQuiet ? Color.secondary : .rowContent)
+            }
+            .fixedSize()
+            .help(item.described)
+        }
     }
 }
 
@@ -333,47 +441,5 @@ struct CountChips: View {
                 .help("\(counts[group]) \(group.countLabel)")
             }
         }
-    }
-}
-
-/// A row's stage, on its own line under its title, while Pull Request Order is on: its pill, why, and who set it; where
-/// it stands in its order, unless its stage says it, as Can merge and Waits do (`OrderRowContext.isSaid`), or the quiet
-/// ✎ of a change of yours where it has no order; and Finished My Review in Your review.
-/// As many lines as it needs, so it wraps rather than squeezes when narrow; why, and who set it, wrap too where they're
-/// longer than the row is wide, such as a session's long name with a failed build after it, rather than being cut off.
-/// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their
-/// spots are (`stageControls`). Someone else's that you finished reviewing says so, without a pill: it's off your
-/// board.
-struct RowStageLine: View {
-    let stage: StageReading
-    let order: OrderRowContext?
-    @ObservedObject var ordering: PullRequestOrder
-    let now: Date
-
-    @Environment(\.interfaceOptions) private var options
-
-    var body: some View {
-        let name = { (ref: ItemRef) in ordering.name(of: ref) }
-        FlowLayout(spacing: 6, lineSpacing: 3) {
-            if stage.isOnBoard {
-                StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
-                    .stageSpot(.pill)
-            }
-            Text(StageText.why(stage, name: name))
-                .foregroundStyle(.secondary)
-            if stage.isOnBoard, let who = StageText.who(stage, now: now, name: name) {
-                Text("· " + who)
-                    .foregroundStyle(.tertiary)
-            }
-            if let order, !order.isSaid(by: stage.stage) {
-                OrderCapsule(order)
-            }
-            if stage.isOnBoard, stage.stage == .yourReview {
-                FinishedReviewLabel()
-                    .stageSpot(.finishedReview)
-            }
-        }
-        .font(size: options.rowDetailSize)
-        .padding(.vertical, 1)
     }
 }

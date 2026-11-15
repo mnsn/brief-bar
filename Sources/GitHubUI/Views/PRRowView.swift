@@ -3,7 +3,9 @@ import BriefBarUI
 import GitHubCore
 import SwiftUI
 
-/// One pull request: why it's in its group, its title, where it is and how long since it changed.
+/// One pull request, as Azure DevOps' rows are: its title and how long since it changed; why it's in its group, who, and
+/// where it is, with its links; and, on a quiet line, where it stands in its mission (`RowLines`). Its ⋯ menu and ✨
+/// Summarize show while you're at it (`RowActivity`).
 struct PRRowView: View {
     let item: GitHubPRSnapshot
     let now: Date
@@ -12,7 +14,7 @@ struct PRRowView: View {
     var order: OrderRowContext? = nil
     var action: () -> Void
 
-    @LocalState private var isHovered = false
+    private let activity = RowActivity()
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
 
@@ -27,9 +29,9 @@ struct PRRowView: View {
         // The row and its summary, together.
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                .fill(activity.isPointedAt ? Color.primary.opacity(0.08) : .clear)
         )
-        .onHover { isHovered = $0 }
+        .onHover { activity.isHovered = $0 }
         .contextMenu {
             Button("Open on GitHub", action: action)
             SummarizeMenuItems(linkRef)
@@ -53,7 +55,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: isHovered)
+                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isActive: activity.isActive)
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
@@ -61,19 +63,20 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        HStack(spacing: 6) {
-                            Text(subtitle)
-                                .font(size: options.rowReasonSize, weight: .medium)
-                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
-                                .lineLimit(1)
+                        // Why, who, and where, with its links: where it is, cut short in its middle first.
+                        RowLines {
+                            reason(subtitle)
+                                .rowLine(.reason)
+                            reason(" · " + item.pullRequest.reference)
+                                .truncationMode(.middle)
+                                .rowLine(.place)
                             LinkCapsules(linkRef)
-                            if let order { OrderCapsule(order) }
+                                .rowLine(.chips)
+                            if let order {
+                                OrderCapsule(order)
+                                    .rowLine(.quiet)
+                            }
                         }
-                        Text(item.pullRequest.reference)
-                            .font(size: options.rowDetailSize)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                     }
                 }
             }
@@ -83,8 +86,10 @@ struct PRRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .rowKeyboardFocus(activity)
         .help(helpText)
         .accessibilityElement(children: .ignore)
+        .rowVoiceOverFocus(activity)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference, order?.sentence].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
@@ -92,11 +97,19 @@ struct PRRowView: View {
             SummarizeMenuItems(linkRef, divided: false)
             if let open = order?.open { Button("Show Its Mission", action: open) }
         }
-        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action, activity: activity) {
             SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)
         }
-        .rowSummarizeButton(linkRef)
+        .rowSummarizeButton(linkRef, activity: activity)
+    }
+
+    /// Why it's here, who, and where, in its group's color for words.
+    private func reason(_ words: String) -> some View {
+        Text(words)
+            .font(size: options.rowReasonSize, weight: .medium)
+            .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.textColor)
+            .lineLimit(1)
     }
 
     private var subtitle: String {

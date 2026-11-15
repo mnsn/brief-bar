@@ -29,11 +29,17 @@ extension View {
         modifier(InterfaceEnvironment(services: services))
     }
 
+    /// The row's ⋯ menu: what a click does, then `actions`. While you're at the row (`activity`), it shows in a column of
+    /// its own on a window's page, and in its time's place in a list of the menu bar (`RowTimeSlot`); with Visible Row and
+    /// Widget Actions on, always, in its column. A row without an activity, as in a widget, has it only then.
     package func rowActions<Actions: View>(
-        for title: String, openTitle: String, open: @escaping () -> Void,
+        for title: String, openTitle: String, open: @escaping () -> Void, activity: RowActivity? = nil,
         @ViewBuilder actions: @escaping () -> Actions
     ) -> some View {
-        modifier(RowActions(title: title, openTitle: openTitle, open: open, actions: actions))
+        // Read here, in the row's own body, so that the row draws its ⋯ again as you come and go.
+        modifier(RowActions(
+            title: title, openTitle: openTitle, open: open, activity: activity, isActive: activity?.isActive == true, actions: actions
+        ))
     }
 }
 
@@ -49,33 +55,71 @@ private struct RowActions<Actions: View>: ViewModifier {
     let title: String
     let openTitle: String
     let open: () -> Void
+    /// For its focus, which is the row's: never read here.
+    let activity: RowActivity?
+    let isActive: Bool
     @ViewBuilder var actions: () -> Actions
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
+    @Environment(\.offersRowActions) private var offersRowActions
+    @Environment(\.panelStyle) private var panelStyle
+
+    /// Where its ⋯ is.
+    private enum Place {
+        case none
+        /// A column of its own, at the end of its first line.
+        case column
+        /// Its time's place, while you're at it.
+        case timesPlace
+    }
+
+    private var place: Place {
+        if options.visibleActions { return .column }
+        guard activity != nil, offersRowActions else { return .none }
+        return panelStyle == .page ? .column : .timesPlace
+    }
 
     func body(content: Content) -> some View {
-        if options.visibleActions {
+        switch place {
+        case .none:
+            content
+        case .column:
             HStack(alignment: .top, spacing: 0) {
                 content.frame(maxWidth: .infinity, alignment: .leading)
-                Menu {
-                    Button(openTitle, action: open)
-                    actions()
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(size: 13, weight: .semibold)
-                        .frame(width: 28 * textScale, height: 28 * textScale)
-                        .contentShape(Rectangle())
-                }
-                .labelMenuStyle()
-                .fixedSize()
-                .padding(.top, 5)
-                .padding(.trailing, 4)
-                .help("\(openTitle) and other actions")
-                .accessibilityLabel("Actions for \(title)")
+                menu(side: (options.visibleActions ? 28 : RowTimeSlot.buttonSide) * textScale)
+                    .modifier(RowActionVisibility(isShown: options.visibleActions || isActive))
+                    .padding(.top, options.visibleActions ? 5 : 3)
+                    .padding(.trailing, options.visibleActions ? 4 : 2)
             }
-        } else {
+        case .timesPlace:
             content
+                .environment(\.rowActionsInTimesPlace, true)
+                .rowTimeActionsButton { menu(side: RowTimeSlot.buttonSide * textScale) }
         }
+    }
+
+    private func menu(side: CGFloat) -> some View {
+        Menu {
+            Button(openTitle, action: open)
+            actions()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(size: 13, weight: .semibold)
+                .frame(width: side, height: side)
+                .background {
+                    // Where it shows only while you're at the row, as its own spot, as a toolbar's button shows it can be
+                    // pressed.
+                    if !options.visibleActions {
+                        Circle().fill(Color.primary.opacity(0.07))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .labelMenuStyle()
+        .fixedSize()
+        .rowFocus(activity, .actions)
+        .help("\(openTitle) and other actions")
+        .accessibilityLabel("Actions for \(title)")
     }
 }
 

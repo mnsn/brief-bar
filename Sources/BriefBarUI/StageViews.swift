@@ -414,11 +414,11 @@ extension View {
     }
 
     /// Over a row that's a button: the stage pill's menu and Finished My Review, each where its spot is in the row; nothing
-    /// without Pull Request Order.
-    package func stageControls(ref: ItemRef, order: PullRequestOrder?, now: Date) -> some View {
+    /// without Pull Request Order. With the row's `activity`, focus on either is the row's too, so its actions show.
+    package func stageControls(ref: ItemRef, order: PullRequestOrder?, now: Date, activity: RowActivity? = nil) -> some View {
         overlayPreferenceValue(StageSpots.self) { spots in
             if let order, !spots.isEmpty {
-                StageControlsOverRow(spots: spots, ref: ref, order: order, now: now)
+                StageControlsOverRow(spots: spots, ref: ref, order: order, now: now, activity: activity)
             }
         }
     }
@@ -429,6 +429,7 @@ private struct StageControlsOverRow: View {
     let ref: ItemRef
     @ObservedObject var order: PullRequestOrder
     let now: Date
+    let activity: RowActivity?
 
     var body: some View {
         if let reading = order.stage(of: ref) {
@@ -443,6 +444,7 @@ private struct StageControlsOverRow: View {
                     }
                     .labelMenuStyle()
                     .frame(width: frame.width, height: frame.height)
+                    .rowFocus(activity, .pill)
                     .offset(x: frame.minX, y: frame.minY)
                     .help(StageText.sentence(reading, now: now, name: order.name(of:)) + "\nClick to change it")
                     .stageAccessibility(reading, order: order, now: now)
@@ -456,6 +458,7 @@ private struct StageControlsOverRow: View {
                     }
                     .buttonStyle(.plain)
                     .frame(width: frame.width, height: frame.height)
+                    .rowFocus(activity, .finishedReview)
                     .offset(x: frame.minX, y: frame.minY)
                     .help(FinishedReviewButton.help(for: ref, order: order))
                     .accessibilityLabel("Finished My Review")
