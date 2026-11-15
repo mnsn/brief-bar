@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.23.0 - 2026-11-15
+
+- **A task you send starts a session in the Copilot app.** With **Send Prompts to Copilot Sessions** on, a work item's
+  new session now starts in the GitHub Copilot app, in a new worktree of the repository, where you can follow and
+  steer it, rather than run on its own with the Copilot CLI. It works in autopilot, with the model and effort you
+  chose, and BriefBar shows it in the app once it starts; **Send with …** starts it there too. The Send to Copilot
+  window has **In the Copilot App** and **Run with the CLI**, and **New Sessions**, in **Settings › Send to Copilot**,
+  chooses which comes first. The app needs the repository among its own; when it can't start the session, the window
+  says why, and runs it with the CLI. A pull request's new session still runs with the CLI.
+- **Change a sprint work item's state.** With **Make Changes in Azure DevOps** on, a task's state, the circle at the
+  start of its line on the Sprint page, and a story's or bug's, on its card and in its details, are menus: choose
+  **New**, **Active**, **Closed** or another of the states its type has in your team's process, and BriefBar sets it in
+  Azure DevOps, as you. **State** is in their right-click and **⋯** menus too, and the line under the page's header
+  says what changed, with **Undo**.
+- **Open a work item's Copilot session or pull request in a click.** On the Sprint page, a work item's right-click and
+  **⋯** menus, and its details, have **Open in Copilot**, for the Copilot session that goes with it, and **Show Pull
+  Request**, which shows its pull request over its details. **↗** at the top of its details opens it in Azure DevOps,
+  as on a pull request's details.
+- **Sessions, Chats and Group Chats look like the window's other pages.** In BriefBar's window, Copilot's sessions
+  and Teams' chats now have a large title, a line that counts what needs you, such as **3 need you · 6 running**, their
+  buttons at the top right, **Open Copilot**, or **Mark All Read** and **Open Teams**, and each group in a card under its
+  heading, as the Pull Requests pages show theirs. The list's footer and its second ⚙ are gone from the window: the
+  sidebar's ⚙ is the window's. **Idle** and **Recent** fold below the other groups, as before.
+- **One heading for every group.** The menu bar's lists and the window's pages head each group the same way: its
+  symbol, its name and how many it has, such as **✋ Needs You 3**, rather than an orange **Needs You (3)** in the menu
+  bar's lists. **Idle (3)** and **Recent (1)** are **› Idle 3** and **› Recent 1**, and say whether they're open to
+  VoiceOver.
+- **A menu-bar item's list closes when you click another app.** It could stay open over the windows you
+  clicked, as after you'd used its ⚙ menu, until you clicked the item again.
+- **Settings, reorganized.** Its sidebar has four parts: **General**; your **Sources**; **Display**, with Menu Bar,
+  Widgets, Windows and Appearance; and **Features**, with Pull Requests, Links & Summaries, Notifications, Send to
+  Copilot and Agents, each with the colored icon the window's sidebar has. Every page starts with its icon, its name and
+  what it's for, and its settings sit in grouped boxes, a switch on the right of each, with their edges lined up.
+- **Each setting says what it does in a line.** The rest is behind **ⓘ** beside it. **Summaries**, **Send Work to
+  Copilot**, **Make Changes in Azure DevOps** and **Pull Requests Sent in Chats** say what they read and send as you
+  turn them on, in a box under the switch, with **Turn On** and **Cancel**. Turning one off needs no box.
+- **General, in short.** It has **Launch BriefBar at Login**, the updates, each source in a line that says whether it's
+  on and opens its page, and the version. **Show Links** and **Summaries** moved to **Settings › Links & Summaries**, and **Notifications
+  Page** and **Keep Notifications For** to **Settings › Notifications**.
+- **Send to Copilot has a page of its own.** **Send Work to Copilot**, with **New Sessions**, the models, the prompt
+  and **Worktrees**, moved from Azure DevOps' page to **Settings › Send to Copilot**. While Azure DevOps is off or
+  paused, the page shows them disabled and says why, with **Turn On…** or **Review…**.
+- **Shorter gear menus.** A list's gear menu, and a widget's right-click menu, keep what you'd change in the moment,
+  such as Teams' **Show Message Previews**, for screen sharing, Azure DevOps' **Notifications** and **Watch a Pull
+  Request…**, and GitHub's **Refresh Now**, with **BriefBar Settings…**. Refresh intervals, how long things are kept,
+  organizations, models, the prompt and **Launch BriefBar at Login** are in Settings only.
+- **A taller Settings window.** Drag its top or bottom edge to make it taller, and it opens at that height from then
+  on. It keeps its width, so each setting's line stays beside its switch.
+- **Colored words you can read.** In light mode, words in a state's color are a darker shade of it now, and in dark
+  mode red, blue and purple words are lighter, so they read as clearly as the rest: a row's reason, such as **Sam
+  Rivera replied · payments-api**, a pipeline's result, such as **Failed in Test**, the numbers and states on a row's
+  links, and the counts in the Overview widget. Symbols keep their bright colors, and with **Quieter Colors and
+  Surfaces** on, those words stay gray. Under a row's title, what someone wrote, such as a comment or what a session
+  asks, is a stronger gray than what's said about it, such as who it's by.
+- **Nothing cut off.** A widget's counts keep their width, so GitHub's no longer cuts each one in half: the title gives
+  way first, then the least urgent counts. A pipeline's stages go on to another line rather than past the card's edge,
+  and Up Next shows a pull request's title on up to two lines.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Send
+  Prompts to Copilot Sessions on, Azure DevOps reads the Copilot app's projects to start a work item's new session
+  there. With Make Changes in Azure DevOps on, Azure DevOps sets the state you choose for a sprint's work item.
+
 ## 0.22.0 - 2026-11-12
 
 - **Your order, on My Work.** Put the work you do yourself in the order you want to do it, in each lane of the Board:
