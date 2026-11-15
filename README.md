@@ -73,9 +73,8 @@ have. Put a widget on your desktop, or open the window for everything, with a pa
 | **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |
 
 Hide what you don't need. To read long descriptions and comments, hold **⌘** and scroll in a window to
-make its text bigger. A new install starts with **Clearer States and Counts**, **Aligned, Easier-to-Read Rows** and
-**Simple Layout Choices** on, in **Settings › Appearance**; an update keeps the look you have, so turn them on there for
-the same.
+make its text bigger. A new install starts with **Clearer States and Counts**, **Aligned Titles** and **Simple Layout
+Choices** on, in **Settings › Appearance**; an update keeps the look you have, so turn them on there for the same.
 [Layouts and appearance options →](docs/user-guide.md#menu-bar-widgets-and-windows)
 
 ## Know what's next

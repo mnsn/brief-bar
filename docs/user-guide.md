@@ -115,8 +115,8 @@ every section, the newest first, each with the actions its own list has. Each it
 and its list as they were until you switch them.
 
 To have one item after an update, as a new install does, click **Put All in One Item** in Settings ›
-Menu Bar (under **Custom**, with **Simple Layout Choices** on), then set its **Counts** to **Added Up**
-and its **List** to **Everything by State**.
+Menu Bar, or **Together** with **Simple Layout Choices** on, then set its **Counts** to **Added Up** and
+its **List** to **Everything by State**.
 
 <p align="center">
   <picture>
@@ -146,11 +146,12 @@ and its **List** to **Everything by State**.
 
 ## Appearance options
 
-**Settings › Appearance** has seven independent options. A new install starts with the first three
-on, **Clearer States and Counts**, **Aligned, Easier-to-Read Rows** and **Simple Layout Choices**, and
-the other four off. An update keeps your choices: an install from before keeps each option as it was,
-off unless you turned it on, so turn those three on for the look a new install has. None of them turns
-a source on, grants permissions or starts an agent.
+**Settings › Appearance** has eight independent options. A new install starts with the first three
+on, **Clearer States and Counts**, **Aligned Titles** and **Simple Layout Choices**, and the other five
+off. An update keeps your choices: an install from before keeps each option as it was, off unless you
+turned it on, so turn those three on for the look a new install has. **Aligned, Easier-to-Read Rows**
+became two options, **Aligned Titles** and **Larger Reasons and Previews**: if you had it on, both are.
+None of them turns a source on, grants permissions or starts an agent.
 
 **Text Size in Windows**, at the top of the page, makes the text on the pages of BriefBar's windows
 bigger, from its usual size up to 150%, for reading long descriptions and comments. In a window, hold
@@ -160,8 +161,9 @@ and Settings keep their size.
 | Option | New install | When it's on |
 |---|---|---|
 | **Clearer States and Counts** | On | Separates **Ready to Merge** from **Finished** in the overview. Sidebar badges and list headers count items needing you or failing, while remaining sprint work is labeled **left**. |
-| **Aligned, Easier-to-Read Rows** | On | Aligns titles across sources and makes reasons and previews larger. Widgets grow slightly to fit complete rows. |
-| **Simple Layout Choices** | On | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. |
+| **Aligned Titles** | On | Lines up titles across sources, whatever icon, avatar or symbol each row starts with. |
+| **Simple Layout Choices** | On | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. With every menu-bar section in one item, Together shows that item's **Counts** and **List**. |
+| **Larger Reasons and Previews** | Off | Makes the lines under each title larger: a row's reason, such as who replied, and what someone wrote, such as a comment or a chat's message. Widgets grow slightly to fit complete rows. |
 | **Compact Briefs** | Off | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
 | **Quieter Colors and Surfaces** | Off | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
 | **Compact Menu Bar** | Off | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
@@ -1604,14 +1606,15 @@ section it shows. Drag a chip onto another card to put them together, onto **New
 Widget**, **New Window**) to give it one of its own, or onto **Hidden**; click **New Item** to choose a
 section instead, or right-click a chip for the same moves. **Put All in One** and **Give Each Its Own**
 change them all at once. With **Simple Layout Choices** on, as on a new install, these pages start with
-**Together**, **Separate** and **Custom**, and the cards are under **Custom**. Settings › Menu Bar
-starts with your menu bar as it is now, BriefBar's items left to right with your counts, and each card
-shows its item the same way. A menu-bar item that shows several sections has **Counts**, **Side by
-Side** or **Added Up** with the states it adds up, and **List**, **A Tab for Each Section** or
-**Everything by State**: a new install's one item starts with **Added Up** and **Everything by State**.
-Each widget has its own **Position** (on the desktop or floating above windows) and **Size** (compact,
-medium or large), there and in its right-click menu, and Settings › Widgets turns on the **Overview**
-widget.
+**Together**, **Separate** and **Custom**, and the cards are under **Custom**; with every menu-bar
+section in one item, Together shows that item's **Counts** and **List** right under them. Settings ›
+Menu Bar starts with your menu bar as it is now, BriefBar's items left to right with your counts, and
+each card shows its item the same way. A menu-bar item that shows several sections has **Counts**,
+**Side by Side** or **Added Up** with the states it adds up, and **List**, **A Tab for Each Section**
+or **Everything by State**: a new install's one item starts with **Added Up** and **Everything by
+State**. Each widget has its own **Position** (on the desktop or floating above windows) and **Size**
+(compact, medium or large), there and in its right-click menu, and Settings › Widgets turns on the
+**Overview** widget.
 
 ## Privacy
 

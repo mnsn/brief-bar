@@ -10,8 +10,10 @@ import Testing
     ]
     private let startHidden: Set<SectionID> = [.azureDevOpsSprint, .azureDevOpsPipelines]
 
-    /// What BriefBar does with its preferences as it starts, as `AppModel` does: the look, then the menu bar.
+    /// What BriefBar does with its preferences as it starts, as `AppModel` does: what an earlier version saved comes over,
+    /// then a new install's look, then its menu bar.
     private func start(_ defaults: MemorySettings) {
+        InterfaceOptions.migrate(defaults)
         NewInstall.saveLook(to: defaults)
         NewInstall.saveMenuBar(sections: sections, hidden: startHidden, to: defaults)
     }
@@ -22,7 +24,7 @@ import Testing
         start(defaults)
 
         let options = InterfaceOptions.load(from: defaults)
-        #expect(options == InterfaceOptions(enabled: [.clearerStates, .readableRows, .simpleLayoutControls]))
+        #expect(options == InterfaceOptions(enabled: [.clearerStates, .alignedTitles, .simpleLayoutControls]))
         // Every switch is saved, those off too, as Settings › Appearance saves them.
         for option in InterfaceOption.allCases {
             #expect(defaults.object(forKey: option.defaultsKey) as? Bool == options[option])
@@ -34,7 +36,7 @@ import Testing
 
     @Test func aNewInstallKeepsAnOptionThatsAlreadySaved() {
         let defaults = MemorySettings()
-        defaults.set(false, forKey: InterfaceOption.readableRows.defaultsKey)
+        defaults.set(false, forKey: InterfaceOption.alignedTitles.defaultsKey)
         defaults.set(true, forKey: InterfaceOption.quietAppearance.defaultsKey)
         start(defaults)
         #expect(InterfaceOptions.load(from: defaults) == InterfaceOptions(enabled: [.clearerStates, .simpleLayoutControls, .quietAppearance]))
@@ -97,6 +99,24 @@ import Testing
         #expect(InterfaceOptions.load(from: defaults) == InterfaceOptions())
         #expect(SectionLayout.load(.menuBar, from: defaults) == layout)
         #expect(MenuBarItemOptions.load(from: defaults).isEmpty)
+    }
+
+    @Test func anUpdateWithAlignedEasierToReadRowsOnKeepsItsLookAsBothOptionsItBecame() {
+        // As Settings › Appearance saved it before the option became two: each switch, that one on.
+        let defaults = MemorySettings()
+        NewInstall.launched(defaults)
+        for key in ["compactBriefs", "quietAppearance", "compactMenuBar", "clearerStates", "visibleActions", "simpleLayoutControls"] {
+            defaults.set(false, forKey: "interface.\(key)")
+        }
+        defaults.set(true, forKey: InterfaceOptions.formerReadableRowsKey)
+        start(defaults)
+        #expect(InterfaceOptions.load(from: defaults) == InterfaceOptions(enabled: [.alignedTitles, .largerReasons]))
+        #expect(defaults.object(forKey: InterfaceOptions.formerReadableRowsKey) == nil)
+        #expect(defaults.object(forKey: Surface.menuBar.defaultsKey) == nil)
+        // Once is enough: starting again changes nothing.
+        let after = defaults.dictionaryRepresentation()
+        start(defaults)
+        #expect(NSDictionary(dictionary: defaults.dictionaryRepresentation()).isEqual(to: after))
     }
 
     @Test func anUpdateWithNothingArrangedYetStillGetsAnItemForEachSection() {

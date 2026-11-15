@@ -21,7 +21,7 @@ public enum NewInstall {
     // MARK: The look
 
     /// The options Settings › Appearance has on for a new install. The others start off, as they do for everyone.
-    public static let interfaceOptions: Set<InterfaceOption> = [.clearerStates, .readableRows, .simpleLayoutControls]
+    public static let interfaceOptions: Set<InterfaceOption> = [.clearerStates, .alignedTitles, .simpleLayoutControls]
 
     /// On a new install, saves its look, as Settings › Appearance saves what you choose: an option that's somehow saved
     /// already keeps its value. Does nothing once BriefBar has launched, so an update keeps your look.

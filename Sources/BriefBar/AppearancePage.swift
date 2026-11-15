@@ -81,8 +81,9 @@ private extension InterfaceOption {
     var title: String {
         switch self {
         case .clearerStates: "Clearer States and Counts"
-        case .readableRows: "Aligned, Easier-to-Read Rows"
+        case .alignedTitles: "Aligned Titles"
         case .simpleLayoutControls: "Simple Layout Choices"
+        case .largerReasons: "Larger Reasons and Previews"
         case .compactBriefs: "Compact Briefs"
         case .quietAppearance: "Quieter Colors and Surfaces"
         case .compactMenuBar: "Compact Menu Bar"
@@ -94,8 +95,9 @@ private extension InterfaceOption {
     var caption: String {
         switch self {
         case .clearerStates: "Shows Ready to Merge apart from Finished, and counts only what needs you or failed."
-        case .readableRows: "Lines up titles across sources, and makes reasons and previews larger."
+        case .alignedTitles: "Lines up titles across sources, whatever each row starts with."
         case .simpleLayoutControls: "Starts Menu Bar, Widgets and Windows with Together, Separate and Custom."
+        case .largerReasons: "Makes the lines under each title larger, and widgets grow to fit them."
         case .compactBriefs: "Shortens the brief to two highlights, and shows a chat's summary in place of its preview."
         case .quietAppearance: "Keeps color for status symbols, with neutral navigation, avatars and backgrounds."
         case .compactMenuBar: "Shows one menu-bar icon that counts what needs you or failed, and keeps your arrangement."
@@ -111,15 +113,20 @@ private extension InterfaceOption {
             Separates Ready to Merge from Finished in the Overview. The window's sidebar badges, a list's tabs and its headers \
             count only what needs you or is failing, and the sprint's remaining work is labeled "left".
             """
-        case .readableRows:
+        case .alignedTitles:
             """
-            Aligns the titles of rows across sources, and makes their reasons and previews larger. Widgets grow a little to \
-            keep their rows whole.
+            Gives every row's icon, avatar or symbol a column of the same width, so that titles line up across sources, in \
+            the lists, the window and the widgets. Teams' widget rows take the size of other sources' titles.
             """
         case .simpleLayoutControls:
             """
             Starts the Menu Bar, Widgets and Windows pages with three choices: Together puts every section in one, Separate \
             gives each its own, and Custom opens the full editor, to move or hide sections one at a time.
+            """
+        case .largerReasons:
+            """
+            Makes the lines under each row's title larger: its reason, such as who replied, and what someone wrote, such as a \
+            comment or a chat's message; and the Overview widget's lines too. Widgets grow a little to keep their rows whole.
             """
         case .compactBriefs:
             """

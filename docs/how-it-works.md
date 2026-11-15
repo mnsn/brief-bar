@@ -305,14 +305,16 @@ open, BriefBar puts each of its menu windows on every Space (`MenusOverFullScree
 
 ### Appearance options
 
-**Settings › Appearance** exposes seven independent `InterfaceOption`s, each a switch with a line on
+**Settings › Appearance** exposes eight independent `InterfaceOption`s, each a switch with a line on
 what it does and **ⓘ** for the rest (`SettingToggle`), those a new install starts with on first.
 `InterfaceOptions` loads each boolean from `interface.<option>` and defaults every missing value to
-false: a new install saves its own before anything loads them ([below](#a-new-install)), and an
-install that launched before keeps what it has. `AppServices` publishes changes to the shared SwiftUI
-environment, so existing windows, lists and widgets update without changing a source's consent or its
-settings. The app also refreshes menu-bar items and widget sizes; rendering never starts these live
-surfaces.
+false: a new install saves its own before anything loads them ([below](#a-new-install)), and an install
+that launched before keeps what it has. Before that, what an earlier version saved comes over
+(`InterfaceOptions.migrate`): Aligned, Easier-to-Read Rows (`interface.readableRows`) became Aligned
+Titles and Larger Reasons and Previews, so an install that had it on gets both on, unless either is
+saved already, and its key goes. `AppServices` publishes changes to the shared SwiftUI environment, so
+existing windows, lists and widgets update without changing a source's consent or its settings. The app
+also refreshes menu-bar items and widget sizes; rendering never starts these live surfaces.
 
 Compact Menu Bar derives one temporary item from the sections already visible in the saved layout.
 It never saves that item into `SectionLayout`, changes hidden sections, or removes the original items'
@@ -320,9 +322,13 @@ options. Its count is Needs You plus failures, not running or finished work. Its
 sections such as Sprint reachable even though they do not contribute to a list by state.
 
 Clearer States separates ready pull requests from finished sessions using `StateRow.isReady`, without
-changing `ItemState`, source classification, notifications or agent responses. Readable Rows uses the
-same row-height calculation in widget content and window sizing. Simple Layout Choices only exposes
-preset controls: choosing a preset is an explicit layout edit; enabling the appearance option is not.
+changing `ItemState`, source classification, notifications or agent responses. Aligned Titles gives
+every row's icon the same column (`rowIconWidth`, `rowIconSpacing`), and Larger Reasons and Previews
+the lines under a title their sizes (`rowReasonSize`, `rowDetailSize`) and widget rows their height
+(`compactRowHeight`), which widget content and window sizing both use. Simple Layout Choices only
+exposes preset controls: choosing a preset is an explicit layout edit; enabling the appearance option
+is not. With every menu-bar section in one item, Together shows that item's Counts and List under the
+choice (`LayoutPage`), as its card does under Custom.
 
 **Text Size in Windows** is a `TextSize` from 100% to 150%, saved as `interface.textSize`, which
 `AppServices` publishes apart from the options. Only a window's page sets the `textScale` environment
@@ -344,9 +350,8 @@ never counts as new. A new install saves what it starts with before anything rea
 saves what you choose, so it's yours from then on: an update never writes it again, and a later
 version doesn't change it.
 
-- **Its look**: Clearer States and Counts, Aligned, Easier-to-Read Rows and Simple Layout Choices on,
-  and the other options off, each in `interface.<option>`. An option that's somehow saved already
-  keeps its value.
+- **Its look**: Clearer States and Counts, Aligned Titles and Simple Layout Choices on, and the other
+  options off, each in `interface.<option>`. An option that's somehow saved already keeps its value.
 - **Its menu bar**, unless one is saved: one item with every section that can show there, those of
   the sources that are off too, as **Put All in One** puts them (`SectionLayout.combineAll`), so each
   source you turn on joins it; the sections that start hidden there (`SectionInfo.hiddenAtFirst`),

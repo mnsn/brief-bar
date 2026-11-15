@@ -218,7 +218,7 @@ struct OrderPlaceholderRow: View {
 
     var body: some View {
         let open = opener
-        let content = HStack(spacing: options.readableRows ? 10 : 9) {
+        let content = HStack(spacing: options.rowIconSpacing) {
             Image(systemName: step.status == .merged ? "arrow.triangle.merge" : "eye.slash")
                 .font(size: 13)
                 .foregroundStyle(.tertiary)

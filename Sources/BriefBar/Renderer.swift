@@ -601,7 +601,7 @@ enum Renderer {
                     if enabled.contains(.compactMenuBar), let first = model.presentedMenuBarItems.first {
                         picture(of: [first], pressed: 0, name: "interface-\(name)-menubar")
                     }
-                    if enabled.contains(.readableRows) || enabled.contains(.visibleActions) {
+                    if enabled.contains(.alignedTitles) || enabled.contains(.largerReasons) || enabled.contains(.visibleActions) {
                         widget(shownWidgetSections, size: .medium, name: "interface-\(name)-widget")
                     }
                     if enabled.contains(.simpleLayoutControls) {

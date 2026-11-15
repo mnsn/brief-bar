@@ -55,8 +55,9 @@ final class AppModel: ObservableObject {
         } else {
             defaults = .standard
         }
-        // A new install starts with its own look, saved before anything reads it: so does the demo, whose preferences are
-        // new each time.
+        // What an earlier version saved comes over first. Then a new install starts with its own look, saved before anything
+        // reads it: so does the demo, whose preferences are new each time.
+        InterfaceOptions.migrate(defaults)
         isNewInstall = NewInstall.isNew(defaults)
         NewInstall.saveLook(to: defaults)
         services = AppServices(defaults: defaults, isDemo: demo)
