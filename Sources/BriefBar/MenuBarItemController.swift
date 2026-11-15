@@ -15,6 +15,8 @@ final class MenuBarItemController: NSObject {
     private let popover = NSPopover()
     /// What the popover opens from, so it stays on the display you clicked.
     private let anchor = PopoverAnchor()
+    /// While the popover is open: clicks in other apps, which close it.
+    private var clicksElsewhere: Any?
     private let panel: ItemPanelModel
     private unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
@@ -83,6 +85,7 @@ final class MenuBarItemController: NSObject {
     func remove() {
         closePopover()
         anchor.remove()
+        stopClosingOnClicksElsewhere()
         setVisible([:])
         setCounted([])
         cancellables.removeAll()
@@ -121,7 +124,36 @@ final class MenuBarItemController: NSObject {
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
         button.highlight(true)
         popover.contentViewController?.view.window?.makeKey()
+        closeOnClicksElsewhere()
         updateVisible()
+    }
+
+    /// Closes the popover when you click in another app, as it closes when BriefBar is the active app and you go to
+    /// another. Clicking the item doesn't make BriefBar the active app on macOS 27, so only `.transient` closed it,
+    /// and that could leave it open over the windows you clicked, as after you'd used its ⚙ menu. A click on the
+    /// item is the item's own, which closes it.
+    private func closeOnClicksElsewhere() {
+        guard clicksElsewhere == nil else { return }
+        clicksElsewhere = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            // Another app's click has no window here, so this is where on the screen it was.
+            let location = event.locationInWindow
+            MainActor.assumeIsolated {
+                guard let self, !self.isOverItem(location) else { return }
+                self.closePopover()
+            }
+        }
+    }
+
+    private func stopClosingOnClicksElsewhere() {
+        guard let clicksElsewhere else { return }
+        NSEvent.removeMonitor(clicksElsewhere)
+        self.clicksElsewhere = nil
+    }
+
+    /// Whether `point`, on the screen, is over the item.
+    private func isOverItem(_ point: NSPoint) -> Bool {
+        guard let button = statusItem.button, let window = button.window else { return false }
+        return window.convertToScreen(button.convert(button.bounds, to: nil)).contains(point)
     }
 
     /// Tells the sources which sections the popover shows, after it opened, closed or switched tabs.
@@ -201,6 +233,7 @@ extension MenuBarItemController: NSPopoverDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.popover.isShown else { return }
                 self.anchor.remove()
+                self.stopClosingOnClicksElsewhere()
                 self.statusItem.button?.highlight(false)
             }
         }
