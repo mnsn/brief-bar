@@ -293,9 +293,10 @@ struct RowIcon: View {
 
 /// A row's quiet line, one line high: its stage's pill, where its order puts it, and what's left before you can complete it,
 /// the most pressing first. Where it doesn't all fit, what's left shows its first few and "+2" for the rest, then only how
-/// many are left: the row's tooltip, VoiceOver and its details say all of it. What's done is in its details alone, and why
-/// it's in its stage in its pill's menu. Its links, where its reason's line has no room for them, and Finished My Review go
-/// after it (`RowLines`).
+/// many are left: the row's tooltip, VoiceOver and its details say all of it. Where even that doesn't fit, as a stage's pill
+/// and an order's capsule together can be too wide for a narrow row, it goes on as many lines as it needs, rather than past
+/// the row's edge. What's done is in its details alone, and why it's in its stage in its pill's menu. Its links, where its
+/// reason's line has no room for them, and Finished My Review go after it (`RowLines`).
 /// The row is a button, which would take every click: the pill's menu and Finished My Review go over it, where their spots
 /// are (`stageControls`). Someone else's that you finished reviewing says so in words, without a pill: it's off your board.
 struct PRQuietLine: View {
@@ -314,6 +315,11 @@ struct PRQuietLine: View {
                 ForEach(shownCounts, id: \.self) { shown in
                     line(shown: shown)
                 }
+                // Too narrow even for only how many are left: on more lines, as its stage's line wrapped before.
+                FlowLayout(spacing: 6, lineSpacing: 3) {
+                    parts(shown: 0)
+                }
+                .lineLimit(1)
             }
             .font(size: options.rowDetailSize)
         }
@@ -332,33 +338,39 @@ struct PRQuietLine: View {
     /// - Parameter shown: how many of what's left show by name; "+2" says the rest.
     private func line(shown: Int) -> some View {
         HStack(spacing: 6) {
-            if let stage {
-                if stage.isOnBoard {
-                    StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
-                        .stageSpot(.pill)
-                } else if let ordering {
-                    Text(StageText.why(stage, name: { ordering.name(of: $0) }))
-                        .foregroundStyle(.secondary)
-                        .truncationMode(.tail)
-                }
+            parts(shown: shown)
+        }
+        .lineLimit(1)
+    }
+
+    /// Its stage, its order, and what's left, `shown` of them by name.
+    @ViewBuilder
+    private func parts(shown: Int) -> some View {
+        if let stage {
+            if stage.isOnBoard {
+                StagePillLabel(stage.stage, opensMenu: stage.stage != .merged)
+                    .stageSpot(.pill)
+            } else if let ordering {
+                Text(StageText.why(stage, name: { ordering.name(of: $0) }))
+                    .foregroundStyle(.secondary)
+                    .truncationMode(.tail)
             }
-            if let order { OrderCapsule(order) }
-            if !left.isEmpty {
-                HStack(spacing: 8) {
-                    ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in
-                        LeftItem(item: item, isQuiet: self.item.group == .idle)
-                    }
-                    if shown < left.count {
-                        let rest = left.dropFirst(shown)
-                        Text(shown == 0 ? "\(rest.count) left" : "+\(rest.count)")
-                            .foregroundStyle(self.item.group == .idle ? Color.secondary : .rowContent)
-                            .fixedSize()
-                            .help(rest.map(\.described).joined(separator: "\n"))
-                    }
+        }
+        if let order { OrderCapsule(order) }
+        if !left.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(Array(left.prefix(shown).enumerated()), id: \.offset) { _, item in
+                    LeftItem(item: item, isQuiet: self.item.group == .idle)
+                }
+                if shown < left.count {
+                    let rest = left.dropFirst(shown)
+                    Text(shown == 0 ? "\(rest.count) left" : "+\(rest.count)")
+                        .foregroundStyle(self.item.group == .idle ? Color.secondary : .rowContent)
+                        .fixedSize()
+                        .help(rest.map(\.described).joined(separator: "\n"))
                 }
             }
         }
-        .lineLimit(1)
     }
 
     /// One thing that's left, as its details list it: its symbol in its color, then its words, readable as content.

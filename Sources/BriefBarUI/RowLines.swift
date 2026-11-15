@@ -142,10 +142,11 @@ package struct RowLines: Layout {
             let chipsSize = chipsOnQuiet.map { $0.size(width: min($0.ideal.width, width)) } ?? .zero
             let chipsRoom = chipsOnQuiet == nil ? 0 : chipsSize.width + (quiet == nil ? 0 : Self.spacing)
             // The quiet line's own things, in the room what follows them on their line leaves: nil where they can't fold
-            // into it.
+            // into it, on one line. Taking more lines to make that room would move what shows at rest, so they take more
+            // only with the line to themselves.
             func quietSize(leaving rest: CGFloat) -> CGSize? {
                 let size = quiet.map { $0.size(width: width - rest) } ?? .zero
-                return size.width + rest <= width + 0.5 ? size : nil
+                return size.width + rest <= width + 0.5 && size.height <= (quiet?.ideal.height ?? 0) + 0.5 ? size : nil
             }
             func row(_ items: [(Part?, CGSize)]) -> [(part: Part, size: CGSize)] {
                 items.compactMap { part, size in part.map { (part: $0, size: size) } }

@@ -31,15 +31,17 @@ struct RowLinesTests {
         #expect(size(lines, width: 100 + floor + RowLines.spacing + 50 - 10).height == max(14, place.height) + RowLines.quietSpacing + 16)
     }
 
-    /// The quiet line's own things get the room its far end's and the capsules leave: here, a part that's taller where it
-    /// has less than 200.
+    /// The quiet line's own things fold to make room for what's at its far end, where they can on one line: here they're
+    /// 200 wide, or 50 where there's less room. Where folded they're still too wide, or would take more lines to make that
+    /// room, here 120 wide on two, what's at the far end goes under them instead: they take more lines only with the line
+    /// to themselves.
     @Test func whatsAtTheQuietLinesEndTakesItsRoomFromIt() {
-        func lines(trailing: Bool) -> some View {
+        func lines(trailing: Bool, narrow: CGSize = CGSize(width: 50, height: 16)) -> some View {
             RowLines {
                 block(100, 14).rowLine(.reason)
                 ViewThatFits(in: .horizontal) {
                     block(200, 16)
-                    block(50, 30)
+                    block(narrow.width, narrow.height)
                 }
                 .rowLine(.quiet)
                 if trailing {
@@ -48,9 +50,14 @@ struct RowLinesTests {
             }
         }
         let quietLine = 14 + RowLines.quietSpacing
+        let under = RowLines.quietSpacing + 16
         #expect(size(lines(trailing: false), width: 250).height == quietLine + 16)
-        #expect(size(lines(trailing: true), width: 250).height == quietLine + 30)
+        #expect(size(lines(trailing: true), width: 250).height == quietLine + 16)
         #expect(size(lines(trailing: true), width: 200 + RowLines.trailingSpacing + 100).height == quietLine + 16)
+        #expect(size(lines(trailing: true, narrow: CGSize(width: 150, height: 16)), width: 250).height == quietLine + 16 + under)
+        let twoLines = CGSize(width: 120, height: 40)
+        #expect(size(lines(trailing: false, narrow: twoLines), width: 150).height == quietLine + 40)
+        #expect(size(lines(trailing: true, narrow: twoLines), width: 250).height == quietLine + 16 + under)
     }
 
     /// The time makes room for ✨, and in a list of the menu bar for the ⋯ after it, only while you're at the row.

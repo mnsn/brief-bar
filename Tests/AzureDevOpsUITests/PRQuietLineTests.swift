@@ -6,8 +6,8 @@ import SwiftUI
 import Testing
 @testable import AzureDevOpsUI
 
-/// A pull request's row in four parts at most: its last, quiet line is one line high, says what's left but never what's
-/// done, and shows where its order puts it on every stage.
+/// A pull request's row in four parts at most: its last, quiet line is one line high while its stage fits, says what's
+/// left but never what's done, and shows where its order puts it on every stage.
 @MainActor
 @Suite struct PRQuietLineTests {
     private static let now = Date(timeIntervalSince1970: 1_792_000_000)
@@ -56,9 +56,45 @@ import Testing
         return NSHostingView(rootView: hosted).fittingSize
     }
 
-    /// However narrow the row, its quiet line keeps to one line: what's left that doesn't fit folds into "+2", rather than
+    /// Proposes its view so wide a room, or none for as wide as it would be, and is as big as its view says it is then,
+    /// even wider than the room.
+    private struct Proposing: Layout {
+        let width: CGFloat?
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            subviews.first?.sizeThatFits(ProposedViewSize(width: width, height: nil)) ?? .zero
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: width, height: nil))
+        }
+    }
+
+    /// How big a view says it is in so wide a room, rather than the room's width.
+    private func ownSize(_ view: some View, width: CGFloat? = nil) -> CGSize {
+        size(Proposing(width: width) { view })
+    }
+
+    /// Where its stage's pill and its order's capsule each fit, but not side by side, the line goes on more lines, as its
+    /// stage's line wrapped before, rather than past the row's edge.
+    @Test func itWrapsRatherThanRunPastTheRow() throws {
+        let item = try Self.item(readiness: Self.left)
+        let other = ItemRef.pullRequest(organization: "contoso", number: 4103)
+        let order = OrderRowContext(step: OrderStep(ref: Self.ref, status: .open, standing: .waiting(open: [other], unknown: [])), isReady: true)
+        let stage = StageReading(stage: .waits, why: .waitsFor([other], words: "After !4103"))
+        let pill = ownSize(PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: []))
+        let capsule = ownSize(PRQuietLine(item: item, order: order, left: []))
+        let width = max(pill.width, capsule.width) + 10
+        #expect(width < pill.width + 6 + capsule.width)
+
+        let line = ownSize(PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), order: order, left: Self.left), width: width)
+        #expect(line.width < width + 0.5)
+        #expect(line.height > pill.height + 2)
+    }
+
+    /// In a narrow row, its quiet line keeps to one line: what's left that doesn't fit folds into "+2", rather than
     /// wrapping as the readiness line did.
-    @Test func itKeepsToOneLineHoweverNarrow() throws {
+    @Test func itKeepsToOneLineInANarrowRow() throws {
         let item = try Self.item(readiness: Self.left)
         let stage = StageReading(stage: .yourReview, why: .awaitsYourReview)
         let line = PRQuietLine(item: item, stage: stage, ordering: Self.ordering(), left: Self.left)
