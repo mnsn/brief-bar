@@ -36,11 +36,11 @@ struct SessionRowView: View {
             row(task)
             // What you asked it with Ask…, and its field, then its summary: each under the row, as far in as its name.
             SessionAskPart(ref: ref, name: session.displayName, isTask: task != nil, place: .row, open: answerOpener(task))
-                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
             RowSummary(subject: ref)
-                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
@@ -85,7 +85,7 @@ struct SessionRowView: View {
 
     private func row(_ task: SentTask?) -> some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
+            HStack(alignment: .top, spacing: options.rowIconSpacing) {
                 Image(systemName: session.rowSymbol)
                     .font(size: compact ? 15 : 17)
                     .foregroundStyle(session.rowColor)

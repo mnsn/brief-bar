@@ -86,7 +86,7 @@ struct PRRowView: View {
                 // Its stage's menu and Finished My Review, over the row's button, which would take their clicks.
                 .stageControls(ref: item.key.linkRef, order: stage == nil ? nil : ordering, now: now)
                 RowSummary(subject: item.key.linkRef)
-                    .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
+                    .padding(.leading, 8 + options.rowIconWidth * textScale + options.rowIconSpacing)
                     .padding(.trailing, 8)
                     .padding(.bottom, 6)
             }
@@ -131,7 +131,7 @@ struct PRRowView: View {
     }
 
     private var content: some View {
-        HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
+        HStack(alignment: .top, spacing: options.rowIconSpacing) {
             RowIcon(item: item, size: compact ? 15 : 17)
                 .frame(width: options.rowIconWidth * textScale, height: 20 * textScale)
                 .accessibilityHidden(true)

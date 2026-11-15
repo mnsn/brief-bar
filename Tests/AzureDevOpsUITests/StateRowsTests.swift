@@ -64,13 +64,15 @@ import Testing
             let height = source.widgetHeight(for: section, rows: 3)
             #expect(height == 162)
         }
-        services.setInterfaceOption(.readableRows, enabled: true)
+        services.setInterfaceOption(.alignedTitles, enabled: true)
+        #expect(source.widgetHeight(for: .azureDevOpsPullRequests, rows: 3) == 162)
+        services.setInterfaceOption(.largerReasons, enabled: true)
         for section in [SectionID.azureDevOpsPullRequests, .azureDevOpsSprint, .azureDevOpsPipelines] {
             let height = source.widgetHeight(for: section, rows: 3)
             #expect(height == 174)
             #expect(source.stateRows(for: section).isEmpty)
         }
-        services.setInterfaceOption(.readableRows, enabled: false)
+        services.setInterfaceOption(.largerReasons, enabled: false)
         let restored = source.widgetHeight(for: .azureDevOpsPullRequests, rows: 3)
         #expect(restored == 162)
     }

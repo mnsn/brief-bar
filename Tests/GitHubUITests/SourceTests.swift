@@ -167,10 +167,12 @@ import Testing
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
         let source = GitHubSource(services: services)
         #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 120)
-        services.setInterfaceOption(.readableRows, enabled: true)
+        services.setInterfaceOption(.alignedTitles, enabled: true)
+        #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 120)
+        services.setInterfaceOption(.largerReasons, enabled: true)
         #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 128)
         #expect(source.stateRows(for: .githubPullRequests).isEmpty)
-        services.setInterfaceOption(.readableRows, enabled: false)
+        services.setInterfaceOption(.largerReasons, enabled: false)
         #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 120)
     }
 

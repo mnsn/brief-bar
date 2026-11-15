@@ -107,7 +107,7 @@ struct SessionsPage: View {
     /// Where a row's name starts, for the line between rows: the card's and the row's padding, its symbol, and the space
     /// after it.
     private var dividerInset: CGFloat {
-        6 + 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9)
+        6 + 8 + options.rowIconWidth * textScale + options.rowIconSpacing
     }
 
     /// Sessions that need nothing and show nothing new, on a line each, folded until you open them, as in the popover.

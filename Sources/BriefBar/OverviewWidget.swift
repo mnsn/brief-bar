@@ -113,7 +113,7 @@ struct OverviewWidgetView: View {
                                 .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(Self.gradient))
                         }
                         Text(text.text)
-                            .font(size: options.readableRows ? 13 : 12, weight: .medium)
+                            .font(size: options.largerReasons ? 13 : 12, weight: .medium)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +132,7 @@ struct OverviewWidgetView: View {
                     HStack(spacing: 8) {
                         mark(line.source)
                         Text(writer.text(for: line).text)
-                            .font(size: options.readableRows ? 13 : 12)
+                            .font(size: options.largerReasons ? 13 : 12)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 0)

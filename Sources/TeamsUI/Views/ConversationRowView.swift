@@ -50,7 +50,7 @@ struct ConversationRowView: View {
                     if !showsSummaryOnly {
                         HStack(alignment: .top, spacing: 6) {
                             Text(previewText)
-                                .font(size: options.readableRows ? 13 : 12)
+                                .font(size: options.largerReasons ? 13 : 12)
                                 .foregroundStyle(showPreview && conversation.isUnread ? .rowContent : Color.secondary)
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)

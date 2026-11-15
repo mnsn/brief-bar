@@ -17,12 +17,14 @@ import Testing
         #expect(services.interfaceOptions == InterfaceOptions(enabled: [.visibleActions]))
     }
 
-    @Test func onlyReadableRowsChangeTheWidgetRowHeight() {
+    @Test func alignedTitlesLineUpRowsAndLargerReasonsGrowWidgets() {
         #expect(InterfaceOptions().compactRowHeight == 42)
         for option in InterfaceOption.allCases {
             let options = InterfaceOptions(enabled: [option])
-            #expect(options.compactRowHeight == (option == .readableRows ? 46 : 42))
-            #expect(options.rowIconWidth == (option == .readableRows ? 30 : 20))
+            #expect(options.compactRowHeight == (option == .largerReasons ? 46 : 42))
+            #expect(options.rowReasonSize == (option == .largerReasons ? 13 : 11))
+            #expect(options.rowIconWidth == (option == .alignedTitles ? 30 : 20))
+            #expect(options.rowIconSpacing == (option == .alignedTitles ? 10 : 9))
         }
     }
 

@@ -120,15 +120,15 @@ struct CompactConversationRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: options.readableRows ? 10 : 8) {
+            HStack(spacing: options.alignedTitles ? 10 : 8) {
                 AvatarView(conversation: conversation)
                     .frame(width: 22, height: 22)
-                    .frame(width: options.readableRows ? 30 : 22)
+                    .frame(width: options.alignedTitles ? 30 : 22)
                     .opacity(conversation.isUnread ? 1 : 0.6)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(conversation.name)
-                            .font(size: options.readableRows ? 13 : 12, weight: conversation.isUnread ? .semibold : .regular)
+                            .font(size: options.alignedTitles ? 13 : 12, weight: conversation.isUnread ? .semibold : .regular)
                             .foregroundStyle(conversation.isUnread ? .primary : .secondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)

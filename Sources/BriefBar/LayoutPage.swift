@@ -152,6 +152,21 @@ struct LayoutPage: View {
                     // Its boxes on the header's edges.
                     .padding(.horizontal, -Self.textInset)
                 } else {
+                    // Everything in one menu-bar item: how it shows its sections, right under the choice, as a new install
+                    // starts. Customize Arrangement… has the rest.
+                    if surface == .menuBar, layoutChoice == .together, items.count == 1, let item = items.first, item.sections.count > 1 {
+                        Form {
+                            Section {
+                                menuBarOptions(item, withStates: false)
+                            }
+                        }
+                        .formStyle(.grouped)
+                        .scrollContentBackground(.hidden)
+                        .scrollDisabled(true)
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Its box on the header's edges.
+                        .padding(.horizontal, -Self.textInset)
+                    }
                     note("\(items.count) \(items.count == 1 ? surface.itemNoun.lowercased() : surface.itemNoun.lowercased() + "s"), \(hidden.count) hidden sections")
                     Button("Customize Arrangement…") { editingCustom = true }
                 }
@@ -385,9 +400,11 @@ struct LayoutPage: View {
         }
     }
 
-    /// Side by side, or added up by state, with which states.
+    /// Side by side, or added up by state, with which states, and its list.
+    /// - Parameter withStates: with a switch for each state it adds up; without, under Together, where Customize
+    ///   Arrangement… has them.
     @ViewBuilder
-    private func menuBarOptions(_ item: SectionLayout.Item) -> some View {
+    private func menuBarOptions(_ item: SectionLayout.Item, withStates: Bool = true) -> some View {
         let options = model.options(forMenuBarItem: item.id)
         let change = { (body: (inout MenuBarItemOptions) -> Void) in
             var changed = options
@@ -399,12 +416,12 @@ struct LayoutPage: View {
             Text("Added Up").tag(true)
         } label: {
             Text("Counts")
-            Text(options.byState
-                 ? "One count for each state below, added up across its sections"
-                 : "Each section's own symbol and counts, one after the other")
+            Text(!options.byState ? "Each section's own symbol and counts, one after the other"
+                 : withStates ? "One count for each state below, added up across its sections"
+                 : "One count for each state, added up across its sections")
         }
         .pickerStyle(.segmented)
-        if options.byState {
+        if withStates, options.byState {
             ForEach(MenuBarItemOptions.order, id: \.self) { state in
                 Toggle(isOn: Binding(
                     get: { options.states.contains(state) },

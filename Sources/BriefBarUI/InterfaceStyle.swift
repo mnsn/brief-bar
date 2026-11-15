@@ -13,10 +13,15 @@ extension EnvironmentValues {
 }
 
 extension InterfaceOptions {
-    package var compactRowHeight: CGFloat { readableRows ? 46 : 42 }
-    package var rowIconWidth: CGFloat { readableRows ? 30 : 20 }
-    package var rowDetailSize: CGFloat { readableRows ? 12 : 11 }
-    package var rowReasonSize: CGFloat { readableRows ? 13 : 11 }
+    /// A widget's row: taller with Larger Reasons and Previews, for its larger line under the title.
+    package var compactRowHeight: CGFloat { largerReasons ? 46 : 42 }
+    /// The column of a row's icon, before its title: as wide as an avatar with Aligned Titles, so that titles line up
+    /// across sources, whatever each row starts with.
+    package var rowIconWidth: CGFloat { alignedTitles ? 30 : 20 }
+    /// Between a row's icon and its title.
+    package var rowIconSpacing: CGFloat { alignedTitles ? 10 : 9 }
+    package var rowDetailSize: CGFloat { largerReasons ? 12 : 11 }
+    package var rowReasonSize: CGFloat { largerReasons ? 13 : 11 }
 }
 
 extension View {
@@ -169,7 +174,7 @@ package struct WidgetMore: View {
         .font(size: 11, weight: .medium)
         .foregroundStyle(options.visibleActions ? Color.accentColor : .secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, options.readableRows ? 47 : 37)
+        .padding(.leading, options.alignedTitles ? 47 : 37)
         .padding(.top, 4)
     }
 }
