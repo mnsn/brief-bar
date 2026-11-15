@@ -271,9 +271,16 @@ each with its count, and ⌘1 to ⌘9. A window with several pages starts with a
 ([below](#the-overview)), and the first of them has the [Notifications page](#the-notifications-page)
 after it, while that's on and lists something. A source can give a section companion pages, which aren't sections: they
 show only in windows, right before it, wherever it shows, with ⌘ numbers but no count, as [My Work](#my-work) does
-(`BriefBarSource.companionPages`, `WindowPages.companions`). A section's page is its list, filling the window (`PanelStyle.page`), the
-whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
-Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
+(`BriefBarSource.companionPages`, `WindowPages.companions`). Every section's page has one template, which its source
+draws (`BriefBarSource.page(for:)`): a large title, a line that counts what's there, such as "3 need you · 6 running",
+its controls on the right (`PageHeader`), then its groups, each in a card under its heading (`PageScroll`, `GlassCard`),
+with no footer or ⚙ of its own: the sidebar's is the window's. A source without a page of its own would show its list,
+filling the window (`PanelStyle.page`). A page fills the window's width: a wide window, such as full screen, gets
+longer lines, not empty sides, and the Sprint more columns of cards. Every group in the menu bar's lists and on the
+pages has the same heading (`SectionHeading`): its symbol in its state's color, its title, and how many it has, in
+secondary, such as "✋ Needs You 3", with what acts on the group, such as Clear, on the right; a group that folds, such
+as Idle or Teams' Recent, has a chevron in the symbol's place, and says whether it's open to VoiceOver
+(`FoldingSectionHeading`). A window opens at the page
 of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
 the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window or Settings is open,
 it shows a Dock icon and the usual menus, and it goes back once they're all closed. It needs the menu bar

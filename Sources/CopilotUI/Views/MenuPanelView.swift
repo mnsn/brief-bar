@@ -77,40 +77,25 @@ struct MenuPanelView: View {
 
             let idle = store.sessions(in: .idle)
             if !idle.isEmpty {
-                DisclosureGroup(isExpanded: $showIdle) {
-                    VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    FoldingSectionHeading(title: DisplayPhase.idle.title, count: idle.count, isExpanded: $showIdle)
+                        .padding(.horizontal, 8)
+                    if showIdle {
                         ForEach(idle) { session in
                             SessionRowView(session: session, now: store.now, compact: true) {
                                 store.open(session, inWindow: panelStyle == .page)
                             }
                         }
                     }
-                } label: {
-                    Text("Idle (\(idle.count))")
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showIdle.toggle() } }
                 }
-                .padding(.horizontal, 8)
             }
         }
     }
 
     private func section(_ phase: DisplayPhase, _ sessions: [SessionSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text("\(phase.title) (\(sessions.count))")
-                    .font(size: 11, weight: .semibold)
-                    .foregroundStyle(options.quietAppearance ? Color.primary : phase.color)
-                Spacer()
-                if phase == .done || phase == .stopped {
-                    Button("Clear") { store.clear(phase) }
-                        .buttonStyle(.borderless)
-                        .font(size: 11)
-                        .help("Move these sessions to Idle")
-                }
+            SectionHeading(symbol: phase.symbol, color: phase.color, title: phase.title, count: sessions.count) {
+                ClearButton(phase: phase)
             }
             .padding(.horizontal, 8)
             ForEach(sessions) { session in
@@ -144,6 +129,22 @@ struct MenuPanelView: View {
         .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// Clear, after Finished's and Stopped's headings, in the popover and on the page: moves their sessions to Idle.
+struct ClearButton: View {
+    let phase: DisplayPhase
+
+    @EnvironmentObject private var store: SessionStore
+
+    var body: some View {
+        if phase == .done || phase == .stopped {
+            Button("Clear") { store.clear(phase) }
+                .buttonStyle(.borderless)
+                .font(size: 11)
+                .help("Move these sessions to Idle")
+        }
     }
 }
 
