@@ -6,9 +6,10 @@ import Foundation
 
 /// A work item's state on the Sprint page, with **Make Changes in Azure DevOps** on: a task, story or bug on the sprint's
 /// board put in another of the states of its type, as the team's backlog configuration maps them (`SprintBoard.states(of:)`),
-/// from its state's menu, its own menus or its details, each when you choose one (`ADOWrite.setState`), one at a time. Its
-/// new state shows at once, and the sprint is read again (`SprintStore.changedState`); Undo puts it back, while the line
-/// under the Sprint page's header says it changed. A change goes as whom BriefBar read the sprint as, and only while the
+/// from its state's menu, its own menus or its details, or, on My Work's Board, by moving its card to another column
+/// (`boardStates(for:)`), each when you choose one (`ADOWrite.setState`), one at a time. Its new state shows at once, and
+/// the sprint is read again (`SprintStore.changedState`); Undo puts it back, while the line under the Sprint page's header,
+/// and My Work's, says it changed. A change goes as whom BriefBar read the sprint as, and only while the
 /// work item is in the state it was in when you chose another, as BriefBar reads it as the change goes. One that didn't
 /// happen says why there, and the sprint is read again, to show its state. The demo changes only its made-up sprint, and
 /// reads nothing.
@@ -111,6 +112,26 @@ final class StateChanges: ObservableObject {
     /// tooltip then says how to turn it on.
     func needsSetting(_ item: WorkItem) -> Bool {
         !settings.makesChanges && !isStopped && !states(for: item).isEmpty
+    }
+
+    /// What My Work's Board knows of a work item's states, for what moving its card to another column does
+    /// (`BoardTask.move(to:sameLane:states:)`): for one on the sprint's board that its menus could put in another state,
+    /// whatever the setting, the state BriefBar reads it in and the first of each kind its type has, in its process's
+    /// order, held while Make Changes in Azure DevOps is off, saying how to turn it on, or while a change is on its way.
+    /// Nil for any other.
+    func boardStates(for item: WorkItem) -> BoardTaskStates? {
+        guard !isStopped, let current = sprint?.board?.item(item.key) else { return nil }
+        let states = states(for: current)
+        guard !states.isEmpty else { return nil }
+        let first = Dictionary(states.map { (MyWorkFacts.progress(of: $0.category), $0.name) }) { first, _ in first }
+        let held: String? = if !settings.makesChanges {
+            StateChangeText.turnOnToMove
+        } else if case .sending(let change)? = line {
+            StateChangeText.waitToMove(change)
+        } else {
+            nil
+        }
+        return .changes(current: current.state, first: first, held: held)
     }
 
     /// The states of a work item on the sprint's board, as `choices(for:)` offers them, whatever the setting.
@@ -371,4 +392,12 @@ enum StateChangeText {
 
     /// How to turn on what changes a work item's state, while it's off.
     static let turnOnHelp = "Turn on Make Changes in Azure DevOps, in Settings › Pull Requests, to change it here."
+
+    /// Why moving a work item's card on My Work's Board doesn't change its state while Make Changes in Azure DevOps is off.
+    static let turnOnToMove = "Turn on Make Changes in Azure DevOps, in Settings › Pull Requests, to set its state by moving its card"
+
+    /// Why it doesn't while another change is on its way: "Task 5104 is changing to Active: one state changes at a time".
+    static func waitToMove(_ change: StateChanges.Change) -> String {
+        "\(change.name) is changing \(change.isUndo ? "back " : "")to \(change.to): one state changes at a time"
+    }
 }

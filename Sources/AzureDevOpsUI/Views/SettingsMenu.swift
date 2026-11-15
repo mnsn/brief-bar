@@ -297,7 +297,9 @@ extension EnvironmentValues {
 
 /// Make Changes in Azure DevOps, off by default: your replies in pull requests' comment threads, their statuses, your own
 /// comments and pull requests' tags, from their details, and, on My Work, the sprint a task or bug of yours is in, each
-/// when you click it; and nothing else. On the Pull Requests page in Settings, it says what it writes as you turn it on.
+/// when you click it, and the state of your sprint work as you move its card on the Board; on the Sprint page, the state
+/// you choose for a work item; and nothing else. On the Pull Requests page in Settings, it says what it writes as you turn
+/// it on.
 struct MakeChangesSetting: View {
     @EnvironmentObject private var settings: AppSettings
 
@@ -305,31 +307,34 @@ struct MakeChangesSetting: View {
     static let explanation = """
         Adds Reply and a status menu to each comment thread in a pull request's details in BriefBar's window, Edit and \
         Delete to your own comments, and Add Tag and ✕ to its tags; on My Work, Move to Sprint to your tasks and bugs \
-        outside the sprint; and, on the Sprint page, a menu of states, such as New, Active and Closed, to its stories, bugs \
-        and tasks. BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you \
-        click: your reply in a thread, a thread's status, such as Resolved or Won't Fix, your comment as you edited it, or \
-        deleted, a tag you add to a pull request or remove from it, on My Work, the sprint a task or bug of yours is in, \
-        moved to your team's current sprint or its next once you confirm, and, on the Sprint page, the state you choose \
-        for a work item. Nothing else, and never by itself: otherwise it only reads. It remembers the tags you add, for \
-        each project, to suggest them. Fix Grammar, in a reply or an edit, uses Apple Intelligence on this Mac unless you \
-        choose a Copilot model, which sends what you wrote to GitHub Copilot. Agents get none of it. Turning it off \
-        forgets the replies and edits you haven't sent, the tags you added, and Undo for the task you moved and for the \
-        state you changed.
+        outside the sprint, and moves of your sprint work's cards to other columns on the Board, which set their states; \
+        and, on the Sprint page, a menu of states, such as New, Active and Closed, to its stories, bugs and tasks. \
+        BriefBar then writes these to Azure DevOps, as you, with your Azure CLI sign-in, and only when you click: your \
+        reply in a thread, a thread's status, such as Resolved or Won't Fix, your comment as you edited it, or deleted, a \
+        tag you add to a pull request or remove from it, on My Work, the sprint a task or bug of yours is in, moved to \
+        your team's current sprint or its next once you confirm, and the state of the column you move your sprint work's \
+        card to, and, on the Sprint page, the state you choose for a work item. Nothing else, and never by itself: \
+        otherwise it only reads. It remembers the tags you add, for each project, to suggest them. Fix Grammar, in a reply \
+        or an edit, uses Apple Intelligence on this Mac unless you choose a Copilot model, which sends what you wrote to \
+        GitHub Copilot. Agents get none of it. Turning it off forgets the replies and edits you haven't sent, the tags you \
+        added, and Undo for the task you moved and for the state you changed.
         """
     /// What it adds, what it writes and when, what Fix Grammar sends, and what it keeps: the box that shows as you turn it on.
     static let entries: [DescriptionBox.Entry] = [
         .init(title: "What it adds", symbol: "plus.bubble", text: """
             Reply and a status menu on each comment thread in a pull request's details in BriefBar's window, Edit and \
             Delete on your own comments, and Add Tag and ✕ on its tags; on My Work, Move to Sprint on your tasks and bugs \
-            outside the sprint; and, on the Sprint page, a menu of states, such as New, Active and Closed, on its \
-            stories, bugs and tasks.
+            outside the sprint, and moves of your sprint work's cards to other columns on the Board, which set their \
+            states; and, on the Sprint page, a menu of states, such as New, Active and Closed, on its stories, bugs and \
+            tasks.
             """),
         .init(title: "What it writes", symbol: "square.and.pencil", text: """
             To Azure DevOps, as you, with your Azure CLI sign-in, and only when you click: your reply in a thread, a \
             thread's status, such as Resolved or Won't Fix, your comment as you edited it, or deleted, a tag you add to a \
             pull request or remove from it, on My Work, the sprint a task or bug of yours is in, moved to your team's \
-            current sprint or its next once you confirm, and, on the Sprint page, the state you choose for a work item. \
-            Nothing else, and never by itself: otherwise it only reads. Agents get none of it.
+            current sprint or its next once you confirm, and the state of the column you move your sprint work's card \
+            to, and, on the Sprint page, the state you choose for a work item. Nothing else, and never by itself: \
+            otherwise it only reads. Agents get none of it.
             """),
         .init(title: "Fix Grammar", symbol: "textformat.abc", text: """
             In a reply or an edit, it uses Apple Intelligence on this Mac unless you choose a Copilot model, which sends \
