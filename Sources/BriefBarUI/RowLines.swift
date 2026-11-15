@@ -31,12 +31,13 @@ extension View {
 /// What a row says under its title: its reason and where, with its capsules at its end; what someone wrote; and its quiet
 /// line, with what's at its far end. Where the reason's line is too narrow for its capsules, where it is gets cut short
 /// first, down to a few letters; where they still don't fit, they go to the end of the quiet line, which folds what it says
-/// to make room, as it does for what's at its far end. A part with nothing to show, such as capsules for a row without
-/// links, takes no room; each line's parts are centered on one another.
+/// to make room, as it does for what's at its far end; where it can't fold that far, what doesn't fit goes under it, never
+/// over it. A part with nothing to show, such as capsules for a row without links, takes no room; each line's parts are
+/// centered on one another.
 package struct RowLines: Layout {
     /// Under the reason's line.
     static let lineSpacing: CGFloat = 2
-    /// Above the quiet line.
+    /// Above the quiet line, and between its lines where it takes more than one.
     static let quietSpacing: CGFloat = 4
     /// Before the capsules, and between what's on the quiet line.
     static let spacing: CGFloat = 6
@@ -131,20 +132,52 @@ package struct RowLines: Layout {
         }
 
         // The quiet line: its own things, then the capsules where the reason's line had no room for them, and what's at its
-        // far end.
+        // far end, its own things folding what they say to make room for the rest. Where they can't fold that far, as a
+        // stage's pill and an order's capsule can't, what doesn't fit goes on a line under them rather than over them: what's
+        // at the far end first, so that what shows at rest stays where it is; then the capsules too, what's at the far end
+        // beside whichever of the two has room for it.
         let chipsOnQuiet = chipsOnReason ? nil : chips
         if quiet != nil || chipsOnQuiet != nil || trailing != nil {
             y += y > 0 ? Self.quietSpacing : 0
-            let chipsSize = chipsOnQuiet.map { $0.size(width: min($0.ideal.width, width - trailingWidth)) } ?? .zero
-            let room = width - trailingWidth - (chipsOnQuiet == nil ? 0 : chipsSize.width + (quiet == nil ? 0 : Self.spacing))
-            let quietSize = quiet.map { $0.size(width: room) } ?? .zero
-            lineHeight = max(quietSize.height, chipsSize.height, trailing?.ideal.height ?? 0)
-            if let quiet { arranged.frames[quiet.index] = center(quietSize, x: 0) }
-            if let chipsOnQuiet {
-                arranged.frames[chipsOnQuiet.index] = center(chipsSize, x: quietSize.width > 0 ? quietSize.width + Self.spacing : 0)
+            let chipsSize = chipsOnQuiet.map { $0.size(width: min($0.ideal.width, width)) } ?? .zero
+            let chipsRoom = chipsOnQuiet == nil ? 0 : chipsSize.width + (quiet == nil ? 0 : Self.spacing)
+            // The quiet line's own things, in the room what follows them on their line leaves: nil where they can't fold
+            // into it.
+            func quietSize(leaving rest: CGFloat) -> CGSize? {
+                let size = quiet.map { $0.size(width: width - rest) } ?? .zero
+                return size.width + rest <= width + 0.5 ? size : nil
             }
-            if let trailing { arranged.frames[trailing.index] = center(trailing.ideal, x: width - trailing.ideal.width) }
-            y += lineHeight
+            func row(_ items: [(Part?, CGSize)]) -> [(part: Part, size: CGSize)] {
+                items.compactMap { part, size in part.map { (part: $0, size: size) } }
+            }
+            var rows: [[(part: Part, size: CGSize)]]
+            var trailingRow = 0
+            if let size = quietSize(leaving: chipsRoom + trailingWidth) {
+                rows = [row([(quiet, size), (chipsOnQuiet, chipsSize)])]
+            } else if trailing != nil, let size = quietSize(leaving: chipsRoom) {
+                rows = [row([(quiet, size), (chipsOnQuiet, chipsSize)])]
+                trailingRow = 1
+            } else {
+                let beside = quietSize(leaving: trailingWidth)
+                rows = [row([(quiet, beside ?? quiet.map { $0.size(width: width) } ?? .zero)]), row([(chipsOnQuiet, chipsSize)])]
+                trailingRow = beside != nil ? 0 : chipsSize.width + trailingWidth <= width + 0.5 ? 1 : 2
+            }
+            var placed = false
+            for index in 0..<max(rows.count, trailing == nil ? 0 : trailingRow + 1) {
+                let items = index < rows.count ? rows[index] : []
+                let end = index == trailingRow ? trailing : nil
+                guard !items.isEmpty || end != nil else { continue }
+                y += placed ? Self.quietSpacing : 0
+                placed = true
+                lineHeight = max(items.map(\.size.height).max() ?? 0, end?.ideal.height ?? 0)
+                var x: CGFloat = 0
+                for item in items {
+                    arranged.frames[item.part.index] = center(item.size, x: x)
+                    x += item.size.width > 0 ? item.size.width + Self.spacing : 0
+                }
+                if let end { arranged.frames[end.index] = center(end.ideal, x: width - end.ideal.width) }
+                y += lineHeight
+            }
         }
         arranged.size = CGSize(width: width, height: y)
         return arranged

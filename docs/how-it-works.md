@@ -307,7 +307,9 @@ open, BriefBar puts each of its menu windows on every Space (`MenusOverFullScree
 why it's there, in its state's readable color, then where, after "·", such as its repository, which is cut short
 first, with the work items, pull requests and sessions linked to it at that line's end, or, where they don't fit
 beside it, at the end of the last line, never left out; what someone wrote, on up to two lines; and a quiet last line,
-such as a pull request's stage, its order's capsule and what's left. A part with nothing to say takes no room. A row's
+such as a pull request's stage, its order's capsule and what's left, which folds what's left to make room for those
+links and for Finished My Review at its end. Where it can't fold that far, as in a narrow list, what doesn't fit goes on
+a line under it, Finished My Review first, never over it. A part with nothing to say takes no room. A row's
 **⋯** menu (`rowActions`) and its other buttons, ✨ and Finished My Review, show while the pointer's over it, or the
 keyboard's or VoiceOver's focus is on it or on one of them (`RowActivity`): in the menu bar's lists in its time's
 place, which makes room for them only then (`RowTimeSlot`, `RowTimeSpot`), so a title has the row's width at rest; on

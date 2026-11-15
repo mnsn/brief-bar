@@ -174,3 +174,62 @@ struct RowLinesTests {
         try await settled("its time back") { seen.timeWidth == time }
     }
 }
+
+/// The quiet line's things never cover one another, nor go past the row, though its own things can't fold far enough for
+/// the capsules and what's at its far end beside them, as a stage's pill and an order's capsule can't: what doesn't fit
+/// goes under them. Here, in a row 300 wide, under a reason too long for the capsules, its own things are 200 wide and
+/// what's at its far end 100; the capsules 50 wide, which fit beside its own things, or 150, which don't.
+@MainActor
+@Suite(.keepsTheMainRunLoopRunning) struct RowLinesPlacementTests {
+    /// Where each part is drawn, in the row's lines.
+    @MainActor
+    private final class Drawn {
+        var frames: [String: CGRect] = [:]
+    }
+
+    @Test(arguments: [50, 150] as [CGFloat])
+    func theQuietLinesThingsNeverCoverOneAnother(chips: CGFloat) async throws {
+        _ = NSApplication.shared
+        let drawn = Drawn()
+        func part(_ name: String, _ width: CGFloat, _ height: CGFloat = 16) -> some View {
+            Color.clear.frame(width: width, height: height)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("RowLines")) } action: { drawn.frames[name] = $0 }
+        }
+        let lines = RowLines {
+            part("reason", 250, 14).rowLine(.reason)
+            part("quiet", 200).rowLine(.quiet)
+            part("chips", chips).rowLine(.chips)
+            part("trailing", 100).rowLine(.trailing)
+        }
+        .coordinateSpace(.named("RowLines"))
+        .frame(width: 300)
+        let host = NSHostingView(rootView: lines)
+        let window = TestWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 300, height: 200), styleMask: .borderless,
+                                backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        let names = ["reason", "quiet", "chips", "trailing"]
+        try await until("each part drawn") {
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            return names.allSatisfy { drawn.frames[$0] != nil }
+        }
+
+        for (index, name) in names.enumerated() {
+            let frame = try #require(drawn.frames[name])
+            #expect(frame.minX > -0.5 && frame.maxX < 300.5, "\(name) at \(frame)")
+            for other in names[(index + 1)...] {
+                let overlap = frame.intersection(try #require(drawn.frames[other]))
+                #expect(overlap.isNull || overlap.width < 0.5 || overlap.height < 0.5, "\(name) covers \(other)")
+            }
+        }
+        // What's at the far end goes under the quiet line's own things, rather than taking room they can't give.
+        let quiet = try #require(drawn.frames["quiet"]), trailing = try #require(drawn.frames["trailing"])
+        #expect(trailing.minY >= quiet.maxY + RowLines.quietSpacing - 0.5)
+    }
+}

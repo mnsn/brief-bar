@@ -373,9 +373,9 @@ set wins, yours or a session's, and the label's tooltip says who set it; where a
 Back** is in its menu. What a session set counts only while the Copilot app lists the session, so a session you run in a
 terminal sets none. Where a stage you or a session set decides it, its marks still show: **‘Cart’ says it's ready ·
 build failed**. Click the label to pick
-another, or the one it's in to keep it there until you change it, or **Finished My Review**, at the end of the line
-while you point at the row or it has the keyboard's focus, to send it to your teammates; **Stage** in a row's **⋯** and
-right-click menus, and VoiceOver's actions, do the same. What you or
+another, or the one it's in to keep it there until you change it, or **Finished My Review**, at the end of the line, or
+under it in a narrow list, while you point at the row or it has the keyboard's focus, to send it to your teammates;
+**Stage** in a row's **⋯** and right-click menus, and VoiceOver's actions, do the same. What you or
 a session set holds until the pull request moves on: new commits, or a session that finishes writing it, end In
 progress, and so does the session that set it finishing; a vote ends Teammate's review, and a Your review a session
 set, someone else's on yours, and yours on someone else's, while a Your review you set lasts until you change it, as
