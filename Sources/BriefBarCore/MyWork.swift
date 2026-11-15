@@ -7,7 +7,9 @@ import Foundation
 // pull request's card names it, and once it merged, that card is in Merged until it's out, its pipelines after the merge
 // done, and every work item of yours it names is done; then in Completed. Work items and pull requests go together only
 // through Show Links' links, never by their states. Only how they're shown: no stage, Up Next slot, row, count or agent's
-// answer changes for it, and nothing is read for it but the sprint, as while its Sprint section is on screen.
+// answer changes for it, and nothing is read for it but the sprint, as while its Sprint section is on screen. Moving a
+// work item's card to another column, with Make Changes in Azure DevOps on, puts its work item in the state that column's
+// work is in, as you (`BoardTask.move(to:sameLane:states:)`): its card goes where its new state puts it.
 
 /// One of your work items in the sprint: your task, or your story or bug without tasks, as the sprint's own counts have
 /// them, what's left (`SprintBoard.myWork`) and what's done (`SprintBoard.myDone`), with what the Board needs of it.
@@ -159,6 +161,75 @@ public struct BoardTask: Equatable, Sendable, Identifiable {
             column = .inProgress
             why = .started
         }
+    }
+}
+
+/// What My Work's Board knows of a work item's states, for what moving its card to another column does
+/// (`BoardTask.move(to:sameLane:states:)`).
+public enum BoardTaskStates: Equatable, Sendable {
+    /// Moving its card changes its state, as you: from `current`, as its process names it, "New", to the first state its
+    /// type has of the kind each column's work is in (`BoardColumn.workProgress`), in its process's order: "New", "Active",
+    /// "Resolved", "Closed". `held` says why it can't now, though it could: with Make Changes in Azure DevOps off, or while
+    /// another change is on its way.
+    case changes(current: String, first: [SprintWork.Progress: String], held: String?)
+    /// Moving its card changes nothing, and why: for one outside the sprint, or one whose type's states aren't known.
+    case fixed(String)
+}
+
+extension BoardColumn {
+    /// How far along a work item's card is there, for the state that moving one there puts it in: not started in To start,
+    /// resolved in Merged, done in Completed, and started in every other stage's column, though it shows in In progress.
+    public var workProgress: SprintWork.Progress {
+        switch self {
+        case .toStart: .toDo
+        case .stage(.merged): .resolved
+        case .stage: .inProgress
+        case .completed: .completed
+        }
+    }
+}
+
+extension BoardTask {
+    /// The columns a work item's card goes in, from left to right, which ⌘→ and ⌘← step through.
+    static let columns: [BoardColumn] = [.toStart, .stage(.inProgress), .stage(.merged), .completed]
+
+    /// What moving its card to a column does, by dragging it there or with ⌘→ and ⌘←: puts its work item in the state of
+    /// that column's work (`BoardColumn.workProgress`), the first of that kind its type has, as you, and its card goes where
+    /// that state puts it, In progress for every stage before Merged. Nothing in its own column. Refused, saying why, in
+    /// another lane, as its lane is its story's; where it's in that kind of state already; where its type has none; and
+    /// where its state can't change, or can't now.
+    /// - Parameter sameLane: the column is in its own lane.
+    public func move(to column: BoardColumn, sameLane: Bool, states: BoardTaskStates) -> BoardMove {
+        guard sameLane else { return .refused(BoardText.workOtherLane) }
+        if column == BoardColumn(self.column) { return .stays }
+        switch states {
+        case .fixed(let why):
+            return .refused(why)
+        case .changes(let current, let first, let held):
+            let progress = column.workProgress
+            if work.progress == progress { return .refused(BoardText.isAlready(current)) }
+            guard let state = first[progress] else { return .refused(BoardText.noState(for: progress, done: first[.completed])) }
+            return held.map(BoardMove.refused) ?? .setState(state)
+        }
+    }
+
+    /// Where ⌘→ or ⌘← takes its card: the next or previous of the columns a work item's card goes in, To start, In progress,
+    /// Merged and Completed, that its type has a state for, past Merged for a task with no resolved state; nil at either
+    /// end. One whose kind of state it's in already says so (`move(to:sameLane:states:)`), rather than be passed: a card its
+    /// pull request or a Copilot task holds where it is would go on changing state back and forth there, never moving.
+    public func keyTarget(forward: Bool, states: BoardTaskStates) -> BoardColumn? {
+        guard let index = Self.columns.firstIndex(of: BoardColumn(column)) else { return nil }
+        let ahead = forward ? Array(Self.columns[(index + 1)...]) : Array(Self.columns[..<index].reversed())
+        guard case .changes(_, let first, _) = states else { return ahead.first }
+        return ahead.first { first[$0.workProgress] != nil } ?? ahead.first
+    }
+
+    /// The column its card goes to once its work item is in the state of a column's work (`BoardColumn.workProgress`), as
+    /// its pull requests and a Copilot task still have it.
+    public func column(movedTo column: BoardColumn) -> Column {
+        var work = self.work
+        work.progress = column.workProgress
+        return BoardTask(work).column
     }
 }
 
@@ -450,10 +521,41 @@ extension BoardText {
         }
     }
 
-    /// Why a work item's card doesn't move to another column: BriefBar changes no work item's state, and none of its stages is
-    /// one.
+    /// Why a work item's card doesn't move to another column where its state can't change on the Board, as for one whose
+    /// type's states aren't known: it moves by itself, as its work does in Azure DevOps.
     public static let workStays =
         "A work item's card moves by itself, as its work does in Azure DevOps: to In progress once it's started, or a Copilot task works on it; onto its pull request's card once one is linked to it; to Merged once it's resolved, and to Completed once it's done"
+
+    /// Why a work item's card doesn't move to another lane: its lane is its story's.
+    public static let workOtherLane = "A work item's card moves between columns in its own lane"
+
+    /// Why a work item's card doesn't go to a column whose work is in the kind of state it's in already, as one in In progress
+    /// while Copilot works on it, still New, onto To start: "It's New already".
+    public static func isAlready(_ state: String) -> String {
+        "It's \(state) already"
+    }
+
+    /// Why a work item's card doesn't go to a column its type has no state for: "Its type has no resolved state in your team's
+    /// process: Completed sets it Closed".
+    /// - Parameter done: the state Completed sets it in, for Merged's.
+    public static func noState(for progress: SprintWork.Progress, done: String?) -> String {
+        let what = switch progress {
+        case .toDo: "no state for work not started"
+        case .inProgress: "no state for work in progress"
+        case .resolved: "no resolved state"
+        case .completed: "no done state"
+        }
+        let instead = progress == .resolved ? done.map { ": Completed sets it \($0)" } ?? "" : ""
+        return "Its type has \(what) in your team's process" + instead
+    }
+
+    /// What a work item's card does, for its tooltip, after its name: a click shows its details; and moving it sets its
+    /// state, where it can, else it moves by itself.
+    public static func taskHelp(movesSetState: Bool) -> String {
+        "Click to see its details. " + (movesSetState
+            ? "Drag it to another column, or press ⌘→ or ⌘←, to set its state in Azure DevOps"
+            : "It moves to another column by itself, as its work goes on in Azure DevOps")
+    }
 
     /// Why Completed doesn't take a pull request's card that isn't there.
     public static let completedTakesNoPullRequest =

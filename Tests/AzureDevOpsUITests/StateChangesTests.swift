@@ -119,6 +119,41 @@ import Testing
         #expect(!states.needsSetting(try item(sprint)))
     }
 
+    /// On My Work's Board, a work item on the sprint's board changes state as its card moves, whatever the setting: from the
+    /// state it's in to the first of each kind its type has, held, saying why, while the setting's off or a change is on its
+    /// way. One outside the sprint, or whose type's states the team's configuration doesn't say, doesn't. Moving a card
+    /// sends the change as choosing it does.
+    @Test func myWorksBoardMovesTheSprintsWorkToTheStatesItsTypeHas() async throws {
+        let (sprint, states, azure) = live(makesChanges: false)
+        let task: [SprintWork.Progress: String] = [.toDo: "New", .inProgress: "Active", .completed: "Closed"]
+        #expect(states.boardStates(for: try item(sprint)) == .changes(current: "New", first: task, held: StateChangeText.turnOnToMove))
+        #expect(StateChangeText.turnOnToMove
+            == "Turn on Make Changes in Azure DevOps, in Settings › Pull Requests, to set its state by moving its card")
+
+        states.settings.makesChanges = true
+        let bug = try item(sprint, 5110)
+        #expect(states.boardStates(for: bug) == .changes(
+            current: bug.state, first: [.toDo: "New", .inProgress: "Active", .resolved: "Resolved", .completed: "Closed"], held: nil
+        ))
+        let outside = try #require(DemoData.outsideWork(now: Self.referenceNow).items.first { $0.id == 5052 })
+        #expect(states.boardStates(for: outside) == nil)
+
+        let change = StateChanges.Change(key: key, name: "Task 5104", title: "", from: "New", to: "Active")
+        states.showForRendering(.sending(change))
+        #expect(states.boardStates(for: try item(sprint)) == .changes(
+            current: "New", first: task, held: "Task 5104 is changing to Active: one state changes at a time"
+        ))
+        states.showForRendering(nil)
+        await states.change(try item(sprint), to: "Active")
+        #expect(azure.sent == [.setState(key, from: "New", to: "Active")])
+        #expect(states.boardStates(for: try item(sprint)) == .changes(current: "Active", first: task, held: nil))
+
+        var unmapped = try #require(sprint.board)
+        unmapped.stateCategories = [:]
+        sprint.receive(SprintSnapshot(board: unmapped, hasLoaded: true))
+        #expect(states.boardStates(for: try item(sprint)) == nil)
+    }
+
     // MARK: Changing
 
     /// A change goes once, from the state BriefBar reads it in, and shows at once as Azure DevOps answered; Undo puts it

@@ -126,16 +126,24 @@ enum MyWorkFacts {
         _ item: WorkItem, story: ItemRef?, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?,
         copilotWorks: (WorkItem) -> Bool
     ) -> SprintWork {
-        let progress: SprintWork.Progress = switch item.category {
+        let pullRequests = linked(item.linkRef).filter(\.kind.isPullRequest).map { ref in
+            LinkedPullRequest(ref: ref, state: state(of: ref, pullRequest: pullRequest))
+        }
+        return SprintWork(
+            ref: item.linkRef, story: story, progress: progress(of: item.category), pullRequests: pullRequests,
+            copilotWorks: copilotWorks(item)
+        )
+    }
+
+    /// How far along a work item in a state of this category is, on the Board: a removed one as one started, as it isn't
+    /// on the sprint's board to show.
+    static func progress(of category: WorkItem.Category) -> SprintWork.Progress {
+        switch category {
         case .proposed: .toDo
         case .resolved: .resolved
         case .completed: .completed
         case .inProgress, .removed: .inProgress
         }
-        let pullRequests = linked(item.linkRef).filter(\.kind.isPullRequest).map { ref in
-            LinkedPullRequest(ref: ref, state: state(of: ref, pullRequest: pullRequest))
-        }
-        return SprintWork(ref: item.linkRef, story: story, progress: progress, pullRequests: pullRequests, copilotWorks: copilotWorks(item))
     }
 
     /// What a linked pull request is, for a work item whose pull requests aren't on the board: one on GitHub, linked in
@@ -337,6 +345,7 @@ private struct MyWorkContent: View {
     @EnvironmentObject private var pullRequestDetails: PullRequestDetailsStore
     @EnvironmentObject private var ordering: PullRequestOrder
     @EnvironmentObject private var moves: SprintMoves
+    @EnvironmentObject private var states: StateChanges
 
     /// The work item's details show rather than a pull request's: you clicked a work item's card last.
     @LocalState private var showsWorkItem = false
@@ -385,6 +394,15 @@ private struct MyWorkContent: View {
                 .padding(.leading, 14)
                 .padding(.trailing, 20)
                 .padding(.bottom, 10)
+            }
+            // What a change of a work item's state is doing, or did, as you moved its card on the Board, or chose it in its
+            // menus or its details, there too.
+            if states.line != nil {
+                StateChangeLine(changes: states)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 14)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 10)
             }
             // One split, whichever details show, so that the Board keeps its place as you click from one kind to the other.
             let detailsShown = shownDetails
@@ -572,8 +590,22 @@ private struct MyWorkContent: View {
             card: { task in workItem(task.ref).map { taskCard(task, item: $0) } },
             story: { ref, isFinished in AnyView(storyHeader(ref, isFinished: isFinished)) },
             isSelected: { ref in shownDetails.workItem?.linkRef == ref },
-            select: { ref in if let item = workItem(ref) { showDetails(of: item) } }
+            select: { ref in if let item = workItem(ref) { showDetails(of: item) } },
+            states: boardStates(of:),
+            setState: { task, state in
+                guard let item = sprintItem(task.ref) else { return }
+                Task { await states.change(item, to: state) }
+            }
         )
+    }
+
+    /// What moving a work item's card does to its state: one on the sprint's board goes in the state of the column you move
+    /// it to, with Make Changes in Azure DevOps on (`StateChanges.boardStates(for:)`); one outside it, or whose type's states
+    /// BriefBar doesn't know, stays, saying why.
+    private func boardStates(of task: BoardTask) -> BoardTaskStates {
+        if let item = sprintItem(task.ref), let known = states.boardStates(for: item) { return known }
+        guard task.work.isOutside, let item = workItem(task.ref) else { return .fixed(BoardText.workStays) }
+        return .fixed(MyWorkText.stateStays(place: outside?.place(of: item), sprint: sprint.board?.sprint.name))
     }
 
     /// A work item in the sprint.
@@ -586,9 +618,9 @@ private struct MyWorkContent: View {
         sprintItem(ref) ?? outside?.items.first { $0.linkRef == ref }
     }
 
-    /// A work item's card: its menu as on the Sprint page, with Make Next in To start. One outside the sprint says where it
-    /// is, which, with Make Changes in Azure DevOps on, is a menu that moves it to the sprint going on or the next, as its
-    /// own menu does.
+    /// A work item's card: its menu as on the Sprint page, with Make Next in To start, and State, with Make Changes in Azure
+    /// DevOps on, for one on the sprint's board. One outside the sprint says where it is, which, with that setting on, is a
+    /// menu that moves it to the sprint going on or the next, as its own menu does.
     private func taskCard(_ task: BoardTask, item: WorkItem) -> BoardCardContent {
         let place = outside?.place(of: item)
         let movable = moves.canMove(item) || moves.undoable?.key == item.key
@@ -610,6 +642,7 @@ private struct MyWorkContent: View {
                     startPickItem(task)
                 }
                 CopilotSendMenuItems(item: item)
+                StateMenuItems(item: item)
                 if movable {
                     Divider()
                     moveItems(item)
@@ -618,7 +651,10 @@ private struct MyWorkContent: View {
             }),
             label: "\(item.type) \(item.id) \(item.title)",
             details: [BoardText.why(task, state: item.state, type: item.type)] + (place.map { [$0] } ?? []),
-            actions: movable ? AnyView(moveItems(item)) : nil
+            actions: AnyView(Group {
+                StateActions(item: item)
+                if movable { moveItems(item) }
+            })
         )
     }
 
@@ -1007,6 +1043,17 @@ enum MyWorkText {
     /// Show's tooltip.
     static let showHelp = "+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start. + All My Tasks: your "
         + "open tasks and bugs outside the sprint too, each saying where it is. They need Show Links."
+
+    /// Why moving a card of your work outside the sprint doesn't change its state, which only the sprint's board's work does
+    /// here: "Move it to Sprint 42 first: only the sprint's work changes state here"; for one in the sprint's iteration that
+    /// its board doesn't have, as under another team's area, "It's not on Sprint 42's board: change its state in Azure
+    /// DevOps"; and with no sprint going on (nil), "With no sprint going on, change its state in Azure DevOps".
+    /// - Parameter place: where it is, as its card says it (`OutsideWork.place`): nil in the sprint's own iteration.
+    static func stateStays(place: String?, sprint: String?) -> String {
+        guard let sprint else { return "With no sprint going on, change its state in Azure DevOps" }
+        guard place != nil else { return "It's not on \(sprint)'s board: change its state in Azure DevOps" }
+        return "Move it to \(sprint) first: only the sprint's work changes state here"
+    }
 
     /// How many of your open tasks and bugs aren't in the sprint, by their types: "5 tasks and 1 bug of yours aren't in Sprint
     /// 42.", "1 task of yours isn't in Sprint 42.", "All your open tasks and bugs are in Sprint 42."; with no sprint going on

@@ -105,12 +105,62 @@ import Testing
         var inYourOrder = false
     }
 
+    /// What My Work's page knows of your work's states, as the Board asks for them, and the states moving a card set: each
+    /// work item goes in it at once, as once Azure DevOps answered, or once the test answers for it, and its card where
+    /// that puts it. With none, as for a page that changes none, moving a work item's card changes nothing.
+    @MainActor
+    private final class WorkStates: ObservableObject {
+        /// The first state of each kind the work items' type has: a task's, with no resolved state.
+        let first: [SprintWork.Progress: String]
+        /// The states moving a card set, in order.
+        private(set) var changes: [(ref: ItemRef, state: String)] = []
+        /// Azure DevOps answers only as the test has it (`answer`), as it does a while after the change went.
+        var answersLater = false
+        private var unanswered: [(ref: ItemRef, progress: SprintWork.Progress)] = []
+        @Published private var progress: [ItemRef: SprintWork.Progress] = [:]
+
+        init(first: [SprintWork.Progress: String] = [:]) {
+            self.first = first
+        }
+
+        /// The sprint's work, each in the state it was set to.
+        func work(_ work: [SprintWork]) -> [SprintWork] {
+            work.map { item in
+                var item = item
+                item.progress = progress[item.ref] ?? item.progress
+                return item
+            }
+        }
+
+        func states(of task: BoardTask) -> BoardTaskStates {
+            guard let current = first[task.work.progress] else { return .fixed(BoardText.workStays) }
+            return .changes(current: current, first: first, held: nil)
+        }
+
+        func set(_ ref: ItemRef, to state: String) {
+            changes.append((ref, state))
+            guard let set = first.first(where: { $0.value == state })?.key else { return }
+            if answersLater {
+                unanswered.append((ref, set))
+            } else {
+                progress[ref] = set
+            }
+        }
+
+        /// Azure DevOps answers each change that went: its work item is in its new state.
+        func answer() {
+            for (ref, set) in unanswered { progress[ref] = set }
+            unanswered = []
+        }
+    }
+
     /// The Board of a page that lists Azure DevOps' pull requests, drawn anew as the order changes, as the page draws it;
     /// with your sprint work on it too, as My Work's, if given.
     private struct Board: View {
         @ObservedObject var order: PullRequestOrder
         @ObservedObject var details: Details
         @ObservedObject var late: Late
+        @ObservedObject var states: WorkStates
         let drawn: Drawn
         let waits: FocusWaits?
         let sprint: Sprint?
@@ -122,7 +172,7 @@ import Testing
             let board = order.board(kinds: kinds)
             let yourOrder: LaneOrders? = sprint?.inYourOrder == true ? order.laneOrders : nil
             let shown: PullRequestBoard = sprint.map { sprint in
-                board.withWork(sprint.work, missions: missions, stories: sprint.stories, yourOrder: yourOrder)
+                board.withWork(states.work(sprint.work), missions: missions, stories: sprint.stories, yourOrder: yourOrder)
             } ?? board
             OrderBoardView(
                 board: shown, missions: missions,
@@ -172,7 +222,9 @@ import Testing
                 },
                 story: { ref, _ in AnyView(Text(ref.shortOrderLabel)) },
                 isSelected: { [details] in details.shown == $0 },
-                select: { [details] in details.shown = $0 }
+                select: { [details] in details.shown = $0 },
+                states: { [states] task in states.states(of: task) },
+                setState: { [states] task, state in states.set(task.ref, to: state) }
             )
         }
     }
@@ -310,15 +362,17 @@ import Testing
     ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
     ///     app.
     ///   - sprint: your sprint work, on the Board as on My Work; nil for only the pull requests.
+    ///   - states: what the page knows of your work's states, and sets as you move its cards; none for a page that changes
+    ///     none.
     ///   - page: the Board scrolls down a page this tall, which the window is, as the window's pages do; nil for none.
     private static func showing(
         _ order: PullRequestOrder, details: Details = Details(), late: Late = Late(), waits: FocusWaits? = nil,
-        sprint: Sprint? = nil, page: CGFloat? = nil,
+        sprint: Sprint? = nil, states: WorkStates = WorkStates(), page: CGFloat? = nil,
         _ body: @MainActor (_ window: NSWindow, _ host: NSView, _ drawn: Drawn) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
-        let board = Board(order: order, details: details, late: late, drawn: drawn, waits: waits, sprint: sprint)
+        let board = Board(order: order, details: details, late: late, states: states, drawn: drawn, waits: waits, sprint: sprint)
         // A scroller that shows as the page first scrolls would narrow it: in a window off screen, one does.
         let root: AnyView = page == nil ? AnyView(board) : AnyView(ScrollView { board }.scrollIndicators(.never))
         let host = NSHostingView(rootView: root)
@@ -379,6 +433,63 @@ import Testing
         }
     }
 
+    /// A work item's card goes once Azure DevOps has its new state: you can show its details meanwhile, with Return on it,
+    /// and once it goes, it takes the keyboard back from the card after it, which AppKit gave it to, as it does right away.
+    @Test func aWorkItemsCardTakesTheKeyboardBackOnceItsStateChangedThoughYouShowedItsDetailsMeanwhile() async throws {
+        let order = Self.order()
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        states.answersLater = true
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .toDo)], stories: [])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            try await Self.pressUntil("⌘→ to start it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            details.shown = nil
+            try await Self.pressUntil("Return on it, before Azure DevOps answers") {
+                Self.press(.return, in: window)
+                return details.shown == task
+            }
+            let before = drawn.frames[task]?.minX
+            states.answer()
+            try await until("its card drawn in In progress") { drawn.frames[task]?.minX != before }
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card that has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == task, "The draft's card kept the keyboard AppKit gave it as the task's card left To start")
+        }
+    }
+
+    /// A card ⌘→ moves keeps the keyboard though another card comes after it, which AppKit gives the keyboard to as the
+    /// moved card leaves its column: the moved card takes it back as it's drawn anew, and Return shows its details.
+    @Test func aMovedCardTakesTheKeyboardBackFromTheCardItWentToByItself() async throws {
+        let order = Self.withAReview()
+        let details = Details()
+        try await Self.showing(order, details: details) { window, host, drawn in
+            try await until("both cards") { drawn.frames[Self.ref] != nil && drawn.frames[Self.review] != nil }
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click to show its details") { details.shown == Self.ref }
+            try await Self.move(.rightArrow, to: .yourReview, "⌘→ beside the review", order: order, drawn: drawn, in: window)
+            try await until("the moved card drawn in Your review") { drawn.columns[Self.ref] == .yourReview }
+            // It takes the keyboard back on the main queue's next turn once it's drawn.
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card that has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == Self.ref, "The review kept the keyboard it was given as the moved card left")
+        }
+    }
+
     /// On My Work, ⌘↑ and ⌘↓ move a card that has the keyboard up or down its column, To start or In progress, in your
     /// order, which BriefBar keeps: it keeps the keyboard, so that the next key moves it on, and at the top, nothing moves.
     /// A pull request's card moves within In progress so too, and keeps its stage.
@@ -423,6 +534,48 @@ import Testing
                 return kept().filter { $0 == Self.ref || $0 == started } == [started, Self.ref]
             }
             #expect(order.stage(of: Self.ref)?.stage == .inProgress)
+        }
+    }
+
+    /// On My Work, ⌘→ and ⌘← on a work item's card put it in the state of the next or previous column that would change it,
+    /// past Merged for a task, which has no resolved state: its card goes there once it's in it, and keeps the keyboard, so
+    /// that the next key moves it on, into Completed too, which opens for it though it folds while it's empty. At To start,
+    /// ⌘← changes nothing.
+    @Test func theCommandArrowsPutAWorkItemInTheStateOfTheNextColumnAndItsCardKeepsTheKeyboard() async throws {
+        let order = Self.order()
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .toDo)], stories: [])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+
+            @MainActor func move(_ arrow: KeyEquivalent, to state: String, _ what: String) async throws {
+                let before = drawn.frames[task]?.minX
+                let count = states.changes.count
+                try await Self.pressUntil(what) {
+                    Self.press(arrow, command: true, in: window)
+                    return states.changes.count > count
+                }
+                #expect(states.changes.last?.state == state)
+                try await until("the Board to draw its card where \(what) moved it") { drawn.frames[task]?.minX != before }
+                // It takes the keyboard back on the main queue's next turn once it's drawn, from the draft's card in In
+                // progress too, which AppKit gave it to as the card left To start.
+                await Self.queuedWorkDone()
+            }
+            try await move(.rightArrow, to: "Active", "⌘→ to start it")
+            try await move(.rightArrow, to: "Closed", "⌘→ again, from its new column, past Merged")
+            try await move(.leftArrow, to: "Active", "⌘← to start it again")
+            try await move(.leftArrow, to: "New", "⌘← to To start")
+            for _ in 0..<3 {
+                Self.press(.leftArrow, command: true, in: window)
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            #expect(states.changes.map(\.state) == ["Active", "Closed", "Active", "New"])
+            #expect(states.changes.allSatisfy { $0.ref == task })
+            #expect(order.stage(of: Self.ref)?.stage == .inProgress, "A key went to the draft's card")
         }
     }
 

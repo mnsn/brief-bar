@@ -1846,9 +1846,12 @@ only a card dragged from its own board, never text from another app that names a
 that light up as you drag, act on the card as the board has it then, looked up again (`BoardMoves`), not as it was when
 the drag started. A click, or Tab, gives a card the keyboard's focus as a text field takes it, whatever the Mac's
 keyboard navigation, and it keeps it as it moves: drawn anew in its new column, it takes the focus back, however long
-the board takes to draw it, up to ten seconds, unless another card, or a field you type in, has it by then; each move
-that takes it to another column owes it that, so that a key that comes just as the last move's wait ends doesn't lose it
-(`OwedFocus`), and one that leaves it in its column, as one that still waits, owes it nothing. ⌘→ and
+the board takes to draw it, up to ten seconds, unless you went to another card, or a field you type in, by then; each
+move that takes it to another column owes it that, so that a key that comes just as the last move's wait ends doesn't
+lose it (`OwedFocus`), and one that leaves it in its column, as one that still waits, owes it nothing. As its old place
+goes, SwiftUI lets go of the focus and AppKit gives it to the next card by itself: a card that goes then tells the Board
+(`MovingFocus`), which counts the next card that gets the focus from none, while you were last on the moved one, as
+that, a click saying where you were first, and the moved card takes the focus back from it. ⌘→ and
 ⌘← move it to the next or previous stage you can set, and from Waits, ⌘← to Can merge. Return or Space shows its
 details, as a click does. Where the details cover the Board (`DetailsSplit`),
 it's disabled, and none of its cards can have the focus: a key monitor of its window (`BoardKeys`) takes ⌘→ and ⌘← for
@@ -2032,9 +2035,11 @@ say its pull requests aren't on your board yet, and the line under it says what 
 lane folds to takes the keyboard's focus as a card does, whatever the Mac's keyboard navigation, so that Tab reaches
 what it hides, and Return, Space or a click folds the lane or shows it. The columns, their widths and their counts come
 from one list (`PullRequestBoard.columns`, `count(of:)`). A work item's card can take the keyboard's focus as a pull
-request's does, and Return or Space shows its details beside the Board; it doesn't move: a drag, ⌘→ or ⌘← on it, and a
-pull request's card dropped on To start or Completed, are refused, saying why (`BoardText.workStays`,
-`toStartTakesNoPullRequest`, `completedTakesNoPullRequest`).
+request's does, and Return or Space shows its details beside the Board. Moved to another column of its lane, by a drag,
+⌘→ or ⌘←, it puts its work item in that column's state, with Make Changes in Azure DevOps on ([Changing a work item's
+state](#changing-a-work-items-state)); where it can't, and a pull request's card dropped on To start or Completed, it's
+refused, saying why (`BoardTask.move(to:sameLane:states:)`, `BoardText.workStays`, `toStartTakesNoPullRequest`,
+`completedTakesNoPullRequest`).
 
 With + Sprint Tasks or + All My Tasks, a line under the header counts your work outside the sprint's iteration, by type,
 "5 tasks and 1 bug of yours aren't in Sprint 42" (`MyWorkText.outside`), so that one left in an older sprint is noticed,
@@ -2399,7 +2404,7 @@ Azure DevOps' samples send (`content`, `parentCommentId` and `commentType` 1, te
 only that (`status`, by the number the API takes for it); and a comment of yours, edited or deleted
 ([below](#editing-and-deleting-your-comments)), a pull request's tags ([below](#a-pull-requests-tags)), on My Work,
 the sprint a task or bug of yours is in ([Moving a task to a sprint](#moving-a-task-to-a-sprint)), and, on the Sprint
-page, a work item's state ([Changing a work item's state](#changing-a-work-items-state)).
+page and My Work's Board, a work item's state ([Changing a work item's state](#changing-a-work-items-state)).
 `ADOClient.send(_:as:)` alone sends them, with a GET's sign-in, headers and redirect guard, from the same request path,
 once: it sends one again only when Azure DevOps rejected the sign-in, which it never acts on, so a change that fails
 otherwise, or times out, isn't made twice. Once it
@@ -3245,6 +3250,25 @@ it and again before each try, once its token came (`StateChanges.send`, `isStill
 Azure DevOps stopping or someone else signing in calls off one that hasn't gone (`StateChanges.forgetAll`). Only the
 board's work items change: a linked one followed in the details shows its state as it was read. The demo changes only
 its made-up sprint, and sends nothing.
+
+On My Work's Board, a card of your sprint work changes its work item's state as you move it to another column of its
+lane, by a drag, ⌘→ or ⌘← (`BoardTask.move(to:sameLane:states:)`): to the state that column's work is in
+(`BoardColumn.workProgress`), To start's not started, Merged's resolved, Completed's done, and started for every other
+stage's column, though the card shows in In progress then, as started work without a pull request on the board does;
+the first of that kind its type has, in its process's order, as the Sprint page lists them, such as New, Active,
+Resolved and Closed, or To Do, In Progress and Done (`StateChanges.boardStates(for:)`, `MyWorkFacts.progress(of:)`).
+The change is the one above, from the same `StateChanges`, whose line shows under My Work's header too, with Undo
+(`StateChangeLine`); the card goes to its new column once the board has the new state, keeping the keyboard after ⌘→ or
+⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`). The
+card's menu has State, with Undo, and VoiceOver's actions each state (`StateMenuItems`, `StateActions`). Nothing moves
+where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
+state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved
+state; while Make Changes in Azure DevOps is off, saying how to turn it on, or another change is on its way
+(`BoardTaskStates`). On a joined column whose columns would each set the same state, as In review's, it goes on the
+first rather than ask you to choose. Your work outside the sprint, with + All My Tasks, which isn't on the sprint's
+board, says to move it there first (`MyWorkText.stateStays`); a type whose states the team's configuration doesn't map
+moves only by itself (`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull
+request linked to it.
 
 ### Send work to Copilot
 

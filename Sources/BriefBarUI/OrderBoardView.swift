@@ -16,7 +16,9 @@ import SwiftUI
 // drop sets one stage. On My Work, with + Sprint Tasks, your sprint work has cards of its own
 // (`PullRequestBoard.withWork`): in To start, a column before In progress, until it's started, then in In progress, after
 // the pull requests; in Merged once it's resolved, and in Completed, a column after Merged, once it's done, where a merged
-// pull request's card goes too once it's out, with your work on it done. They don't move: their work does, in Azure DevOps.
+// pull request's card goes too once it's out, with your work on it done. Dragging one to another column of its lane, or
+// ⌘→ and ⌘←, puts its work item in the state that column's work is in, with Make Changes in Azure DevOps on
+// (`BoardTask.move(to:sameLane:states:)`), and it goes there once Azure DevOps has it; else it moves as its work does.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -28,8 +30,8 @@ package struct BoardCardContent {
     package var details: [String]
     /// Its Mission menu, for VoiceOver's actions as its row has them; nil where it has none.
     package var mission: MissionMenuContext?
-    /// What VoiceOver offers as its actions, before Show Details, of what its menu and its content do: a work item's move
-    /// to another sprint. Nil for none.
+    /// What VoiceOver offers as its actions, before Show Details, of what its menu and its content do: a work item's states,
+    /// and its move to another sprint. Nil for none.
     package var actions: AnyView?
 
     package init(
@@ -46,7 +48,7 @@ package struct BoardCardContent {
 }
 
 /// What a page draws of your sprint work on the Board, on My Work with + Sprint Tasks: a work item's card, and the header of a
-/// story's lane.
+/// story's lane; and what moving a work item's card to another column does to its state.
 package struct BoardWorkContent {
     /// A work item's card: its content, its menu, and what VoiceOver says of it; nil for one the page doesn't know.
     package var card: (BoardTask) -> BoardCardContent?
@@ -57,15 +59,24 @@ package struct BoardWorkContent {
     package var isSelected: (ItemRef) -> Bool
     /// Shows a work item's details.
     package var select: (ItemRef) -> Void
+    /// What the page knows of a work item's states, for what moving its card to another column does: its state and those
+    /// of its type, or why moving it doesn't change it (`BoardTask.move(to:sameLane:states:)`).
+    package var states: (BoardTask) -> BoardTaskStates
+    /// Puts a work item in a state, as moving its card asks: the card goes to its new column once its work item is in it.
+    package var setState: (BoardTask, String) -> Void
 
     package init(
         card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef, _ isFinished: Bool) -> AnyView,
-        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void
+        isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void,
+        states: @escaping (BoardTask) -> BoardTaskStates = { _ in .fixed(BoardText.workStays) },
+        setState: @escaping (BoardTask, String) -> Void = { _, _ in }
     ) {
         self.card = card
         self.story = story
         self.isSelected = isSelected
         self.select = select
+        self.states = states
+        self.setState = setState
     }
 }
 
@@ -159,6 +170,36 @@ private struct BoardNotice: Equatable {
 private struct KeyOpened: Equatable {
     var column: BoardColumn
     var spot: CardSpot
+}
+
+/// A card a key, or a drop, takes to another column while it has the keyboard's focus, until it has the focus back there.
+/// As its old place goes from the board, AppKit gives the focus to the next card by itself: that card, which you didn't
+/// choose, is where the moved card takes it back from as it's drawn anew (`OrderBoardView.mayTakeFocus(from:to:)`). A
+/// work item's card goes once Azure DevOps has its new state, so you may well have gone elsewhere meanwhile: only the
+/// focus going to a card right as its old place goes counts.
+private struct MovingFocus: Equatable {
+    var spot: CardSpot
+    /// Its move, as `OwedFocus` counts them: once that move's wait ends, it's done with.
+    var move: Int
+    /// Its old place went from the board.
+    var left = false
+    /// The card AppKit gave the focus to as it went.
+    var handedOn: CardSpot?
+
+    /// As the keyboard's focus goes from one card to another, or to none: done with, once it has it back where it went,
+    /// not while its old place is still there, as a work item's waits for Azure DevOps; the card the focus went to by
+    /// itself, where it went from no card right as its old place went while you were last on it, as a click on a card
+    /// says where you were last first; done with too, once you went on from that one.
+    /// - Parameter last: the card you were last on, before this change.
+    func focusChanged(from old: CardSpot?, to new: CardSpot?, last: CardSpot?) -> MovingFocus? {
+        if new == spot { return left ? nil : self }
+        if let new, left, handedOn == nil, old == nil || old == spot, last == spot {
+            var handed = self
+            handed.handedOn = new
+            return handed
+        }
+        return handedOn == nil || new == handedOn ? self : nil
+    }
 }
 
 /// What decides how long the column a key moved a card to stays open: which card has the keyboard's focus, whether the
@@ -545,6 +586,8 @@ package struct OrderBoardView: View {
     /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
     /// focus back as it appears, so that the next key moves it on.
     @LocalState private var refocus = OwedFocus<CardSpot>()
+    /// That card, while a move takes it to another column, until it has the focus back (`MovingFocus`).
+    @LocalState private var movingFocus: MovingFocus?
     /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
     /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
     @LocalState private var lastFocus: CardSpot?
@@ -603,7 +646,10 @@ package struct OrderBoardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .background(alignment: .topLeading) { coveredKeys(lanes, moves: moves) }
-        .onChange(of: focused) { _, spot in
+        .onChange(of: focused) { old, spot in
+            if let moving = movingFocus {
+                movingFocus = moving.focusChanged(from: old, to: spot, last: lastFocus)
+            }
             if isEnabled { lastFocus = spot }
         }
         .onChange(of: isEnabled) { _, enabled in
@@ -1634,8 +1680,9 @@ package struct OrderBoardView: View {
 
     /// What dropping a card on a column of a lane does: on a joined column, what dropping it on the one of its columns that
     /// takes it does, or nothing where it's in one of them already, but in your order, where it goes where you drop it in
-    /// an open column; where more than one would take it, nothing until it springs open into them; and where none does, why
-    /// the first doesn't. Nil for a card that left the board.
+    /// an open column; where more than one would take it, each differently, nothing until it springs open into them, though
+    /// a work item's card goes on one that sets the same state in each, as In review's two do; and where none does, why the
+    /// first doesn't. Nil for a card that left the board.
     /// - Parameter isFolded: the column is a strip, whose cards don't show: one dropped in its own does nothing there.
     private func outcome(of ref: ItemRef, on column: ShownColumn, isFolded: Bool, in lane: BoardLane, moves: BoardMoves) -> Dropping? {
         var outcomes: [(move: BoardMove, part: BoardColumn)] = []
@@ -1650,7 +1697,7 @@ package struct OrderBoardView: View {
             return reorders ? .reorder(stays.part) : .move(.stays, to: stays.part)
         }
         let taken = outcomes.filter(\.move.isTaken)
-        if taken.count > 1 { return .choose(BoardText.chooseOne(of: column)) }
+        if taken.contains(where: { $0.move != taken[0].move }) { return .choose(BoardText.chooseOne(of: column)) }
         return (taken.first ?? outcomes.first).map { .move($0.move, to: $0.part) }
     }
 
@@ -1847,11 +1894,13 @@ package struct OrderBoardView: View {
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
                 badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), reorder: reorder,
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
-                tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
+                tookFocus: { refocus.took(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
+                left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     // A click gives it the keyboard's focus, which it has back once its details close, should they cover
-                    // the board.
+                    // the board; you chose it, so another card a move owes the focus leaves it there.
                     lastFocus = spot
+                    if movingFocus?.spot != spot { movingFocus = nil }
                     select(card.ref)
                 },
                 drag: {
@@ -1870,21 +1919,25 @@ package struct OrderBoardView: View {
         }
     }
 
-    /// A work item's own card, which shows its details as a pull request's does, but doesn't move: ⌘→ and ⌘← say why.
+    /// A work item's own card, which shows its details as a pull request's does, and moves to another column, by a drag, ⌘→
+    /// or ⌘←, where that sets its work item's state; else they say why it doesn't.
     @ViewBuilder
     private func taskView(_ task: BoardTask, in lane: BoardLane, reorder: CardReorder?) -> some View {
         if let work, let content = work.card(task) {
             let spot = CardSpot(lane: lane.kind, ref: task.ref)
+            let changes = if case .changes = work.states(task) { true } else { false }
             BoardTaskCardView(
                 task: task, content: content, next: board.startNext.flatMap { $0.task.ref == task.ref ? $0 : nil }, order: order,
                 isSelected: work.isSelected(task.ref), reorder: reorder, spot: spot, focus: $focused,
-                takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) }, mayTakeFocus: { !keys.isEditingText },
+                takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) },
+                mayTakeFocus: { mayTakeFocus(from: $0, to: spot) }, left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     lastFocus = spot
+                    if movingFocus?.spot != spot { movingFocus = nil }
                     work.select(task.ref)
                 },
                 drag: {
-                    // As a pull request's card starts, for the columns to say why they don't take it.
+                    // As a pull request's card starts: the columns that take it light up, and those that don't say why.
                     let started = BoardDrag(ref: task.ref)
                     DispatchQueue.main.async {
                         drag = started
@@ -1893,7 +1946,8 @@ package struct OrderBoardView: View {
                     }
                     return started.payload
                 },
-                move: { refuse(BoardText.workStays, about: task.ref, in: lane.kind) }
+                move: { forward in taskKey(task.ref, in: lane, forward: forward) },
+                movesHelp: BoardText.taskHelp(movesSetState: changes)
             )
         }
     }
@@ -1971,6 +2025,10 @@ package struct OrderBoardView: View {
         case .move(.refused(let why), _):
             refuse(why, about: ref, in: lane.kind)
             return false
+        // A work item's card: its work item goes in that column's state, as you, and the card there once it's in it.
+        case .move(.setState(let state), let part):
+            guard let task = lane.tasks.first(where: { $0.ref == ref }) else { return false }
+            return setState(of: task, to: state, column: part, in: lane.kind, keepsFocus: focused?.ref == ref, opensColumn: false)
         case .move(_, let part):
             guard let stage = part.stage, let (card, move) = moves.drop(payload, of: started, on: stage, in: lane.kind) else {
                 return false
@@ -1979,12 +2037,12 @@ package struct OrderBoardView: View {
         }
     }
 
-    /// What dropping a card on a column of a lane does, to the card as it is now: a work item's stays where its work puts it,
-    /// To start and Completed take no pull request, and one in Completed goes nowhere. Nil for a card that left the board.
+    /// What dropping a card on a column of a lane does, to the card as it is now: a work item's goes in that column's state,
+    /// in its own lane, where it can (`BoardTask.move(to:sameLane:states:)`), To start and Completed take no pull request,
+    /// and one in Completed goes nowhere. Nil for a card that left the board.
     private func moving(_ ref: ItemRef, to column: BoardColumn, in lane: BoardLane, moves: BoardMoves) -> BoardMove? {
         if let task = board.lanes.lazy.flatMap(\.tasks).first(where: { $0.ref == ref }) {
-            let stays = BoardColumn(task.column) == column && lane.tasks.contains { $0.ref == ref }
-            return stays ? .stays : .refused(BoardText.workStays)
+            return task.move(to: column, sameLane: lane.tasks.contains { $0.ref == ref }, states: workStates(of: task))
         }
         guard let card = moves.card(ref, in: lane.kind) else { return nil }
         let isCompleted = board.completed.contains(ref)
@@ -2013,6 +2071,53 @@ package struct OrderBoardView: View {
             return
         }
         _ = apply(move, to: card, in: lane, keepsFocus: keepsFocus, opensColumn: true)
+    }
+
+    /// What the page knows of a work item's states, for what moving its card does: nothing changes it on a board with no
+    /// page that changes states.
+    private func workStates(of task: BoardTask) -> BoardTaskStates {
+        work?.states(task) ?? .fixed(BoardText.workStays)
+    }
+
+    /// ⌘→ and ⌘← on a work item's card: the next or previous column that would change its state (`BoardTask.keyTarget`), or
+    /// why it can't go there; a beep at either end. It keeps the keyboard's focus, drawn anew in its new column.
+    private func taskKey(_ ref: ItemRef, in lane: BoardLane, forward: Bool) {
+        guard let task = lane.tasks.first(where: { $0.ref == ref }) else { return }
+        let states = workStates(of: task)
+        guard let column = task.keyTarget(forward: forward, states: states) else {
+            ThisMac.beep()
+            return
+        }
+        switch task.move(to: column, sameLane: true, states: states) {
+        case .setState(let state):
+            _ = setState(of: task, to: state, column: column, in: lane.kind, keepsFocus: true, opensColumn: true)
+        case .refused(let why):
+            refuse(why, about: ref, in: lane.kind)
+        case .stays, .setStage, .setAsNext:
+            ThisMac.beep()
+        }
+    }
+
+    /// Puts a work item in the state that moving its card to a column asks for, as a drop or a key does: its card goes to its
+    /// new column once its work item is in that state, as Azure DevOps answers.
+    /// - Parameters:
+    ///   - keepsFocus: it has the keyboard's focus, which it keeps, drawn anew in its new column.
+    ///   - opensColumn: a key moved it, and the column it goes to opens, folded or not, while it keeps the keyboard's focus,
+    ///     so that the next key moves it on from there.
+    private func setState(
+        of task: BoardTask, to state: String, column: BoardColumn, in lane: BoardLane.Kind, keepsFocus: Bool, opensColumn: Bool
+    ) -> Bool {
+        guard let work else { return false }
+        notice = nil
+        work.setState(task, state)
+        let goes = task.column(movedTo: column)
+        guard goes != task.column else { return true }
+        let spot = CardSpot(lane: lane, ref: task.ref)
+        if keepsFocus { oweFocus(to: spot, moves: true) }
+        if opensColumn {
+            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: BoardColumn(goes), spot: spot) }
+        }
+        return true
     }
 
     /// ⌘→ and ⌘← while the details cover the board, which can't take the keyboard's focus then: on the card of the pull
@@ -2063,6 +2168,9 @@ package struct OrderBoardView: View {
             }
         case .stays:
             return false
+        // A work item's card's alone, which `setState(of:to:column:in:keepsFocus:opensColumn:)` moves.
+        case .setState:
+            return false
         case .refused(let why):
             refuse(why, about: card.ref, in: lane)
             return false
@@ -2101,7 +2209,8 @@ package struct OrderBoardView: View {
     }
 
     /// The card keeps the keyboard's focus as a move takes it to another column: drawn anew there, it takes the focus back
-    /// as it appears, however long the board takes to draw it, unless another card, or a field you type in, has it by then.
+    /// as it appears, however long the board takes to draw it, unless you went to another card, or a field you type in, by
+    /// then; not the card AppKit gives the focus to as the moved card's old place goes (`MovingFocus`).
     /// One the move leaves in its column, as one that still waits, isn't drawn anew and keeps it; one the move takes off the
     /// board has nowhere to take it back: neither is owed it. Should the board not draw it in its new column within ten
     /// seconds, as in a lane you fold, or a column folded as you dropped it there, it isn't owed it later.
@@ -2111,13 +2220,16 @@ package struct OrderBoardView: View {
             refocus.took(spot)
             return
         }
-        oweFocus(to: spot)
+        oweFocus(to: spot, moves: true)
     }
 
     /// A card is owed the keyboard's focus, which it takes as it's drawn: until it does, or ten seconds on, the test's own
     /// wait where it has one.
-    private func oweFocus(to spot: CardSpot) {
+    /// - Parameter moves: a move takes it to another column, from which its old place goes (`MovingFocus`); false for one
+    ///   that doesn't move.
+    private func oweFocus(to spot: CardSpot, moves: Bool = false) {
         let move = refocus.owe(spot)
+        movingFocus = moves ? MovingFocus(spot: spot, move: move) : nil
         Task { @MainActor [focusWait] in
             if let focusWait {
                 await focusWait()
@@ -2125,7 +2237,17 @@ package struct OrderBoardView: View {
                 try? await Task.sleep(for: Self.owedFocusWait)
             }
             refocus.waitEnded(move)
+            if movingFocus?.move == move { movingFocus = nil }
         }
+    }
+
+    /// Whether a card owed the keyboard's focus takes it as it's drawn anew, from the card that has it, if any: from none,
+    /// and from the one AppKit gave it to by itself as the moved card's old place went (`MovingFocus.handedOn`); never from
+    /// a card you went to, nor from a field you type in.
+    private func mayTakeFocus(from current: CardSpot?, to spot: CardSpot) -> Bool {
+        guard !keys.isEditingText else { return false }
+        guard let current, current != spot else { return true }
+        return movingFocus?.spot == spot && movingFocus?.handedOn == current
     }
 
     /// Whether a move owes its card the keyboard's focus: where it takes it to another column of the board, where it's
@@ -2371,8 +2493,11 @@ private struct BoardCardView: View {
     /// Drawn anew in another column by a move it made with the keyboard's focus: it takes the focus back as it appears.
     let takesFocus: Bool
     let tookFocus: () -> Void
-    /// Whether it may take the focus back now: not from a field you type in.
-    let mayTakeFocus: () -> Bool
+    /// Whether it may take the focus back now, from the card that has it, if any: not from a field you type in, nor from a
+    /// card you went to (`OrderBoardView.mayTakeFocus(from:to:)`).
+    let mayTakeFocus: (CardSpot?) -> Bool
+    /// It goes from where it's drawn, as a move takes it elsewhere (`MovingFocus`).
+    let left: () -> Void
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
@@ -2437,13 +2562,14 @@ private struct BoardCardView: View {
             // As a field takes the keyboard's focus, on a click and with Tab, whatever the Mac's keyboard navigation.
             .focusable(interactions: .edit)
             .focused(focus, equals: spot)
+            .onDisappear(perform: left)
             .onAppear {
                 guard takesFocus else { return }
                 tookFocus()
-                // Once this update is done, which also takes its old card away, and the focus with it: unless another card,
-                // or a field you type in, took the keyboard while the board drew it here.
+                // Once this update is done, which also takes its old card away, and the focus with it, or gives it to the
+                // next card: unless you went to another card, or a field you type in, while the board drew it here.
                 DispatchQueue.main.async {
-                    guard focus.wrappedValue == nil || focus.wrappedValue == spot, mayTakeFocus() else { return }
+                    guard mayTakeFocus(focus.wrappedValue) else { return }
                     focus.wrappedValue = spot
                 }
             }
@@ -2620,8 +2746,8 @@ package struct CardBadge: Equatable, Identifiable {
 }
 
 /// A work item's own card on the Board, on My Work with + Sprint Tasks: the page's content, framed in its column's color, a
-/// click showing its details and giving it the keyboard's focus, as a pull request's card does. It doesn't move, as its work
-/// does in Azure DevOps: ⌘→ and ⌘←, and dropping it on another column, say why.
+/// click showing its details and giving it the keyboard's focus, as a pull request's card does. Dropping it on another
+/// column, ⌘→ and ⌘← put its work item in that column's state, where the page can, else say why it doesn't move.
 private struct BoardTaskCardView: View {
     let task: BoardTask
     let content: BoardCardContent
@@ -2638,13 +2764,18 @@ private struct BoardTaskCardView: View {
     /// as it appears.
     let takesFocus: Bool
     let tookFocus: () -> Void
-    /// Whether it may take the focus now: not from a field you type in.
-    let mayTakeFocus: () -> Bool
+    /// Whether it may take the focus now, from the card that has it, if any: not from a field you type in, nor from a card
+    /// you went to (`OrderBoardView.mayTakeFocus(from:to:)`).
+    let mayTakeFocus: (CardSpot?) -> Bool
+    /// It goes from where it's drawn, as a move takes it elsewhere (`MovingFocus`).
+    let left: () -> Void
     let select: () -> Void
     /// The drag's payload, as it starts.
     let drag: () -> String
-    /// ⌘→ or ⌘←: why it doesn't move.
-    let move: () -> Void
+    /// ⌘→, forward, or ⌘←: to the next or previous column that sets its state, or why it doesn't move.
+    let move: (_ forward: Bool) -> Void
+    /// What its tooltip says moving it does (`BoardText.taskHelp`).
+    let movesHelp: String
 
     @LocalState private var isHovered = false
     @Environment(\.textScale) private var textScale
@@ -2693,18 +2824,19 @@ private struct BoardTaskCardView: View {
             }
             .focusable(interactions: .edit)
             .focused(focus, equals: spot)
+            .onDisappear(perform: left)
             .onAppear {
                 guard takesFocus else { return }
                 tookFocus()
-                // Once this update is done: unless another card, or a field you type in, took the keyboard meanwhile.
+                // Once this update is done: unless you went to another card, or a field you type in, meanwhile.
                 DispatchQueue.main.async {
-                    guard focus.wrappedValue == nil || focus.wrappedValue == spot, mayTakeFocus() else { return }
+                    guard mayTakeFocus(focus.wrappedValue) else { return }
                     focus.wrappedValue = spot
                 }
             }
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 guard press.modifiers.isCommandAlone else { return .ignored }
-                move()
+                move(press.key == .rightArrow)
                 return .handled
             }
             .reorderKeys(reorder)
@@ -2712,10 +2844,7 @@ private struct BoardTaskCardView: View {
                 select()
                 return .handled
             }
-            .help(
-                "\(content.label)\nClick to see its details. It moves to another column by itself, as its work goes on in Azure DevOps"
-                    + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
-            )
+            .help("\(content.label)\n\(movesHelp)" + (reorder == nil ? "" : "\n" + BoardText.reorderHelp))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(content.label)
             .accessibilityValue(accessibilityValue)
