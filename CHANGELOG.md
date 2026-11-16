@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.24.0 - 2026-11-16
+
+- **A clearer look, from the start.** A new install starts with **Clearer States and Counts**, **Aligned Titles** and
+  **Simple Layout Choices** on, in **Settings › Appearance**, and the other options off. An update keeps the look you
+  have: to get the same, turn those three on there. Each option now says what it does in a line, with the rest behind
+  **ⓘ**, and those a new install starts with come first.
+- **Aligned, Easier-to-Read Rows is now two options.** **Aligned Titles** lines up titles across sources, whatever each
+  row starts with, and **Larger Reasons and Previews** makes the lines under each title larger, with widgets growing to
+  fit them. If you had it on, both are on, so your lists look as they did.
+- **One menu-bar item, from the start.** A new install starts with one BriefBar item in the menu bar, which each source
+  you turn on joins, with its counts added up by state and one list of everything by state. Sprint and Pipelines start
+  hidden, as before, and **Give Each Its Own Item**, in **Settings › Menu Bar**, gives each section an item of its own.
+  An update keeps your items: to have one, click **Put All in One Item** there, or **Together** with Simple Layout
+  Choices on, then set its **Counts** to **Added Up** and its **List** to **Everything by State**.
+- **Together shows its item's options.** With **Simple Layout Choices** on and every section in one menu-bar item,
+  Settings › Menu Bar shows that item's **Counts** and **List** right under **Together**, so a tab for each section is
+  a click away. **Customize Arrangement…** has the rest.
+- **Move your work on My Work's Board to set its state.** With **Make Changes in Azure DevOps** on, drag a task, story
+  or bug of yours in the sprint to another column on My Work's Board, or press **⌘→** or **⌘←** on its card, and
+  BriefBar sets its state in Azure DevOps, as you, so that your team sees your work there too: **To start** sets it to
+  **New**; **In progress**, or any column after it up to **Waits**, to **Active**; **Merged** to **Resolved**, where its
+  type has that state; and **Completed** to **Closed**; or to the states your team's process has instead, such as
+  **To Do**, **In Progress** and **Done**. Its card goes to its new column once Azure DevOps has it, the line under
+  the header says what changed, with **Undo**, and its right-click menu has **State** too. Your work outside the
+  sprint says to move it there first.
+- **The keyboard stays on the card you move.** On the Board, a card that **⌘→** or **⌘←** moves keeps the keyboard in its
+  new column, so that the next key moves it on, though another card comes after it, which used to take it.
+- **Calmer rows.** Every row in the menu bar's lists, on the window's pages and in the Overview reads the same way, in
+  up to four parts: its title and how long ago; why it's there, who or what and where, in its state's color, with the
+  work items, pull requests and sessions linked to it at that line's end; what someone wrote, on up to two lines; and a
+  quiet last line with a pull request's stage, where its order puts it and what's still left. Each thing is said once:
+  why a pull request is in its stage, and who set it, are in its stage label's tooltip, and **Merge conflicts** isn't
+  said again under a pull request that's failing for them. Widgets' rows keep their two lines.
+- **What's left, without what's done.** A pull request's row says only what still holds it up, on one line, with **+2**
+  for what doesn't fit. What's done, such as **Build passed**, is in its details' **What's Left** and the row's
+  tooltip.
+- **Actions when you need them.** Every row's **⋯** menu, and **Finished My Review**, show while you point at the row
+  or it has the keyboard's focus, rather than **⋯ Actions** on every row of the Pull Requests page and Finished My
+  Review on every pull request in Your review. In the menu bar's lists, **⋯** and **✨** take the time's place, so
+  titles get the row's whole width. Every action stays in the row's right-click menu and in VoiceOver's actions, and
+  **Visible Row and Widget Actions** keeps ⋯ and Finished My Review in view.
+- **Order capsules are easier to read.** **After !4079**, **Next to merge** and the other capsules that say where a pull
+  request's order puts it have more contrast, in light and dark. **Next to merge** is blue, whatever your accent color.
+- **“1 needs you”, and “3 need you”.** Counts of what needs you read the same everywhere now: the window's pages, the
+  Overview at the top of every menu-bar list and the Overview widget said “1 need you”, and Copilot's menu-bar item, in
+  its tooltip and to VoiceOver, and a session that waits for the sessions it started said “3 needs you”.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Make
+  Changes in Azure DevOps on, Azure DevOps sets the state of a sprint's work item whose card you move on My Work's
+  Board.
+
 ## 0.23.0 - 2026-11-15
 
 - **A task you send starts a session in the Copilot app.** With **Send Prompts to Copilot Sessions** on, a work item's

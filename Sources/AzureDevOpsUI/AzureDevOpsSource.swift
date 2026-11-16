@@ -115,7 +115,10 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// can read in BriefBar's own folder, which the prompt goes through too. With Make Changes in Azure DevOps, on the
     /// Sprint page, the state you choose for one of its stories, bugs or tasks, a PATCH of its state, when you click
     /// it, after which BriefBar reads the sprint again.
-    nonisolated package static let descriptionVersion = 33
+    /// 34: with Make Changes in Azure DevOps, on My Work, the state of a story, bug or task of yours in the sprint, set
+    /// to that of the column you move its card to, a PATCH of its state, when you move it, after which BriefBar reads
+    /// the sprint again.
+    nonisolated package static let descriptionVersion = 34
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
