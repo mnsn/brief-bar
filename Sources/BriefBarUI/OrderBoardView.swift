@@ -199,6 +199,9 @@ private struct PendingMove: Equatable {
     var opensColumn: Bool
     /// Its change is done, and BriefBar reads its work item in its new state.
     var isDone = false
+    /// The column its card was drawn in while its change was on its way, as Copilot's work moved it, owed the keyboard's
+    /// focus still (`OrderBoardView.tookFocus(_:in:)`): nil once the board has it in another.
+    var drawn: BoardColumn?
 
     /// The same move, its card owed the focus no more: nil where that was all the board waited on it for, as for a drop.
     var unowed: PendingMove? {
@@ -1978,7 +1981,7 @@ package struct OrderBoardView: View {
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
                 badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), reorder: reorder,
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
-                tookFocus: { tookFocus(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
+                tookFocus: { tookFocus(spot, in: column) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
                 left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     choose(spot)
@@ -2010,7 +2013,7 @@ package struct OrderBoardView: View {
             BoardTaskCardView(
                 task: task, content: content, next: board.startNext.flatMap { $0.task.ref == task.ref ? $0 : nil }, order: order,
                 isSelected: work.isSelected(task.ref), reorder: reorder, spot: spot, focus: $focused,
-                takesFocus: refocus.spot == spot, tookFocus: { tookFocus(spot) },
+                takesFocus: refocus.spot == spot, tookFocus: { tookFocus(spot, in: BoardColumn(task.column)) },
                 mayTakeFocus: { mayTakeFocus(from: $0, to: spot) }, left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     choose(spot)
@@ -2408,14 +2411,18 @@ package struct OrderBoardView: View {
     }
 
     /// Where a work item's card a key or a drop moved is, once its change is done: in another column than it was in, the
-    /// board follows it no more. For a key, that column shows for the moment where you hid it, and a lane that folds once its
-    /// work is all done stays open, as if you opened it, now that it is, though you went to another card meanwhile; and while
-    /// the card is owed the focus, the column opens, folded or not, for the card to be drawn there and take the focus back.
+    /// board follows it no more. Drawn there already as its change was on its way, it took the keyboard's focus there, and
+    /// is owed it no more; drawn there anew, it takes it as it appears. For a key, that column shows for the moment where
+    /// you hid it, and a lane that folds once its work is all done stays open, as if you opened it, now that it is, though
+    /// you went to another card meanwhile; and while the card is owed the focus, the column opens, folded or not, for the
+    /// card to be drawn there and take the focus back.
     private func land(_ place: PendingPlace?) {
-        guard let place, let pending = pendingMove, pending.id == place.move.id, pending.isDone,
-              let column = place.column, column != pending.from
-        else { return }
+        guard let place, let pending = pendingMove, pending.id == place.move.id else { return }
+        // Wherever the board has it next, other than where it was drawn, it's drawn anew.
+        if let drawn = pending.drawn, place.column != drawn { pendingMove?.drawn = nil }
+        guard pending.isDone, let column = place.column, column != pending.from else { return }
         pendingMove = nil
+        if pending.drawn == column, let move = pending.owed { endFocusWait(move) }
         guard pending.opensColumn else { return }
         showForTheMoment(column)
         if let lane = board.lanes.first(where: { $0.kind == pending.spot.lane }), foldsOnceDone(lane), !lane.hasWorkToDo {
@@ -2446,11 +2453,15 @@ package struct OrderBoardView: View {
         return movingFocus?.spot == spot && movingFocus?.handedOn == current
     }
 
-    /// A card owed the keyboard's focus was drawn anew, and takes it: it's owed it no more. But a work item's card whose
-    /// change is still on its way, which Copilot's work may move again before it's done, as Copilot starts or stops working
-    /// on it, stays owed it, to take it back wherever it's drawn next, until its change is done (`PendingMove`).
-    private func tookFocus(_ spot: CardSpot) {
-        if let pending = pendingMove, pending.spot == spot, pending.owed != nil, !pending.isDone { return }
+    /// A card owed the keyboard's focus was drawn anew, in this column, and takes it: it's owed it no more. But a work
+    /// item's card whose change is still on its way, which Copilot's work may move again before it's done, as Copilot
+    /// starts or stops working on it, stays owed it, to take it back wherever it's drawn next, until its change is done:
+    /// should that leave it where it's drawn now, it's owed it no more then (`land(_:)`).
+    private func tookFocus(_ spot: CardSpot, in column: BoardColumn) {
+        if let pending = pendingMove, pending.spot == spot, pending.owed != nil, !pending.isDone {
+            pendingMove?.drawn = column
+            return
+        }
         refocus.took(spot)
     }
 

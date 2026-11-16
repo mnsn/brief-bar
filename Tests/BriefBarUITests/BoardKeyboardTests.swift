@@ -43,14 +43,16 @@ import Testing
     }
 
     /// The column the Board doesn't draw cards in until the test lets it: as a busy Mac draws a moved card in its new column
-    /// late.
+    /// late. And a work item whose card it doesn't draw meanwhile, as in a lane you fold.
     @MainActor
     private final class Late: ObservableObject {
         @Published var column: PullRequestStage?
+        @Published var work: ItemRef?
 
         /// The Board draws its cards at last, as it does anew when the order it watches changes.
         func release(redrawing order: PullRequestOrder) {
             column = nil
+            work = nil
             order.objectWillChange.send()
         }
     }
@@ -224,7 +226,8 @@ import Testing
         /// A work item's card, its number, and its story's lane's header, its story's.
         private var work: BoardWorkContent {
             BoardWorkContent(
-                card: { [drawn] task in
+                card: { [drawn, late] task in
+                    guard task.ref != late.work else { return nil }
                     let label = task.ref.shortOrderLabel
                     let content = Text(label)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { drawn.frames[task.ref] = $0 }
@@ -835,6 +838,62 @@ import Testing
             } else {
                 #expect(details.shown == Self.ref, "The bug's card took the keyboard from the draft's card you went to")
             }
+        }
+    }
+
+    /// Where Copilot's work draws a key's card early in the column its change puts it in, as Copilot starts on a New task
+    /// that ⌘→ starts, the card takes the keyboard there; once Azure DevOps answers, leaving it there, it's owed it no more.
+    /// Its view going and coming back within the move's wait, as when you fold its lane and unfold it, it leaves the
+    /// keyboard to the card AppKit gave it to as it went, which it gives on from a card Tab reached.
+    @Test func aKeysCardCopilotsWorkDrewEarlyWhereItsChangePutsItIsOwedTheKeyboardNoMoreOnceItsDone() async throws {
+        let order = Self.order()
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        states.answersLater = true
+        let details = Details()
+        let late = Late()
+        // The card's wait to be drawn anew lasts until the test ends, as a slow Mac may take longer than the app's ten seconds.
+        let waits = FocusWaits()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .toDo)], stories: [])
+        try await Self.showing(order, details: details, late: late, waits: waits, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            try await Self.pressUntil("⌘→ to start it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            let toStart = drawn.frames[task]?.minX
+            states.copilotWorks[task] = true
+            try await until("its card drawn in In progress, as Copilot started") {
+                drawn.isDrawn(task) && drawn.frames[task]?.minX != toStart
+            }
+            await Self.queuedWorkDone()
+            states.answer()
+            await Self.queuedWorkDone()
+            // Tab goes on to the draft's card, and Shift-Tab back to the task's.
+            window.selectNextKeyView(nil)
+            await Self.queuedWorkDone()
+            window.selectPreviousKeyView(nil)
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the task's card, which Tab reached again") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == task)
+            late.work = task
+            order.objectWillChange.send()
+            try await until("its card gone, as its lane folds") { !drawn.isDrawn(task) }
+            late.release(redrawing: order)
+            try await until("its card drawn again, as its lane opens") { drawn.isDrawn(task) }
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card that has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == Self.ref, "The task's card took the keyboard back from the draft's card AppKit gave it to")
         }
     }
 
