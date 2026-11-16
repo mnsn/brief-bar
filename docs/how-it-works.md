@@ -3376,11 +3376,14 @@ working on it meanwhile: the Board follows the card, from the key or the drop un
 those ten seconds end (`PendingMove`, `land`); should Copilot's work move it before the change is done, as it may twice,
 it takes the keyboard back there and stays owed it, to take it back again from the card AppKit gives it to as it goes,
 unless you went to another (`tookFocus`, `rearmed`); once the change is done where it's drawn already, it's owed it no
-more (`land`). Once a key's card is there, that column shows for the moment where you hid it, as Show Them does, and a
-lane that folds once its work is all done stays open, though you went to another card meanwhile (`showForTheMoment`);
-while the card is owed the focus, the column opens too. The card's menu has State, with Undo, and VoiceOver's actions
-each state, none while a change is on its way, which they couldn't make
-(`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
+more (`land`). Meanwhile a key's card owed the keyboard stays in sight wherever Copilot's work takes it: its lane
+doesn't fold, and its column doesn't hide or fold, while it's there, none of which lasts (`keptInSight`), as it would
+otherwise go from under the keyboard, which AppKit would give another card, where a key would act, for as long as Azure
+DevOps takes. Once a key's card is there, or where Copilot's work took it as its change fails, that column shows for the
+moment where you hid it, as Show Them does, and a lane that folds once its work is all done stays open, though you went
+to another card meanwhile (`arrive`, `showForTheMoment`); while the card is owed the focus, the column opens too. The
+card's menu has State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they
+couldn't make (`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved
 state; while Make Changes in Azure DevOps is off, saying how to turn it on, or another change is on its way
