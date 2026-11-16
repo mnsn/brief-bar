@@ -549,6 +549,12 @@ package struct OrderBoardView: View {
     @LocalState private var searchFolds = BoardFolds()
     /// The hidden columns holding a match that you hid again while My Work's search shows them: until it's cleared.
     @LocalState private var searchHidden: Set<BoardColumn> = []
+    /// The folded columns Up Next's "2 more ›", or Return in My Work's search, opened for the moment while the search shows
+    /// only what matches: their moment ends as it's cleared, as the board is then as you left it.
+    @LocalState private var searchRevealed: Set<BoardColumn> = []
+    /// The hidden columns Return in My Work's search showed for the moment while it shows only what matches: until it's
+    /// cleared.
+    @LocalState private var searchUnhidden: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
     @LocalState private var unfolded: Set<BoardLane.Kind> = []
     @LocalState private var width: CGFloat = 0
@@ -685,11 +691,16 @@ package struct OrderBoardView: View {
         .onChange(of: order.boardLayout.hidden) { _, hidden in
             unhiddenForNow.formIntersection(hidden)
         }
-        // Once My Work's search is cleared, what you folded, opened or hid in it is over: the board is as you left it.
+        // Once My Work's search is cleared, what you folded, opened or hid in it is over, and so is what it opened or showed for
+        // the moment: the board is as you left it.
         .onChange(of: board.search == nil) { _, cleared in
             guard cleared else { return }
             searchFolds = BoardFolds()
             searchHidden = []
+            revealedOpen.subtract(searchRevealed)
+            unhiddenForNow.subtract(searchUnhidden)
+            searchRevealed = []
+            searchUnhidden = []
         }
         // A strip the dragged card hovers springs open once it has stayed there a moment, and a joined column into its
         // columns.
@@ -1261,21 +1272,22 @@ package struct OrderBoardView: View {
             Button("Hide \(column.menuTitle)") { hide(column) }
         }
         Divider()
-        // Each forgets your folds, those you made while My Work's search shows only what matches too.
+        // Each forgets your folds, those you made while My Work's search shows only what matches too: so each is there while
+        // those are all it would change.
         Button("Simple Columns") {
             withAnimation(.easeOut(duration: 0.15)) {
                 searchFolds = BoardFolds()
                 order.simpleColumns()
             }
         }
-        .disabled(order.hasSimpleColumns)
+        .disabled(order.hasSimpleColumns && searchFolds.isEmpty)
         Button("Reset Columns") {
             withAnimation(.easeOut(duration: 0.15)) {
                 searchFolds = BoardFolds()
                 order.resetColumns()
             }
         }
-        .disabled(order.hasDefaultColumns)
+        .disabled(order.hasDefaultColumns && searchFolds.isEmpty)
     }
 
     /// VoiceOver's actions on a column's title or strip, besides opening or folding it.
@@ -2315,16 +2327,19 @@ package struct OrderBoardView: View {
 
     /// A column opens for the moment where it would be folded but for its own moment, or where the board doesn't know its
     /// width yet to tell: the joined column that holds it, which it returns, as one; and where you hid it, it shows for the
-    /// moment, as Done where you hid that.
+    /// moment, as Done where you hid that. While My Work's search shows only what matches, either lasts as long as it does,
+    /// but where it began before it.
     @discardableResult
     private func openForTheMoment(_ column: BoardColumn) -> ShownColumn {
         if let hidden = currentMetrics().hidden.first(where: { $0.contains(column) }) {
+            if board.search != nil { searchUnhidden.formUnion(Set(hidden.parts).subtracting(unhiddenForNow)) }
             unhiddenForNow.formUnion(hidden.parts)
         }
         let metrics = currentMetrics()
         let shown = metrics.shown(holding: column) ?? ShownColumn(column)
         let others = openForNow.subtracting(shown.parts)
         if width <= 0 || folding(metrics.shown, widths: metrics.widths, open: others, choices: foldChoices).isFolded(shown) {
+            if board.search != nil, !revealedOpen.contains(column) { searchRevealed.insert(column) }
             revealedOpen.insert(column)
         }
         return shown

@@ -123,23 +123,36 @@ enum MyWorkFacts {
 
     /// What My Work's search finds a card on the Board by (`BoardSearch.Card`). A pull request's: its number, "PR !4102", and
     /// its title; the work items of yours its card names, and any other Show Links links it to, even while Show has only pull
-    /// requests, by type and ID, "Task 5112", and title; and its mission's name, with the story it's for. A work item's: its
-    /// type and ID, and its title; the pull requests its card names, "PR !4120", with their titles where BriefBar knows
-    /// them; and its story, by type, ID and title, with that story's mission's name. So a mission's name, or a story's ID,
-    /// finds its cards, with Lanes: None too.
+    /// requests, by type and ID, "Task 5112", and title, as the sprint, your work outside it or Show Links read them; and its
+    /// mission's name, with the story it's for. A work item's: its type and ID, and its title; the pull requests its card
+    /// names, "PR !4120", with their titles, as your lists or Show Links read them; and its story, by type, ID and title, with
+    /// that story's mission's name. So a mission's name, or a story's ID, finds its cards, with Lanes: None too.
     /// - Parameters:
     ///   - title: what a pull request, a work item or a session is called, as its source says.
     ///   - workItem: one of your work items as BriefBar read it, for its type and title.
+    ///   - linkedWorkItem: a linked work item the sprint doesn't show, as Show Links read it, such as your task outside the
+    ///     sprint with Show: Pull Requests, or someone else's.
+    ///   - linkedPullRequest: a linked pull request your lists don't show, as Show Links read it, such as a teammate's.
     ///   - linked: what Show Links links a pull request to; nothing while it's off.
     ///   - missions: the missions, as By Mission lists them.
     ///   - missionTitle: a mission's name, as its lane's header says it.
     static func searched(
         _ item: BoardItem, on board: PullRequestBoard, title: (ItemRef) -> String?, workItem: (ItemRef) -> WorkItem?,
-        linked: (ItemRef) -> [ItemRef], missions: [OrderMission], missionTitle: (OrderMission) -> String
+        linkedWorkItem: (WorkItemKey) -> WorkItem?, linkedPullRequest: (PRKey) -> PullRequest?, linked: (ItemRef) -> [ItemRef],
+        missions: [OrderMission], missionTitle: (OrderMission) -> String
     ) -> BoardSearch.Card {
+        func known(_ ref: ItemRef) -> WorkItem? {
+            guard ref.kind == .workItem, let id = ref.number else { return nil }
+            return workItem(ref) ?? linkedWorkItem(WorkItemKey(ref.scope, id))
+        }
+        func called(_ ref: ItemRef) -> String? {
+            if let title = title(ref) { return title }
+            guard ref.kind == .pullRequest, let number = ref.number else { return nil }
+            return linkedPullRequest(PRKey(ref.scope, number))?.title
+        }
         func names(ofWorkItem ref: ItemRef) -> [String] {
-            let item = workItem(ref)
-            return [item.map { "\($0.type) \($0.id)" } ?? ref.id, item?.title ?? title(ref)].compactMap { $0 }
+            let item = known(ref)
+            return [item.map { "\($0.type) \($0.id)" } ?? ref.id, item?.title ?? called(ref)].compactMap { $0 }
         }
         func names(of mission: OrderMission?) -> [String] {
             guard let mission else { return [] }
@@ -156,7 +169,7 @@ enum MyWorkFacts {
             let mission = card.mission.flatMap { key in missions.first { $0.key == key } }
             return BoardSearch.Card(
                 refs: [card.ref] + work,
-                names: ["PR \(card.ref.shortOrderLabel)", title(card.ref)].compactMap { $0 } + work.flatMap(names(ofWorkItem:))
+                names: ["PR \(card.ref.shortOrderLabel)", called(card.ref)].compactMap { $0 } + work.flatMap(names(ofWorkItem:))
                     + names(of: mission)
             )
         case .work(let task):
@@ -166,7 +179,7 @@ enum MyWorkFacts {
             return BoardSearch.Card(
                 refs: [task.ref] + pullRequests,
                 names: names(ofWorkItem: task.ref)
-                    + pullRequests.flatMap { ["PR \($0.shortOrderLabel)", title($0)].compactMap { $0 } }
+                    + pullRequests.flatMap { ["PR \($0.shortOrderLabel)", called($0)].compactMap { $0 } }
                     + (story.map(names(ofWorkItem:)) ?? []) + names(of: mission)
             )
         }
@@ -269,6 +282,8 @@ extension EnvironmentValues {
 struct MyWorkPage: View {
     /// A linked pull request your lists don't show, as Show Links read it.
     let linkedPullRequest: (PRKey) -> PullRequest?
+    /// A linked work item the sprint doesn't show, as Show Links read it, for what the Board's search finds a card by.
+    var linkedWorkItem: (WorkItemKey) -> WorkItem? = { _ in nil }
     /// What it shows, for pictures; nil for what you chose.
     var shows: MyWorkShows? = nil
     /// The Board's lanes, for pictures; nil for those you chose.
@@ -279,7 +294,10 @@ struct MyWorkPage: View {
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
-        MyWorkContent(links: services.links, linkedPullRequest: linkedPullRequest, shows: shows, lanes: lanes, search: search)
+        MyWorkContent(
+            links: services.links, linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes,
+            search: search
+        )
     }
 }
 
@@ -288,7 +306,8 @@ extension MyWorkPage {
     /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
     /// and in a narrow window; and what + Sprint Tasks says while Show Links is off.
     static func renderings(
-        services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?, environment: (AnyView) -> AnyView
+        services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
+        linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
     ) -> [(name: String, view: AnyView)] {
         guard services.pullRequestOrder.isOn else { return [] }
         let shown: [(name: String, shows: MyWorkShows, lanes: BoardLanes, size: CGSize, search: String?)] = [
@@ -307,7 +326,9 @@ extension MyWorkPage {
             .environment(\.isRendering, true)
         let foot = (name: "my-work-show-links-off", view: environment(AnyView(showLinksOff)))
         return [foot] + shown.map { name, shows, lanes, size, search in
-            let page = MyWorkPage(linkedPullRequest: linkedPullRequest, shows: shows, lanes: lanes, search: search)
+            let page = MyWorkPage(
+                linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes, search: search
+            )
                 .environment(\.panelStyle, .page)
                 .textSize(from: services)
                 .frame(width: size.width, height: size.height)
@@ -388,6 +409,7 @@ struct MyWorkDetails {
 private struct MyWorkContent: View {
     @ObservedObject var links: Links
     let linkedPullRequest: (PRKey) -> PullRequest?
+    let linkedWorkItem: (WorkItemKey) -> WorkItem?
     let shows: MyWorkShows?
     let lanes: BoardLanes?
 
@@ -413,9 +435,13 @@ private struct MyWorkContent: View {
     @FocusState private var isSearching: Bool
 
     /// - Parameter search: what the Board's search starts with, for pictures.
-    init(links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, shows: MyWorkShows?, lanes: BoardLanes?, search: String?) {
+    init(
+        links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?,
+        shows: MyWorkShows?, lanes: BoardLanes?, search: String?
+    ) {
         self.links = links
         self.linkedPullRequest = linkedPullRequest
+        self.linkedWorkItem = linkedWorkItem
         self.shows = shows
         self.lanes = lanes
         _searchText = LocalState(wrappedValue: search ?? "")
@@ -673,8 +699,9 @@ private struct MyWorkContent: View {
         let missions = PullRequestsByMission.missions(ordering.missions)
         return board.matching(search) { item in
             MyWorkFacts.searched(
-                item, on: board, title: { titles[$0] ?? ordering.name(of: $0) }, workItem: workItem,
-                linked: { links.connections(of: $0).map(\.item.ref) }, missions: missions, missionTitle: ordering.title(of:)
+                item, on: board, title: { titles[$0] ?? ordering.name(of: $0) }, workItem: workItem, linkedWorkItem: linkedWorkItem,
+                linkedPullRequest: linkedPullRequest, linked: { links.connections(of: $0).map(\.item.ref) }, missions: missions,
+                missionTitle: ordering.title(of:)
             )
         }
     }

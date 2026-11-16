@@ -303,9 +303,9 @@ import Testing
     }
 
     /// The search finds a pull request's card by its number and title; by the work items of yours its card names and the
-    /// others Show Links links it to, by type, ID and title; and by its mission's name and story. A work item's card, by its
-    /// type, ID and title, by the pull requests it names, and by its story, with that story's mission. A link, by what it
-    /// is or names.
+    /// others Show Links links it to, by type, ID and title, as Show Links read one the sprint doesn't show; and by its
+    /// mission's name and story. A work item's card, by its type, ID and title, by the pull requests it names, with a
+    /// teammate's title as Show Links read it, and by its story, with that story's mission. A link, by what it is or names.
     @Test func theSearchFindsACardByWhatItIsAndWhatItNames() throws {
         func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
         func item(_ id: Int, _ type: String, _ title: String) -> WorkItem {
@@ -324,7 +324,15 @@ import Testing
             5112: item(5112, "Task", "Cap the backoff"), 5113: item(5113, "Bug", "Totals round down"),
             5160: item(5160, "User Story", "Retry payments that fail for a moment"),
         ]
-        let titles = [retry: "Add retry with backoff", saved: "Save items for later", ref(5120): "Write the runbook"]
+        // Your lists have !4102; Show Links read Task 5120, which the sprint doesn't show, and Sam's !4120.
+        let titles = [retry: "Add retry with backoff"]
+        let linkedWorkItems = [WorkItemKey("contoso", 5120): item(5120, "Task", "Write the runbook")]
+        let linkedPullRequests = [
+            PRKey("contoso", 4120): PullRequest(
+                key: PRKey("contoso", 4120), title: "Save items for later", status: .active, author: Person(id: "sam", name: "Sam Rivera"),
+                createdAt: Date(), projectId: "p", projectName: "Storefront", repositoryId: "r", repositoryName: "shop-web"
+            ),
+        ]
         let work = [
             SprintWork(
                 ref: ref(5112), story: ref(5160), progress: .inProgress, pullRequests: [LinkedPullRequest(ref: retry, state: .open(author: nil))]
@@ -337,10 +345,11 @@ import Testing
             stages: [retry: StageReading(stage: .inProgress, why: .draft)], missions: [payments], kinds: PullRequestsByMission.kinds
         ).withWork(work, missions: [payments], stories: [ref(5160)])
         let lane = try #require(board.lanes.first)
-        // Show Links links !4102 to Task 5112, which its card names, and to 5120, which isn't yours.
+        // Show Links links !4102 to Task 5112, which its card names, and to Task 5120, which isn't yours.
         func card(_ item: BoardItem) -> BoardSearch.Card {
             MyWorkFacts.searched(
                 item, on: board, title: { titles[$0] }, workItem: { $0.number.flatMap { items[$0] } },
+                linkedWorkItem: { linkedWorkItems[$0] }, linkedPullRequest: { linkedPullRequests[$0] },
                 linked: { $0 == retry ? [ref(5120), ref(5112)] : [] }, missions: [payments], missionTitle: { _ in "Payments" }
             )
         }
@@ -351,8 +360,8 @@ import Testing
         let bug = BoardItem.work(try #require(lane.tasks.first))
         #expect(bug.ref == ref(5113))
         for text in [
-            "4102", "PR !4102", "retry backoff", "task 5112", "cap the backoff", "5120", "runbook", "payments", "user story 5160",
-            "fail for a moment", "https://dev.azure.com/contoso/Storefront/_workitems/edit/5120",
+            "4102", "PR !4102", "retry backoff", "task 5112", "cap the backoff", "5120", "task 5120", "runbook", "payments",
+            "user story 5160", "fail for a moment", "https://dev.azure.com/contoso/Storefront/_workitems/edit/5120",
         ] {
             #expect(try matches(text, pullRequest), "\(text)")
         }

@@ -53,30 +53,35 @@ import Testing
         .pullRequest(organization: "contoso", number: number)
     }
 
-    /// Pull Request Order, on, with an order of two drafts of yours, In progress, on the Board.
-    private static func order() throws -> PullRequestOrder {
+    /// Pull Request Order, on, with an order of pull requests of yours, each after the one before, on the Board: by default two
+    /// drafts, In progress.
+    private static func order(
+        _ stages: [Int: StageFacts] = [4101: StageFacts(role: .author, state: .draft), 4102: StageFacts(role: .author, state: .draft)]
+    ) throws -> PullRequestOrder {
         let defaults = MemoryDefaults()
         defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let numbers = stages.keys.sorted()
         var declared = DeclaredOrders()
         try declared.apply(
-            OrderRequest(entries: [
-                .init(link: "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4101", after: []),
-                .init(link: "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/4102", after: ["4101"]),
-            ]),
+            OrderRequest(entries: numbers.enumerated().map { place, number in
+                .init(
+                    link: "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)",
+                    after: place == 0 ? [] : ["\(numbers[place - 1])"]
+                )
+            }),
             now: Date(timeIntervalSince1970: 1_791_900_000), newID: UUID()
         )
         declared.save(to: defaults)
         let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
         order.publish(
             .azureDevOps,
-            pullRequests: [4101, 4102].map { number in
+            pullRequests: numbers.map { number in
                 OrderPullRequest(
                     ref: ref(number), repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/work-\(number)", targetBranch: "main",
                     author: "robin", createdAt: Date(timeIntervalSince1970: 1_791_000_000 + Double(number))
                 )
             },
-            stages: [ref(4101): StageFacts(role: .author, state: .draft), ref(4102): StageFacts(role: .author, state: .draft)],
-            account: "robin@contoso.com"
+            stages: Dictionary(uniqueKeysWithValues: stages.map { (ref($0.key), $0.value) }), account: "robin@contoso.com"
         )
         order.setView(.board)
         order.setLanes(.missions)
@@ -88,8 +93,47 @@ import Testing
     @Test func aColumnYouFoldedOpensWhileItHoldsAMatch() async throws {
         let order = try Self.order()
         let searching = Searching()
-        let drawn = Drawn()
+        try await Self.showing(order, searching) { settle in
+            try await settle("the board", [Self.ref(4101), Self.ref(4102)])
+            order.setBoardFolds(BoardFolds([.stage(.inProgress): .folded]))
+            try await settle("In progress folded", [])
+            searching.text = "4102"
+            try await settle("the match in In progress, opened", [Self.ref(4102)])
+            searching.text = ""
+            try await settle("In progress folded again", [])
+        }
+        #expect(order.boardFolds[.stage(.inProgress)] == .folded)
+    }
+
+    /// A column Up Next's "2 more ›" opens for the moment while the search shows only what matches is open for as long as
+    /// the search: once it's cleared, In progress, which you folded, is folded again, rather than open for a moment that
+    /// began in the search.
+    @Test func whatTheSearchOpensForTheMomentFoldsAgainOnceItsCleared() async throws {
+        let waiting = StageFacts(role: .author, waitingFor: "Waiting on Priya")
+        let order = try Self.order([4101: StageFacts(role: .author, state: .draft), 4102: waiting, 4103: waiting])
+        let searching = Searching()
+        try await Self.showing(order, searching) { settle in
+            try await settle("the board", [Self.ref(4101), Self.ref(4102), Self.ref(4103)])
+            order.setBoardFolds(BoardFolds([.stage(.inProgress): .folded]))
+            try await settle("In progress folded", [Self.ref(4102), Self.ref(4103)])
+            // In progress has no match: it folds, and "2 more ›" opens it for the moment.
+            searching.text = "4102"
+            try await settle("the match in Teammate's review", [Self.ref(4102)])
+            order.revealedColumn = .inProgress
+            try await settle("In progress opened for the moment", [Self.ref(4102)]) { order.revealedColumn == nil }
+            searching.text = ""
+            try await settle("In progress folded again", [Self.ref(4102), Self.ref(4103)])
+        }
+        #expect(order.boardFolds[.stage(.inProgress)] == .folded)
+    }
+
+    /// Shows the page in a window off screen while `body` runs, which waits with `settle` until the cards drawn are those it
+    /// names, and anything else it waits for holds.
+    private static func showing(
+        _ order: PullRequestOrder, _ searching: Searching, _ body: @MainActor (_ settle: Settle) async throws -> Void
+    ) async throws {
         _ = NSApplication.shared
+        let drawn = Drawn()
         let host = NSHostingView(
             rootView: Page(order: order, searching: searching, drawn: drawn)
                 .environmentObject(AppServices(defaults: MemoryDefaults(), isDemo: true))
@@ -106,21 +150,23 @@ import Testing
             window.contentView = nil
             window.close()
         }
-        func settle(_ what: String, until shown: Set<ItemRef>) async throws {
+        try await body(Settle(host: host, window: window, drawn: drawn))
+    }
+
+    /// Waits until the cards drawn are those it names, and anything else it's given holds: drawing the window off screen
+    /// each time, as the screen would.
+    @MainActor
+    private struct Settle {
+        let host: NSView
+        let window: NSWindow
+        let drawn: Drawn
+
+        func callAsFunction(_ what: String, _ shown: Set<ItemRef>, also: () -> Bool = { true }) async throws {
             try await until(what) {
                 host.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
-                return drawn.shown == shown
+                return drawn.shown == shown && also()
             }
         }
-
-        try await settle("the board", until: [Self.ref(4101), Self.ref(4102)])
-        order.setBoardFolds(BoardFolds([.stage(.inProgress): .folded]))
-        try await settle("In progress folded", until: [])
-        searching.text = "4102"
-        try await settle("the match in In progress, opened", until: [Self.ref(4102)])
-        searching.text = ""
-        try await settle("In progress folded again", until: [])
-        #expect(order.boardFolds[.stage(.inProgress)] == .folded)
     }
 }

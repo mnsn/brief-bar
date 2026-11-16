@@ -831,7 +831,11 @@ package final class AzureDevOpsSource: BriefBarSource {
         let page: AnyView = switch section {
         case .azureDevOpsSprint: environment(SprintPage())
         case .azureDevOpsPipelines: environment(PipelinesPage())
-        case .azureDevOpsMyWork: environment(MyWorkPage { [weak self] key in self?.workLinks?.linkedPullRequest(key) })
+        case .azureDevOpsMyWork:
+            environment(MyWorkPage(
+                linkedPullRequest: { [weak self] key in self?.workLinks?.linkedPullRequest(key) },
+                linkedWorkItem: { [weak self] key in self?.workLinks?.linkedWorkItem(key) }
+            ))
         default: environment(PullRequestsPage())
         }
         return AnyView(page.environment(\.panelStyle, .page))
@@ -1237,9 +1241,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         }
         if let store {
             renderings += PullRequestsByMission.renderings(store: store, services: services) { self.environment($0) }
-            renderings += MyWorkPage.renderings(services: services, linkedPullRequest: { [weak self] key in
-                self?.workLinks?.linkedPullRequest(key)
-            }) { self.environment($0) }
+            renderings += MyWorkPage.renderings(
+                services: services, linkedPullRequest: { [weak self] key in self?.workLinks?.linkedPullRequest(key) },
+                linkedWorkItem: { [weak self] key in self?.workLinks?.linkedWorkItem(key) }
+            ) { self.environment($0) }
             if !renderedMoves.pages.isEmpty {
                 renderings += MyWorkPage.moveRenderings(
                     services: services, linkedPullRequest: { [weak self] key in self?.workLinks?.linkedPullRequest(key) },

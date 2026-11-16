@@ -211,6 +211,13 @@ final class WorkLinksStore {
         read.pullRequests[key]
     }
 
+    /// A linked work item the sprint doesn't show, as Show Links read it: for My Work's search, the type and title of one
+    /// linked to a pull request of yours, as your task outside the sprint is with Show: Pull Requests. Nil for one it hasn't
+    /// read, or couldn't.
+    func linkedWorkItem(_ key: WorkItemKey) -> WorkItem? {
+        read.workItems[key]
+    }
+
     /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
     /// any, not only those you chose, as a session or a link you added may link another organization's work item.
     var lookupOrganizations: Set<String> {
