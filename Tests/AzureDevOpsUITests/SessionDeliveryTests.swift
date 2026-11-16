@@ -2334,21 +2334,27 @@ private final class TakenAt: Sendable {
         ])
         let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
         try ext.listen(kinds: ["send", "fork", "create"])
-        // The app takes its time to start the first, until the stand-in starts again below.
-        ext.start(after: .seconds(60)) { [started] _ in ["ok": true, "createdSessionId": started] }
+        // The app takes its time to start the first, until the stand-in starts again below: longer than this test waits for
+        // anything, on however busy a machine.
+        ext.start(after: .seconds(600)) { [started] _ in ["ok": true, "createdSessionId": started] }
         defer { ext.stop() }
         try hold(session, home: home)
 
         let first = Task { await store.startInApp(.workItem(workItem), prompt: "Fix it", options: CopilotModel.standard, repository: repository) }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        // Its request goes only after a few turns of the main actor, which can each take tens of seconds on CI's runners while
+        // every suite starts: as long as any wait (`waitLimit`).
+        var deadline = ContinuousClock.now.advanced(by: waitLimit)
         while ext.received.isEmpty, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
+        try #require(ext.received == ["create"], "The first session's request didn't reach the extension")
         let then = Task { await store.startInApp(.workItem(other), prompt: "Fix that", options: CopilotModel.standard, repository: repository) }
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(CopilotTasksStore.startingFromIt))
+        deadline = ContinuousClock.now.advanced(by: waitLimit)
         while !store.isStartingInApp(.workItem(other)), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
+        try #require(store.isStartingInApp(.workItem(other)), "BriefBar didn't begin to start the second session")
         try await Task.sleep(for: .milliseconds(500))
         // Only the first's request, which the stand-in took.
         #expect(requests(home).filter { !$0.hasPrefix(".") }.isEmpty)
