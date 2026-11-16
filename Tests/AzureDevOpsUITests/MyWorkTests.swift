@@ -1,9 +1,10 @@
 import AzureDevOpsCore
-import BriefBarCore
 import BriefBarUI
 import Foundation
 import Testing
 @testable import AzureDevOpsUI
+// For a mission of its own, whose initializer is internal.
+@testable import BriefBarCore
 
 /// My Work, with My Work Page on: where it shows, what it reads, and your sprint work as its Board takes it.
 @MainActor
@@ -299,6 +300,83 @@ import Testing
             .withWork(work, missions: [], stories: [])
         #expect(outside.count == 1)
         #expect(MyWorkFacts.card(of: outside, on: board) == outside.items[1].linkRef)
+    }
+
+    /// The search finds a pull request's card by its number and title; by the work items of yours its card names and the
+    /// others Show Links links it to, by type, ID and title, as Show Links read one the sprint doesn't show; and by its
+    /// mission's name and story. A work item's card, by its type, ID and title, by the pull requests it names, with a
+    /// teammate's title as Show Links read it, and by its story, with that story's mission. A link, by what it is or names.
+    @Test func theSearchFindsACardByWhatItIsAndWhatItNames() throws {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: "contoso", id: id) }
+        func item(_ id: Int, _ type: String, _ title: String) -> WorkItem {
+            WorkItem(
+                id: id, organization: "contoso", project: "Storefront", type: type, title: title, state: "Active", category: .inProgress
+            )
+        }
+        let retry = ItemRef.pullRequest(organization: "contoso", number: 4102)
+        let saved = ItemRef.pullRequest(organization: "contoso", number: 4120)
+        var payments = OrderMission(
+            key: .chain(retry), kind: .stack, steps: [OrderStep(ref: retry, status: .open, standing: .unordered)], attached: [],
+            cycles: [], isFocused: false, isFinished: false, isStale: false, attention: nil, date: nil, sessions: []
+        )
+        payments.story = MissionStory(ref: ref(5160), type: "User Story")
+        let items = [
+            5112: item(5112, "Task", "Cap the backoff"), 5113: item(5113, "Bug", "Totals round down"),
+            5160: item(5160, "User Story", "Retry payments that fail for a moment"),
+        ]
+        // Your lists have !4102; Show Links read Task 5120, which the sprint doesn't show, and Sam's !4120.
+        let titles = [retry: "Add retry with backoff"]
+        let linkedWorkItems = [WorkItemKey("contoso", 5120): item(5120, "Task", "Write the runbook")]
+        let linkedPullRequests = [
+            PRKey("contoso", 4120): PullRequest(
+                key: PRKey("contoso", 4120), title: "Save items for later", status: .active, author: Person(id: "sam", name: "Sam Rivera"),
+                createdAt: Date(), projectId: "p", projectName: "Storefront", repositoryId: "r", repositoryName: "shop-web"
+            ),
+        ]
+        let work = [
+            SprintWork(
+                ref: ref(5112), story: ref(5160), progress: .inProgress, pullRequests: [LinkedPullRequest(ref: retry, state: .open(author: nil))]
+            ),
+            SprintWork(
+                ref: ref(5113), story: ref(5160), progress: .inProgress, pullRequests: [LinkedPullRequest(ref: saved, state: .open(author: "Sam"))]
+            ),
+        ]
+        let board = PullRequestBoard.make(
+            stages: [retry: StageReading(stage: .inProgress, why: .draft)], missions: [payments], kinds: PullRequestsByMission.kinds
+        ).withWork(work, missions: [payments], stories: [ref(5160)])
+        let lane = try #require(board.lanes.first)
+        // Show Links links !4102 to Task 5112, which its card names, and to Task 5120, which isn't yours.
+        func card(_ item: BoardItem) -> BoardSearch.Card {
+            MyWorkFacts.searched(
+                item, on: board, title: { titles[$0] }, workItem: { $0.number.flatMap { items[$0] } },
+                linkedWorkItem: { linkedWorkItems[$0] }, linkedPullRequest: { linkedPullRequests[$0] },
+                linked: { $0 == retry ? [ref(5120), ref(5112)] : [] }, missions: [payments], missionTitle: { _ in "Payments" }
+            )
+        }
+        func matches(_ text: String, _ item: BoardItem) throws -> Bool {
+            try #require(BoardSearch(text)).matches(card(item))
+        }
+        let pullRequest = BoardItem.pullRequest(try #require(lane.cards.first))
+        let bug = BoardItem.work(try #require(lane.tasks.first))
+        #expect(bug.ref == ref(5113))
+        for text in [
+            "4102", "PR !4102", "retry backoff", "task 5112", "cap the backoff", "5120", "task 5120", "runbook", "payments",
+            "user story 5160", "fail for a moment", "https://dev.azure.com/contoso/Storefront/_workitems/edit/5120",
+        ] {
+            #expect(try matches(text, pullRequest), "\(text)")
+        }
+        for text in ["5113", "save items"] {
+            #expect(try !matches(text, pullRequest), "\(text)")
+        }
+        for text in [
+            "bug 5113", "totals", "#4120", "pr 4120", "save items", "5160", "retry payments", "payments",
+            "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4120",
+        ] {
+            #expect(try matches(text, bug), "\(text)")
+        }
+        for text in ["4102", "cap", "https://dev.azure.com/contoso/Storefront/_workitems/edit/5160"] {
+            #expect(try !matches(text, bug), "\(text)")
+        }
     }
 
     /// A work item's details show while you clicked its card last, though the pull requests' store, which every page and

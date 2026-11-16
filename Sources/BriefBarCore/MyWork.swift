@@ -334,10 +334,11 @@ extension BoardLane {
 
     /// Whether it has cards of your work that's still to do, which keep a finished mission's lane, or a story's, from
     /// folding, as it would hide them: in To start or In progress, or not resolved yet, as one still open whose pull request
-    /// merged, in Merged; or a pull request's card that names work of yours not resolved yet (`namesWorkToDo`). Resolved and
-    /// done work folds with it, as a merged pull request's card does.
+    /// merged, in Merged; or a pull request's card that names work of yours not resolved yet (`namesWorkToDo`); or, while
+    /// My Work's search shows only some of them, one it hides (`hidesWorkToDo`). Resolved and done work folds with it, as a
+    /// merged pull request's card does.
     public var hasWorkToDo: Bool {
-        namesWorkToDo || tasks.contains { task in
+        namesWorkToDo || hidesWorkToDo || tasks.contains { task in
             task.column == .toStart || task.column == .inProgress || task.work.progress.isOpen
         }
     }

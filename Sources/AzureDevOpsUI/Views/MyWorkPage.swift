@@ -121,6 +121,70 @@ enum MyWorkFacts {
         return nil
     }
 
+    /// What My Work's search finds a card on the Board by (`BoardSearch.Card`). A pull request's: its number, "PR !4102", and
+    /// its title; the work items of yours its card names, and any other Show Links links it to, even while Show has only pull
+    /// requests, by type and ID, "Task 5112", and title, as the sprint, your work outside it or Show Links read them; and its
+    /// mission's name, with the story it's for. A work item's: its type and ID, and its title; the pull requests its card
+    /// names, "PR !4120", with their titles, as your lists or Show Links read them; and its story, by type, ID and title, with
+    /// that story's mission's name. So a mission's name, or a story's ID, finds its cards, with Lanes: None too.
+    /// - Parameters:
+    ///   - title: what a pull request, a work item or a session is called, as its source says.
+    ///   - workItem: one of your work items as BriefBar read it, for its type and title.
+    ///   - linkedWorkItem: a linked work item the sprint doesn't show, as Show Links read it, such as your task outside the
+    ///     sprint with Show: Pull Requests, or someone else's.
+    ///   - linkedPullRequest: a linked pull request your lists don't show, as Show Links read it, such as a teammate's.
+    ///   - linked: what Show Links links a pull request to; nothing while it's off.
+    ///   - missions: the missions, as By Mission lists them.
+    ///   - missionTitle: a mission's name, as its lane's header says it.
+    static func searched(
+        _ item: BoardItem, on board: PullRequestBoard, title: (ItemRef) -> String?, workItem: (ItemRef) -> WorkItem?,
+        linkedWorkItem: (WorkItemKey) -> WorkItem?, linkedPullRequest: (PRKey) -> PullRequest?, linked: (ItemRef) -> [ItemRef],
+        missions: [OrderMission], missionTitle: (OrderMission) -> String
+    ) -> BoardSearch.Card {
+        func known(_ ref: ItemRef) -> WorkItem? {
+            guard ref.kind == .workItem, let id = ref.number else { return nil }
+            return workItem(ref) ?? linkedWorkItem(WorkItemKey(ref.scope, id))
+        }
+        func called(_ ref: ItemRef) -> String? {
+            if let title = title(ref) { return title }
+            guard ref.kind == .pullRequest, let number = ref.number else { return nil }
+            return linkedPullRequest(PRKey(ref.scope, number))?.title
+        }
+        func names(ofWorkItem ref: ItemRef) -> [String] {
+            let item = known(ref)
+            return [item.map { "\($0.type) \($0.id)" } ?? ref.id, item?.title ?? called(ref)].compactMap { $0 }
+        }
+        func names(of mission: OrderMission?) -> [String] {
+            guard let mission else { return [] }
+            let story = mission.story.map { story in
+                names(ofWorkItem: story.ref) + [story.type.map { "\($0) \(story.ref.id)" }].compactMap { $0 }
+            }
+            return [missionTitle(mission)] + (story ?? [])
+        }
+        switch item {
+        case .pullRequest(let card):
+            var seen: Set<ItemRef> = []
+            let work = ((board.workOfPullRequests[card.ref] ?? []) + linked(card.ref).filter { $0.kind == .workItem })
+                .filter { seen.insert($0).inserted }
+            let mission = card.mission.flatMap { key in missions.first { $0.key == key } }
+            return BoardSearch.Card(
+                refs: [card.ref] + work,
+                names: ["PR \(card.ref.shortOrderLabel)", called(card.ref)].compactMap { $0 } + work.flatMap(names(ofWorkItem:))
+                    + names(of: mission)
+            )
+        case .work(let task):
+            let pullRequests = task.work.pullRequests.map(\.ref)
+            let story = task.work.story.flatMap { $0 == task.ref ? nil : $0 }
+            let mission = task.work.story.flatMap { story in missions.first { $0.story?.ref == story } }
+            return BoardSearch.Card(
+                refs: [task.ref] + pullRequests,
+                names: names(ofWorkItem: task.ref)
+                    + pullRequests.flatMap { ["PR \($0.shortOrderLabel)", called($0)].compactMap { $0 } }
+                    + (story.map(names(ofWorkItem:)) ?? []) + names(of: mission)
+            )
+        }
+    }
+
     /// One of your work items, for its story.
     private static func work(
         _ item: WorkItem, story: ItemRef?, linked: (ItemRef) -> [ItemRef], pullRequest: (PRKey) -> KnownPullRequest?,
@@ -218,32 +282,42 @@ extension EnvironmentValues {
 struct MyWorkPage: View {
     /// A linked pull request your lists don't show, as Show Links read it.
     let linkedPullRequest: (PRKey) -> PullRequest?
+    /// A linked work item the sprint doesn't show, as Show Links read it, for what the Board's search finds a card by.
+    var linkedWorkItem: (WorkItemKey) -> WorkItem? = { _ in nil }
     /// What it shows, for pictures; nil for what you chose.
     var shows: MyWorkShows? = nil
     /// The Board's lanes, for pictures; nil for those you chose.
     var lanes: BoardLanes? = nil
+    /// What the Board's search starts with, for pictures; nil for nothing.
+    var search: String? = nil
 
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
-        MyWorkContent(links: services.links, linkedPullRequest: linkedPullRequest, shows: shows, lanes: lanes)
+        MyWorkContent(
+            links: services.links, linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes,
+            search: search
+        )
     }
 }
 
 extension MyWorkPage {
     /// My Work's pictures, while Pull Request Order is on: with + Sprint Tasks, wide enough for every column, in a narrow
-    /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; and what + Sprint Tasks says while Show Links
-    /// is off.
+    /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
+    /// and in a narrow window; and what + Sprint Tasks says while Show Links is off.
     static func renderings(
-        services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?, environment: (AnyView) -> AnyView
+        services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
+        linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
     ) -> [(name: String, view: AnyView)] {
         guard services.pullRequestOrder.isOn else { return [] }
-        let shown: [(name: String, shows: MyWorkShows, lanes: BoardLanes, size: CGSize)] = [
-            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_600, height: 2_050)),
-            ("my-work-sprint-tasks-narrow", .sprintTasks, .missions, CGSize(width: 560, height: 2_250)),
-            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_600, height: 950)),
-            ("my-work-all-tasks", .allTasks, .missions, CGSize(width: 1_600, height: 2_150)),
-            ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250)),
+        let shown: [(name: String, shows: MyWorkShows, lanes: BoardLanes, size: CGSize, search: String?)] = [
+            ("my-work-sprint-tasks", .sprintTasks, .missions, CGSize(width: 1_600, height: 2_050), nil),
+            ("my-work-sprint-tasks-narrow", .sprintTasks, .missions, CGSize(width: 560, height: 2_250), nil),
+            ("my-work-sprint-tasks-lanes-none", .sprintTasks, BoardLanes.none, CGSize(width: 1_600, height: 950), nil),
+            ("my-work-all-tasks", .allTasks, .missions, CGSize(width: 1_600, height: 2_150), nil),
+            ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250), nil),
+            ("my-work-search", .allTasks, .missions, CGSize(width: 1_600, height: 1_250), "checkout"),
+            ("my-work-search-narrow", .allTasks, .missions, CGSize(width: 560, height: 1_500), "checkout"),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
@@ -251,8 +325,10 @@ extension MyWorkPage {
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
         let foot = (name: "my-work-show-links-off", view: environment(AnyView(showLinksOff)))
-        return [foot] + shown.map { name, shows, lanes, size in
-            let page = MyWorkPage(linkedPullRequest: linkedPullRequest, shows: shows, lanes: lanes)
+        return [foot] + shown.map { name, shows, lanes, size, search in
+            let page = MyWorkPage(
+                linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes, search: search
+            )
                 .environment(\.panelStyle, .page)
                 .textSize(from: services)
                 .frame(width: size.width, height: size.height)
@@ -333,6 +409,7 @@ struct MyWorkDetails {
 private struct MyWorkContent: View {
     @ObservedObject var links: Links
     let linkedPullRequest: (PRKey) -> PullRequest?
+    let linkedWorkItem: (WorkItemKey) -> WorkItem?
     let shows: MyWorkShows?
     let lanes: BoardLanes?
 
@@ -346,11 +423,29 @@ private struct MyWorkContent: View {
     @EnvironmentObject private var ordering: PullRequestOrder
     @EnvironmentObject private var moves: SprintMoves
     @EnvironmentObject private var states: StateChanges
+    @Environment(\.textScale) private var textScale
 
     /// The work item's details show rather than a pull request's: you clicked a work item's card last.
     @LocalState private var showsWorkItem = false
     /// A move of a work item of yours to another sprint that waits for you to confirm it, in this window only.
     @LocalState private var proposal: SprintMoves.Proposal?
+    /// What you search the Board for, as you type it: in this window, while it shows My Work, and never kept.
+    @LocalState private var searchText: String
+    /// The search's field has the keyboard.
+    @FocusState private var isSearching: Bool
+
+    /// - Parameter search: what the Board's search starts with, for pictures.
+    init(
+        links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?,
+        shows: MyWorkShows?, lanes: BoardLanes?, search: String?
+    ) {
+        self.links = links
+        self.linkedPullRequest = linkedPullRequest
+        self.linkedWorkItem = linkedWorkItem
+        self.shows = shows
+        self.lanes = lanes
+        _searchText = LocalState(wrappedValue: search ?? "")
+    }
 
     /// What the Board shows: your pull requests, or your sprint work with them, and your work outside the sprint too.
     private var shown: MyWorkShows {
@@ -376,12 +471,14 @@ private struct MyWorkContent: View {
     }
 
     var body: some View {
+        // Worked out once each time the page draws, for the search's count and the Board.
+        let board = searched(self.board)
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
                 PageRefreshStatus(page: .pullRequests, withSprint: showsWork)
                 BoardLanesPicker(order: ordering, shown: lanes)
             }
-            showPicker
+            showPicker(board)
             // What a move to another sprint is doing, or did, under Show, with the header: in sight wherever the page is
             // scrolled, as the cards you move from are far below the header.
             if moves.state != nil || moves.finding != nil {
@@ -411,7 +508,7 @@ private struct MyWorkContent: View {
                 preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
-                content
+                content(board)
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
@@ -435,14 +532,24 @@ private struct MyWorkContent: View {
         }
     }
 
-    /// What the Board shows, on a row of its own under the header: in the header, its three choices, which have no symbols
-    /// to shrink to, took the title's and the subtitle's room in a narrow window. Where the row is too narrow for its label,
-    /// as in the narrowest window with larger text, it goes without, then with a smaller control, which keeps every word.
-    private var showPicker: some View {
-        ViewThatFits(in: .horizontal) {
-            showRow(label: true)
-            showRow(label: false)
-            showRow(label: false).controlSize(.small)
+    /// What the Board shows, on a row of its own under the header, with the Board's search at its end: in the header, its
+    /// three choices, which have no symbols to shrink to, took the title's and the subtitle's room in a narrow window. Where
+    /// the row is too narrow for Show's label beside the search, as in the narrowest window with larger text, it goes
+    /// without, then with a smaller control, which keeps every word.
+    private func showPicker(_ board: PullRequestBoard?) -> some View {
+        HStack(spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                showRow(label: true)
+                showRow(label: false)
+                showRow(label: false).controlSize(.small)
+            }
+            // Show takes the room it needs first, the search what's left, up to its own width.
+            .layoutPriority(1)
+            if board != nil {
+                searchField(board)
+                    .frame(minWidth: 150 * textScale, idealWidth: 260 * textScale, maxWidth: 260 * textScale)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 18)
@@ -450,6 +557,59 @@ private struct MyWorkContent: View {
         .padding(.bottom, 10)
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+    }
+
+    /// The Board's search (`BoardSearch`): ⌘F, or a click on its magnifier, gives it the keyboard; Escape clears it, as its ✕
+    /// does, then leaves it; Return takes the keyboard to the first card that matches, as Show Them does. While you search,
+    /// it says how many cards match.
+    private func searchField(_ board: PullRequestBoard?) -> some View {
+        HStack(spacing: 5) {
+            Button {
+                isSearching = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("f", modifiers: .command)
+            .help(MyWorkText.searchHelp)
+            .accessibilityHidden(true)
+            TextField(MyWorkText.searchPrompt, text: $searchText)
+                .textFieldStyle(.plain)
+                .focused($isSearching)
+                .onSubmit {
+                    guard let first = board?.firstCard else { return }
+                    // The field lets go of the keyboard, for the card to take it.
+                    isSearching = false
+                    ordering.revealedCard = first
+                }
+                .onExitCommand {
+                    if searchText.isEmpty { isSearching = false } else { searchText = "" }
+                }
+                .help(MyWorkText.searchHelp)
+                .accessibilityLabel("Search the Board")
+                .accessibilityHint(MyWorkText.searchHint)
+            if let board, board.search != nil {
+                Text(BoardText.matchCount(board.cardCount))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the search")
+                .accessibilityLabel("Clear Search")
+            }
+        }
+        .font(size: 12)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.06)))
     }
 
     /// Show's control, after its label or not.
@@ -531,9 +691,24 @@ private struct MyWorkContent: View {
         return MyWorkFacts.work(sprint: sprintWork, outside: outsideWork)
     }
 
-    private var content: some View {
-        let board = self.board
-        return PageScroll {
+    /// The Board as the search shows it, while you search: only the cards that match, by what `MyWorkFacts.searched` finds
+    /// each by; else as it is.
+    private func searched(_ board: PullRequestBoard?) -> PullRequestBoard? {
+        guard let board, let search = BoardSearch(searchText) else { return board }
+        let titles = Dictionary(store.items.map { ($0.key.linkRef, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let missions = PullRequestsByMission.missions(ordering.missions)
+        return board.matching(search) { item in
+            MyWorkFacts.searched(
+                item, on: board, title: { titles[$0] ?? ordering.name(of: $0) }, workItem: workItem, linkedWorkItem: linkedWorkItem,
+                linkedPullRequest: linkedPullRequest, linked: { links.connections(of: $0).map(\.item.ref) }, missions: missions,
+                missionTitle: ordering.title(of:)
+            )
+        }
+    }
+
+    /// Up Next, the lines about your sprint work and the Board, which the search shows only what matches of.
+    private func content(_ board: PullRequestBoard?) -> some View {
+        PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
                 if let board, store.hasLoaded, !store.items.isEmpty || board.startNext != nil {
@@ -808,10 +983,11 @@ private struct MyWorkContent: View {
     }
 
     /// Show Them: + All My Tasks, with the Board at the first of them, which takes the keyboard's focus, its column opened for
-    /// the moment where it's folded.
+    /// the moment where it's folded. A search that would hide it is cleared.
     private func showOutside() {
         let card = outside.flatMap { outside in board(showing: .allTasks).flatMap { MyWorkFacts.card(of: outside, on: $0) } }
         settings.myWorkShows = .allTasks
+        searchText = ""
         if let card { ordering.revealedCard = card }
     }
 
@@ -1043,6 +1219,16 @@ enum MyWorkText {
     /// Show's tooltip.
     static let showHelp = "+ Sprint Tasks: your sprint work on the Board too, what hasn't started in To start. + All My Tasks: your "
         + "open tasks and bugs outside the sprint too, each saying where it is. They need Show Links."
+
+    /// The search's field while it's empty.
+    static let searchPrompt = "Search by ID or name"
+
+    /// The search's tooltip.
+    static let searchHelp = "Show only the cards that match: a task's or a pull request's ID, or words of its name, or of its "
+        + "mission's or story's. ⌘F searches, Return goes to the first card, Escape clears it"
+
+    /// What VoiceOver says the search does.
+    static let searchHint = "Shows only the Board's cards that match, by ID or name. Return goes to the first, and Escape clears it"
 
     /// Why moving a card of your work outside the sprint doesn't change its state, which only the sprint's board's work does
     /// here: "Move it to Sprint 42 first: only the sprint's work changes state here"; for one in the sprint's iteration that

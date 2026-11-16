@@ -18,7 +18,10 @@ import SwiftUI
 // the pull requests; in Merged once it's resolved, and in Completed, a column after Merged, once it's done, where a merged
 // pull request's card goes too once it's out, with your work on it done. Dragging one to another column of its lane, or
 // ⌘→ and ⌘←, puts its work item in the state that column's work is in, with Make Changes in Azure DevOps on
-// (`BoardTask.move(to:sameLane:states:)`), and it goes there once Azure DevOps has it; else it moves as its work does.
+// (`BoardTask.move(to:sameLane:states:)`), and it goes there once Azure DevOps has it; else it moves as its work does. My
+// Work's search shows only the cards that match it (`PullRequestBoard.matching`), in the lanes that hold them, which don't
+// fold while it lasts; BriefBar folds the columns by what matches, opening one you folded and showing one you hid where it
+// holds a match, and what you fold or open meanwhile lasts as long as the search: cleared, the board is as you left it.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -541,6 +544,17 @@ package struct OrderBoardView: View {
     /// The hidden columns Show Them showed, for the card it shows in one, for the moment: until you hide one again, or the
     /// board goes.
     @LocalState private var unhiddenForNow: Set<BoardColumn> = []
+    /// The columns you folded or opened while My Work's search shows only what matches: for as long as it does, your own
+    /// choices waiting until it's cleared.
+    @LocalState private var searchFolds = BoardFolds()
+    /// The hidden columns holding a match that you hid again while My Work's search shows them: until it's cleared.
+    @LocalState private var searchHidden: Set<BoardColumn> = []
+    /// The folded columns Up Next's "2 more ›", or Return in My Work's search, opened for the moment while the search shows
+    /// only what matches: their moment ends as it's cleared, as the board is then as you left it.
+    @LocalState private var searchRevealed: Set<BoardColumn> = []
+    /// The hidden columns Return in My Work's search showed for the moment while it shows only what matches: until it's
+    /// cleared.
+    @LocalState private var searchUnhidden: Set<BoardColumn> = []
     @LocalState private var notice: BoardNotice?
     @LocalState private var unfolded: Set<BoardLane.Kind> = []
     @LocalState private var width: CGFloat = 0
@@ -604,9 +618,9 @@ package struct OrderBoardView: View {
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
             if lanes.isEmpty {
-                Text(board.showsWork
+                Text(board.search.map(BoardText.noMatch) ?? (board.showsWork
                     ? "Nothing's on your board yet. Your pull requests, those you're asked to review, and your sprint work show here by stage."
-                    : "Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage.")
+                    : "Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage."))
                     .font(size: 12.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -677,6 +691,17 @@ package struct OrderBoardView: View {
         .onChange(of: order.boardLayout.hidden) { _, hidden in
             unhiddenForNow.formIntersection(hidden)
         }
+        // Once My Work's search is cleared, what you folded, opened or hid in it is over, and so is what it opened or showed for
+        // the moment: the board is as you left it.
+        .onChange(of: board.search == nil) { _, cleared in
+            guard cleared else { return }
+            searchFolds = BoardFolds()
+            searchHidden = []
+            revealedOpen.subtract(searchRevealed)
+            unhiddenForNow.subtract(searchUnhidden)
+            searchRevealed = []
+            searchUnhidden = []
+        }
         // A strip the dragged card hovers springs open once it has stayed there a moment, and a joined column into its
         // columns.
         .task(id: springing) {
@@ -720,9 +745,31 @@ package struct OrderBoardView: View {
         return open
     }
 
-    /// How you laid out the columns, with those Show Them showed for the moment.
+    /// How you laid out the columns, with those Show Them showed for the moment; and while My Work's search shows only what
+    /// matches, the hidden ones that hold a match, but for those you hid again meanwhile.
     private var shownLayout: BoardLayout {
-        unhiddenForNow.reduce(order.boardLayout) { $0.showing(ShownColumn($1)) }
+        let layout = unhiddenForNow.reduce(order.boardLayout) { $0.showing(ShownColumn($1)) }
+        guard board.search != nil else { return layout }
+        return layout.hiddenColumns(board.columns)
+            .filter { board.count(of: $0) > 0 && searchHidden.isDisjoint(with: $0.parts) }
+            .reduce(layout) { $0.showing($1) }
+    }
+
+    /// Your folds and opens as the board takes them: while My Work's search shows only what matches, those you made since it
+    /// began, BriefBar deciding the rest by what matches, so that a column you folded opens where it holds one; else those
+    /// you keep.
+    private var foldChoices: BoardFolds {
+        board.search == nil ? order.boardFolds : searchFolds
+    }
+
+    /// Keeps your folds and opens: while My Work's search shows only what matches, until it's cleared; else in the
+    /// preferences.
+    private func setFoldChoices(_ choices: BoardFolds) {
+        if board.search == nil {
+            order.setBoardFolds(choices)
+        } else {
+            searchFolds = choices
+        }
     }
 
     /// The column as the board shows it that holds one of its columns: a joined one, unless a drag sprang it open.
@@ -752,7 +799,7 @@ package struct OrderBoardView: View {
         let widths = BoardWidths(scale: textScale, available: width, endsWithHidden: !hidden.isEmpty)
         return BoardMetrics(
             widths: widths, columns: board.columns, shown: shown, hidden: hidden,
-            folding: folding(shown, widths: widths, open: open, choices: order.boardFolds)
+            folding: folding(shown, widths: widths, open: open, choices: foldChoices)
         )
     }
 
@@ -768,7 +815,7 @@ package struct OrderBoardView: View {
     /// is now and once the other columns' moments end. Nil where those differ, as while one open for the moment takes the
     /// room this one would have: then a click on it is kept, rather than forgotten for a moment that ends.
     private func foldsByItself(_ column: ShownColumn, metrics: BoardMetrics) -> Bool? {
-        var choices = order.boardFolds
+        var choices = foldChoices
         choices[column] = nil
         let now = folding(metrics.shown, widths: metrics.widths, open: openForNow.subtracting(column.parts), choices: choices)
             .isFolded(column)
@@ -784,23 +831,24 @@ package struct OrderBoardView: View {
     }
 
     /// Folds a column, as a click on its title does: one open for the moment folds back, where it was folded; else
-    /// remembered, unless BriefBar would fold it by itself now, when it forgets that you opened it.
+    /// remembered, unless BriefBar would fold it by itself now, when it forgets that you opened it; while My Work's search
+    /// shows only what matches, until it's cleared.
     private func fold(_ column: ShownColumn, metrics: BoardMetrics) {
         withAnimation(.easeOut(duration: 0.15)) {
             let wasOpenForNow = column.parts.contains(where: openForNow.contains)
             endMoment(column)
             if wasOpenForNow, currentMetrics().isFolded(column) { return }
             let byItself = foldsByItself(column, metrics: metrics) ?? false
-            order.setBoardFolds(order.boardFolds.choosing(.folded, for: column, byItself: byItself))
+            setFoldChoices(foldChoices.choosing(.folded, for: column, byItself: byItself))
         }
     }
 
     /// Opens a column, as a click on its strip does: remembered, unless BriefBar would open it by itself now, when it
-    /// forgets that you folded it.
+    /// forgets that you folded it; while My Work's search shows only what matches, until it's cleared.
     private func open(_ column: ShownColumn, metrics: BoardMetrics) {
         withAnimation(.easeOut(duration: 0.15)) {
             let byItself = foldsByItself(column, metrics: metrics) ?? true
-            order.setBoardFolds(order.boardFolds.choosing(.open, for: column, byItself: byItself))
+            setFoldChoices(foldChoices.choosing(.open, for: column, byItself: byItself))
         }
     }
 
@@ -808,9 +856,9 @@ package struct OrderBoardView: View {
     private func letBriefBarDecide(_ column: ShownColumn) {
         withAnimation(.easeOut(duration: 0.15)) {
             endMoment(column)
-            var choices = order.boardFolds
+            var choices = foldChoices
             choices[column] = nil
-            order.setBoardFolds(choices)
+            setFoldChoices(choices)
         }
     }
 
@@ -847,11 +895,12 @@ package struct OrderBoardView: View {
     }
 
     /// Merged or Completed, or Done, hidden, as Hide in its menu does: into the tab at the titles' end; one Show Them showed
-    /// for the moment too.
+    /// for the moment too, and one My Work's search shows for a match, until it's cleared.
     private func hide(_ column: ShownColumn) {
         withAnimation(.easeOut(duration: 0.15)) {
             endMoment(column)
             unhiddenForNow.subtract(column.parts)
+            if board.search != nil { searchHidden.formUnion(column.parts) }
             order.setBoardLayout(order.boardLayout.hiding(column))
         }
     }
@@ -1092,7 +1141,7 @@ package struct OrderBoardView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(help(column) + (order.boardFolds[column] == .open ? "\nYou opened it. Click to fold it" : "\nClick to fold it")
+            .help(help(column) + (foldChoices[column] == .open ? "\nYou opened it. Click to fold it" : "\nClick to fold it")
                 + (column.isJoined ? ", or ←|→ over its marks to split it" : "") + "\n→|← between two titles joins them")
             .contextMenu { columnMenu(column, isFolded: false, metrics: metrics) }
             .accessibilityLabel("\(column.spokenTitle), \(count)")
@@ -1189,7 +1238,7 @@ package struct OrderBoardView: View {
     private func columnMenu(_ column: ShownColumn, isFolded: Bool, metrics: BoardMetrics) -> some View {
         if let why = metrics.folding.folded[column] {
             Text(BoardText.folded(why))
-        } else if order.boardFolds[column] == .open {
+        } else if foldChoices[column] == .open {
             Text(BoardText.openedByYou)
         }
         if isFolded {
@@ -1197,7 +1246,7 @@ package struct OrderBoardView: View {
         } else {
             Button("Fold") { fold(column, metrics: metrics) }
         }
-        if order.boardFolds[column] != nil {
+        if foldChoices[column] != nil {
             Divider()
             Button("Let BriefBar Decide") { letBriefBarDecide(column) }
         }
@@ -1223,20 +1272,28 @@ package struct OrderBoardView: View {
             Button("Hide \(column.menuTitle)") { hide(column) }
         }
         Divider()
+        // Each forgets your folds, those you made while My Work's search shows only what matches too: so each is there while
+        // those are all it would change.
         Button("Simple Columns") {
-            withAnimation(.easeOut(duration: 0.15)) { order.simpleColumns() }
+            withAnimation(.easeOut(duration: 0.15)) {
+                searchFolds = BoardFolds()
+                order.simpleColumns()
+            }
         }
-        .disabled(order.hasSimpleColumns)
+        .disabled(order.hasSimpleColumns && searchFolds.isEmpty)
         Button("Reset Columns") {
-            withAnimation(.easeOut(duration: 0.15)) { order.resetColumns() }
+            withAnimation(.easeOut(duration: 0.15)) {
+                searchFolds = BoardFolds()
+                order.resetColumns()
+            }
         }
-        .disabled(order.hasDefaultColumns)
+        .disabled(order.hasDefaultColumns && searchFolds.isEmpty)
     }
 
     /// VoiceOver's actions on a column's title or strip, besides opening or folding it.
     @ViewBuilder
     private func columnActions(_ column: ShownColumn, metrics: BoardMetrics) -> some View {
-        if order.boardFolds[column] != nil {
+        if foldChoices[column] != nil {
             Button("Let BriefBar Decide") { letBriefBarDecide(column) }
         }
         layoutItems(column, metrics: metrics)
@@ -1411,8 +1468,9 @@ package struct OrderBoardView: View {
     private func laneView(_ lane: BoardLane, metrics: BoardMetrics, moves: BoardMoves) -> some View {
         let mission = lane.mission.flatMap { key in missions.first { $0.key == key } }
         // A finished mission's lane folds, but not while it holds your work that's still to do, which it would hide; so does
-        // a story's whose work is all resolved or done.
-        let canFold = mission.map { $0.isFinished && !lane.hasWorkToDo } ?? lane.isFinishedStory
+        // a story's whose work is all resolved or done. Neither while My Work's search shows only what matches, which it
+        // would hide too.
+        let canFold = board.search == nil && (mission.map { $0.isFinished && !lane.hasWorkToDo } ?? lane.isFinishedStory)
         let isFolded = canFold && !unfolded.contains(lane.kind)
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
@@ -2184,7 +2242,7 @@ package struct OrderBoardView: View {
         let after = metrics(splitting: [], open: openForNow.subtracting(sprung))
         let open = Set(after.shown.filter { $0.parts.contains(where: openForNow.subtracting(sprung).contains) })
         if board.foldsOnceMoved(
-            to: column, stages: order.stages, shown: after.shown, choices: order.boardFolds, open: open, widths: after.widths
+            to: column, stages: order.stages, shown: after.shown, choices: foldChoices, open: open, widths: after.widths
         ) {
             flash(column)
         }
@@ -2269,16 +2327,19 @@ package struct OrderBoardView: View {
 
     /// A column opens for the moment where it would be folded but for its own moment, or where the board doesn't know its
     /// width yet to tell: the joined column that holds it, which it returns, as one; and where you hid it, it shows for the
-    /// moment, as Done where you hid that.
+    /// moment, as Done where you hid that. While My Work's search shows only what matches, either lasts as long as it does,
+    /// but where it began before it.
     @discardableResult
     private func openForTheMoment(_ column: BoardColumn) -> ShownColumn {
         if let hidden = currentMetrics().hidden.first(where: { $0.contains(column) }) {
+            if board.search != nil { searchUnhidden.formUnion(Set(hidden.parts).subtracting(unhiddenForNow)) }
             unhiddenForNow.formUnion(hidden.parts)
         }
         let metrics = currentMetrics()
         let shown = metrics.shown(holding: column) ?? ShownColumn(column)
         let others = openForNow.subtracting(shown.parts)
-        if width <= 0 || folding(metrics.shown, widths: metrics.widths, open: others, choices: order.boardFolds).isFolded(shown) {
+        if width <= 0 || folding(metrics.shown, widths: metrics.widths, open: others, choices: foldChoices).isFolded(shown) {
+            if board.search != nil, !revealedOpen.contains(column) { searchRevealed.insert(column) }
             revealedOpen.insert(column)
         }
         return shown

@@ -530,6 +530,19 @@ were. While My Work shows + Sprint Tasks or + All My Tasks, BriefBar reads your 
 and your open tasks and bugs in its team's project, through Azure DevOps' Assigned to me query; with + All My Tasks, also
 the pull requests linked to them.
 
+**Search.** On My Work, type in **Search by ID or name**, at the end of **Show**'s row, or press **⌘F** to get there,
+and the Board shows only the cards that match, in the lanes that hold one: each word you type has to be in a card's
+number, such as **5112** or **!4102** (or **#4102**), its title, its mission's name, or its story's ID or title, in any
+case. A pull request's card also matches the work items of yours it names, and any other [Show Links](#links) links it
+to, by type, ID and title, so **Task 5112** finds its pull request's card even with Show: Pull Requests; a work item's
+card matches the pull requests it names. A link you paste to a pull request or a work item finds just its card, or the
+card that names it. Each column counts what matches, and the field says how many cards do. While you search, no lane
+folds; a column with a match opens, even one you folded, a column you hid shows while it holds one, and the rest fold;
+what you fold or open meanwhile lasts until you clear the search, and the Board is then as you left it. Up Next stays as
+it is. **Return** takes the keyboard to the first card that matches, and **Escape** clears the search, then leaves the
+field. Moving a card in your order moves it only past the cards that show. BriefBar keeps what you search for only while
+the window shows My Work, never in its preferences.
+
 **Your order.** On My Work, put the work you do yourself in the order you want to do it, in each lane: drag a card up or
 down in **To start** or **In progress**, where a line shows where it goes; or click it, or Tab to it, and press **⌘↑**
 or **⌘↓**, the page following it; or right-click it and choose **Move Up**, **Move Down** or **Move to Top**, under
