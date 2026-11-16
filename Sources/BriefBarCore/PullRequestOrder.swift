@@ -54,7 +54,7 @@ public struct GitHubStack: Equatable, Sendable, Codable {
 /// and its task's place in the backlog, never titles.
 public struct OrderStory: Hashable, Sendable {
     /// The story: a work item on the backlog, such as a user story, a product backlog item, a requirement, an issue or a
-    /// bug.
+    /// bug; or a task with no parent.
     public var ref: ItemRef
     /// Its type, such as "User Story", once BriefBar read it.
     public var type: String?
@@ -873,8 +873,8 @@ public struct OrderMission: Identifiable, Equatable, Sendable {
         case stack
         /// Pull requests opened under this session, whose order nobody told BriefBar.
         case family(session: ItemRef)
-        /// The pull requests of a story's tasks, or of the story itself, in its tasks' backlog order: BriefBar can't see
-        /// which merges first, but for those stacked on each other.
+        /// The pull requests of a story's tasks, or of the story itself, in its tasks' backlog order, or those of a task with
+        /// no story, which is a story itself: BriefBar can't see which merges first, but for those stacked on each other.
         case story(ItemRef)
         /// Pull requests you put together, with New Mission; or those you'd put in a mission that's gone since, by its key.
         case mine
@@ -2220,6 +2220,15 @@ public enum OrderText {
         case 1: return words[0]
         default: return words.dropLast().joined(separator: ", ") + " and " + words[words.count - 1]
         }
+    }
+
+    /// The repositories a mission's pull requests are in, as its header names them, each once: the one with the most of them
+    /// first, then by name, "payments-api", "payments-api and shop-web"; nil with none.
+    /// - Parameter places: each pull request's repository.
+    public static func places(_ places: [String]) -> String? {
+        let counts = Dictionary(places.map { ($0, 1) }, uniquingKeysWith: +)
+        let names = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
+        return names.isEmpty ? nil : join(names)
     }
 
     /// Where a step stands in its order, "Merge after !4101"; nil when its notes say it all, or it has no order.

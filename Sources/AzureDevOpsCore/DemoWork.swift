@@ -43,7 +43,7 @@ extension DemoData {
     }()
 
     /// The sprint's task board: stories and a bug with their tasks, a story without tasks yet, a finished one,
-    /// and a task without a story.
+    /// and two tasks without a story, one of them changed in two repositories.
     public static func sprintBoard(now: Date = Date(), calendar: Calendar = .current) -> SprintBoard {
         let people = (me: me, sam: sam, priya: priya, alex: alex, jordan: jordan, maria: maria, chen: chen)
         func item(
@@ -81,6 +81,8 @@ extension DemoData {
             item(5142, "Task", "Load test the search API", "Closed", people.chen, parent: 5140, rank: 2),
 
             item(5150, "Task", "Prepare the sprint review demo", "New", people.me, hours: 1, rank: 9),
+            // A task of its own, changed in two repositories: a pull request in each (`DemoData.workLinks`).
+            item(5152, "Task", "Let shoppers cancel an order before it ships", "Active", people.me, hours: 4, rank: 8, changed: 45),
         ]
         var relations: [ADOIterationWorkItems.Relation] = []
         for item in items where item.parentId == nil {

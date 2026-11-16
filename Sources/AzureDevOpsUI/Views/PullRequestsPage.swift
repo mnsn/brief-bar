@@ -18,6 +18,7 @@ struct PullRequestsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var ordering: PullRequestOrder
+    @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
 
     @LocalState private var showIdle = false
@@ -101,9 +102,11 @@ struct PullRequestsPage: View {
                     }
                 }
                 if shownOrder == .byMission {
+                    let naming = Self.namingRepositories(on: board, items: store.items)
                     PullRequestsByMission(
                         view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        card: boardCard, isSelected: isSelected, select: select, shownOnTop: details.shownOnTop,
+                        card: { boardCard($0, $1, namesRepository: naming.contains($0.key.linkRef)) }, isSelected: isSelected,
+                        select: select, shownOnTop: details.shownOnTop,
                         rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
                         showByStatus: { settings.pullRequestOrder = .status }, now: store.now
                     )
@@ -139,8 +142,19 @@ struct PullRequestsPage: View {
     }
 
     /// A pull request's card on the Board (`PullRequestBoardCard.content`).
-    private func boardCard(_ item: PRSnapshot, _ card: BoardCard) -> BoardCardContent {
-        PullRequestBoardCard.content(item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes) { select(item) }
+    private func boardCard(_ item: PRSnapshot, _ card: BoardCard, namesRepository: Bool) -> BoardCardContent {
+        PullRequestBoardCard.content(
+            item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, namesRepository: namesRepository,
+            links: LinkCapsules.spoken(item.key.linkRef, links: services.links)
+        ) { select(item) }
+    }
+
+    /// The pull requests whose Board cards name their repository, as their lanes mix them
+    /// (`PullRequestBoard.namingRepositories`): none without a Board.
+    static func namingRepositories(on board: PullRequestBoard?, items: [PRSnapshot]) -> Set<ItemRef> {
+        guard let board else { return [] }
+        let repositories = Dictionary(items.map { ($0.key.linkRef, $0.repository) }, uniquingKeysWith: { first, _ in first })
+        return board.namingRepositories { repositories[$0].flatMap { $0.isEmpty ? nil : $0 } }
     }
 
     /// The groups, each in a card: every pull request By Status, or those in no mission By Mission.

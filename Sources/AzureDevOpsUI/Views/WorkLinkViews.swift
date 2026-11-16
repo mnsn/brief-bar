@@ -18,11 +18,18 @@ extension WorkItem {
 struct PullRequestLinks: View {
     let key: PRKey
     var opensMenu = false
+    /// What else it leaves out, as what shows them says them already, such as the work items a Board card names.
+    var excluding: Set<ItemRef> = []
+    /// Above and below the capsules, to sit level with taller controls beside them, as a Board card's stage pill.
+    var inset: CGFloat = 0
 
     @EnvironmentObject private var copilot: CopilotTasksStore
 
     var body: some View {
-        LinkCapsules(key.linkRef, excluding: Self.session(of: copilot.isOn ? copilot.latest(forPullRequest: key) : nil), opensMenu: opensMenu)
+        LinkCapsules(
+            key.linkRef, excluding: Self.session(of: copilot.isOn ? copilot.latest(forPullRequest: key) : nil).union(excluding),
+            opensMenu: opensMenu, inset: inset
+        )
     }
 
     static func session(of entry: CopilotTaskEntry?) -> Set<ItemRef> {

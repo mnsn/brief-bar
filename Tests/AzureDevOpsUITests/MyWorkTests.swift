@@ -84,15 +84,16 @@ import Testing
             PRKey("contoso", 4132): (pullRequest(4132, by: "Robin Ray"), true),
         ]
         let work = MyWorkFacts.work(in: board, linked: { links[$0] ?? [] }, pullRequest: { known[$0] }, copilotWorks: { $0.id == 5103 })
-        #expect(work.map(\.ref) == [5103, 5112, 5104, 5150, 5102].map(workItem))
-        #expect(work.map(\.story) == [workItem(5101), workItem(5110), workItem(5101), nil, workItem(5101)])
-        #expect(work.map(\.progress) == [.inProgress, .inProgress, .toDo, .toDo, .completed])
-        #expect(work.map(\.copilotWorks) == [true, false, false, false, false])
+        #expect(work.map(\.ref) == [5103, 5112, 5152, 5104, 5150, 5102].map(workItem))
+        #expect(work.map(\.story) == [workItem(5101), workItem(5110), nil, workItem(5101), nil, workItem(5101)])
+        #expect(work.map(\.progress) == [.inProgress, .inProgress, .inProgress, .toDo, .toDo, .completed])
+        #expect(work.map(\.copilotWorks) == [true, false, false, false, false, false])
         #expect(work[0].pullRequests == [LinkedPullRequest(ref: github, state: .open(author: nil))])
         #expect(work[1].pullRequests.map(\.state) == [.unknown])
-        #expect(work[2].pullRequests == [LinkedPullRequest(ref: .pullRequest(organization: "contoso", number: 4120), state: .open(author: "Sam"))])
-        #expect(work[3].pullRequests.map(\.state) == [.merged, .abandoned, .open(author: nil), .unknown])
-        #expect(work[4].pullRequests.isEmpty)
+        #expect(work[2].pullRequests.isEmpty)
+        #expect(work[3].pullRequests == [LinkedPullRequest(ref: .pullRequest(organization: "contoso", number: 4120), state: .open(author: "Sam"))])
+        #expect(work[4].pullRequests.map(\.state) == [.merged, .abandoned, .open(author: nil), .unknown])
+        #expect(work[5].pullRequests.isEmpty)
     }
 
     /// One of your merged pull requests is out once BriefBar follows its pipelines after the merge no more and none failed or

@@ -125,10 +125,11 @@ private struct StoriesNeedShowLinks: View {
     }
 }
 
-/// A pull request's card on the Board: its number and title, on two lines at most; why it's in its stage; what needs you on
-/// it, what failed and a draft, unless its stage says so already; where it stands in its order, unless its stage says that,
-/// as Can merge and Waits do; its stage's pill, whose menu changes it, and who set it; Copilot's work on it; and Finished My
-/// Review in Your review. It grows with the text: only its title is ever cut short.
+/// A pull request's card on the Board: its number and title, on two lines at most; why it's in its stage, with its
+/// repository where its lane mixes them; what needs you on it, what failed and a draft, unless its stage says so already;
+/// where it stands in its order, unless its stage says that, as Can merge and Waits do; its stage's pill, whose menu changes
+/// it, and who set it, then its links' capsules, as its row has them; Copilot's work on it; and Finished My Review in Your
+/// review. It grows with the text: only its title is ever cut short.
 struct PullRequestBoardCard: View {
     let item: PRSnapshot
     let card: BoardCard
@@ -136,10 +137,15 @@ struct PullRequestBoardCard: View {
     let order: OrderRowContext?
     @ObservedObject var ordering: PullRequestOrder
     /// The work items of yours it's for, on My Work with + Sprint Tasks or + All My Tasks, which have no cards of their own:
-    /// "Task 5112", and for one outside the sprint where it is, "Task 5181 (Sprint 41)".
+    /// "Task 5112", and for one outside the sprint where it is, "Task 5181 (Sprint 41)"; with the board's other pull
+    /// requests for it, "Task 5152 with !4116".
     var work: [String] = []
     /// What keeps it in Merged, on My Work with + Sprint Tasks, after "Merged": "Production waits for approval".
     var held: String? = nil
+    /// Its repository, where its lane has pull requests of more than one (`PullRequestBoard.namingRepositories`): "shop-web".
+    var repository: String? = nil
+    /// What its links' capsules leave out, as it names them already: the work items `work` names.
+    var named: Set<ItemRef> = []
     let now: Date
 
     var body: some View {
@@ -163,10 +169,10 @@ struct PullRequestBoardCard: View {
                 }
                 .font(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
-                .help("Your work items it's for, through Show Links' links")
+                .help("Your work items it's for, through Show Links' links, each with the Board's other pull requests for it")
             }
             // Why alone: its flags are its marks, below.
-            Text([StageText.reason(reading, name: name), held].compactMap { $0 }.joined(separator: " · "))
+            Text([StageText.reason(reading, name: name), held, repository].compactMap { $0 }.joined(separator: " · "))
                 .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -209,6 +215,9 @@ struct PullRequestBoardCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 2)
                 }
+                // Its sessions, and work items it doesn't name, as its row shows them: nothing while Show Links is off, nor
+                // without links, which takes no room on the line.
+                PullRequestLinks(key: item.key, excluding: named, inset: 2)
             }
             if card.stage == .yourReview {
                 FinishedReviewButton(ref: card.ref, order: ordering)
@@ -221,21 +230,28 @@ struct PullRequestBoardCard: View {
     /// and what VoiceOver says of it. With a lane for every card, Undo shows at the top.
     /// - Parameters:
     ///   - lanes: the Board's lanes, for where Undo shows.
-    ///   - work: the work items of yours it's for, on My Work with + Sprint Tasks: "Task 5112".
+    ///   - work: the work items of yours it's for, on My Work with + Sprint Tasks: "Task 5112", "Task 5152 with !4116".
     ///   - held: what keeps it in Merged, on My Work with + Sprint Tasks: "Production waits for approval".
+    ///   - namesRepository: its lane has pull requests of more than one repository (`PullRequestBoard.namingRepositories`).
+    ///   - named: the work items `work` names, which its links' capsules leave out.
+    ///   - links: what VoiceOver hears of its links, as it doesn't hear the card's capsules (`LinkCapsules.spoken`): the
+    ///     session of the task Copilot is doing on it too, whose line on the card it doesn't hear either.
     ///   - select: shows its details.
     @MainActor
     static func content(
         _ item: PRSnapshot, _ card: BoardCard, store: PRStore, ordering: PullRequestOrder, lanes: BoardLanes, work: [String] = [],
-        held: String? = nil, select: @escaping () -> Void
+        held: String? = nil, namesRepository: Bool = false, named: Set<ItemRef> = [], links: [String] = [],
+        select: @escaping () -> Void
     ) -> BoardCardContent {
         let order = card.step.map {
             OrderRowContext(step: $0, mission: card.mission, isReady: item.group == .ready, names: ordering.names)
         }
         let mission = MissionMenuContext.of(item.key.linkRef, order: ordering, mission: card.mission, undo: .onBoard(lanes))
+        let repository = namesRepository && !item.repository.isEmpty ? item.repository : nil
         return BoardCardContent(
             view: AnyView(PullRequestBoardCard(
-                item: item, card: card, order: order, ordering: ordering, work: work, held: held, now: store.now
+                item: item, card: card, order: order, ordering: ordering, work: work, held: held, repository: repository,
+                named: named, now: store.now
             )),
             menu: AnyView(Group {
                 Button("Show Details", action: select)
@@ -249,7 +265,7 @@ struct PullRequestBoardCard: View {
             }),
             label: "!\(item.key.number) \(item.title)",
             details: details(item, reading: card.reading, order: order, ordering: ordering)
-                + (work.isEmpty ? [] : ["for " + work.joined(separator: ", ")]) + [held].compactMap { $0 },
+                + (work.isEmpty ? [] : ["for " + work.joined(separator: ", ")]) + [held].compactMap { $0 } + links,
             mission: mission
         )
     }

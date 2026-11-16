@@ -86,12 +86,17 @@ enum DemoPullRequestOrder {
     /// (`DemoData.workLinks`), which are its mission.
     static let checkoutRedesign = ItemRef.workItem(organization: DemoData.organization, id: 5180)
 
+    /// Task 5152, "Let shoppers cancel an order before it ships", in the sprint with no story: Show Links' demo links it to
+    /// !4115, in payments-api, and !4116, in shop-web (`DemoData.workLinks`), which are its mission.
+    static let orderCancellation = ItemRef.workItem(organization: DemoData.organization, id: 5152)
+
     /// The names Apple Intelligence would give the demo's missions, as their work drifted from where it started: made up,
     /// as the demo never asks the model.
     static let names: [MissionKey: String] = [
         .plan(paymentsID): "Payment retries and coupons",
         .plan(id): "Dark mode everywhere",
         .story(checkoutRedesign): "Faster checkout",
+        .story(orderCancellation): "Order cancellation",
         .mine(mineID): "Build agents on .NET 9",
     ]
 

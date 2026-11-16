@@ -471,8 +471,11 @@ private struct MyWorkContent: View {
     }
 
     var body: some View {
-        // Worked out once each time the page draws, for the search's count and the Board.
-        let board = searched(self.board)
+        // Worked out once each time the page draws, for the search's count and the Board; which cards name their
+        // repository, by the whole board, so that a card says the same while the search shows only part of its lane.
+        let whole = self.board
+        let board = searched(whole)
+        let naming = PullRequestsPage.namingRepositories(on: whole, items: store.items)
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
                 PageRefreshStatus(page: .pullRequests, withSprint: showsWork)
@@ -508,7 +511,7 @@ private struct MyWorkContent: View {
                 preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
-                content(board)
+                content(board, naming: naming)
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
@@ -707,7 +710,8 @@ private struct MyWorkContent: View {
     }
 
     /// Up Next, the lines about your sprint work and the Board, which the search shows only what matches of.
-    private func content(_ board: PullRequestBoard?) -> some View {
+    /// - Parameter naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
+    private func content(_ board: PullRequestBoard?, naming: Set<ItemRef>) -> some View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
@@ -726,7 +730,8 @@ private struct MyWorkContent: View {
                 if let board {
                     PullRequestsByMission(
                         view: .board, ordering: ordering, items: store.items, row: { _, _ in AnyView(EmptyView()) },
-                        card: { item, card in boardCard(item, card, board: board) }, isSelected: isSelected, select: select,
+                        card: { item, card in boardCard(item, card, board: board, namesRepository: naming.contains(item.key.linkRef)) },
+                        isSelected: isSelected, select: select,
                         shownOnTop: shownDetails.pullRequestOnTop, rest: { _ in AnyView(EmptyView()) }, board: board,
                         showByStatus: {
                             settings.pullRequestOrder = .status
@@ -739,20 +744,27 @@ private struct MyWorkContent: View {
         }
     }
 
-    /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work; in Merged then,
-    /// what keeps it there.
-    private func boardCard(_ item: PRSnapshot, _ card: BoardCard, board: PullRequestBoard) -> BoardCardContent {
+    /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work, each with the
+    /// board's other pull requests for it, "Task 5152 with !4116"; in Merged then, what keeps it there; and its repository
+    /// where its lane mixes them.
+    private func boardCard(_ item: PRSnapshot, _ card: BoardCard, board: PullRequestBoard, namesRepository: Bool) -> BoardCardContent {
         let items = (board.workOfPullRequests[card.ref] ?? []).map { ref in (ref: ref, item: workItem(ref)) }
-        let work = items.map { named in
+        let names = items.map { named in
             named.item.map { MyWorkText.mention($0, place: outside?.place(of: $0)) } ?? named.ref.shortOrderLabel
+        }
+        let work = zip(items, names).map { named, name in
+            MyWorkText.mention(name, with: board.pullRequests(for: named.ref, besides: card.ref), near: card.ref)
         }
         var held: String?
         if board.showsWork, card.stage == .merged, !board.completed.contains(card.ref) {
-            let open = zip(items, work).filter { named, _ in named.item?.isDone != true }.map { _, name in name }
+            let open = zip(items, names).filter { named, _ in named.item?.isDone != true }.map { _, name in name }
             held = MyWorkFacts.held(store.record(for: item.key), open: open, followsMerges: settings.followMerges, now: store.now)
         }
+        let named = Set(items.map(\.ref))
         return PullRequestBoardCard.content(
-            item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work, held: held
+            item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, work: work, held: held,
+            namesRepository: namesRepository, named: named,
+            links: LinkCapsules.spoken(item.key.linkRef, excluding: named, links: links)
         ) {
             select(item)
         }
@@ -1267,6 +1279,13 @@ enum MyWorkText {
         let name = "\(item.type) \(item.id)"
         guard let place else { return name }
         return "\(name) (\(place == OutsideWork.noSprint ? "no sprint" : place))"
+    }
+
+    /// The same, with the Board's other pull requests for it, as one changed in several repositories has: "Task 5152 with
+    /// !4116", "Task 5152 with !4116 and !4117"; as it is with none.
+    /// - Parameter ref: the pull request whose card names it, beside which the others are named.
+    static func mention(_ name: String, with others: [ItemRef], near ref: ItemRef) -> String {
+        others.isEmpty ? name : "\(name) with \(OrderText.list(others, near: ref))"
     }
 
     /// While your work outside the sprint is read for the first time: "Looking for your tasks and bugs outside Sprint 42…".

@@ -49,9 +49,10 @@ import Testing
         #expect(unread.stories(of: Self.pullRequest, workItems: [5102]) == [
             OrderStory(ref: Self.ref(5101), type: nil, task: Self.ref(5102), rank: 4),
         ])
-        // A task with no parent: no story.
+        // A task with no parent: a story itself, whose pull requests go together, with no parent to read.
         let orphan = WorkItemStories(workItems: [Self.item(5150, "Task")], board: nil)
-        #expect(orphan.stories(of: Self.pullRequest, workItems: [5150]).isEmpty)
+        #expect(orphan.stories(of: Self.pullRequest, workItems: [5150]) == [OrderStory(ref: Self.ref(5150), type: "Task")])
+        #expect(orphan.parents(ofTasksIn: [WorkItemKey(Self.organization, 5150)]).isEmpty)
     }
 
     @Test func aFeatureOrAnEpicGivesNoneAndAnythingElseIsAStoryItself() {
