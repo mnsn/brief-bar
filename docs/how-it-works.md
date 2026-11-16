@@ -3348,10 +3348,12 @@ The change is the one above, from the same `StateChanges`, whose line shows unde
 (`StateChangeLine`); once the board has the new state, the card goes where its new state, its pull requests and
 Copilot's work put it, so that a task with no pull request moved to Your review is Active, and shows in In progress. It
 keeps the keyboard after ⌘→ or ⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`): owed
-the focus until Azure DevOps answers, however long that takes, its ten seconds to be drawn anew start only then, and
-it's owed nothing once the change didn't happen, nor once you chose another card (`OrderBoardView.settle`, `choose`); a
-key shows the column it goes to for the moment where you hid it, as Show Them does (`showForTheMoment`). The card's menu
-has State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
+the focus until the change is done, however long Azure DevOps takes, its ten seconds to be drawn anew start only then,
+where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already
+(`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose another card
+(`OrderBoardView.settle`, `choose`). Once a key's change is done, the column the card goes to shows for the moment where
+you hid it, as Show Them does, though you went to another card meanwhile (`showForTheMoment`). The card's menu has
+State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
 (`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved

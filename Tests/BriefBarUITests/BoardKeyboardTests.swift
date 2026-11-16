@@ -609,6 +609,43 @@ import Testing
         }
     }
 
+    /// A key's move into a column you hid shows that column once its change is done, though you clicked another card before
+    /// Azure DevOps answered: that card keeps the keyboard, which the moved card is owed no more.
+    @Test func aColumnYouHidShowsForAKeysMoveThoughYouWentToAnotherCardMeanwhile() async throws {
+        let order = Self.order()
+        order.setBoardLayout(BoardLayout(hidden: [.completed]))
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        states.answersLater = true
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .inProgress)], stories: [])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("both cards") { drawn.frames[task] != nil && drawn.frames[Self.ref] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            try await Self.pressUntil("⌘→ to close it, into Completed, which you hid") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            #expect(states.changes.last?.state == "Closed")
+            Self.click(at: try #require(drawn.frames[Self.ref]), in: host)
+            try await until("the click on the draft's card, before Azure DevOps answers") { details.shown == Self.ref }
+            let before = drawn.frames[task]?.minX
+            states.answer()
+            try await until("its card drawn in Completed, shown for it") {
+                drawn.isDrawn(task) && drawn.frames[task]?.minX != before
+            }
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card that has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == Self.ref, "The moved card took the keyboard from the draft's card you clicked")
+            #expect(order.boardLayout == BoardLayout(hidden: [.completed]))
+        }
+    }
+
     /// Why a work item's card couldn't move, which its lane says, goes once what held it ends: ⌘→ while its change is on its
     /// way says one state changes at a time, and once Azure DevOps answers, the card moves and the lane says it no more.
     @Test func aLanesLineOfWhyAWorkItemsCardCouldntMoveGoesOnceItsChangeIsDone() async throws {

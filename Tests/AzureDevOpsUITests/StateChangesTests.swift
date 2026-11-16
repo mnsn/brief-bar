@@ -255,7 +255,7 @@ import Testing
         // Read again while the token came: someone set it to Closed.
         try readAgain(sprint, in: "Closed")
         token?.resume()
-        await changing.value
+        #expect(await !changing.value)
         #expect(azure.sent.isEmpty)
         let change = StateChanges.Change(
             key: key, name: "Task 5104", title: task.title, from: "New", to: "Active", account: "robin@contoso.example"
@@ -287,6 +287,27 @@ import Testing
         #expect(states.undoable == nil)
     }
 
+    /// A change is called off as it waits for its token once a read finds its work item in the state it goes to, as someone
+    /// else put it there: nothing goes, and the line says nothing, but it says the work item is in that state, as BriefBar
+    /// reads it, for My Work's Board, where its card goes there.
+    @Test func aChangeCalledOffAsAReadFindsItWhereItGoesSaysItsThere() async throws {
+        let (sprint, states, azure) = live()
+        var token: CheckedContinuation<Void, Never>?
+        states.send = { write, account, wanted in
+            await withCheckedContinuation { token = $0 }
+            return try await azure.send(write, as: account, while: wanted)
+        }
+        let task = try item(sprint)
+        let changing = Task { await states.change(task, to: "Active") }
+        try await waitUntil { token != nil }
+        try readAgain(sprint, in: "Active")
+        token?.resume()
+        #expect(await changing.value)
+        #expect(azure.sent.isEmpty)
+        #expect(states.line == nil)
+        #expect(try item(sprint).state == "Active")
+    }
+
     /// Turned off as a change waits for its token, it never goes, and leaves nothing on its way; and turned off after one
     /// went, Undo goes with the line.
     @Test func turningItOffCallsOffWhatHasntGoneAndForgetsUndo() async throws {
@@ -300,7 +321,7 @@ import Testing
         let changing = Task { await states.change(task, to: "Active") }
         try await waitUntil { states.isBusy }
         states.settings.makesChanges = false
-        await changing.value
+        #expect(await !changing.value)
         #expect(azure.sent.isEmpty)
         #expect(states.line == nil)
         #expect(!states.isBusy)
