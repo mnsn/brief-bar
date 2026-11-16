@@ -26,8 +26,9 @@ import Testing
         #expect(BoardSearch("  cart ")?.text == "cart")
     }
 
-    /// A link to a pull request or a work item matches only the card that is, or names, what it points to: not one whose
-    /// names have its number.
+    /// A link to a pull request, a work item or a Copilot session matches only the card that is, or names, what it points to,
+    /// or that the session works on: not one whose names have its number or ID. A session's `ghapp://sessions/` link or its ID
+    /// alone.
     @Test func aLinkMatchesOnlyWhatItPointsTo() throws {
         let pullRequest = try #require(BoardSearch("https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4102"))
         #expect(pullRequest.matches(Self.card("PR !4102", refs: [Steps.pr(4102)])))
@@ -35,6 +36,74 @@ import Testing
         let workItem = try #require(BoardSearch(" https://dev.azure.com/contoso/Storefront/_workitems/edit/5112 "))
         #expect(workItem.matches(Self.card("PR !4102", refs: [Steps.pr(4102), Steps.task(5112)])))
         #expect(!workItem.matches(Self.card("Task 5112", refs: [Steps.task(5113)])))
+        for text in ["ghapp://sessions/7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b", " 7C1E2A90-4B3D-4F5E-8A6B-1C2D3E4F5A6B "] {
+            let session = try #require(BoardSearch(text))
+            #expect(session.matches(Self.card("PR !4102", refs: [Steps.pr(4102), Steps.task(5112), Steps.cart])), "\(text)")
+            #expect(!session.matches(Self.card("PR !4103", "7c1e2a90-4b3d-4f5e-8a6b-1c2d3e4f5a6b", refs: [Steps.pr(4103)])), "\(text)")
+        }
+    }
+
+    /// A pull request's card that's for the same work item as one that matches shows too, as related, as a task's pull request
+    /// in another repository does: in its lane, its column counting it, though the field counts only what matches, and Return
+    /// goes past it to the first that does. One that matches in one of its lanes isn't related in another, where it doesn't
+    /// show; one for none of the work items that those that match are for doesn't show.
+    @Test func aPullRequestForTheSameWorkItemAsAMatchShowsAsRelated() throws {
+        var checkout = Steps.mission([Steps.step(4101, .next), Steps.step(4102, .waiting(open: [Steps.pr(4101)], unknown: []))])
+        checkout.story = MissionStory(ref: Steps.task(5001))
+        let cart = Steps.mission([Steps.step(4103, .merged, status: .merged), Steps.step(4102)])
+        let board = Steps.board([
+            4101: Steps.reading(.inProgress, .draft, at: 1), 4102: Steps.reading(.yourReview, .asked("Priya asked you"), at: 2),
+            4103: Steps.reading(.merged, .merged, at: 3), 4200: Steps.reading(.teammateReview, .findReviewer, at: 4),
+        ], missions: [checkout, cart])
+        // Task 5112 has !4101 and !4200, each in its own repository; Task 5113 has !4102 and !4103.
+        let work: [ItemRef: [ItemRef]] = [
+            Steps.pr(4101): [Steps.task(5112)], Steps.pr(4200): [Steps.task(5112)], Steps.pr(4102): [Steps.task(5113)],
+            Steps.pr(4103): [Steps.task(5113)],
+        ]
+        let titles: [ItemRef: String] = [
+            Steps.pr(4101): "Round cart totals", Steps.pr(4102): "Retry backoff", Steps.pr(4103): "Cart badge",
+            Steps.pr(4200): "Café menu",
+        ]
+        let missions = [checkout.key: "Checkout", cart.key: "Cart"]
+        func matching(_ text: String) throws -> PullRequestBoard {
+            try board.matching(#require(BoardSearch(text))) { item in
+                guard case .pullRequest(let card) = item else { return BoardSearch.Card(refs: [item.ref], names: []) }
+                return BoardSearch.Card(
+                    refs: [card.ref] + (work[card.ref] ?? []),
+                    names: ["PR \(card.ref.shortOrderLabel)", titles[card.ref] ?? "", card.mission.flatMap { missions[$0] } ?? ""]
+                )
+            }
+        }
+        func labels(_ board: PullRequestBoard) -> [[String]] {
+            board.lanes.map { lane in board.columns.flatMap { lane.items(in: $0) }.map(\.ref.shortOrderLabel) }
+        }
+
+        // !4101, Task 5112's other pull request, in Checkout's lane, which comes first.
+        let menu = try matching("4200")
+        #expect(menu.lanes.map(\.kind) == [.mission(checkout.key), .notInAMission])
+        #expect(labels(menu) == [["!4101"], ["!4200"]])
+        #expect(menu.related == [Steps.pr(4101)])
+        #expect(menu.counts == [.inProgress: 1, .teammateReview: 1])
+        #expect(menu.count(of: .stage(.inProgress)) == 1)
+        #expect(menu.cardCount == 1)
+        #expect(menu.firstCard == Steps.pr(4200))
+        #expect(BoardText.matchCount(menu.cardCount, related: menu.related.count) == "1 card · 1 related")
+
+        // !4102 matches in both of its lanes, and !4103, Task 5113's other, shows with it in Cart's.
+        let retry = try matching("retry")
+        #expect(labels(retry) == [["!4102"], ["!4102", "!4103"]])
+        #expect(retry.related == [Steps.pr(4103)])
+        #expect(retry.counts == [.yourReview: 1, .merged: 1])
+
+        // !4102 matches only in Cart's lane, by its name, so it doesn't show in Checkout's; !4200 is Task 5112's, as !4101 is.
+        let cartSearch = try matching("cart")
+        #expect(labels(cartSearch) == [["!4101"], ["!4102", "!4103"], ["!4200"]])
+        #expect(cartSearch.related == [Steps.pr(4200)])
+        #expect(cartSearch.cardCount == 3)
+
+        #expect(try matching("4101 round").related == [Steps.pr(4200)])
+        #expect(try matching("nothing like it").related.isEmpty)
+        #expect(BoardText.matchCount(3) == "3 cards")
     }
 
     /// The board keeps only the cards that match, in the lanes that hold them, each column counting them, Completed too,

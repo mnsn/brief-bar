@@ -122,33 +122,43 @@ enum MyWorkFacts {
     }
 
     /// What My Work's search finds a card on the Board by (`BoardSearch.Card`). A pull request's: its number, "PR !4102", and
-    /// its title; the work items of yours its card names, and any other Show Links links it to, even while Show has only pull
-    /// requests, by type and ID, "Task 5112", and title, as the sprint, your work outside it or Show Links read them; and its
-    /// mission's name, with the story it's for. A work item's: its type and ID, and its title; the pull requests its card
-    /// names, "PR !4120", with their titles, as your lists or Show Links read them; and its story, by type, ID and title, with
-    /// that story's mission's name. So a mission's name, or a story's ID, finds its cards, with Lanes: None too.
+    /// its title; its repository and source branch; the work items of yours its card names, and any other Show Links links it
+    /// to, even while Show has only pull requests, by type and ID, "Task 5112", and title, as the sprint, your work outside it
+    /// or Show Links read them; the Copilot sessions Show Links links it to, by name; and its mission's name, with the story
+    /// it's for. A work item's: its type and ID, and its title; the pull requests its card names, "PR !4120", with their titles
+    /// and repositories, as your lists or Show Links read them; the sessions Show Links links it to, through those pull
+    /// requests too; and its story, by type, ID and title, with that story's mission's name. So a mission's name, or a story's
+    /// ID, finds its cards, with Lanes: None too; a repository's name its pull requests' cards; and a session's link the cards
+    /// it works on.
     /// - Parameters:
     ///   - title: what a pull request, a work item or a session is called, as its source says.
     ///   - workItem: one of your work items as BriefBar read it, for its type and title.
     ///   - linkedWorkItem: a linked work item the sprint doesn't show, as Show Links read it, such as your task outside the
     ///     sprint with Show: Pull Requests, or someone else's.
-    ///   - linkedPullRequest: a linked pull request your lists don't show, as Show Links read it, such as a teammate's.
-    ///   - linked: what Show Links links a pull request to; nothing while it's off.
+    ///   - pullRequest: a pull request as your lists have it, else as Show Links read it, such as a teammate's: for its title,
+    ///     repository and branch.
+    ///   - linked: what Show Links links a pull request or a work item to; nothing while it's off.
     ///   - missions: the missions, as By Mission lists them.
     ///   - missionTitle: a mission's name, as its lane's header says it.
     static func searched(
         _ item: BoardItem, on board: PullRequestBoard, title: (ItemRef) -> String?, workItem: (ItemRef) -> WorkItem?,
-        linkedWorkItem: (WorkItemKey) -> WorkItem?, linkedPullRequest: (PRKey) -> PullRequest?, linked: (ItemRef) -> [ItemRef],
+        linkedWorkItem: (WorkItemKey) -> WorkItem?, pullRequest: (PRKey) -> PullRequest?, linked: (ItemRef) -> [ItemRef],
         missions: [OrderMission], missionTitle: (OrderMission) -> String
     ) -> BoardSearch.Card {
         func known(_ ref: ItemRef) -> WorkItem? {
             guard ref.kind == .workItem, let id = ref.number else { return nil }
             return workItem(ref) ?? linkedWorkItem(WorkItemKey(ref.scope, id))
         }
-        func called(_ ref: ItemRef) -> String? {
-            if let title = title(ref) { return title }
+        func read(_ ref: ItemRef) -> PullRequest? {
             guard ref.kind == .pullRequest, let number = ref.number else { return nil }
-            return linkedPullRequest(PRKey(ref.scope, number))?.title
+            return pullRequest(PRKey(ref.scope, number))
+        }
+        func called(_ ref: ItemRef) -> String? {
+            title(ref) ?? read(ref)?.title
+        }
+        /// A pull request's repository: a GitHub one's is in its reference.
+        func repository(of ref: ItemRef) -> String? {
+            ref.kind == .gitHubPullRequest ? ref.scope : read(ref)?.repositoryName
         }
         func names(ofWorkItem ref: ItemRef) -> [String] {
             let item = known(ref)
@@ -164,23 +174,26 @@ enum MyWorkFacts {
         switch item {
         case .pullRequest(let card):
             var seen: Set<ItemRef> = []
-            let work = ((board.workOfPullRequests[card.ref] ?? []) + linked(card.ref).filter { $0.kind == .workItem })
+            let links = linked(card.ref)
+            let work = ((board.workOfPullRequests[card.ref] ?? []) + links.filter { $0.kind == .workItem })
                 .filter { seen.insert($0).inserted }
+            let sessions = links.filter { $0.kind == .session }
             let mission = card.mission.flatMap { key in missions.first { $0.key == key } }
+            let itself = ["PR \(card.ref.shortOrderLabel)", called(card.ref), repository(of: card.ref), read(card.ref)?.sourceBranch]
             return BoardSearch.Card(
-                refs: [card.ref] + work,
-                names: ["PR \(card.ref.shortOrderLabel)", called(card.ref)].compactMap { $0 } + work.flatMap(names(ofWorkItem:))
-                    + names(of: mission)
+                refs: [card.ref] + work + sessions,
+                names: itself.compactMap { $0 } + work.flatMap(names(ofWorkItem:)) + sessions.compactMap(title) + names(of: mission)
             )
         case .work(let task):
             let pullRequests = task.work.pullRequests.map(\.ref)
+            let sessions = linked(task.ref).filter { $0.kind == .session }
             let story = task.work.story.flatMap { $0 == task.ref ? nil : $0 }
             let mission = task.work.story.flatMap { story in missions.first { $0.story?.ref == story } }
             return BoardSearch.Card(
-                refs: [task.ref] + pullRequests,
+                refs: [task.ref] + pullRequests + sessions,
                 names: names(ofWorkItem: task.ref)
-                    + pullRequests.flatMap { ["PR \($0.shortOrderLabel)", called($0)].compactMap { $0 } }
-                    + (story.map(names(ofWorkItem:)) ?? []) + names(of: mission)
+                    + pullRequests.flatMap { ["PR \($0.shortOrderLabel)", called($0), repository(of: $0)].compactMap { $0 } }
+                    + sessions.compactMap(title) + (story.map(names(ofWorkItem:)) ?? []) + names(of: mission)
             )
         }
     }
@@ -304,7 +317,8 @@ struct MyWorkPage: View {
 extension MyWorkPage {
     /// My Work's pictures, while Pull Request Order is on: with + Sprint Tasks, wide enough for every column, in a narrow
     /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
-    /// and in a narrow window; and what + Sprint Tasks says while Show Links is off.
+    /// and in a narrow window, for “!4115”, whose task's other pull request shows as related, and for a session's name,
+    /// “migrate stored”; and what + Sprint Tasks says while Show Links is off.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -318,6 +332,8 @@ extension MyWorkPage {
             ("my-work-pull-requests", .pullRequests, .missions, CGSize(width: 1_200, height: 1_250), nil),
             ("my-work-search", .allTasks, .missions, CGSize(width: 1_600, height: 1_250), "checkout"),
             ("my-work-search-narrow", .allTasks, .missions, CGSize(width: 560, height: 1_500), "checkout"),
+            ("my-work-search-related", .allTasks, .missions, CGSize(width: 1_600, height: 650), "!4115"),
+            ("my-work-search-session", .allTasks, .missions, CGSize(width: 1_600, height: 650), "migrate stored"),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
@@ -564,7 +580,7 @@ private struct MyWorkContent: View {
 
     /// The Board's search (`BoardSearch`): ⌘F, or a click on its magnifier, gives it the keyboard; Escape clears it, as its ✕
     /// does, then leaves it; Return takes the keyboard to the first card that matches, as Show Them does. While you search,
-    /// it says how many cards match.
+    /// it says how many cards match, and how many it shows as related to them.
     private func searchField(_ board: PullRequestBoard?) -> some View {
         HStack(spacing: 5) {
             Button {
@@ -593,7 +609,7 @@ private struct MyWorkContent: View {
                 .accessibilityLabel("Search the Board")
                 .accessibilityHint(MyWorkText.searchHint)
             if let board, board.search != nil {
-                Text(BoardText.matchCount(board.cardCount))
+                Text(BoardText.matchCount(board.cardCount, related: board.related.count))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -695,16 +711,21 @@ private struct MyWorkContent: View {
     }
 
     /// The Board as the search shows it, while you search: only the cards that match, by what `MyWorkFacts.searched` finds
-    /// each by; else as it is.
+    /// each by, with the pull requests' cards related to them; else as it is. A session is called as Show Links' capsules
+    /// call it.
     private func searched(_ board: PullRequestBoard?) -> PullRequestBoard? {
         guard let board, let search = BoardSearch(searchText) else { return board }
         let titles = Dictionary(store.items.map { ($0.key.linkRef, $0.title) }, uniquingKeysWith: { first, _ in first })
         let missions = PullRequestsByMission.missions(ordering.missions)
+        let title = { (ref: ItemRef) -> String? in
+            guard ref.kind == .session else { return titles[ref] ?? ordering.name(of: ref) }
+            return links.isDescribed(ref) ? links.describe(ref).label : nil
+        }
         return board.matching(search) { item in
             MyWorkFacts.searched(
-                item, on: board, title: { titles[$0] ?? ordering.name(of: $0) }, workItem: workItem, linkedWorkItem: linkedWorkItem,
-                linkedPullRequest: linkedPullRequest, linked: { links.connections(of: $0).map(\.item.ref) }, missions: missions,
-                missionTitle: ordering.title(of:)
+                item, on: board, title: title, workItem: workItem, linkedWorkItem: linkedWorkItem,
+                pullRequest: { store.record(for: $0)?.pullRequest ?? linkedPullRequest($0) },
+                linked: { links.connections(of: $0).map(\.item.ref) }, missions: missions, missionTitle: ordering.title(of:)
             )
         }
     }
@@ -1236,11 +1257,13 @@ enum MyWorkText {
     static let searchPrompt = "Search by ID or name"
 
     /// The search's tooltip.
-    static let searchHelp = "Show only the cards that match: a task's or a pull request's ID, or words of its name, or of its "
-        + "mission's or story's. ⌘F searches, Return goes to the first card, Escape clears it"
+    static let searchHelp = "Show only the cards that match: a task's or a pull request's ID, or words of its name, its "
+        + "mission's or story's, its repository's or branch's, or its Copilot sessions'; and, faded, the other pull requests "
+        + "for the same work item. ⌘F searches, Return goes to the first card that matches, Escape clears it"
 
     /// What VoiceOver says the search does.
-    static let searchHint = "Shows only the Board's cards that match, by ID or name. Return goes to the first, and Escape clears it"
+    static let searchHint = "Shows only the Board's cards that match, by ID or name, repository, branch or session, and the "
+        + "pull requests related to them. Return goes to the first that matches, and Escape clears it"
 
     /// Why moving a card of your work outside the sprint doesn't change its state, which only the sprint's board's work does
     /// here: "Move it to Sprint 42 first: only the sprint's work changes state here"; for one in the sprint's iteration that

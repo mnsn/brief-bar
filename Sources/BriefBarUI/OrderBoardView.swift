@@ -19,9 +19,10 @@ import SwiftUI
 // pull request's card goes too once it's out, with your work on it done. Dragging one to another column of its lane, or
 // ⌘→ and ⌘←, puts its work item in the state that column's work is in, with Make Changes in Azure DevOps on
 // (`BoardTask.move(to:sameLane:states:)`), and it goes there once Azure DevOps has it; else it moves as its work does. My
-// Work's search shows only the cards that match it (`PullRequestBoard.matching`), in the lanes that hold them, which don't
-// fold while it lasts; BriefBar folds the columns by what matches, opening one you folded and showing one you hid where it
-// holds a match, and what you fold or open meanwhile lasts as long as the search: cleared, the board is as you left it.
+// Work's search shows only the cards that match it (`PullRequestBoard.matching`), and, faded, the pull requests' cards
+// related to them (`PullRequestBoard.related`), in the lanes that hold them, which don't fold while it lasts; BriefBar folds
+// the columns by what shows, opening one you folded and showing one you hid where it holds a card, and what you fold or open
+// meanwhile lasts as long as the search: cleared, the board is as you left it.
 
 /// What a page draws on a card, which the Board frames: its content, its menu, and what VoiceOver says of it.
 package struct BoardCardContent {
@@ -1928,8 +1929,8 @@ package struct OrderBoardView: View {
             let spot = CardSpot(lane: lane.kind, ref: card.ref)
             BoardCardView(
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
-                badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), reorder: reorder,
-                order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
+                badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), isRelated: board.related.contains(card.ref),
+                reorder: reorder, order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
                 left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
@@ -2528,7 +2529,8 @@ private struct Sideways: Layout {
 /// what's next, Fix next on Fix next's, wherever it is, with ✎ where you chose it, a click showing its details and giving it
 /// the keyboard's focus, as a field takes it, whatever the Mac's keyboard navigation: then ⌘→ and ⌘← move it, and Return or
 /// Space shows its details. Tab goes from card to card. It drags to another column, and VoiceOver has every move among its
-/// actions, and Make Next where its column has an Up Next slot.
+/// actions, and Make Next where its column has an Up Next slot. Faded where My Work's search shows it as related to a card
+/// that matches, which VoiceOver hears first, and its tooltip says.
 private struct BoardCardView: View {
     let card: BoardCard
     let content: BoardCardContent
@@ -2540,6 +2542,9 @@ private struct BoardCardView: View {
     /// What it wears: Fix next, as Fix next's pull request, then Next, as its column's first.
     let badges: [CardBadge]
     let isSelected: Bool
+    /// My Work's search shows it though it doesn't match, as it's for the same work item as a card that does
+    /// (`PullRequestBoard.related`).
+    let isRelated: Bool
     /// Its moves within its column, in your order, on My Work's In progress; nil elsewhere.
     let reorder: CardReorder?
     @ObservedObject var order: PullRequestOrder
@@ -2595,6 +2600,8 @@ private struct BoardCardView: View {
                     .allowsHitTesting(false)
                 }
             }
+            // Faded while it's only related to a card that matches My Work's search; the ring of the card you selected isn't.
+            .opacity(isRelated ? Self.relatedOpacity : 1)
             .overlay {
                 if isSelected {
                     shape.strokeBorder(Color.accentColor, lineWidth: 2)
@@ -2641,7 +2648,8 @@ private struct BoardCardView: View {
                 return .handled
             }
             .help(
-                "\(content.label)\nClick to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage"
+                "\(content.label)\n" + (isRelated ? BoardText.related + "\n" : "")
+                    + "Click to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage"
                     + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
             )
             .accessibilityElement(children: .ignore)
@@ -2716,13 +2724,18 @@ private struct BoardCardView: View {
     }
 
     private var accessibilityValue: String {
-        // Its stage stays Merged there: the column says where it is.
-        var parts = column == .completed ? [column.title] : []
+        // That it's related first: the rest is what any card says. Its stage stays Merged in Completed: the column says
+        // where it is.
+        var parts = isRelated ? [BoardText.related] : []
+        if column == .completed { parts.append(column.title) }
         parts.append(StageWords.spoken(card.reading, order: order, now: now))
         parts += content.details
         parts += badges.map(\.spoken)
         return parts.joined(separator: ", ")
     }
+
+    /// How faded a card related to one that matches My Work's search is.
+    static let relatedOpacity = 0.5
 
     /// What follows the pointer as it's dragged: its number and title, in its column's color.
     private var preview: some View {
