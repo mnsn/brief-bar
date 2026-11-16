@@ -228,6 +228,20 @@ private struct PendingPlace: Equatable {
     var column: BoardColumn?
 }
 
+/// Where a card is on the board: its lane, and its column.
+private struct SightPlace: Equatable {
+    var lane: BoardLane.Kind
+    var column: BoardColumn
+}
+
+/// What stays in sight, however you laid out the board (`OrderBoardView.keptInSight`): the columns that show where you hid
+/// them, those that open where they'd fold, and the lanes that stay open where they'd fold.
+private struct KeptInSight {
+    var shown: Set<BoardColumn> = []
+    var open: Set<BoardColumn> = []
+    var lanes: Set<BoardLane.Kind> = []
+}
+
 /// What decides how long the column a key moved a card to stays open: which card has the keyboard's focus, whether the
 /// board can take it, which card a move still owes it, and that column.
 private struct KeyMoment: Equatable {
@@ -633,6 +647,12 @@ package struct OrderBoardView: View {
     /// (`settle(_:changed:)`), and a key's in sight wherever Copilot's work takes it (`keptInSight`). Not where it isn't,
     /// nor once you chose another card.
     @LocalState private var pendingMove: PendingMove?
+    /// The place the board keeps a key's card in sight in, as it last drew it (`movedSight`): once the card goes on, or its
+    /// move ends, the card you're on there stays in sight with it (`handOnSight(from:to:)`).
+    @LocalState private var heldSight: SightPlace?
+    /// The column the board kept a key's card in sight in as that ended, where the card you're on was: it stays open while
+    /// the card you're on is in it, where you folded it (`handOnSight(from:to:)`).
+    @LocalState private var yourSight: BoardColumn?
     /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
     /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
     @LocalState private var lastFocus: CardSpot?
@@ -721,6 +741,8 @@ package struct OrderBoardView: View {
         // is done, which its pull requests and Copilot's work may change while the change is on its way; or where it stays
         // as its change fails.
         .onChange(of: pendingPlace) { _, place in land(place) }
+        // Where the board keeps a key's card in sight, as Copilot's work takes it, until its move ends.
+        .onChange(of: movedSight) { old, new in handOnSight(from: old, to: new) }
         .onDisappear {
             if order.stageRefusal != nil { order.stageRefusal = nil }
         }
@@ -798,25 +820,25 @@ package struct OrderBoardView: View {
     // MARK: Folding
 
     /// The columns open for the moment, whatever else says: those a drag sprang open, the one a card you moved with a key
-    /// went to while a card there keeps the keyboard's focus, the one a key's card is in while its change is on its way
-    /// (`keptInSight`), and those Up Next's "2 more ›" or My Work's Show Them opened.
+    /// went to while a card there keeps the keyboard's focus, the one a key's card is in while its change is on its way,
+    /// and one it was in while the card you're on is there (`keptInSight`), and those Up Next's "2 more ›" or My Work's
+    /// Show Them opened.
     private var openForNow: Set<BoardColumn> {
-        var open = sprung.union(revealedOpen)
+        var open = sprung.union(revealedOpen).union(keptInSight.open)
         if let opened = keyOpened, let column = column(of: opened.spot), shownColumn(holding: opened.column).contains(column) {
             open.insert(column)
         }
-        if let kept = keptInSight { open.insert(kept.column) }
         return open
     }
 
     /// How you laid out the columns, with those Show Them showed for the moment; and while My Work's search shows only what
     /// matches, the hidden ones that hold a match, but for those you hid again meanwhile. And the one a key's card is in
-    /// while its change is on its way, while it's there (`keptInSight`).
+    /// while its change is on its way, while it's there, or the card you're on, as that ends (`keptInSight`).
     private var shownLayout: BoardLayout {
         shownLayout(keepingInSight: true)
     }
 
-    /// The same, with or without the column a key's card is in while its change is on its way.
+    /// The same, with or without the columns in sight for a key's card on its way, and for the card you're on.
     private func shownLayout(keepingInSight: Bool) -> BoardLayout {
         var layout = unhiddenForNow.reduce(order.boardLayout) { $0.showing(ShownColumn($1)) }
         if board.search != nil {
@@ -824,10 +846,12 @@ package struct OrderBoardView: View {
                 .filter { board.count(of: $0) > 0 && searchHidden.isDisjoint(with: $0.parts) }
                 .reduce(layout) { $0.showing($1) }
         }
-        guard keepingInSight, let kept = keptInSight,
-              let hidden = layout.hiddenColumns(board.columns).first(where: { $0.contains(kept.column) })
-        else { return layout }
-        return layout.showing(hidden)
+        guard keepingInSight else { return layout }
+        let shown = keptInSight.shown
+        guard !shown.isEmpty else { return layout }
+        return layout.hiddenColumns(board.columns).filter { $0.parts.contains(where: shown.contains) }.reduce(layout) {
+            $0.showing($1)
+        }
     }
 
     /// Where a key's card is while its change is on its way, owed the keyboard's focus, and while the board follows it once
@@ -835,10 +859,48 @@ package struct OrderBoardView: View {
     /// hide or fold, while it's there, as the card would go from under the keyboard, which AppKit would give another card,
     /// where a key would act, for as long as Azure DevOps takes. Not once you chose another card, nor for a drop, which
     /// leaves the card's lane to fold. Nothing of it lasts: where the card ends up, `land(_:)` shows it.
-    private var keptInSight: (lane: BoardLane.Kind, column: BoardColumn)? {
+    private var movedSight: SightPlace? {
         guard let pending = pendingMove, pending.opensColumn, pending.owed != nil, let column = column(of: pending.spot)
         else { return nil }
-        return (pending.spot.lane, column)
+        return SightPlace(lane: pending.spot.lane, column: column)
+    }
+
+    /// What stays in sight however you laid out the board: where a key's card is while its change is on its way
+    /// (`movedSight`); and where the card you're on is in a place the board kept that card in sight in, as it goes on or its
+    /// move ends, rather than hide or fold under you. The board draws that place as it was until it hands it on to you
+    /// (`handOnSight(from:to:)`), and keeps its column open, where you folded it, while you're there.
+    private var keptInSight: KeptInSight {
+        var kept = KeptInSight()
+        if let moved = movedSight {
+            kept.shown.insert(moved.column)
+            kept.open.insert(moved.column)
+            kept.lanes.insert(moved.lane)
+        }
+        guard heldSight != nil || yourSight != nil, let spot = cardYoureOn, let column = column(of: spot) else { return kept }
+        if let held = heldSight {
+            if isSameColumn(column, as: held.column) {
+                kept.shown.insert(held.column)
+                kept.open.insert(held.column)
+            }
+            if spot.lane == held.lane { kept.lanes.insert(held.lane) }
+        }
+        if let yours = yourSight, isSameColumn(column, as: yours) { kept.open.insert(yours) }
+        return kept
+    }
+
+    /// The card you're on: the one you chose, or that has the keyboard's focus; not one AppKit gave it to by itself as a
+    /// moved card's old place went, which that card takes it back from (`MovingFocus`).
+    private var cardYoureOn: CardSpot? {
+        guard let spot = lastFocus, spot != movingFocus?.handedOn else { return nil }
+        return spot
+    }
+
+    /// Whether a column is in the same column as another, as you laid them out, joined or not, shown or hidden.
+    private func isSameColumn(_ column: BoardColumn, as other: BoardColumn) -> Bool {
+        guard column != other else { return true }
+        let layout = shownLayout(keepingInSight: false)
+        let columns = layout.shown(board.columns, splitting: sprungJoins) + layout.hiddenColumns(board.columns)
+        return columns.first { $0.contains(other) }?.contains(column) ?? false
     }
 
     /// Your folds and opens as the board takes them: while My Work's search shows only what matches, those you made since it
@@ -914,6 +976,7 @@ package struct OrderBoardView: View {
         sprung.subtract(column.parts)
         revealedOpen.subtract(column.parts)
         if let opened = keyOpened, column.contains(opened.column) { keyOpened = nil }
+        if let yours = yourSight, column.contains(yours) { yourSight = nil }
     }
 
     /// Folds a column, as a click on its title does: one open for the moment folds back, where it was folded; else
@@ -1557,8 +1620,9 @@ package struct OrderBoardView: View {
         // a story's whose work is all resolved or done. Neither while My Work's search shows only what matches, which it
         // would hide too.
         let canFold = board.search == nil && (mission.map { $0.isFinished && !lane.hasWorkToDo } ?? lane.isFinishedStory)
-        // Nor while it holds a key's card whose change is on its way, wherever Copilot's work takes it (`keptInSight`).
-        let isFolded = canFold && !unfolded.contains(lane.kind) && keptInSight?.lane != lane.kind
+        // Nor while it holds a key's card whose change is on its way, wherever Copilot's work takes it, nor the card you're
+        // on as that ends (`keptInSight`).
+        let isFolded = canFold && !unfolded.contains(lane.kind) && !keptInSight.lanes.contains(lane.kind)
         let undoRefs = board.undoRefs(of: lane, missions: missions, changed: order.lastStageChange?.ref)
         return VStack(alignment: .leading, spacing: 8) {
             // The lane's header stays in view as the board scrolls sideways. Every card in one lane has none, but for the
@@ -2403,6 +2467,8 @@ package struct OrderBoardView: View {
     /// - Returns: the move's own, which its change names as it's done.
     private func track(_ spot: CardSpot, from column: BoardColumn, owesFocus: Bool, opensColumn: Bool) -> UUID? {
         guard owesFocus || opensColumn else { return nil }
+        // A new move: a column the last one handed on to you is yours no more.
+        yourSight = nil
         let owed = owesFocus ? oweFocus(to: spot, moves: true, waits: false) : nil
         let pending = PendingMove(spot: spot, from: column, owed: owed, opensColumn: opensColumn)
         pendingMove = pending
@@ -2477,6 +2543,24 @@ package struct OrderBoardView: View {
         }
         guard pending.owed != nil else { return }
         withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: column, spot: pending.spot) }
+    }
+
+    /// The board keeps a key's card in sight in another place, or no more, as Copilot's work takes it on, its move ends, or
+    /// you choose another card: where the card you're on, as you chose it or went to it, is in the place it leaves, that
+    /// stays in sight with it. Where you hid its column, that shows for the moment, as you work there now; where you folded
+    /// it, it stays open while the card you're on is in it; and a lane that folds once its work is all done stays open, as
+    /// if you opened it. Not where the key's card took the keyboard on with it.
+    private func handOnSight(from old: SightPlace?, to new: SightPlace?) {
+        heldSight = new
+        guard let old, old != new, let spot = cardYoureOn, let column = column(of: spot) else { return }
+        if isSameColumn(column, as: old.column) {
+            showForTheMoment(old.column)
+            yourSight = old.column
+        }
+        if spot.lane == old.lane, let lane = board.lanes.first(where: { $0.kind == old.lane }), foldsOnceDone(lane),
+           !lane.hasWorkToDo {
+            unfolded.insert(old.lane)
+        }
     }
 
     /// You chose a card, with a click or Return: it has the keyboard's focus back once its details close, should they cover
