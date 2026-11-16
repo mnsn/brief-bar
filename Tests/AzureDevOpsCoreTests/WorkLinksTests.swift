@@ -415,6 +415,53 @@ import Testing
         #expect(published.each.dropFirst(before).contains { $0.pendingWorkItems == linked })
     }
 
+    /// A linked work item read before stories were wanted, without its parent, whose read with it fails since: it isn't
+    /// pending, as a failed read counts as read, but it's partly read, so its task gives no story rather than be one of its
+    /// own (`WorkItemStories`), until a read with its parent gets it; and nothing is partly read while stories aren't wanted.
+    @Test func aWorkItemReadWithoutItsParentIsPartlyReadUntilAReadGetsIt() async {
+        let server = StubServer()
+        let fails = Mutex(false)
+        server.on("/pullRequests/7/workitems", json: Fixture.list([["id": "5102"]]))
+        server.on("/_apis/wit/workitems") { _ in
+            fails.withLock { $0 }
+                ? .status(500) : .json(Fixture.list([WorkFixture.workItem(5102, "Task", "Round coupon totals", parent: 5101, rank: 2)]))
+        }
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let pullRequests = [PRKey("contoso", 7): Self.place]
+        let task = WorkItemKey("contoso", 5102)
+        func stories(_ links: WorkLinks) -> [OrderStory] {
+            WorkItemStories(workItems: Array(links.workItems.values), board: nil, partlyRead: links.partlyRead)
+                .stories(of: PRKey("contoso", 7), workItems: [5102])
+        }
+
+        await engine.update(.init(pullRequests: pullRequests))
+        var links = await engine.currentLinks()
+        #expect(links.workItems[task]?.parentId == nil)
+        #expect(links.partlyRead.isEmpty)
+
+        // Wanted, and the read with its parent fails: no longer pending, but partly read, so its task gives no story.
+        fails.withLock { $0 = true }
+        await engine.update(.init(pullRequests: pullRequests, wantsStories: true))
+        links = await engine.currentLinks()
+        #expect(links.pendingWorkItems.isEmpty)
+        #expect(links.partlyRead == [task])
+        #expect(stories(links).isEmpty)
+
+        // Once a read gets it, with its parent: its story.
+        fails.withLock { $0 = false }
+        clock.advance(61 * minute)
+        await engine.refresh()
+        links = await engine.currentLinks()
+        #expect(links.partlyRead.isEmpty)
+        #expect(stories(links) == [
+            OrderStory(ref: .workItem(organization: "contoso", id: 5101), task: .workItem(organization: "contoso", id: 5102), rank: 2),
+        ])
+
+        await engine.update(.init(pullRequests: pullRequests))
+        #expect(await engine.currentLinks().partlyRead.isEmpty)
+    }
+
     @Test func looksUpWhatYouLinkedThatNoListShows() async {
         let server = StubServer()
         server.on("/_apis/git/pullrequests/4130") { _ in .status(404) }

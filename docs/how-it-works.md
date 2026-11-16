@@ -2029,9 +2029,10 @@ Reset Columns forget your folds too, as Let BriefBar Decide would for each.
 **A task's work in several repositories.** With Show Links on, a task with no parent is a story itself
 (`WorkItemStories.story`), as a bug or a story is, so two or more of its pull requests are its mission, a lane of their
 own, as one changed in several repositories has a pull request in each. That's only where its parent is read with it,
-as the sprint, your work outside it and Show Links' reads of linked work items have it; and a pull request whose work
-items aren't all read yet is for no story until they are (`WorkLinks.pendingWorkItems`), so a task whose parent isn't
-known yet is never taken for one with none. A mission's header names each repository its pull requests are in, the one
+as the sprint, your work outside it and Show Links' reads of linked work items have it; a pull request whose work
+items aren't all read yet is for no story until they are (`WorkLinks.pendingWorkItems`); and a task Show Links read
+before stories were wanted, without its parent, whose read with it fails since, gives none until a read gets it
+(`WorkLinks.partlyRead`): a task whose parent isn't known is never taken for one with none. A mission's header names each repository its pull requests are in, the one
 with the most of them first, "payments-api and shop-web" (`OrderText.places`), rather than the one most are in; and
 where a lane has pull requests of more than one repository, its cards name theirs, after why they're there
 (`PullRequestBoard.namingRepositories`), as rows do, while a lane's in one say nothing of it, its header naming it. A

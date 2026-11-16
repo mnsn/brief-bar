@@ -103,13 +103,16 @@ struct PullRequestsPage: View {
                 }
                 if shownOrder == .byMission {
                     let naming = Self.namingRepositories(on: board, items: store.items)
-                    PullRequestsByMission(
-                        view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
-                        card: { boardCard($0, $1, namesRepository: naming.contains($0.key.linkRef)) }, isSelected: isSelected,
-                        select: select, shownOnTop: details.shownOnTop,
-                        rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
-                        showByStatus: { settings.pullRequestOrder = .status }, now: store.now
-                    )
+                    // Drawn again as Show Links' links change, for what the Board's cards say of them to VoiceOver.
+                    ObservingLinks(links: services.links) {
+                        PullRequestsByMission(
+                            view: shownView, ordering: ordering, items: store.items, row: { AnyView(row($0, order: $1)) },
+                            card: { boardCard($0, $1, namesRepository: naming.contains($0.key.linkRef)) }, isSelected: isSelected,
+                            select: select, shownOnTop: details.shownOnTop,
+                            rest: { AnyView(groups($0, showsBrief: false)) }, board: board,
+                            showByStatus: { settings.pullRequestOrder = .status }, now: store.now
+                        )
+                    }
                 } else {
                     // What you changed last of a mission, from a row's Mission menu: By Status has no mission's card to say it.
                     if ordering.isOn, !ordering.said.isEmpty {
@@ -141,7 +144,8 @@ struct PullRequestsPage: View {
         ordering.revealColumn(stage)
     }
 
-    /// A pull request's card on the Board (`PullRequestBoardCard.content`).
+    /// A pull request's card on the Board (`PullRequestBoardCard.content`), with what VoiceOver hears of its links, as Show
+    /// Links has them as it's drawn (`ObservingLinks`).
     private func boardCard(_ item: PRSnapshot, _ card: BoardCard, namesRepository: Bool) -> BoardCardContent {
         PullRequestBoardCard.content(
             item, card, store: store, ordering: ordering, lanes: lanes ?? ordering.lanes, namesRepository: namesRepository,
@@ -340,5 +344,16 @@ struct PullRequestsPage: View {
 
     private func dismissing(_ item: PRSnapshot) -> (() -> Void)? {
         item.group == .needsYou ? { store.dismiss(item) } : nil
+    }
+}
+
+/// Draws its content again as Show Links' links change: for what a page works out from them as it draws, which the views that
+/// show it can't tell it, such as what VoiceOver hears of a Board card's links, worked out with the card's content.
+private struct ObservingLinks<Content: View>: View {
+    @ObservedObject var links: Links
+    let content: () -> Content
+
+    var body: some View {
+        content()
     }
 }

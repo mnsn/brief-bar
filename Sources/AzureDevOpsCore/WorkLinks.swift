@@ -41,11 +41,16 @@ public struct WorkLinks: Sendable, Equatable {
     /// While stories are wanted, your pull requests whose work items' read failed and that no read answered for: their
     /// stories count as read, with none known, until a read gets them.
     public var unreadablePullRequests: Set<PRKey>
+    /// While stories are wanted, the linked work items in `workItems` read without what stories want, their parent and place
+    /// in the backlog: as read before stories were wanted, while no read with it answered since, as when it failed. What's
+    /// read of them doesn't say whether a task has a parent, so a task among them is for no story, rather than a story of its
+    /// own (`WorkItemStories`), until a read gets it.
+    public var partlyRead: Set<WorkItemKey>
 
     public init(
         workItemsOfPullRequests: [PRKey: [Int]] = [:], pullRequestsOfWorkItems: [WorkItemKey: [PRKey]] = [:],
         workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:],
-        pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = []
+        pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = [], partlyRead: Set<WorkItemKey> = []
     ) {
         self.workItemsOfPullRequests = workItemsOfPullRequests
         self.pullRequestsOfWorkItems = pullRequestsOfWorkItems
@@ -54,6 +59,7 @@ public struct WorkLinks: Sendable, Equatable {
         self.parents = parents
         self.pendingWorkItems = pendingWorkItems
         self.unreadablePullRequests = unreadablePullRequests
+        self.partlyRead = partlyRead
     }
 
     /// Every link it read, between pull requests and work items.
@@ -247,6 +253,9 @@ public actor LinkEngine {
     private var pullRequestsRead: [PRKey: Date] = [:]
     private var sprintRead: (items: Set<WorkItemKey>, at: Date)?
     private var workItemsRead: [WorkItemKey: Date] = [:]
+    /// The linked work items whose last read had what stories want, their parent and place in the backlog: what's kept of
+    /// the rest doesn't say whether a task has a parent (`WorkLinks.partlyRead`).
+    private var readWithStories: Set<WorkItemKey> = []
     private var parentsRead: [WorkItemKey: Date] = [:]
     private var lookupsRead: [PRKey: Date] = [:]
     /// When each read failed, by what it read, to try again later rather than every refresh.
@@ -282,6 +291,7 @@ public actor LinkEngine {
                     item.rank = nil
                     return item
                 }
+                readWithStories = []
             }
         }
         prune()
@@ -471,6 +481,7 @@ public actor LinkEngine {
         let wanted = wantedWorkItems()
         links.workItems = links.workItems.filter { wanted.contains($0.key) }
         workItemsRead = workItemsRead.filter { wanted.contains($0.key) }
+        readWithStories.formIntersection(wanted)
         let due = wanted.filter {
             isDue(workItemsRead[$0], failed: failures["wi \($0)"], at: date, asked: isAsked("wi \($0)", read: workItemsRead[$0]))
         }
@@ -489,6 +500,7 @@ public actor LinkEngine {
                     // Those left out were deleted, or can't be read: there's nothing more to show of them, nor stories.
                     for id in batch {
                         links.workItems[WorkItemKey(organization, id)] = nil
+                        readWithStories.remove(WorkItemKey(organization, id))
                     }
                     // Stories may have been turned on or off while it read: what they don't want isn't kept, and what was
                     // read without what they want is read again.
@@ -502,6 +514,7 @@ public actor LinkEngine {
                             item.rank = nil
                         }
                         links.workItems[key] = item
+                        if readsStories && wantsStories { readWithStories.insert(key) }
                     }
                     guard readsStories || !wantsStories else { continue }
                     for id in batch {
@@ -616,6 +629,7 @@ public actor LinkEngine {
     private func publish() {
         var pending: Set<WorkItemKey> = []
         var unreadable: Set<PRKey> = []
+        var partlyRead: Set<WorkItemKey> = []
         if inputs.wantsStories {
             for (pullRequest, ids) in links.workItemsOfPullRequests {
                 for id in ids {
@@ -624,9 +638,11 @@ public actor LinkEngine {
                 }
             }
             unreadable = Set(inputs.pullRequests.keys.filter { links.workItemsOfPullRequests[$0] == nil && failures["pr \($0)"] != nil })
+            partlyRead = Set(links.workItems.keys).subtracting(readWithStories).subtracting(inputs.sprintItems)
         }
         links.pendingWorkItems = pending
         links.unreadablePullRequests = unreadable
+        links.partlyRead = partlyRead
         guard links != lastPublished else { return }
         lastPublished = links
         onChange(links)

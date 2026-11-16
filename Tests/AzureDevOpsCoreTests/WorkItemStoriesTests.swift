@@ -53,6 +53,14 @@ import Testing
         let orphan = WorkItemStories(workItems: [Self.item(5150, "Task")], board: nil)
         #expect(orphan.stories(of: Self.pullRequest, workItems: [5150]) == [OrderStory(ref: Self.ref(5150), type: "Task")])
         #expect(orphan.parents(ofTasksIn: [WorkItemKey(Self.organization, 5150)]).isEmpty)
+        // One read without its parent, as Show Links reads linked work items before stories are wanted, may have one: no
+        // story; a story read so is one itself all the same, as its own type decides.
+        let partly = WorkItemStories(
+            workItems: [Self.item(5150, "Task"), Self.item(5160, "User Story")], board: nil,
+            partlyRead: [WorkItemKey(Self.organization, 5150), WorkItemKey(Self.organization, 5160)]
+        )
+        #expect(partly.stories(of: Self.pullRequest, workItems: [5150]).isEmpty)
+        #expect(partly.stories(of: Self.pullRequest, workItems: [5160]) == [OrderStory(ref: Self.ref(5160), type: "User Story")])
     }
 
     @Test func aFeatureOrAnEpicGivesNoneAndAnythingElseIsAStoryItself() {
