@@ -116,7 +116,7 @@ import Testing
         private(set) var changes: [(ref: ItemRef, state: String)] = []
         /// Azure DevOps answers only as the test has it (`answer`), as it does a while after the change went.
         var answersLater = false
-        private var unanswered: [(ref: ItemRef, progress: SprintWork.Progress)] = []
+        private var unanswered: [(ref: ItemRef, progress: SprintWork.Progress, done: @MainActor (Bool) -> Void)] = []
         @Published private var progress: [ItemRef: SprintWork.Progress] = [:]
 
         init(first: [SprintWork.Progress: String] = [:]) {
@@ -141,20 +141,24 @@ import Testing
         /// Why a card doesn't move while a change is on its way.
         static let oneAtATime = "One state changes at a time"
 
-        func set(_ ref: ItemRef, to state: String) {
+        /// Sets a work item's state, as moving its card does, saying once Azure DevOps answered whether it's in it (`done`).
+        func set(_ ref: ItemRef, to state: String, done: @escaping @MainActor (Bool) -> Void) {
             changes.append((ref, state))
-            guard let set = first.first(where: { $0.value == state })?.key else { return }
+            guard let set = first.first(where: { $0.value == state })?.key else { return done(false) }
             if answersLater {
-                unanswered.append((ref, set))
+                unanswered.append((ref, set, done))
             } else {
                 progress[ref] = set
+                done(true)
             }
         }
 
         /// Azure DevOps answers each change that went: its work item is in its new state.
         func answer() {
-            for (ref, set) in unanswered { progress[ref] = set }
+            let answered = unanswered
             unanswered = []
+            for (ref, set, _) in answered { progress[ref] = set }
+            for (_, _, done) in answered { done(true) }
         }
     }
 
@@ -228,7 +232,7 @@ import Testing
                 isSelected: { [details] in details.shown == $0 },
                 select: { [details] in details.shown = $0 },
                 states: { [states] task in states.states(of: task) },
-                setState: { [states] task, state in states.set(task.ref, to: state) }
+                setState: { [states] task, state, done in states.set(task.ref, to: state, done: done) }
             )
         }
     }
@@ -361,6 +365,35 @@ import Testing
         return order
     }
 
+    /// Pull Request Order, on, with two pull requests of yours for a story, both merged: its mission is finished, and its
+    /// lane folds while it holds none of your work still to do; and a draft of yours in no mission.
+    private static func finishedStoryMission(_ story: ItemRef) -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        BoardLanes.missions.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { Date(timeIntervalSince1970: 1_792_000_000) })
+        let merged = [4101, 4102].map { ItemRef.pullRequest(organization: "contoso", number: $0) }
+        var stages = Dictionary(uniqueKeysWithValues: merged.map { ($0, StageFacts(role: .author, state: .merged)) })
+        stages[ref] = StageFacts(role: .author, state: .draft)
+        order.publish(
+            .azureDevOps,
+            pullRequests: merged.enumerated().map { index, merged in
+                OrderPullRequest(
+                    ref: merged, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/\(merged.shortOrderLabel)",
+                    targetBranch: "main", author: "robin", state: .merged, createdAt: Date(timeIntervalSince1970: 1_790_000_000),
+                    stories: [OrderStory(
+                        ref: story, type: "User Story", task: .workItem(organization: "contoso", id: 5102 + index), rank: Double(index)
+                    )]
+                )
+            } + [OrderPullRequest(
+                ref: ref, repository: "contoso/7d3f9a12/shop-web", sourceBranch: "robin/totals", targetBranch: "main", author: "robin",
+                createdAt: Date(timeIntervalSince1970: 1_791_000_000), stories: []
+            )],
+            stages: stages, account: "robin@contoso.com", readsStories: true
+        )
+        return order
+    }
+
     /// Shows the Board in a window while `body` runs, once its card is drawn.
     /// - Parameters:
     ///   - waits: how long a card a key moved is owed the keyboard's focus, as the test ends it; nil for as long as in the
@@ -472,11 +505,16 @@ import Testing
         }
     }
 
-    /// ⌘→ that leaves a story's work all done keeps its lane open, as if you opened it, rather than fold it under the card:
-    /// the card, drawn in Completed, keeps the keyboard, and ⌘← starts it again.
-    @Test func aKeyThatFinishesAStorysWorkKeepsItsLaneOpenWithTheCardAndTheKeyboard() async throws {
-        let order = Self.order()
+    /// ⌘→ that leaves a lane's work all done keeps the lane open, as if you opened it, rather than fold it under the card: a
+    /// story's lane, and a finished mission's, whose pull requests all merged. The card, drawn in Completed, keeps the
+    /// keyboard, and ⌘← starts it again.
+    @Test(arguments: [false, true])
+    func aKeyThatFinishesALanesWorkKeepsItOpenWithTheCardAndTheKeyboard(inAFinishedMission: Bool) async throws {
         let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let order = inAFinishedMission ? Self.finishedStoryMission(story) : Self.order()
+        if inAFinishedMission {
+            #expect(order.missions.first { $0.story?.ref == story }?.isFinished == true)
+        }
         let task = ItemRef.workItem(organization: "contoso", id: 5104)
         let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
         let details = Details()
@@ -486,7 +524,7 @@ import Testing
             Self.click(at: try #require(drawn.frames[task]), in: host)
             try await until("the click to show its details") { details.shown == task }
             let before = drawn.frames[task]?.minX
-            try await Self.pressUntil("⌘→ to close it, the story's last work") {
+            try await Self.pressUntil("⌘→ to close it, the lane's last work") {
                 Self.press(.rightArrow, command: true, in: window)
                 return states.changes.count == 1
             }
@@ -500,6 +538,74 @@ import Testing
                 return states.changes.count == 2
             }
             #expect(states.changes.last?.state == "Active")
+        }
+    }
+
+    /// However long Azure DevOps takes to answer, a work item's card a key moved is owed the keyboard until it has: its
+    /// wait to be drawn anew, the app's ten seconds, starts only once its work item is in its new state, so that it takes the
+    /// keyboard back from the card AppKit gave it to as it left To start.
+    @Test func aWorkItemsCardTakesTheKeyboardBackHoweverLongAzureDevOpsTakesToAnswer() async throws {
+        let order = Self.order()
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        states.answersLater = true
+        let details = Details()
+        let waits = FocusWaits()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .toDo)], stories: [])
+        try await Self.showing(order, details: details, waits: waits, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            try await Self.pressUntil("⌘→ to start it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            // Azure DevOps takes longer than that wait: any going on ends before it answers.
+            await Self.queuedWorkDone()
+            waits.end()
+            await Self.queuedWorkDone()
+            let before = drawn.frames[task]?.minX
+            states.answer()
+            try await until("its card drawn in In progress") { drawn.frames[task]?.minX != before }
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card that has the keyboard") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == task, "The draft's card kept the keyboard AppKit gave it as the task's card left To start")
+        }
+    }
+
+    /// ⌘→ that moves a work item's card into a column you hid shows that column for the moment, as Show Them does, so that
+    /// the card is drawn there and keeps the keyboard, and ⌘← starts it again. What you hid stays hidden.
+    @Test func aKeyThatMovesAWorkItemsCardIntoAColumnYouHidShowsItForTheMoment() async throws {
+        let order = Self.order()
+        order.setBoardLayout(BoardLayout(hidden: [.completed]))
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let states = WorkStates(first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"])
+        let details = Details()
+        let sprint = Sprint(work: [SprintWork(ref: task, progress: .inProgress)], stories: [])
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the task's card") { drawn.frames[task] != nil }
+            Self.click(at: try #require(drawn.frames[task]), in: host)
+            try await until("the click to show its details") { details.shown == task }
+            let before = drawn.frames[task]?.minX
+            try await Self.pressUntil("⌘→ to close it, into Completed, which you hid") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            #expect(states.changes.last?.state == "Closed")
+            try await until("its card drawn in Completed, shown for it") {
+                drawn.isDrawn(task) && drawn.frames[task]?.minX != before
+            }
+            await Self.queuedWorkDone()
+            try await Self.pressUntil("⌘← on the card, which kept the keyboard, to start it again") {
+                Self.press(.leftArrow, command: true, in: window)
+                return states.changes.count == 2
+            }
+            #expect(states.changes.last?.state == "Active")
+            #expect(order.boardLayout == BoardLayout(hidden: [.completed]))
         }
     }
 

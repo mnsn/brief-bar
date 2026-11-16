@@ -66,13 +66,16 @@ package struct BoardWorkContent {
     /// of its type, or why moving it doesn't change it (`BoardTask.move(to:sameLane:states:)`).
     package var states: (BoardTask) -> BoardTaskStates
     /// Puts a work item in a state, as moving its card asks: the card goes to its new column once its work item is in it.
-    package var setState: (BoardTask, String) -> Void
+    /// Says whether it is, once Azure DevOps answered, or the change didn't go (`done`), however long that takes.
+    package var setState: @MainActor (BoardTask, String, _ done: @escaping @MainActor (Bool) -> Void) -> Void
 
     package init(
         card: @escaping (BoardTask) -> BoardCardContent?, story: @escaping (ItemRef, _ isFinished: Bool) -> AnyView,
         isSelected: @escaping (ItemRef) -> Bool, select: @escaping (ItemRef) -> Void,
         states: @escaping (BoardTask) -> BoardTaskStates = { _ in .fixed(BoardText.workStays) },
-        setState: @escaping (BoardTask, String) -> Void = { _, _ in }
+        setState: @escaping @MainActor (BoardTask, String, _ done: @escaping @MainActor (Bool) -> Void) -> Void = { _, _, done in
+            done(false)
+        }
     ) {
         self.card = card
         self.story = story
@@ -176,6 +179,13 @@ private struct BoardNotice: Equatable {
 private struct KeyOpened: Equatable {
     var column: BoardColumn
     var spot: CardSpot
+}
+
+/// A work item's card a key, or a drop, moved while it had the keyboard's focus, while its change waits for Azure DevOps:
+/// the card is owed the focus, for this move, which `OwedFocus` counts.
+private struct PendingMove: Equatable {
+    var spot: CardSpot
+    var move: Int
 }
 
 /// What decides how long the column a key moved a card to stays open: which card has the keyboard's focus, whether the
@@ -541,8 +551,8 @@ package struct OrderBoardView: View {
     /// The folded columns Up Next's "2 more ›", or My Work's Show Them, opened, for the moment: until you fold them, or the
     /// board goes.
     @LocalState private var revealedOpen: Set<BoardColumn> = []
-    /// The hidden columns Show Them showed, for the card it shows in one, for the moment: until you hide one again, or the
-    /// board goes.
+    /// The hidden columns Show Them showed, for the card it shows in one, or a key moved a card to, for the moment: until you
+    /// hide one again, or the board goes.
     @LocalState private var unhiddenForNow: Set<BoardColumn> = []
     /// The columns you folded or opened while My Work's search shows only what matches: for as long as it does, your own
     /// choices waiting until it's cleared.
@@ -575,6 +585,10 @@ package struct OrderBoardView: View {
     @LocalState private var refocus = OwedFocus<CardSpot>()
     /// That card, while a move takes it to another column, until it has the focus back (`MovingFocus`).
     @LocalState private var movingFocus: MovingFocus<CardSpot>?
+    /// A work item's card a key or a drop moved while it had the focus, until Azure DevOps answers, however long that takes:
+    /// owed the focus meanwhile, its wait to be drawn anew starts only once its work item is in its new state
+    /// (`settle(_:changed:showing:)`). Not once the change didn't happen, nor once you chose another card.
+    @LocalState private var pendingMove: PendingMove?
     /// The card that had the keyboard's focus while the board could take it, or that you clicked last: when the details
     /// cover the board, which can't take the focus then, it has it back once they close, and the keys move it meanwhile.
     @LocalState private var lastFocus: CardSpot?
@@ -1933,10 +1947,7 @@ package struct OrderBoardView: View {
                 tookFocus: { refocus.took(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
                 left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
-                    // A click gives it the keyboard's focus, which it has back once its details close, should they cover
-                    // the board; you chose it, so another card a move owes the focus leaves it there.
-                    lastFocus = spot
-                    if movingFocus?.spot != spot { movingFocus = nil }
+                    choose(spot)
                     select(card.ref)
                 },
                 drag: {
@@ -1968,8 +1979,7 @@ package struct OrderBoardView: View {
                 takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) },
                 mayTakeFocus: { mayTakeFocus(from: $0, to: spot) }, left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
-                    lastFocus = spot
-                    if movingFocus?.spot != spot { movingFocus = nil }
+                    choose(spot)
                     work.select(task.ref)
                 },
                 drag: {
@@ -2146,29 +2156,42 @@ package struct OrderBoardView: View {
     }
 
     /// Puts a work item in the state that moving its card to a column asks for, as a drop or a key does: its card goes to its
-    /// new column once its work item is in that state, as Azure DevOps answers.
+    /// new column once its work item is in that state, as Azure DevOps answers, however long that takes.
     /// - Parameters:
-    ///   - keepsFocus: it has the keyboard's focus, which it keeps, drawn anew in its new column.
+    ///   - keepsFocus: it has the keyboard's focus, which it keeps, drawn anew in its new column: owed it until Azure DevOps
+    ///     answers, and from then on as a card a key moved is (`settle(_:changed:showing:)`).
     ///   - opensColumn: a key moved it, and the column it goes to opens, folded or not, while it keeps the keyboard's focus,
-    ///     so that the next key moves it on from there; and a story's lane whose work it leaves all done stays open, as if
-    ///     you opened it, rather than fold under the card, which takes the keyboard back there, where ⌘← moves it back.
+    ///     and shows for the moment where you hid it, so that the next key moves it on from there; and a lane that folds once
+    ///     its work is all done, a story's or a finished mission's, stays open where the move leaves it so, as if you opened
+    ///     it, rather than fold under the card, which takes the keyboard back there, where ⌘← moves it back.
     private func setState(
         of task: BoardTask, to state: String, column: BoardColumn, in lane: BoardLane.Kind, keepsFocus: Bool, opensColumn: Bool
     ) -> Bool {
         guard let work else { return false }
         notice = nil
-        if opensColumn, board.lanes.first(where: { $0.kind == lane })?.finishesStory(moving: task, to: column) == true {
+        if opensColumn, let moving = board.lanes.first(where: { $0.kind == lane }), foldsOnceDone(moving),
+           moving.finishesWork(moving: task, to: column) {
             unfolded.insert(lane)
         }
-        work.setState(task, state)
-        let goes = task.column(movedTo: column)
-        guard goes != task.column else { return true }
+        let goes = BoardColumn(task.column(movedTo: column))
+        let moves = goes != BoardColumn(task.column)
         let spot = CardSpot(lane: lane, ref: task.ref)
-        if keepsFocus { oweFocus(to: spot, moves: true) }
+        // While its own change is on its way, a key pressed meanwhile doesn't replace that change, which still owes it.
+        let pending = keepsFocus && moves && pendingMove?.spot != spot ? awaitMove(of: spot) : nil
+        work.setState(task, state) { changed in
+            settle(pending, changed: changed, showing: opensColumn ? goes : nil)
+        }
+        guard moves else { return true }
         if opensColumn {
-            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: BoardColumn(goes), spot: spot) }
+            withAnimation(.easeOut(duration: 0.15)) { keyOpened = KeyOpened(column: goes, spot: spot) }
         }
         return true
+    }
+
+    /// Whether a lane folds by itself once its work is all resolved or done (`BoardLane.hasWorkToDo`), until you open it: a
+    /// story's, and a finished mission's (`laneView`).
+    private func foldsOnceDone(_ lane: BoardLane) -> Bool {
+        lane.story != nil || missions.first { $0.key == lane.mission }?.isFinished == true
     }
 
     /// ⌘→ and ⌘← while the details cover the board, which can't take the keyboard's focus then: on the card of the pull
@@ -2278,19 +2301,72 @@ package struct OrderBoardView: View {
 
     /// A card is owed the keyboard's focus, which it takes as it's drawn: until it does, or ten seconds on, the test's own
     /// wait where it has one.
-    /// - Parameter moves: a move takes it to another column, from which its old place goes (`MovingFocus`); false for one
-    ///   that doesn't move.
-    private func oweFocus(to spot: CardSpot, moves: Bool = false) {
+    /// - Parameters:
+    ///   - moves: a move takes it to another column, from which its old place goes (`MovingFocus`); false for one that
+    ///     doesn't move.
+    ///   - waits: its wait starts now; false for a work item's card whose change waits for Azure DevOps, whose wait starts
+    ///     once that settles (`awaitMove(of:)`).
+    /// - Returns: its move, as `OwedFocus` counts them.
+    @discardableResult
+    private func oweFocus(to spot: CardSpot, moves: Bool = false, waits: Bool = true) -> Int {
         let move = refocus.owe(spot)
         movingFocus = moves ? MovingFocus(spot: spot, move: move) : nil
+        // Owed anew: a work item's card whose change is on its way is owed it no more.
+        pendingMove = nil
+        if waits { waitForFocus(move) }
+        return move
+    }
+
+    /// A work item's card is owed the keyboard's focus for a move whose change waits for Azure DevOps, however long that
+    /// takes: its wait to be drawn anew starts once the change settles (`settle(_:changed:showing:)`).
+    private func awaitMove(of spot: CardSpot) -> PendingMove {
+        let pending = PendingMove(spot: spot, move: oweFocus(to: spot, moves: true, waits: false))
+        pendingMove = pending
+        return pending
+    }
+
+    /// Ten seconds on, the test's own wait where it has one, a move's card is owed the keyboard's focus no more.
+    private func waitForFocus(_ move: Int) {
         Task { @MainActor [focusWait] in
             if let focusWait {
                 await focusWait()
             } else {
                 try? await Task.sleep(for: Self.owedFocusWait)
             }
-            refocus.waitEnded(move)
-            if movingFocus?.move == move { movingFocus = nil }
+            endFocusWait(move)
+        }
+    }
+
+    /// A move's card isn't owed the keyboard's focus any more, unless a later move owes it anew.
+    private func endFocusWait(_ move: Int) {
+        refocus.waitEnded(move)
+        if movingFocus?.move == move { movingFocus = nil }
+    }
+
+    /// A work item's change that a key or a drop asked for settled while its card is still owed the keyboard's focus for it:
+    /// once it changed, the card's wait to be drawn anew in its new column starts now, and for a key, that column shows for
+    /// the moment where you hid it; once it didn't, the card stays where it is, owed nothing.
+    /// - Parameter column: the column the card goes to, for a key; nil for a drop.
+    private func settle(_ pending: PendingMove?, changed: Bool, showing column: BoardColumn?) {
+        guard let pending, pendingMove == pending else { return }
+        pendingMove = nil
+        guard changed else {
+            endFocusWait(pending.move)
+            return
+        }
+        if let column { showForTheMoment(column) }
+        waitForFocus(pending.move)
+    }
+
+    /// You chose a card, with a click or Return: it has the keyboard's focus back once its details close, should they cover
+    /// the board; another card a move owes the focus leaves it there, and a work item's whose change is on its way is owed
+    /// it no more.
+    private func choose(_ spot: CardSpot) {
+        lastFocus = spot
+        if movingFocus?.spot != spot { movingFocus = nil }
+        if let pending = pendingMove, pending.spot != spot {
+            pendingMove = nil
+            endFocusWait(pending.move)
         }
     }
 
@@ -2327,14 +2403,11 @@ package struct OrderBoardView: View {
 
     /// A column opens for the moment where it would be folded but for its own moment, or where the board doesn't know its
     /// width yet to tell: the joined column that holds it, which it returns, as one; and where you hid it, it shows for the
-    /// moment, as Done where you hid that. While My Work's search shows only what matches, either lasts as long as it does,
+    /// moment (`showForTheMoment(_:)`). While My Work's search shows only what matches, either lasts as long as it does,
     /// but where it began before it.
     @discardableResult
     private func openForTheMoment(_ column: BoardColumn) -> ShownColumn {
-        if let hidden = currentMetrics().hidden.first(where: { $0.contains(column) }) {
-            if board.search != nil { searchUnhidden.formUnion(Set(hidden.parts).subtracting(unhiddenForNow)) }
-            unhiddenForNow.formUnion(hidden.parts)
-        }
+        showForTheMoment(column)
         let metrics = currentMetrics()
         let shown = metrics.shown(holding: column) ?? ShownColumn(column)
         let others = openForNow.subtracting(shown.parts)
@@ -2343,6 +2416,15 @@ package struct OrderBoardView: View {
             revealedOpen.insert(column)
         }
         return shown
+    }
+
+    /// Where you hid a column, it shows for the moment, as Done where you hid that: until you hide it again, or the board
+    /// goes; while My Work's search shows only what matches, as long as it does, but where it began before it. What you hid
+    /// stays hidden.
+    private func showForTheMoment(_ column: BoardColumn) {
+        guard let hidden = currentMetrics().hidden.first(where: { $0.contains(column) }) else { return }
+        if board.search != nil { searchUnhidden.formUnion(Set(hidden.parts).subtracting(unhiddenForNow)) }
+        unhiddenForNow.formUnion(hidden.parts)
     }
 
     /// A column's title flashes in its color, for a moment: the joined column's that holds it.

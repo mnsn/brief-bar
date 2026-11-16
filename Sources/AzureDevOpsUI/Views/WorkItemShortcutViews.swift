@@ -98,15 +98,15 @@ struct StateChoices: View {
 }
 
 /// A work item's states as VoiceOver's actions, on a card VoiceOver reads as one, as on My Work's Board, with Make Changes in
-/// Azure DevOps on: Change State to each it can be put in but its own, and Undo, while it's the one whose state you changed
-/// last.
+/// Azure DevOps on: Change State to each it can be put in but its own, but while a change is on its way, which they couldn't
+/// make (`StateChanges.actionChoices(for:)`); and Undo, while it's the one whose state you changed last.
 struct StateActions: View {
     let item: WorkItem
 
     @EnvironmentObject private var states: StateChanges
 
     var body: some View {
-        ForEach(states.choices(for: item).filter { !StateChanges.isSame($0.name, item.state) }, id: \.name) { choice in
+        ForEach(states.actionChoices(for: item), id: \.name) { choice in
             Button("Change State to \(choice.name)") { Task { await states.change(item, to: choice.name) } }
         }
         if let undo = states.undoable, undo.key == item.key {

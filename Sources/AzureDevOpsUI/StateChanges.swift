@@ -108,6 +108,14 @@ final class StateChanges: ObservableObject {
         !choices(for: item).isEmpty
     }
 
+    /// The states VoiceOver's actions offer to put a work item in, on its card on My Work's Board: those its menus offer
+    /// (`choices(for:)`) but the one it's in; none while a change is on its way, which they couldn't make, as its menus'
+    /// are dimmed then.
+    func actionChoices(for item: WorkItem) -> [WorkItemState] {
+        guard !isBusy else { return [] }
+        return choices(for: item).filter { !Self.isSame($0.name, item.state) }
+    }
+
     /// Whether a work item's state could be changed here once Make Changes in Azure DevOps is on, while it's off: its state's
     /// tooltip then says how to turn it on.
     func needsSetting(_ item: WorkItem) -> Bool {
@@ -149,12 +157,14 @@ final class StateChanges: ObservableObject {
     }
 
     /// Puts a work item in another of its states, as you chose it: from the one BriefBar reads it in now, as you choose it.
-    /// Nothing for the one it's in already, or one its type doesn't have.
-    func change(_ item: WorkItem, to name: String) async {
+    /// Nothing for the one it's in already, or one its type doesn't have. Says, once Azure DevOps answered, or the change
+    /// didn't go, whether BriefBar shows the work item in that state now, as My Work's Board waits to know (`send`).
+    @discardableResult
+    func change(_ item: WorkItem, to name: String) async -> Bool {
         guard !isBusy, let sprint, let current = sprint.board?.item(item.key), !Self.isSame(current.state, name),
               choices(for: current).contains(where: { $0.name == name })
-        else { return }
-        await send(Change(
+        else { return false }
+        return await send(Change(
             key: current.key, name: Self.name(of: current), title: current.title, from: current.state, to: name, account: sprint.account
         ))
     }
@@ -211,19 +221,21 @@ final class StateChanges: ObservableObject {
 
     /// Sends a change, while you can make changes, as whom BriefBar read the sprint as when you chose it, and only while the
     /// work item is in the state it was in then: what Azure DevOps answers shows at once, and the sprint is read again. One
-    /// that didn't happen, or may not have, says why, and the sprint is read again to show its state.
-    private func send(_ change: Change) async {
-        guard !isStopped, !isBusy, settings.makesChanges, let sprint else { return }
+    /// that didn't happen, or may not have, says why, and the sprint is read again to show its state. Says whether the work
+    /// item is in the state it goes to now, as Azure DevOps answered, or as BriefBar read it already.
+    @discardableResult
+    private func send(_ change: Change) async -> Bool {
+        guard !isStopped, !isBusy, settings.makesChanges, let sprint else { return false }
         switch hold(change) {
         case nil:
             break
         case .there?:
             // In the state it goes to already, as chosen in another window too: there's nothing to send, nor to try again.
             if case .failed(change, _)? = line { line = nil }
-            return
+            return true
         case .notListed?:
             didNotChange(change, .notListed)
-            return
+            return false
         }
         let generation = generation, lifetime = lifetime
         line = .sending(change)
@@ -243,28 +255,28 @@ final class StateChanges: ObservableObject {
         } catch is CancellationError {
             // Called off before it went: as the setting was turned off while it waited for a token, or someone else signed in,
             // the line says nothing; as BriefBar no longer reads it in the state it was in, it says so.
-            guard lifetime == self.lifetime, case .sending(change)? = line else { return }
+            guard lifetime == self.lifetime, case .sending(change)? = line else { return false }
             if generation == self.generation, let hold = hold(change), hold != .there {
                 didNotChange(change, .notListed)
             } else {
                 line = nil
             }
-            return
+            return false
         } catch {
             // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
-            guard lifetime == self.lifetime else { return }
+            guard lifetime == self.lifetime else { return false }
             let problem = ADOWriteProblem(error, now: now())
             // Read again, to show its state: Azure DevOps may have changed it, or someone else may have.
             sprint.refresh()
             // Called off as it went, as the setting was turned off: the line says nothing more.
             guard generation == self.generation else {
                 if case .sending(change)? = line { line = nil }
-                return
+                return false
             }
             didNotChange(change, problem)
-            return
+            return false
         }
-        guard lifetime == self.lifetime else { return }
+        guard lifetime == self.lifetime else { return false }
         if let board = sprint.board, let item = board.item(change.key) {
             sprint.changedState(item.changing(state: change.to, answer: answer, at: now(), categories: board.categories(of: item.type)))
         } else {
@@ -273,10 +285,11 @@ final class StateChanges: ObservableObject {
         // Called off as it went, as the setting was turned off: the board shows its new state, and nothing offers Undo.
         guard generation == self.generation else {
             if case .sending(change)? = line { line = nil }
-            return
+            return true
         }
         line = .changed(change)
         SpokenText.announce(StateChangeText.changed(change) + (change.isUndo ? "" : " Undo changes it back."))
+        return true
     }
 
     /// Says why a change didn't happen, or may not have, on the line under the Sprint page's header, and to VoiceOver.

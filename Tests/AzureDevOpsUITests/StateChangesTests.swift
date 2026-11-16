@@ -119,6 +119,19 @@ import Testing
         #expect(!states.needsSetting(try item(sprint)))
     }
 
+    /// VoiceOver's actions on a work item's card offer each state it can go to but its own, and none while a change is on its
+    /// way, which they couldn't make, as its menus' are dimmed then.
+    @Test func voiceOversActionsOfferNoStateWhileAChangeIsOnItsWay() throws {
+        let (sprint, states, _) = live()
+        let task = try item(sprint)
+        #expect(states.actionChoices(for: task).map(\.name) == ["Active", "Closed"])
+        let other = StateChanges.Change(key: WorkItemKey(DemoData.organization, 5105), name: "Task 5105", title: "", from: "New", to: "Active")
+        states.showForRendering(.sending(other))
+        #expect(states.actionChoices(for: task).isEmpty)
+        states.showForRendering(.failed(other, .offline))
+        #expect(states.actionChoices(for: task).map(\.name) == ["Active", "Closed"])
+    }
+
     /// On My Work's Board, a work item on the sprint's board changes state as its card moves, whatever the setting: from the
     /// state it's in to the first of each kind its type has, held, saying why, while the setting's off or a change is on its
     /// way. One outside the sprint, or whose type's states the team's configuration doesn't say, doesn't. Moving a card
@@ -144,7 +157,8 @@ import Testing
             current: "New", first: task, held: "Task 5104 is changing to Active: one state changes at a time"
         ))
         states.showForRendering(nil)
-        await states.change(try item(sprint), to: "Active")
+        // It says once it's in that state, as the Board waits to know.
+        #expect(await states.change(try item(sprint), to: "Active"))
         #expect(azure.sent == [.setState(key, from: "New", to: "Active")])
         #expect(states.boardStates(for: try item(sprint)) == .changes(current: "Active", first: task, held: nil))
 
@@ -193,7 +207,7 @@ import Testing
     @Test func aChangeThatFailsSaysWhyAndCanBeTriedAgain() async throws {
         let (sprint, states, azure) = live()
         azure.fails = .offline
-        await states.change(try item(sprint), to: "Closed")
+        #expect(await !states.change(try item(sprint), to: "Closed"))
         let change = StateChanges.Change(
             key: key, name: "Task 5104", title: "Move a saved item back to the cart", from: "New", to: "Closed"
         )
