@@ -157,13 +157,14 @@ final class StateChanges: ObservableObject {
     }
 
     /// Puts a work item in another of its states, as you chose it: from the one BriefBar reads it in now, as you choose it.
-    /// Nothing for the one it's in already, or one its type doesn't have. Says, once the change is done, however it ended,
-    /// whether BriefBar reads the work item in that state, as My Work's Board waits to know (`send`).
+    /// Nothing for one its type doesn't have, nor for the one it's in already, as a read may have found it since you chose
+    /// it. Says, once the change is done, however it ended, whether BriefBar reads the work item in that state, as My Work's
+    /// Board waits to know (`send`): so for the one it's in already too.
     @discardableResult
     func change(_ item: WorkItem, to name: String) async -> Bool {
-        guard !isBusy, let sprint, let current = sprint.board?.item(item.key), !Self.isSame(current.state, name),
-              choices(for: current).contains(where: { $0.name == name })
-        else { return false }
+        guard let sprint, let current = sprint.board?.item(item.key) else { return false }
+        guard !Self.isSame(current.state, name) else { return true }
+        guard !isBusy, choices(for: current).contains(where: { $0.name == name }) else { return false }
         return await send(Change(
             key: current.key, name: Self.name(of: current), title: current.title, from: current.state, to: name, account: sprint.account
         ))

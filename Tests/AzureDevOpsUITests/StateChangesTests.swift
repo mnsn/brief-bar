@@ -308,6 +308,19 @@ import Testing
         #expect(try item(sprint).state == "Active")
     }
 
+    /// A change asked for of the work item as you chose it, which a read found since in the state it goes to, as someone else
+    /// put it there before the change began: nothing goes, and the line says nothing, but it says the work item is in that
+    /// state, for My Work's Board, where its card goes there.
+    @Test func aChangeToTheStateAReadFoundItInSinceYouChoseItSaysItsThere() async throws {
+        let (sprint, states, azure) = live()
+        let task = try item(sprint)
+        try readAgain(sprint, in: "Active")
+        #expect(await states.change(task, to: "Active"))
+        #expect(azure.sent.isEmpty)
+        #expect(states.line == nil)
+        #expect(try item(sprint).state == "Active")
+    }
+
     /// Turned off as a change waits for its token, it never goes, and leaves nothing on its way; and turned off after one
     /// went, Undo goes with the line.
     @Test func turningItOffCallsOffWhatHasntGoneAndForgetsUndo() async throws {

@@ -32,8 +32,8 @@ package struct OwedFocus<Spot: Hashable> {
 /// As its old place goes from the board, SwiftUI lets go of the focus and AppKit gives it to the next card by itself, in
 /// one change, from the moved card to the next or from none, or in two, to none, then to the next: that card, which you
 /// didn't choose, is where the moved card takes it back from as it's drawn anew (`OrderBoardView.mayTakeFocus(from:to:)`).
-/// A work item's card goes once Azure DevOps has its new state, so you may well have gone elsewhere meanwhile: only the
-/// focus going to a card right as its old place goes counts.
+/// A work item's card goes once Azure DevOps has its new state, or as Copilot's work moves it before then, so you may
+/// well have gone elsewhere meanwhile: only the focus going to a card right as its old place goes counts.
 package struct MovingFocus<Spot: Hashable>: Equatable {
     package var spot: Spot
     /// Its move, as `OwedFocus` counts them: once that move's wait ends, it's done with.

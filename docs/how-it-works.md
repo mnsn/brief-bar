@@ -3379,12 +3379,24 @@ The change is the one above, from the same `StateChanges`, whose line shows unde
 Copilot's work put it, so that a task with no pull request moved to Your review is Active, and shows in In progress. It
 keeps the keyboard after ⌘→ or ⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`): owed
 the focus until the change is done, however long Azure DevOps takes, its ten seconds to be drawn anew start only then,
-where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already
-(`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose another card
-(`OrderBoardView.settle`, `choose`). Once a key's change is done, the column the card goes to shows for the moment where
-you hid it, as Show Them does, though you went to another card meanwhile (`showForTheMoment`). The card's menu has
-State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
-(`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
+where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already,
+even before the change began (`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose
+another card (`OrderBoardView.settle`, `choose`). Where it goes isn't known until then, as Copilot may start or stop
+working on it meanwhile: the Board follows the card, from the key or the drop until it shows it in another column, or
+those ten seconds end (`PendingMove`, `land`); should Copilot's work move it before the change is done, as it may twice,
+it takes the keyboard back there and stays owed it, to take it back again from the card AppKit gives it to as it goes,
+unless you went to another (`tookFocus`, `rearmed`); once the change is done where it's drawn already, it's owed it no
+more (`land`). Meanwhile a key's card owed the keyboard stays in sight wherever Copilot's work takes it: its lane
+doesn't fold, and its column doesn't hide or fold, while it's there, none of which lasts (`keptInSight`), as it would
+otherwise go from under the keyboard, which AppKit would give another card, where a key would act, for as long as Azure
+DevOps takes. A card you go to in that place meanwhile, with a click, Return or Tab, stays in sight there as the key's
+card goes on or its move ends: a column you hid shows for the moment, one you folded stays open while that card has the
+keyboard, and a lane that would fold stays open (`handOnSight`). Once a key's card is there, or where Copilot's work
+took it as its change fails, that column shows for the moment where you hid it, as Show Them does, and a lane that folds
+once its work is all done stays open, though you went to another card meanwhile (`arrive`, `showForTheMoment`); while
+the card is owed the focus, the column opens too. The card's menu has State, with Undo, and VoiceOver's actions each
+state, none while a change is on its way, which they couldn't make (`StateMenuItems`, `StateActions`,
+`StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved
 state; while Make Changes in Azure DevOps is off, saying how to turn it on, or another change is on its way
