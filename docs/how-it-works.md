@@ -2138,27 +2138,37 @@ instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on 
 BriefBar finds no team for you to read them in.
 
 **Search** (`BoardSearch`), at the end of Show's row, shows only the Board's cards that match what you type
-(`PullRequestBoard.matching`), in the lanes that hold one, each column, Completed and the hidden columns' tab counting what
-matches (`cardCount`, in the field, how many cards do), and a pull request's card in two missions' lanes in each it
+(`PullRequestBoard.matching`), with the pull requests' cards related to them, in the lanes that hold one, each column,
+Completed and the hidden columns' tab counting what shows, and a pull request's card in two missions' lanes in each it
 matches in; Up Next, Start next and the line of what isn't on the board stay as they are, and nothing is read for it.
 Each word has to be, in any case and with any accents, in one of a card's names (`MyWorkFacts.searched`): a pull
-request's number with its kind, "PR !4102", its title, the work items of yours its card names and any other Show Links
-links it to, even with Show: Pull Requests, by type and ID, "Task 5112", and title, as the sprint, your work outside it
-or Show Links read them (`WorkLinksStore.linkedWorkItem`), and its mission's name with the story it's for; a work item's
-type, ID and title, the pull requests its card names, "PR !4120", with their titles, as your lists or Show Links read
-them, a teammate's too (`linkedPullRequest`), and its story's type, ID and title, with that story's mission's name. So a
-mission's name or a story's ID finds its cards, with Lanes: None too. A ! or # before a word doesn't count, and a link
-to a pull request or a work item (`ItemRef.from(link:)`) matches only the card that is it or names it. While it lasts, no
-lane folds, and a story's lane reads finished only where all its work is, shown or not (`BoardLane.hidesWorkToDo`).
-BriefBar folds every column by what matches, as if you'd chosen none: one with a match opens, as the room allows, one
-without folds; a column you hid shows where it holds a match; and a fold or an open you make meanwhile is kept only until
-the search is cleared, as is a column Up Next's **2 more ›** or Return opens or shows for the moment meanwhile, when the
-board is as you left it (Hide still hides for good, and hides one the search showed until then; Simple Columns and Reset
-Columns forget those folds too, and offer to while those are all they'd change). A move in your order swaps places only
-with the cards that show, those hidden keeping theirs (`BoardLane.wholeOrder`), and a drop's flash counts only what
-shows (`foldsOnceMoved`). ⌘F gives the field the keyboard; Escape clears it, then leaves it; Return takes the keyboard to
-the first card that matches (`PullRequestBoard.firstCard`), as Show Them does, which clears the search. What you typed is
-the window's own while it shows My Work, never in the preferences.
+request's number with its kind, "PR !4102", its title, its repository and its source branch, as your lists or Show Links
+read it, the work items of yours its card names and any other Show Links links it to, even with Show: Pull Requests, by
+type and ID, "Task 5112", and title, as the sprint, your work outside it or Show Links read them
+(`WorkLinksStore.linkedWorkItem`), the names of the Copilot sessions Show Links links it to, as their capsules name them
+(`LinkedItem.label`), and its mission's name with the story it's for; a work item's type, ID and title, the pull requests
+its card names, "PR !4120", with their titles and repositories, as your lists or Show Links read them, a teammate's too
+(`linkedPullRequest`), a GitHub one's from its link, the names of the sessions linked to it, or to those pull requests,
+and its story's type, ID and title, with that story's mission's name. So a mission's name or a story's ID finds its
+cards, with Lanes: None too, a repository's name its pull requests' cards, and a session's name the cards it works on. A
+! or # before a word doesn't count, and a link to a pull request, a work item or a Copilot session, `ghapp://sessions/`
+or a session's ID alone (`ItemRef.from(link:)`), matches only the card that is it, names it, or that the session is
+linked to, named or not. A pull request's card that matches in no lane but is for a work item that one that matches is
+for, by the work items Show Links links each to, is related (`PullRequestBoard.related`), as a task's pull request in
+another repository is: it shows in each of its lanes, at half opacity, VoiceOver hearing first that it's related
+(`BoardText.related`), as its tooltip says, and its column counts it and opens for it as for a match; the field counts the
+matches (`cardCount`), and the related cards after them, "1 card · 1 related" (`BoardText.matchCount`). A work item's own
+card is never related: one that has a card has no pull request on the board. While it lasts, no lane folds, and a story's
+lane reads finished only where all its work is, shown or not (`BoardLane.hidesWorkToDo`). BriefBar folds every column by
+what shows, as if you'd chosen none: one with a card opens, as the room allows, one without folds; a column you hid shows
+where it holds one; and a fold or an open you make meanwhile is kept only until the search is cleared, as is a column Up
+Next's **2 more ›** or Return opens or shows for the moment meanwhile, when the board is as you left it (Hide still hides
+for good, and hides one the search showed until then; Simple Columns and Reset Columns forget those folds too, and offer to
+while those are all they'd change). A move in your order swaps places only with the cards that show, those hidden keeping
+theirs (`BoardLane.wholeOrder`), and a drop's flash counts only what shows (`foldsOnceMoved`). ⌘F gives the field the
+keyboard; Escape clears it, then leaves it; Return takes the keyboard to the first card that matches, past those related
+(`PullRequestBoard.firstCard`), as Show Them does, which clears the search. What you typed is the window's own while it
+shows My Work, never in the preferences.
 
 **Your order** (`LaneOrders`), on My Work only, puts the cards in each lane's To start and In progress, the work you do
 yourself, in the order you put them in (`BoardColumn.takesYourOrder`): a drag within the column, with a line where it

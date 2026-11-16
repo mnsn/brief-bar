@@ -966,6 +966,10 @@ public struct PullRequestBoard: Equatable, Sendable {
     public var isInYourOrder = false
     /// My Work's search, while it shows only the cards that match it (`matching`); nil while it shows them all.
     public var search: BoardSearch?
+    /// The pull requests whose cards My Work's search shows, faded, though they don't match it: each is for a work item that
+    /// a pull request's card that matches is for too, as a task changed in several repositories has a pull request in each
+    /// (`matching`). Never a work item's own card. Empty without a search.
+    public var related: Set<ItemRef> = []
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],

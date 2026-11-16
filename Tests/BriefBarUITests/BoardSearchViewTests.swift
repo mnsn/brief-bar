@@ -4,8 +4,8 @@ import SwiftUI
 import Testing
 @testable import BriefBarUI
 
-/// My Work's search on the Board: a column you folded opens while it holds a match, and folds again once the search is
-/// cleared, your fold kept. In a window off screen.
+/// My Work's search on the Board: a column you folded opens while it holds a match, or a card related to one, and folds again
+/// once the search is cleared, your fold kept. In a window off screen.
 @MainActor
 @Suite(.keepsTheMainRunLoopRunning) struct BoardSearchViewTests {
     /// The cards drawn now.
@@ -20,17 +20,18 @@ import Testing
         @Published var text = ""
     }
 
-    /// The page By Mission, on the Board, as a search shows it: each card found by its number.
+    /// The page By Mission, on the Board, as a search shows it: each card found by its number, and the work items it's for.
     private struct Page: View {
         @ObservedObject var order: PullRequestOrder
         @ObservedObject var searching: Searching
+        let work: [ItemRef: [ItemRef]]
         let drawn: Drawn
 
         var body: some View {
             let kinds: Set<ItemRef.Kind> = [.pullRequest]
             let whole = order.board(kinds: kinds)
             let board = BoardSearch(searching.text).map { search in
-                whole.matching(search) { BoardSearch.Card(refs: [$0.ref], names: [$0.ref.shortOrderLabel]) }
+                whole.matching(search) { BoardSearch.Card(refs: [$0.ref] + (work[$0.ref] ?? []), names: [$0.ref.shortOrderLabel]) }
             } ?? whole
             MissionsBody(
                 view: .board, ordering: order, kinds: kinds, elsewhere: "GitHub", openElsewhere: nil, listed: whole.refs.sorted(),
@@ -127,15 +128,38 @@ import Testing
         #expect(order.boardFolds[.stage(.inProgress)] == .folded)
     }
 
+    /// A pull request's card for the same work item as the match shows too, though you folded its column, which opens for it
+    /// while the search lasts, as for a match, and folds again once it's cleared.
+    @Test func aRelatedCardOpensAColumnYouFolded() async throws {
+        let order = try Self.order([
+            4101: StageFacts(role: .author, state: .draft), 4102: StageFacts(role: .author, waitingFor: "Waiting on Priya"),
+        ])
+        let searching = Searching()
+        // Both are for Task 5112, as a task changed in two repositories has a pull request in each.
+        let task = ItemRef.workItem(organization: "contoso", id: 5112)
+        try await Self.showing(order, searching, work: [Self.ref(4101): [task], Self.ref(4102): [task]]) { settle in
+            try await settle("the board", [Self.ref(4101), Self.ref(4102)])
+            order.setBoardFolds(BoardFolds([.stage(.teammateReview): .folded]))
+            try await settle("Teammate's review folded", [Self.ref(4101)])
+            searching.text = "4101"
+            try await settle("the match, and the related card in Teammate's review, opened", [Self.ref(4101), Self.ref(4102)])
+            searching.text = ""
+            try await settle("Teammate's review folded again", [Self.ref(4101)])
+        }
+        #expect(order.boardFolds[.stage(.teammateReview)] == .folded)
+    }
+
     /// Shows the page in a window off screen while `body` runs, which waits with `settle` until the cards drawn are those it
     /// names, and anything else it waits for holds.
+    /// - Parameter work: the work items each pull request is for.
     private static func showing(
-        _ order: PullRequestOrder, _ searching: Searching, _ body: @MainActor (_ settle: Settle) async throws -> Void
+        _ order: PullRequestOrder, _ searching: Searching, work: [ItemRef: [ItemRef]] = [:],
+        _ body: @MainActor (_ settle: Settle) async throws -> Void
     ) async throws {
         _ = NSApplication.shared
         let drawn = Drawn()
         let host = NSHostingView(
-            rootView: Page(order: order, searching: searching, drawn: drawn)
+            rootView: Page(order: order, searching: searching, work: work, drawn: drawn)
                 .environmentObject(AppServices(defaults: MemoryDefaults(), isDemo: true))
         )
         host.sizingOptions = []
