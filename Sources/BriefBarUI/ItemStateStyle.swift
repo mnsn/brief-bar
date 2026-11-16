@@ -25,10 +25,11 @@ extension ItemState {
         }
     }
 
-    /// After a count, as in "11 need you · 4 went wrong · 2 running · 3 done or ready".
-    package var countLabel: String {
+    /// After `count`, as in "1 needs you · 4 went wrong · 2 running · 3 done or ready", or "11 need you": what every
+    /// count of what needs you says, the same everywhere.
+    package func countLabel(_ count: Int) -> String {
         switch self {
-        case .needsYou: return "need you"
+        case .needsYou: return count == 1 ? "needs you" : "need you"
         case .failing: return "went wrong"
         case .running: return "running"
         case .done: return "done or ready"

@@ -473,7 +473,7 @@ private struct MyWorkContent: View {
 
     private var subtitle: String {
         let counts = store.counts
-        var parts = [PRGroup.needsYou, .failing, .ready, .toReview].filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel)" }
+        var parts = [PRGroup.needsYou, .failing, .ready, .toReview].filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }
         if showsWork, let board = sprint.board {
             let left = board.myWork.count
             parts.append(left == 0 ? "Nothing of yours left in \(board.sprint.name)" : "\(left) of yours left in \(board.sprint.name)")

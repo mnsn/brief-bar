@@ -938,7 +938,7 @@ struct AzureDevOpsAgent: Sendable {
         let counts = GroupCounts(read.items)
         var lines: [String] = []
         if let problem = read.problem { lines.append("BriefBar couldn't read everything: \(problem)\n") }
-        lines.append(PRGroup.allCases.map { "\(counts[$0]) \($0.countLabel)" }.joined(separator: " · "))
+        lines.append(PRGroup.allCases.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }.joined(separator: " · "))
         for group in only.map({ [$0] }) ?? PRGroup.allCases {
             let items = read.items.filter { $0.group == group }
             guard !items.isEmpty || only != nil else { continue }

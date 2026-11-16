@@ -83,6 +83,27 @@ import Testing
         #expect(notes.refused.last?.hasPrefix("open ghapp://sessions/\(child)") == true)
     }
 
+    /// What Copilot's menu-bar item says, in its tooltip and to VoiceOver, counts what needs you as the rest of BriefBar
+    /// does: "1 needs you", but "2 need you".
+    @Test func theMenuBarSaysHowManyNeedYou() {
+        let at = Date().addingTimeInterval(-60)
+        func asking(_ id: String) -> SessionRecord {
+            var log = SessionLogState()
+            log.apply(LogEvent(timestamp: at, kind: .userMessage))
+            log.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .toolStart(.init(
+                callId: "q-\(id)", name: "ask_user", question: "Which color?"
+            ))))
+            return SessionRecord(meta: SessionMeta(id: id, name: id, isRunning: true), log: log)
+        }
+        let source = CopilotSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), paths: nil)
+        source.store.receive(EngineSnapshot(records: [asking("5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21")]))
+        #expect(source.segment(for: .copilotSessions).summary == "Copilot: 1 needs you")
+        source.store.receive(EngineSnapshot(records: [
+            asking("5e2a9c41-7d3b-4f86-b0e1-9c4d2a7f3e21"), asking("8b1f4d72-3c9e-4a05-a6d8-2e7c1b9f0d32"),
+        ]))
+        #expect(source.segment(for: .copilotSessions).summary == "Copilot: 2 need you")
+    }
+
     /// How many questions Ask… asked, and how many of them stopped.
     private final class Asked: Sendable {
         private let counts = Mutex((asked: 0, stopped: 0))

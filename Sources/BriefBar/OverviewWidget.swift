@@ -158,9 +158,9 @@ struct OverviewWidgetView: View {
                         .font(size: 11)
                         .frame(height: content.rowHeight)
                         .padding(.horizontal, 14)
-                        .help("\(lines.more) more need you")
+                        .help("\(lines.more) more \(ItemState.needsYou.countLabel(lines.more))")
                 } else {
-                    Text("\(lines.more) more need you")
+                    Text("\(lines.more) more \(ItemState.needsYou.countLabel(lines.more))")
                         .font(size: 11)
                         .foregroundStyle(.secondary)
                         .frame(height: content.rowHeight)

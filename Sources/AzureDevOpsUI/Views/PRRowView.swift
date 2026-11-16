@@ -438,7 +438,7 @@ struct CountChips: View {
                         .monospacedDigit()
                 }
                 .font(size: 11, weight: .semibold)
-                .help("\(counts[group]) \(group.countLabel)")
+                .help("\(counts[group]) \(group.countLabel(counts[group]))")
             }
         }
     }

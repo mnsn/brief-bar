@@ -445,7 +445,7 @@ struct CountChips: View {
                         .monospacedDigit()
                 }
                 .font(size: 11, weight: .semibold)
-                .help("\(counts[phase]) \(phase.title.lowercased())")
+                .help("\(counts[phase]) \(phase.countLabel(counts[phase]))")
             }
         }
     }

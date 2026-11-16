@@ -14,6 +14,11 @@ extension DisplayPhase {
         }
     }
 
+    /// After `count`, as in "1 needs you", "3 need you", "6 running", "2 finished".
+    func countLabel(_ count: Int) -> String {
+        self == .needsYou ? ItemState.needsYou.countLabel(count) : title.lowercased()
+    }
+
     var color: Color {
         switch self {
         case .needsYou: return .orange

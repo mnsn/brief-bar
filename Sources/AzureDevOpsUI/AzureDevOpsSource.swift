@@ -732,7 +732,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                 title.append(MenuBarDrawing.count(counts[group], font: font))
             }
         }
-        let spoken = groups.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel)" }
+        let spoken = groups.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.countLabel(counts[$0]))" }
         let summary = needsSignIn
             ? "Azure DevOps: sign in to see your pull requests"
             : spoken.isEmpty ? "Azure DevOps: nothing needs you" : "Azure DevOps: " + spoken.joined(separator: ", ")
