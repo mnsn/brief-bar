@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.24.1 - 2026-11-16
+
+- **Search My Work's Board.** Type in **Search by ID or name**, at the end of **Show**'s row, and the Board shows only the
+  cards that match: a task's or a pull request's ID, such as **5112** or **!4102**, or words of its title, its mission's
+  name or its story's. A pull request's card matches the work items it's for too, and a work item's card its pull
+  requests; a link you paste finds just its card. Lanes with nothing that matches go, and each column counts what does,
+  opening where something matches, even if you folded or hid it, until you clear the search. **⌘F** searches, **Return**
+  goes to the first card that matches, and **Escape** clears it. Up Next stays as it is.
+- **A card a key moves on My Work's Board keeps the keyboard, however long Azure DevOps takes.** When Azure DevOps took
+  more than ten seconds to answer, a work item's card that **⌘→** or **⌘←** moved lost the keyboard to the card after
+  it, which the next key then moved. It now takes the keyboard back once its new state comes, whenever that is, unless
+  you went to another card meanwhile.
+- **A key shows a column you hid for the card it moves there.** With **Merged** or **Completed** hidden, **⌘→** into it
+  set the work item's state but took its card, and the keyboard, out of sight. The column now shows for the moment once
+  the card goes there, as it does for **Show Them**, even if you went to another card meanwhile. Unless you did, the
+  card keeps the keyboard there, so that **⌘←** moves it back. It stays hidden in your layout.
+- **A finished mission's lane stays open for the work a key finishes.** A key that finishes the last of your work in a
+  finished mission's lane, whose pull requests all merged, keeps that lane open, with the card and the keyboard on it,
+  as it already did a story's lane, rather than fold it under the card, until you fold it yourself.
+- **VoiceOver offers no state change that can't happen.** While a state change is on its way, VoiceOver's actions on a
+  work item's card on My Work's Board leave out **Change State to …**, which did nothing then, as its **State** menu is
+  dimmed.
+
 ## 0.24.0 - 2026-11-16
 
 - **A clearer look, from the start.** A new install starts with **Clearer States and Counts**, **Aligned Titles** and
