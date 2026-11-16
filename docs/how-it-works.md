@@ -3373,10 +3373,12 @@ where BriefBar reads its work item in its new state, as Azure DevOps answered or
 even before the change began (`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose
 another card (`OrderBoardView.settle`, `choose`). Where it goes isn't known until then, as Copilot may start or stop
 working on it meanwhile: the Board follows the card, from the key or the drop until it shows it in another column, or
-those ten seconds end (`PendingMove`, `land`). Once a key's card is there, that column shows for the moment where you
-hid it, as Show Them does, and a lane that folds once its work is all done stays open, though you went to another card
-meanwhile (`showForTheMoment`); while the card is owed the focus, the column opens too. The card's menu has State, with
-Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
+those ten seconds end (`PendingMove`, `land`); should Copilot's work move it before the change is done, as it may twice,
+it takes the keyboard back there and stays owed it, to take it back again from the card AppKit gives it to as it goes,
+unless you went to another (`tookFocus`, `rearmed`). Once a key's card is there, that column shows for the moment where
+you hid it, as Show Them does, and a lane that folds once its work is all done stays open, though you went to another
+card meanwhile (`showForTheMoment`); while the card is owed the focus, the column opens too. The card's menu has State,
+with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
 (`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved

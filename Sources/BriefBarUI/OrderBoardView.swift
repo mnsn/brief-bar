@@ -184,8 +184,9 @@ private struct KeyOpened: Equatable {
 /// A work item's card a key, or a drop, moved to another column: the board follows it from when its change starts until
 /// it shows the card in another column than it was in, or for ten seconds once the change is done, as where its new
 /// state, its pull requests and Copilot's work put it may change meanwhile, as Copilot stops working on it
-/// (`OrderBoardView.land`). Owed the keyboard's focus meanwhile, where it had it, but once you chose another card; and,
-/// for a key, the column it goes to opens, and shows for the moment where you hid it.
+/// (`OrderBoardView.land`). Owed the keyboard's focus meanwhile, where it had it, but once you chose another card: until
+/// its change is done, wherever Copilot's work moves it first, as it may twice; and, for a key, the column it goes to
+/// opens, and shows for the moment where you hid it.
 private struct PendingMove: Equatable {
     /// This move's own, which its change names as it's done.
     var id = UUID()
@@ -608,9 +609,11 @@ package struct OrderBoardView: View {
     @LocalState private var revealCount = 0
     @FocusState private var focused: CardSpot?
     /// The card a key, or a drop, just moved while it had the keyboard's focus: drawn anew in its new column, it takes the
-    /// focus back as it appears, so that the next key moves it on.
+    /// focus back as it appears, so that the next key moves it on; a work item's, wherever it's drawn until its change is
+    /// done (`tookFocus(_:)`).
     @LocalState private var refocus = OwedFocus<CardSpot>()
-    /// That card, while a move takes it to another column, until it has the focus back (`MovingFocus`).
+    /// That card, while a move takes it to another column, until it has the focus back (`MovingFocus`); a work item's anew
+    /// as it does, until its change is done (`rearmed(_:focusedOn:)`).
     @LocalState private var movingFocus: MovingFocus<CardSpot>?
     /// A work item's card a key or a drop moved, from when its change starts until the board shows it in another column,
     /// or for ten seconds once the change is done (`PendingMove`): owed the focus meanwhile where it had it, however long
@@ -677,7 +680,7 @@ package struct OrderBoardView: View {
         .background(alignment: .topLeading) { coveredKeys(lanes, moves: moves) }
         .onChange(of: focused) { old, spot in
             if let moving = movingFocus {
-                movingFocus = moving.focusChanged(from: old, to: spot, last: lastFocus)
+                movingFocus = moving.focusChanged(from: old, to: spot, last: lastFocus) ?? rearmed(moving, focusedOn: spot)
             }
             if isEnabled { lastFocus = spot }
         }
@@ -1975,7 +1978,7 @@ package struct OrderBoardView: View {
                 card: card, content: content, column: column, marksApproved: isJoined && column == .stage(.approved),
                 badges: CardBadge.of(card, on: board), isSelected: isSelected(card.ref), reorder: reorder,
                 order: order, now: now, spot: spot, focus: $focused, takesFocus: refocus.spot == spot,
-                tookFocus: { refocus.took(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
+                tookFocus: { tookFocus(spot) }, mayTakeFocus: { mayTakeFocus(from: $0, to: spot) },
                 left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     choose(spot)
@@ -2007,7 +2010,7 @@ package struct OrderBoardView: View {
             BoardTaskCardView(
                 task: task, content: content, next: board.startNext.flatMap { $0.task.ref == task.ref ? $0 : nil }, order: order,
                 isSelected: work.isSelected(task.ref), reorder: reorder, spot: spot, focus: $focused,
-                takesFocus: refocus.spot == spot, tookFocus: { refocus.took(spot) },
+                takesFocus: refocus.spot == spot, tookFocus: { tookFocus(spot) },
                 mayTakeFocus: { mayTakeFocus(from: $0, to: spot) }, left: { if movingFocus?.spot == spot { movingFocus?.left = true } },
                 select: {
                     choose(spot)
@@ -2441,6 +2444,24 @@ package struct OrderBoardView: View {
         guard !keys.isEditingText else { return false }
         guard let current, current != spot else { return true }
         return movingFocus?.spot == spot && movingFocus?.handedOn == current
+    }
+
+    /// A card owed the keyboard's focus was drawn anew, and takes it: it's owed it no more. But a work item's card whose
+    /// change is still on its way, which Copilot's work may move again before it's done, as Copilot starts or stops working
+    /// on it, stays owed it, to take it back wherever it's drawn next, until its change is done (`PendingMove`).
+    private func tookFocus(_ spot: CardSpot) {
+        if let pending = pendingMove, pending.spot == spot, pending.owed != nil, !pending.isDone { return }
+        refocus.took(spot)
+    }
+
+    /// A work item's card took the keyboard's focus back while its change is still on its way, which Copilot's work may
+    /// move again before it's done: its next move hands the focus on again, as the first did, for the card to take it back
+    /// from (`MovingFocus`). Nil for any other card, and once its change is done.
+    private func rearmed(_ moving: MovingFocus<CardSpot>, focusedOn spot: CardSpot?) -> MovingFocus<CardSpot>? {
+        guard spot == moving.spot, let pending = pendingMove, pending.spot == moving.spot, !pending.isDone,
+              pending.owed == moving.move
+        else { return nil }
+        return MovingFocus(spot: moving.spot, move: moving.move)
     }
 
     /// Whether a move owes its card the keyboard's focus: where it takes it to another column of the board, where it's
