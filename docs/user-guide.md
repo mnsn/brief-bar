@@ -538,15 +538,20 @@ the pull requests linked to them.
 **Search.** On My Work, type in **Search by ID or name**, at the end of **Show**'s row, or press **⌘F** to get there,
 and the Board shows only the cards that match, in the lanes that hold one: each word you type has to be in a card's
 number, such as **5112** or **!4102** (or **#4102**), its title, its mission's name, or its story's ID or title, in any
-case. A pull request's card also matches the work items of yours it names, and any other [Show Links](#links) links it
-to, by type, ID and title, so **Task 5112** finds its pull request's card even with Show: Pull Requests; a work item's
-card matches the pull requests it names. A link you paste to a pull request or a work item finds just its card, or the
-card that names it. Each column counts what matches, and the field says how many cards do. While you search, no lane
-folds; a column with a match opens, even one you folded, a column you hid shows while it holds one, and the rest fold;
-what you fold or open meanwhile lasts until you clear the search, and the Board is then as you left it. Up Next stays as
-it is. **Return** takes the keyboard to the first card that matches, and **Escape** clears the search, then leaves the
-field. Moving a card in your order moves it only past the cards that show. BriefBar keeps what you search for only while
-the window shows My Work, never in its preferences.
+case. A pull request's card also matches its repository, such as **shop-web**, and its branch; the work items of yours
+it names, and any other [Show Links](#links) links it to, by type, ID and title, so **Task 5112** finds its pull
+request's card even with Show: Pull Requests; and the names of the Copilot sessions Show Links links it to, so a
+session's name finds the pull requests it works on. A work item's card matches the pull requests it names, with their
+repositories, and the sessions linked to it or to them. A link you paste to a pull request, a work item or a Copilot
+session, or a session's ID, finds just its card, the card that names it, or those the session works on. With a pull
+request's card that matches, the Board shows the other pull requests for the same work item too, faded, such as a task's
+pull request in another repository: **!4115** shows **!4116** too. They're related, not matches: VoiceOver says so first,
+and the field counts them apart, **1 card · 1 related**. Each column counts what it shows. While you search, no lane
+folds; a column with a card that shows opens, even one you folded, a column you hid shows while it holds one, and the
+rest fold; what you fold or open meanwhile lasts until you clear the search, and the Board is then as you left it. Up
+Next stays as it is. **Return** takes the keyboard to the first card that matches, past those related, and **Escape**
+clears the search, then leaves the field. Moving a card in your order moves it only past the cards that show. BriefBar
+keeps what you search for only while the window shows My Work, never in its preferences.
 
 **Your order.** On My Work, put the work you do yourself in the order you want to do it, in each lane: drag a card up or
 down in **To start** or **In progress**, where a line shows where it goes; or click it, or Tab to it, and press **⌘↑**
