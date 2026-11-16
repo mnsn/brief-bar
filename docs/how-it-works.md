@@ -547,7 +547,8 @@ pull request linked to both, since a work item's pull requests and their session
 doesn't reach its work items' other sessions: they may be on other pull requests. A row shows a capsule for each kind:
 the work item's or pull request's number, or how many; and how the session that needs you most stands, in a word and in
 its color. The task Copilot is doing on a pull request, or the latest sent from a work item, isn't in them: its own
-capsule shows it. Widgets' rows show none.
+capsule shows it. A pull request's card on the Board shows them beside its stage, but for the work items it names on My
+Work. Widgets' rows show none.
 
 ### Where it stands
 
@@ -2025,6 +2026,22 @@ hidden column that holds its card, Done where you hid that, for the moment: unti
 Simple Columns joins Your review, Teammate's review and Approved; Can merge and Waits; and Merged and Completed. It and
 Reset Columns forget your folds too, as Let BriefBar Decide would for each.
 
+**A task's work in several repositories.** With Show Links on, a task with no parent is a story itself
+(`WorkItemStories.story`), as a bug or a story is, so two or more of its pull requests are its mission, a lane of their
+own, as one changed in several repositories has a pull request in each. That's only where its parent is read with it,
+as the sprint, your work outside it and Show Links' reads of linked work items have it; a pull request whose work
+items aren't all read yet is for no story until they are (`WorkLinks.pendingWorkItems`); and a task Show Links read
+before stories were wanted, without its parent, whose read with it fails since, gives none until a read gets it
+(`WorkLinks.partlyRead`): a task whose parent isn't known is never taken for one with none. A mission's header names each repository its pull requests are in, the one
+with the most of them first, "payments-api and shop-web" (`OrderText.places`), rather than the one most are in; and
+where a lane has pull requests of more than one repository, its cards name theirs, after why they're there
+(`PullRequestBoard.namingRepositories`), as rows do, while a lane's in one say nothing of it, its header naming it. A
+card shows its links' capsules beside its stage, as its row does (`PullRequestLinks`): with Show Links on, its sessions,
+in the color of the one that needs you most, and work items it doesn't name; not the task Copilot is doing on it, whose
+own line shows it. An empty one takes no room on the line, so a card without links is as tall as it was. VoiceOver, which
+hears a card as one, hears its links in its details, as their tooltips say them (`LinkCapsules.spoken`), the task's
+session too, as it doesn't hear that task's line.
+
 #### My Work
 
 **My Work Page (preview)**, off by default (`order.myWorkPage`), takes Up Next and the Board from Azure DevOps' Pull
@@ -2061,10 +2078,13 @@ states: with Show Links off, + Sprint Tasks and + All My Tasks show none of your
 `PullRequestBoard.withWork` puts that on the board, which is only how it shows: no stage, pull request's Up Next slot,
 group, count or agent's answer changes, though Up Next gains Start next (below). A work item with a pull request on the board has no card of its own: that pull request's card
 names it, resolved and done too (`workOfPullRequests`), and where it is for one outside the sprint, "Task 5181
-(Sprint 41)" (`MyWorkText.mention`). One without, a `BoardTask`, goes in **Completed**, a column after Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
+(Sprint 41)" (`MyWorkText.mention`), with the board's other pull requests for it, by their numbers, "Task 5152 with
+!4116" (`PullRequestBoard.pullRequests(for:besides:)`), as a task changed in two repositories has. One without, a `BoardTask`, goes in **Completed**, a column after Merged (`BoardColumn.completed`), once it's done, whatever its pull requests are, saying its state and what its pull
 request is, "Closed · !4120 merged"; else, with a pull request that isn't on the board, the first of an open one, one that
 merged, one that can't be read, saying what it is: in Merged for one that merged, "!4120 merged · task still open", or
-"Resolved · !4120 merged" for one resolved, and in In progress for the rest, such as "Sam's !4120"; else in In progress
+"Resolved · !4120 merged" for one resolved, and in In progress for the rest, such as "Sam's !4120"; and its others after
+it, but those abandoned, two at most, then how many more, "Sam's !4120 · !4122 merged · 1 more"
+(`BoardTask.otherPullRequests`); else in In progress
 with a Copilot task; in Merged once it's resolved, "Resolved"; in **To start**, a column before In progress
 (`BoardColumn.toStart`), while it hasn't started; else in In progress, after its pull requests, "Active · no pull request
 yet". An abandoned pull request counts as none, its card saying so. Removed work items aren't in the sprint's board, so

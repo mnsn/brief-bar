@@ -2,10 +2,11 @@ import BriefBarCore
 import Foundation
 
 /// Which stories your pull requests are for, for Pull Request Order's missions by story (§7.4.2): by each of a pull
-/// request's linked work items' own type, never its parent's, and never guessed. A task gives its parent, and none without
-/// one; a feature or an epic, too broad for a mission, none; anything else on the backlog, such as a user story, a product
-/// backlog item, a requirement, an issue or a bug, is a story itself; and one whose type BriefBar hasn't read yet, none,
-/// until it has. Tasks are the types on the sprint's team's task board, in its project, the sprint saying which story each
+/// request's linked work items' own type, never its parent's, and never guessed. A task gives its parent, and is a story
+/// itself without one, so that the pull requests of a task of its own, as one changed in several repositories, go together
+/// too, but none while BriefBar doesn't know whether it has one, as read without it (`WorkLinks.partlyRead`); a feature or
+/// an epic, too broad for a mission, none; anything else on the backlog, such as a user story, a product backlog item, a
+/// requirement, an issue or a bug, is a story itself; and one whose type BriefBar hasn't read yet, none, until it has. Tasks are the types on the sprint's team's task board, in its project, the sprint saying which story each
 /// of its own is under; features and epics, its portfolio backlogs' types. With no sprint today, tasks are the types your
 /// work outside the sprint was read with, in the team's project, as My Work takes them (`OutsideWork`). Elsewhere, as in
 /// every process Azure DevOps comes with: Task, and Feature and Epic.
@@ -37,6 +38,8 @@ public struct WorkItemStories: Sendable {
     private let placed: [WorkItemKey: Int]
     /// The sprint's team's project, by organization and name, lowercased, and its types.
     private let project: (organization: String, name: String, types: Types)?
+    /// Work items read without their parent (`WorkLinks.partlyRead`): a task among them may have one.
+    private let partlyRead: Set<WorkItemKey>
 
     /// - Parameters:
     ///   - workItems: the work items BriefBar read: the sprint's, the linked ones Show Links read, and their parents. The
@@ -44,12 +47,15 @@ public struct WorkItemStories: Sendable {
     ///   - board: the sprint's task board, when BriefBar has it.
     ///   - outside: your work outside the sprint, as read in the team's project: with no board, its task types are that
     ///     project's, and its portfolio's as standard.
-    public init(workItems: [WorkItem], board: SprintBoard?, outside: OutsideWork? = nil) {
+    ///   - partlyRead: work items read without their parent, as Show Links reads linked work items before stories are
+    ///     wanted: a task among them with no parent gives no story, rather than be one itself.
+    public init(workItems: [WorkItem], board: SprintBoard?, outside: OutsideWork? = nil, partlyRead: Set<WorkItemKey> = []) {
         var byKey: [WorkItemKey: WorkItem] = [:]
         for item in workItems where byKey[item.key] == nil {
             byKey[item.key] = item
         }
         self.workItems = byKey
+        self.partlyRead = partlyRead
         var placed: [WorkItemKey: Int] = [:]
         for row in board?.rows ?? [] {
             guard let story = row.parent else { continue }
@@ -75,7 +81,9 @@ public struct WorkItemStories: Sendable {
 
     /// The story a work item is for, by its own type; nil for none, or while its type isn't read, as for one read without
     /// it. Where the sprint's board puts it says only which story a task is under, when its parent wasn't read with it,
-    /// which the board's links may predate: a bug or a story the board shows under another is a story itself.
+    /// which the board's links may predate: a bug or a story the board shows under another is a story itself. A task with no
+    /// parent, read with what its parent is as the sprint and Show Links read them, and that the board puts under none, is a
+    /// story itself; one read without it gives none.
     public func story(of key: WorkItemKey) -> OrderStory? {
         guard let item = workItems[key] else { return nil }
         let ref = ItemRef.workItem(organization: key.organization, id: key.id)
@@ -83,7 +91,11 @@ public struct WorkItemStories: Sendable {
         let type = item.type.trimmingCharacters(in: .whitespaces).lowercased()
         guard !type.isEmpty, type != WorkItem.untyped.lowercased() else { return nil }
         if types.tasks.contains(type) {
-            return (item.parentId ?? placed[key]).map { story(WorkItemKey(key.organization, $0), task: ref, rank: item.rank) }
+            if let parent = item.parentId ?? placed[key] {
+                return story(WorkItemKey(key.organization, parent), task: ref, rank: item.rank)
+            }
+            // Read without its parent, it may have one: no story, rather than a story of its own.
+            return partlyRead.contains(key) ? nil : OrderStory(ref: ref, type: item.type)
         }
         if types.portfolio.contains(type) { return nil }
         return OrderStory(ref: ref, type: item.type)

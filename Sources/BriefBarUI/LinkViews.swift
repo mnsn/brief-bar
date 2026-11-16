@@ -9,32 +9,35 @@ package struct LinkCapsules: View {
     private let ref: ItemRef
     private let excluding: Set<ItemRef>
     private let opensMenu: Bool
+    private let inset: CGFloat
 
     @EnvironmentObject private var services: AppServices
 
     /// - Parameters:
     ///   - excluding: what the row shows already, such as the task Copilot is doing on it.
     ///   - opensMenu: a click opens the links' menu: only where the row itself isn't a button, which would take the click.
-    package init(_ ref: ItemRef, excluding: Set<ItemRef> = [], opensMenu: Bool = false) {
+    ///   - inset: above and below the capsules, while there are any, to sit level with taller controls beside them.
+    package init(_ ref: ItemRef, excluding: Set<ItemRef> = [], opensMenu: Bool = false, inset: CGFloat = 0) {
         self.ref = ref
         self.excluding = excluding
         self.opensMenu = opensMenu
+        self.inset = inset
     }
 
     package var body: some View {
-        Capsules(ref: ref, excluding: excluding, opensMenu: opensMenu, links: services.links)
+        Capsules(ref: ref, excluding: excluding, opensMenu: opensMenu, inset: inset, links: services.links)
     }
 
     private struct Capsules: View {
         let ref: ItemRef
         let excluding: Set<ItemRef>
         let opensMenu: Bool
+        let inset: CGFloat
         @ObservedObject var links: Links
 
         var body: some View {
-            let shown = links.connections(of: ref).filter { !excluding.contains($0.item.ref) }
-            if !shown.isEmpty {
-                let groups = Dictionary(grouping: shown, by: \.item.ref.kind.family).sorted { $0.key < $1.key }.map(\.value)
+            let groups = LinkCapsules.groups(of: ref, excluding: excluding, links: links)
+            if !groups.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(groups, id: \.first?.id) { group in
                         if opensMenu {
@@ -53,9 +56,26 @@ package struct LinkCapsules: View {
                     }
                 }
                 .fixedSize()
+                .padding(.vertical, inset)
                 .accessibilityElement(children: .combine)
             }
         }
+    }
+}
+
+extension LinkCapsules {
+    /// A thing's links, a group for each capsule, in the capsules' order: work items, pull requests, then sessions.
+    @MainActor
+    static func groups(of ref: ItemRef, excluding: Set<ItemRef>, links: Links) -> [[LinkConnection]] {
+        let shown = links.connections(of: ref).filter { !excluding.contains($0.item.ref) }
+        return Dictionary(grouping: shown, by: \.item.ref.kind.family).sorted { $0.key < $1.key }.map(\.value)
+    }
+
+    /// What VoiceOver hears of a thing's capsules where it hears the thing as one, as a Board card, which says them in its
+    /// details: each capsule's tooltip, its things one after another. Nothing while Show Links is off, or it has no links.
+    @MainActor
+    package static func spoken(_ ref: ItemRef, excluding: Set<ItemRef> = [], links: Links) -> [String] {
+        groups(of: ref, excluding: excluding, links: links).map { LinkCapsule.help($0, separator: "; ") }
     }
 }
 
@@ -89,12 +109,17 @@ struct LinkCapsule: View {
     }
 
     private var help: String {
+        Self.help(connections, separator: "\n")
+    }
+
+    /// Its tooltip: each linked thing, how it stands and why it's linked, "‘Retry backoff’ — Working (on its branch)".
+    static func help(_ connections: [LinkConnection], separator: String) -> String {
         connections.map { connection in
             var line = connection.item.menuTitle
             if let status = connection.item.status { line += " — \(status)" }
             return line + " (\(connection.reason))"
         }
-        .joined(separator: "\n")
+        .joined(separator: separator)
     }
 }
 

@@ -39,11 +39,12 @@ import Testing
               - !4102 “Add retry with backoff to the payments client” in payments-api: ‘Retry backoff’ says it's ready (set 1d ago)
             """))
         #expect(text.contains("""
-            - Teammate's review (4):
+            - Teammate's review (5):
               - !4079 “Rename the order status enum” in payments-api: Not approved yet · merge conflicts
               - !3990 “Remove the legacy coupon API” in payments-api: Not approved yet · build expired (You set it 1d ago)
               - !4105 “Prototype one-click checkout” in shop-web: Nobody's asked to review it yet (You set it 2h ago)
               - !4099 “Log slow database queries” in infra: 0 of 2 approvals
+              - !4115 “Add an order cancellation endpoint” in payments-api: Not approved yet
             - Approved (1):
               - !4088 “Show delivery estimates on the product page” in shop-web: Maria approved it · Copilot is writing it · build failed
             - Can merge (1):

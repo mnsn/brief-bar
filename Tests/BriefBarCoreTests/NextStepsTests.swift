@@ -1718,8 +1718,14 @@ import Testing
         #expect(task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .merged)])) == (.merged, "!4120 merged · task still open"))
         #expect(task(Self.work(5103, .inProgress, linked: [Self.linked(4120, .unknown)])) == (.inProgress, "!4120 can't be read"))
         let several = [Self.linked(4118, .abandoned), Self.linked(4119, .unknown), Self.linked(4120, .merged), Self.linked(4121, .open(author: "Sam"))]
-        #expect(task(Self.work(5103, .inProgress, linked: several)) == (.inProgress, "Sam's !4121"))
-        #expect(task(Self.work(5103, .inProgress, linked: Array(several.prefix(3)))) == (.merged, "!4120 merged · task still open"))
+        // Of several, the one that puts it where it is, then the others, but those abandoned, which count as none.
+        #expect(task(Self.work(5103, .inProgress, linked: several)) == (.inProgress, "Sam's !4121 · !4120 merged · !4119 can't be read"))
+        #expect(task(Self.work(5103, .inProgress, linked: Array(several.prefix(3))))
+            == (.merged, "!4120 merged · !4119 can't be read · task still open"))
+        // Two others at most, then how many more.
+        let many = several + [Self.linked(4122, .open(author: "Priya")), Self.linked(4123, .merged)]
+        #expect(task(Self.work(5103, .inProgress, linked: many)).why == "Sam's !4121 · Priya's !4122 · !4120 merged · 2 more")
+        #expect(task(Self.work(5110, .resolved, linked: Array(several.suffix(2)))).why == "Resolved · Sam's !4121 · !4120 merged")
 
         let abandoned = task(Self.work(5103, .toDo, linked: [Self.linked(4120, .abandoned)]))
         #expect(abandoned.column == .toStart)
@@ -1728,6 +1734,32 @@ import Testing
         #expect(started.column == .inProgress)
         #expect(started.why == "Active · no pull request yet · !4120 abandoned")
         #expect(task(Self.work(5103, .toDo, copilot: true)) == (column: .inProgress, why: "New · Copilot works on it"))
+    }
+
+    /// A task changed in several repositories has a pull request in each: each one's card names the board's others for its
+    /// work item, by number; and the cards of a lane with pull requests of more than one repository name theirs, while a
+    /// lane's in one don't, as its mission's header names it.
+    @Test func aTasksPullRequestsInSeveralRepositoriesNameEachOtherAndTheirRepositories() {
+        let checkout = Self.mission([Self.step(4101, .next), Self.step(4102, .waiting(open: [Self.pr(4101)], unknown: []))])
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.inProgress, .draft, at: 1), 4102: Self.reading(.yourReview, .asked("Priya asked you"), at: 2),
+            4200: Self.reading(.teammateReview, .findReviewer, at: 3), 4201: Self.reading(.inProgress, .draft, at: 4),
+        ]
+        let work = [
+            Self.work(5152, .inProgress, linked: [Self.linked(4200), Self.linked(4201), Self.linked(4300, .merged)]),
+            Self.work(5103, .inProgress, linked: [Self.linked(4101)]),
+        ]
+        let board = Self.board(stages, missions: [checkout]).withWork(work, missions: [checkout], stories: [])
+        #expect(board.pullRequests(for: Self.task(5152), besides: Self.pr(4200)) == [Self.pr(4201)])
+        #expect(board.pullRequests(for: Self.task(5152), besides: Self.pr(4201)) == [Self.pr(4200)])
+        #expect(board.pullRequests(for: Self.task(5103), besides: Self.pr(4101)).isEmpty)
+        // !4101 and !4102 in shop-web, in their mission's lane; !4200 in payments-api and !4201 in shop-web, in no mission's.
+        let repositories = [Self.pr(4101): "shop-web", Self.pr(4102): "shop-web", Self.pr(4200): "payments-api", Self.pr(4201): "shop-web"]
+        #expect(board.namingRepositories { repositories[$0] } == [Self.pr(4200), Self.pr(4201)])
+        // With Lanes: None, its one lane mixes them all; one whose repository isn't known says nothing.
+        let one = Self.board(stages, missions: [checkout], lanes: .none)
+        #expect(one.namingRepositories { repositories[$0] } == Set([4101, 4102, 4200, 4201].map(Self.pr)))
+        #expect(one.namingRepositories { $0 == Self.pr(4200) ? "payments-api" : nil }.isEmpty)
     }
 
     /// Resolved work is in Merged, its card saying so after its state, but in In progress while its pull request is still

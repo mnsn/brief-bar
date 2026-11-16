@@ -12,7 +12,7 @@ package struct MissionCard: View {
     let mission: OrderMission
     /// The kinds of pull request the page lists.
     let kinds: Set<ItemRef.Kind>
-    /// Its pull requests' repository, as the page names it.
+    /// Its pull requests' repositories, as the page names them: "payments-api and shop-web".
     let place: String?
     /// The page that lists its other pull requests, "GitHub", and opening it; nil when it can't open.
     let elsewhere: String

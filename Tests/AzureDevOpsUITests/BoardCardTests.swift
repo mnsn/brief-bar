@@ -199,11 +199,12 @@ import Testing
         #expect(BoardText.setter(replaced, now: now, name: { ordering.name(of: $0) }) == "‘\(name)’ · 5m, after you")
 
         let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
         func height(_ reading: StageReading) -> CGFloat {
             let card = PullRequestBoardCard(
                 item: item, card: BoardCard(ref: Self.ref(4093), reading: reading), order: nil, ordering: ordering, now: now
             )
-            return NSHostingView(rootView: card.frame(width: 200).environmentObject(copilot)).fittingSize.height
+            return NSHostingView(rootView: card.frame(width: 200).environmentObject(copilot).environmentObject(services)).fittingSize.height
         }
         #expect(height(replaced) > height(plain) + 8)
     }

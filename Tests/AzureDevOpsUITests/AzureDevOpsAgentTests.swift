@@ -73,8 +73,8 @@ import Testing
 
     @Test func listsPullRequestsByGroup() async throws {
         let all = try await call("pull_requests")
-        #expect(all.hasPrefix("4 need you · 1 answered · 2 failing · 2 ready to complete · 1 to review · 2 waiting · 1 done · 2 idle"))
-        #expect(all.contains("## Idle (2)"))
+        #expect(all.hasPrefix("4 need you · 1 answered · 2 failing · 2 ready to complete · 1 to review · 3 waiting · 1 done · 3 idle"))
+        #expect(all.contains("## Idle (3)"))
         let toReview = try await call("pull_requests", ["group": .string("to_review")])
         #expect(toReview.contains("## To Review (1)\n- !4071 “Cache product search results” in search (by Chen Wei, you review it): Optional review"))
         // Its detail only said who wrote it, as whose it is does.
@@ -208,7 +208,7 @@ import Testing
 
         let sprint = try await call("sprint", ["mine": .bool(true)])
         #expect(sprint.hasPrefix("Sprint 42 · Storefront Team"))
-        #expect(sprint.components(separatedBy: "(you)").count - 1 == 5 + 1)
+        #expect(sprint.components(separatedBy: "(you)").count - 1 == 6 + 1)
 
         let tasks = try await call("copilot_tasks")
         #expect(tasks.contains("- Work item 5112 “Round half up in the coupon service” in Storefront: finished"))
@@ -408,6 +408,7 @@ import Testing
             4091: .you("you, to complete !4091"),
             4071: .you("you, to review Chen Wei's !4071"),
             4099: .people("Alex Kim and Jordan Lee, to review your !4099"),
+            4115: .people("Priya Shah, to review your !4115"),
             4060: .people("Sam Rivera, to update !4060"),
             4085: .people("an approval for the pipeline after !4085 merged"),
         ])

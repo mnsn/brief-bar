@@ -8,7 +8,7 @@ public enum DemoData {
 
     /// The groups the demo pull requests land in; `make demo-check` compares them with the app's.
     public static let expectedCounts: [String: Int] = [
-        "needsYou": 4, "answered": 1, "failing": 2, "ready": 2, "toReview": 1, "waiting": 2, "done": 1, "idle": 2,
+        "needsYou": 4, "answered": 1, "failing": 2, "ready": 2, "toReview": 1, "waiting": 3, "done": 1, "idle": 3,
     ]
 
     static let sam = person("b001", "Sam Rivera")
@@ -293,6 +293,13 @@ public enum DemoData {
                 ],
                 activity: [Activity(threadId: 91, kind: .push, at: ago(20), actor: me, commitCount: 1)]
             ),
+            // Waiting for a reviewer: Task 5152's endpoint, one of its two pull requests, each in its own repository on the
+            // same branch (`workLinks`).
+            record(
+                pr(4115, "Add an order cancellation endpoint", repo: "payments-api", created: ago(45),
+                   reviewers: [reviewer(priya)], branch: "cancel-order"),
+                checks: [build("payments-api CI", .passed, ago(30)), minimumReviewers(.pending, 1)]
+            ),
             // Waiting for the author: you asked for changes.
             record(
                 pr(4060, "Add rate limiting to the public API", repo: "payments-api", author: sam, created: ago(6 * day),
@@ -309,6 +316,11 @@ public enum DemoData {
             // Idle: a draft.
             record(
                 pr(4105, "Prototype one-click checkout", repo: "shop-web", created: ago(3 * hour), branch: "one-click", draft: true),
+                checks: [build("shop-web CI", .notRun, nil)]
+            ),
+            // Idle: a draft, Task 5152's other pull request, its page's button.
+            record(
+                pr(4116, "Add a Cancel button to the orders page", repo: "shop-web", created: ago(25), branch: "cancel-order", draft: true),
                 checks: [build("shop-web CI", .notRun, nil)]
             ),
             // Idle: no activity for weeks.
@@ -328,7 +340,8 @@ extension DemoData {
     /// Made-up links for Show Links: the work items of some of the demo's pull requests, and the pull requests of some of
     /// the demo sprint's work items, among them two of teammates' that the lists don't show, and linked work items that
     /// aren't in the sprint: among them the tasks of User Story 5180, "Checkout redesign", which isn't in the sprint
-    /// either, whose three pull requests are its mission with Pull Request Order on (`parents`).
+    /// either, whose three pull requests are its mission with Pull Request Order on (`parents`). And Task 5152, of no story,
+    /// with a pull request in each of two repositories, which are its own mission.
     public static func workLinks(now: Date = Date()) -> WorkLinks {
         let project = "Storefront"
         let projectId = "7a0c4e1d-0000-4000-8000-000000000001"
@@ -359,6 +372,8 @@ extension DemoData {
                 key(4113): [5181],
                 key(4088): [5182],
                 key(4105): [5183],
+                key(4115): [5152],
+                key(4116): [5152],
             ],
             pullRequestsOfWorkItems: [
                 workItem(5101): [key(4120)],
@@ -367,6 +382,7 @@ extension DemoData {
                 workItem(5120): [key(4118)],
                 workItem(5140): [key(4071)],
                 workItem(5141): [key(4071)],
+                workItem(5152): [key(4115), key(4116)],
             ],
             workItems: [
                 workItem(5160): linked(5160, "User Story", "Retry payments that fail for a moment", "Active", changed: 30),

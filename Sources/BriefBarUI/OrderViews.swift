@@ -205,7 +205,7 @@ package struct OrderNodeMark: View {
 package struct MissionHeader: View {
     let mission: OrderMission
     @ObservedObject var order: PullRequestOrder
-    /// Its pull requests' repository, as the page names it.
+    /// Its pull requests' repositories, as the page names them: "payments-api and shop-web".
     let place: String?
 
     @LocalState private var confirmsForget = false

@@ -134,6 +134,13 @@ public struct BoardTask: Equatable, Sendable, Identifiable {
     public var id: ItemRef { work.ref }
     public var ref: ItemRef { work.ref }
 
+    /// Its other pull requests, besides the one that puts it where it is, which its card names after it: in the order that
+    /// one was chosen in, without those abandoned, which count as none.
+    public var otherPullRequests: [LinkedPullRequest] {
+        let ranked = work.pullRequests.enumerated().sorted { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) }.map(\.element)
+        return ranked.dropFirst().filter { $0.state != .abandoned }
+    }
+
     /// Where a work item goes with none of its pull requests on the board: Completed, once it's done, whatever its pull
     /// requests are; else, with a pull request of another kind, Merged for one that merged and In progress for the rest; then
     /// In progress for one a Copilot task works on; Merged for one resolved; else To start until it's started.
@@ -473,6 +480,26 @@ extension PullRequestBoard {
         // A story or bug of yours without tasks has no lane of its own: its header would say what its one card does.
         return story != work.ref && stories.contains(story) ? .story(story) : .notInAMission
     }
+
+    /// The board's other pull requests for a work item of yours, besides one, by their numbers: for that one's card, which
+    /// names the work item, to say which other cards are its too, "Task 5152 with !4116", as one changed in several
+    /// repositories has a pull request in each. None without your sprint work on the board (`withWork`).
+    public func pullRequests(for work: ItemRef, besides ref: ItemRef) -> [ItemRef] {
+        workOfPullRequests.filter { $0.key != ref && $0.value.contains(work) }.map(\.key).sorted()
+    }
+
+    /// The pull requests whose cards name their repository: those in a lane whose pull requests are in more than one, which
+    /// its cards tell apart, such as a task's in two repositories; a lane's in one say nothing of it, as its mission's
+    /// header names it. A pull request in two lanes names it in both where one of them is mixed.
+    /// - Parameter repository: a pull request's repository, as the page names it; nil for one it doesn't know.
+    public func namingRepositories(_ repository: (ItemRef) -> String?) -> Set<ItemRef> {
+        var naming: Set<ItemRef> = []
+        for lane in lanes {
+            let refs = lane.cards.map(\.ref)
+            if Set(refs.compactMap(repository)).count > 1 { naming.formUnion(refs) }
+        }
+        return naming
+    }
 }
 
 extension BoardText {
@@ -501,30 +528,38 @@ extension BoardText {
 
     /// Why a work item's card is where it is, on its card: "New", "Active · no pull request yet", "New · Copilot works on it",
     /// "Sam's !4120", "!4120 merged · task still open", "Resolved", "Resolved · !4120 merged", "Closed", "Closed · !4120
-    /// merged", and one abandoned after it, "New · !4120 abandoned".
+    /// merged", and one abandoned after it, "New · !4120 abandoned". Its other pull requests follow the one that puts it
+    /// there, two at most, then how many more: "Sam's !4120 · #412 on GitHub", "!4120 merged · !4122 merged · task still
+    /// open".
     /// - Parameters:
     ///   - state: its state, as its process names it: "New", "Active".
     ///   - type: its type, as its process names it: "Task".
     public static func why(_ task: BoardTask, state: String, type: String) -> String {
+        let others = otherPullRequests(of: task)
         var parts: [String] = switch task.why {
         case .notStarted, .resolved: [state]
         case .started: [state, "no pull request yet"]
         case .copilot: [state, "Copilot works on it"]
-        case .pullRequest(let linked) where task.work.progress == .resolved: [state, pullRequest(linked)]
-        case .pullRequest(let linked): [pullRequest(linked, type: type)]
-        case .done(let linked): [state] + (linked.map { [pullRequest($0)] } ?? [])
+        case .pullRequest(let linked) where task.work.progress == .resolved: [state, pullRequest(linked)] + others
+        case .pullRequest(let linked) where linked.state == .merged:
+            [pullRequest(linked)] + others + ["\(type.lowercased()) still open"]
+        case .pullRequest(let linked): [pullRequest(linked)] + others
+        case .done(let linked): [state] + (linked.map { [pullRequest($0)] } ?? []) + others
         }
         if let abandoned = task.abandoned { parts.append("\(abandoned.shortOrderLabel) abandoned") }
         return parts.joined(separator: " · ")
     }
 
-    /// A linked pull request that isn't on the board, by what it is, for a work item that's still open: "Sam's !4120", "Your
-    /// !4120", "#412 on GitHub", "!4120 merged · task still open", "!4120 can't be read".
-    static func pullRequest(_ linked: LinkedPullRequest, type: String) -> String {
-        linked.state == .merged ? "\(linked.ref.shortOrderLabel) merged · \(type.lowercased()) still open" : pullRequest(linked)
+    /// A work item's other pull requests, as its card names them after the one that puts it where it is: two at most, then
+    /// how many more, "2 more".
+    private static func otherPullRequests(of task: BoardTask) -> [String] {
+        let others = task.otherPullRequests
+        let named = others.prefix(2).map { pullRequest($0) }
+        return others.count > 2 ? named + ["\(others.count - 2) more"] : named
     }
 
-    /// The same, after the state of a work item that's resolved or done: "Sam's !4120", "!4120 merged".
+    /// A linked pull request that isn't on the board, by what it is: "Sam's !4120", "Your !4120", "#412 on GitHub",
+    /// "!4120 merged", "!4120 can't be read".
     static func pullRequest(_ linked: LinkedPullRequest) -> String {
         let label = linked.ref.shortOrderLabel
         switch linked.state {

@@ -20,7 +20,7 @@ within() {
 JSON="$("$BIN" --demo --json)"
 
 # Each source's counts, by group.
-EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":9,"needsYou":3,"running":4,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
+EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":3,"needsYou":4,"ready":2,"toReview":1,"waiting":3},"copilot":{"done":1,"idle":9,"needsYou":3,"running":4,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
 COUNTS="$(jq -cS 'with_entries(.value |= .counts)' <<<"$JSON")"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 
@@ -52,8 +52,8 @@ done
     fail "--demo --chats doesn't show the made-up link"
 "$BIN" --demo --sprint | grep '^Sprint 42 · Storefront Team' >/dev/null ||
     fail "--demo --sprint doesn't show the made-up sprint"
-[[ "$("$BIN" --demo --sprint --mine | grep -c '(you)')" == 5 ]] ||
-    fail "--demo --sprint --mine doesn't show your 5 tasks"
+[[ "$("$BIN" --demo --sprint --mine | grep -c '(you)')" == 6 ]] ||
+    fail "--demo --sprint --mine doesn't show your 6 tasks"
 "$BIN" --demo --pipelines | grep '^shop-web CI .*Failed in Test' >/dev/null ||
     fail "--demo --pipelines doesn't show the made-up failed run"
 

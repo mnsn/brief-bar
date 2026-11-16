@@ -208,11 +208,9 @@ package struct MissionsBody: View {
             .padding(.horizontal, 4)
     }
 
-    /// The repository most of its pull requests on the page are in.
+    /// The repositories its pull requests on the page are in, the one with the most first: "payments-api and shop-web".
     private func place(of mission: OrderMission) -> String? {
-        let places = mission.steps(of: kinds).compactMap { place($0.ref) }
-        let counts = Dictionary(places.map { ($0, 1) }, uniquingKeysWith: +)
-        return counts.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key
+        OrderText.places(mission.steps(of: kinds).compactMap { place($0.ref) })
     }
 
     /// A node's click, or a pull request's in a mission card's next steps or suggested split: what its row's does, for one

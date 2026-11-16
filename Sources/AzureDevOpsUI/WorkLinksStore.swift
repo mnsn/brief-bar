@@ -258,10 +258,12 @@ final class WorkLinksStore {
     }
 
     /// Which stories work items are for, from what's read of them: the sprint's, the linked ones' and their parents'; with no
-    /// sprint, by the types your work outside it was read with, as My Work's cards take them.
+    /// sprint, by the types your work outside it was read with, as My Work's cards take them; and a linked task read without
+    /// its parent, for no story.
     private var storyFinder: WorkItemStories {
         WorkItemStories(
-            workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board, outside: sprint.outside
+            workItems: sprintItems + Array(read.workItems.values) + Array(read.parents.values), board: sprint.board, outside: sprint.outside,
+            partlyRead: read.partlyRead
         )
     }
 

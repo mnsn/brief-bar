@@ -491,7 +491,7 @@ package struct OrderBoardView: View {
     /// The page that lists the missions' other pull requests, "GitHub", and opening it; nil when it can't open.
     let elsewhere: String
     let openElsewhere: (() -> Void)?
-    /// The repository most of a mission's pull requests are in, as the page names it.
+    /// The repositories a mission's pull requests are in, as the page names them, the one with the most first.
     let place: (OrderMission) -> String?
     /// A card's content as the page draws it; nil for one it doesn't list.
     let card: (BoardCard) -> BoardCardContent?

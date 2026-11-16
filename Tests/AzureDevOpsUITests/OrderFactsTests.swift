@@ -315,6 +315,11 @@ import Testing
         #expect(order.title(of: mission) == "Faster checkout" && order.naming(of: mission) == .appleIntelligence)
         #expect(order.name(of: DemoPullRequestOrder.checkoutRedesign) == "Checkout redesign")
         #expect(order.describe(.workItem(organization: "contoso", id: 5181))?.title == "Speed up the checkout page")
+        // A task with no story is a story itself: its pull requests, one in each of two repositories, are its mission.
+        let cancellation = try #require(order.missions.first { $0.key == .story(DemoPullRequestOrder.orderCancellation) })
+        #expect(Set(cancellation.steps.map(\.ref.id)) == ["4115", "4116"])
+        #expect(OrderText.story(of: cancellation, title: order.title(of: cancellation)) == "Task 5152")
+        #expect(order.title(of: cancellation) == "Order cancellation")
         // Each pull request goes with all its work items, for its mission's name.
         let seen = PullRequestOrderFacts.pullRequests(store.records, items: store.items, showToReview: false, stories: workLinks.storiesRead)
         #expect(seen.first { $0.ref.id == "4091" }?.workItems == [5110, 5112].map { .workItem(organization: "contoso", id: $0) })
@@ -993,11 +998,12 @@ import Testing
         #expect(PullRequestBoardCard.details(item, reading: reading, order: next, ordering: order) == ["shop-web"])
 
         let copilot = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: false)
         func height(_ context: OrderRowContext?) -> CGFloat {
             let card = PullRequestBoardCard(
                 item: item, card: BoardCard(ref: ref, reading: reading), order: context, ordering: order, now: now
             )
-            return NSHostingView(rootView: card.frame(width: 220).environmentObject(copilot)).fittingSize.height
+            return NSHostingView(rootView: card.frame(width: 220).environmentObject(copilot).environmentObject(services)).fittingSize.height
         }
         #expect(height(moved) > height(nil) + 8)
         #expect(abs(height(next) - height(nil)) < 0.5)

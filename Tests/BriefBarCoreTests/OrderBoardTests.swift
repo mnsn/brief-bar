@@ -454,4 +454,13 @@ import Testing
             #expect(OrderText.standing(standing, of: Self.pr(2))?.lowercased().contains("ready") == false, "\(standing)")
         }
     }
+
+    /// A mission's header names each repository its pull requests are in, once: the one with the most of them first, then by
+    /// name, as a task's in two repositories are.
+    @Test func aMissionsHeaderNamesEachRepositoryItsPullRequestsAreIn() {
+        #expect(OrderText.places([]) == nil)
+        #expect(OrderText.places(["shop-web", "shop-web"]) == "shop-web")
+        #expect(OrderText.places(["shop-web", "payments-api", "shop-web"]) == "shop-web and payments-api")
+        #expect(OrderText.places(["shop-web", "payments-api", "infra"]) == "infra, payments-api and shop-web")
+    }
 }
