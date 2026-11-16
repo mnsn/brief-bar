@@ -2114,6 +2114,27 @@ problem too, as the Sprint page shows the cards read before under it. With no sp
 instead, such as "5 tasks and 1 bug of yours are open", for a team you chose on the Sprint page: without a sprint today,
 BriefBar finds no team for you to read them in.
 
+**Search** (`BoardSearch`), at the end of Show's row, shows only the Board's cards that match what you type
+(`PullRequestBoard.matching`), in the lanes that hold one, each column, Completed and the hidden columns' tab counting what
+matches (`cardCount`, in the field, how many cards do), and a pull request's card in two missions' lanes in each it
+matches in; Up Next, Start next and the line of what isn't on the board stay as they are, and nothing is read for it.
+Each word has to be, in any case and with any accents, in one of a card's names (`MyWorkFacts.searched`): a pull
+request's number with its kind, "PR !4102", its title, the work items of yours its card names and any other Show Links
+links it to, even with Show: Pull Requests, by type and ID, "Task 5112", and title, and its mission's name with the story
+it's for; a work item's type, ID and title, the pull requests its card names, "PR !4120", with their titles where
+BriefBar knows them, and its story's type, ID and title, with that story's mission's name. So a mission's name or a
+story's ID finds its cards, with Lanes: None too. A ! or # before a word doesn't count, and a link to a pull request or a
+work item (`ItemRef.from(link:)`) matches only the card that is it or names it. While it lasts, no lane folds, and a
+story's lane reads finished only where all its work is, shown or not (`BoardLane.hidesWorkToDo`). BriefBar folds every
+column by what matches, as if you'd chosen none: one with a match opens, as the room allows, one without folds; a column
+you hid shows where it holds a match; and a fold or an open you make meanwhile is kept only until the search is cleared,
+when the board is as you left it (Hide still hides for good, and hides one the search showed until then; Simple Columns
+and Reset Columns forget those folds too). A move in your order swaps places only with the cards that show, those hidden
+keeping theirs (`BoardLane.wholeOrder`), and a drop's flash counts only what shows (`foldsOnceMoved`). ⌘F gives the
+field the keyboard; Escape clears it, then leaves it; Return takes the keyboard to the first card that matches
+(`PullRequestBoard.firstCard`), as Show Them does, which clears the search. What you typed is the window's own while it
+shows My Work, never in the preferences.
+
 **Your order** (`LaneOrders`), on My Work only, puts the cards in each lane's To start and In progress, the work you do
 yourself, in the order you put them in (`BoardColumn.takesYourOrder`): a drag within the column, with a line where it
 would go (`Dropping.reorder`), in an open column with another card in it, as a strip shows no cards to go between; ⌘↑

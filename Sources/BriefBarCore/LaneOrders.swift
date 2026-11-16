@@ -293,11 +293,12 @@ extension BoardLane {
     }
 
     /// Its order once you move one of its cards within its column, To start or In progress, with where it is then: nil
-    /// where it doesn't move, as at the top for Move Up, or for a card in no such column.
+    /// where it doesn't move, as at the top for Move Up, or for a card in no such column. While My Work's search hides some
+    /// of its cards, the move swaps places only with those that show, and those it hides keep theirs (`wholeOrder`).
     public func moving(_ ref: ItemRef, _ move: LaneMove) -> (order: [ItemRef], place: LanePlace)? {
         guard let column = orderColumn(of: ref) else { return nil }
         let refs = items(in: column).map(\.ref)
-        let shown = items(in: .stage(.inProgress)).map(\.ref) + items(in: .toStart).map(\.ref)
+        let shown = wholeOrder ?? (items(in: .stage(.inProgress)).map(\.ref) + items(in: .toStart).map(\.ref))
         let done = Set(cards(in: .merged).map(\.ref) + tasks.filter { $0.column == .merged || $0.column == .completed }.map(\.ref))
         guard let order = LaneOrders.moving(ref, move, column: refs, shown: shown, kept: yourOrder, done: done) else { return nil }
         let inColumn = Set(refs)

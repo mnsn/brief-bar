@@ -852,12 +852,19 @@ public struct BoardLane: Equatable, Sendable, Identifiable {
     /// Whether a pull request's card in it names work of yours not resolved yet, on My Work with your work
     /// (`PullRequestBoard.withWork`): with its work items' own cards, what keeps a finished mission's lane open.
     public var namesWorkToDo = false
+    /// While My Work's search shows only some of its cards (`PullRequestBoard.matching`): whether it has work of yours still
+    /// to do, among them or not (`hasWorkToDo`), so that it reads finished only where it is.
+    public var hidesWorkToDo = false
     /// Whose order it has in To start and In progress, on My Work, where you put its cards in your order
     /// (`PullRequestBoard.inYourOrder`); nil elsewhere.
     public var orderKey: LaneOrderKey?
     /// Your order of its cards in To start and In progress, as kept (`LaneOrders`): nil until you move one, as it keeps the
     /// Board's own order till then.
     public var yourOrder: [ItemRef]?
+    /// While My Work's search shows only some of its cards (`PullRequestBoard.matching`): all its cards in In progress and To
+    /// start, as they'd show without it, so that a move within a column swaps places only with the cards that show, and
+    /// those it hides keep theirs. Nil without a search.
+    public var wholeOrder: [ItemRef]?
 
     public init(kind: Kind, columns: [PullRequestStage: [BoardCard]], tasks: [BoardTask] = [], fixFirst: ItemRef? = nil) {
         self.kind = kind
@@ -957,6 +964,8 @@ public struct PullRequestBoard: Equatable, Sendable {
     /// It's in your order, on My Work (`inYourOrder`): you can move the cards of its To start and In progress within their
     /// columns of a lane.
     public var isInYourOrder = false
+    /// My Work's search, while it shows only the cards that match it (`matching`); nil while it shows them all.
+    public var search: BoardSearch?
 
     public init(
         lanes: [BoardLane] = [], counts: [PullRequestStage: Int] = [:], next: [UpNextSlot: ItemRef] = [:],

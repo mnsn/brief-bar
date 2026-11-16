@@ -203,9 +203,10 @@ extension PullRequestBoard {
     }
 
     /// Whether the column a card moved to shows folded once it moved, as BriefBar folds it (`BoardFolding`): this Board, from
-    /// before the move, with each of its pull requests in the column its stage takes it to now, and none that left the
-    /// board. So the column a card left counts it no more, and what a move did to the others counts too, as Set as Next to
-    /// Merge has the rest of its mission wait for the one you set. Its work items' cards stay as they are.
+    /// before the move, with each of the pull requests it shows in the column its stage takes it to now, and none that left
+    /// the board; while My Work's search shows some, only those. So the column a card left counts it no more, and what a move
+    /// did to the others counts too, as Set as Next to Merge has the rest of its mission wait for the one you set. Its work
+    /// items' cards stay as they are.
     /// - Parameters:
     ///   - column: the column it moved to, which shows in the column of `shown` that holds it.
     ///   - stages: each pull request's stage once moved, with the sessions at work on it in its flags.
@@ -214,7 +215,9 @@ extension PullRequestBoard {
         to column: BoardColumn, stages: [ItemRef: StageReading], shown: [ShownColumn], choices: BoardFolds,
         open: Set<ShownColumn>, widths: BoardWidths
     ) -> Bool {
-        let cards = refs.compactMap { ref in stages[ref].flatMap { $0.isOnBoard ? BoardCard(ref: ref, reading: $0) : nil } }
+        let cards = Set(lanes.flatMap(\.cards).map(\.ref)).compactMap { ref in
+            stages[ref].flatMap { $0.isOnBoard ? BoardCard(ref: ref, reading: $0) : nil }
+        }
         let byStage = Dictionary(grouping: cards, by: \.stage)
         var moved = self
         moved.lanes = [BoardLane(kind: .all, columns: byStage, tasks: lanes.flatMap(\.tasks))]
