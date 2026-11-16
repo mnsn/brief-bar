@@ -2653,7 +2653,8 @@ private struct BoardCardView: View {
                     + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
             )
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(content.label)
+            // That it's only related, before its name: VoiceOver says its label before its value.
+            .accessibilityLabel(isRelated ? "\(BoardText.related), \(content.label)" : content.label)
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Shows its details")
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -2724,10 +2725,8 @@ private struct BoardCardView: View {
     }
 
     private var accessibilityValue: String {
-        // That it's related first: the rest is what any card says. Its stage stays Merged in Completed: the column says
-        // where it is.
-        var parts = isRelated ? [BoardText.related] : []
-        if column == .completed { parts.append(column.title) }
+        // Its stage stays Merged there: the column says where it is.
+        var parts = column == .completed ? [column.title] : []
         parts.append(StageWords.spoken(card.reading, order: order, now: now))
         parts += content.details
         parts += badges.map(\.spoken)
