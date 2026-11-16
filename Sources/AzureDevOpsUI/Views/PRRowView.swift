@@ -34,7 +34,8 @@ struct PRRowView: View {
     /// Its details show in BriefBar's window, from the menu bar or a widget, rather than in the window it's in: its menu
     /// says Show in BriefBar.
     var showsInWindow = false
-    /// Where it stands in its mission, for its order capsule, on a window's Pull Requests page with Pull Request Order on.
+    /// Where it stands in its mission, for its order capsule, with Pull Request Order on: on every row of a window's Pull
+    /// Requests page, and on a Can merge or Waits row in the menu bar's lists and the Overview (`PullRequestRow`).
     var order: OrderRowContext? = nil
     /// Its Mission menu, and VoiceOver's actions for it, on a window's Pull Requests page with Pull Request Order on.
     var mission: MissionMenuContext? = nil

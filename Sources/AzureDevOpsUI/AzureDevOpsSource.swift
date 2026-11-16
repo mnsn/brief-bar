@@ -1263,7 +1263,31 @@ package final class AzureDevOpsSource: BriefBarSource {
             renderings.append((name: "my-work-state-moved", view: environment(page)))
         }
         renderings += rowActionsRenderings()
+        renderings += readyListRenderings()
         return renderings
+    }
+
+    /// The menu bar's list's Ready to Complete group, below what its picture shows: as the list draws it, as wide as its
+    /// popover, on its background, without the summaries the demo keeps under its rows. In the demo, one that can merge,
+    /// and one that waits for another pull request.
+    private func readyListRenderings() -> [(name: String, view: AnyView)] {
+        guard let store, services.pullRequestOrder.isOn else { return [] }
+        let ready = store.items(in: .ready)
+        guard !ready.isEmpty else { return [] }
+        let list = VStack(alignment: .leading, spacing: 2) {
+            SectionHeading(symbol: PRGroup.ready.symbol, color: PRGroup.ready.color, title: PRGroup.ready.title, count: ready.count)
+                .padding(.horizontal, 8)
+            ForEach(ready) { item in
+                PullRequestRow(item: item)
+            }
+        }
+        .environment(\.offersSummaries, false)
+        .padding(8)
+        .frame(width: MenuPanelView.width)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.panelStyle, .popover(width: nil))
+        .environment(\.isRendering, true)
+        return [(name: "pull-requests-ready-list", view: environment(list))]
     }
 
     /// One of the Pull Requests page's rows, on its card, as wide as the page in a window as it opens: as it is, and while

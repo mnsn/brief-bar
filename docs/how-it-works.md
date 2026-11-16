@@ -1700,7 +1700,10 @@ its stage comes from what Azure DevOps shows alone. Without an account BriefBar 
 it. **Forget Stages…** forgets it, and turning Azure DevOps off; turning Pull Request Order off keeps it, unused, and
 Forget Stages… is there for it then: while it's on, what it keeps comes back at once, or goes after 30 days on its own.
 
-A row shows its order capsule after its label, whatever its stage, since its label's words are in its tooltip. Beside
+On the Pull Requests page, a row shows its order capsule after its label, whatever its stage, since its label's words
+are in its tooltip. In the menu bar's lists, the Overview and lists by state (`PullRequestRow`), only a Can merge or
+Waits row does, whose label's words, such as **After !4102**, said where its order puts it before they went to its
+tooltip (`OrderRowContext.isSaid(by:)`), so that the row still says what it waits for. Beside
 Can merge and Waits, whose words say where its order puts it, a card shows its order capsule only where
 a change of yours speaks of it (`OrderRowContext.isSaid(by:)`): ✎ **Next to merge** for one you set as next, or, for one
 an order went against yours, its capsule, which says so in its tooltip and to VoiceOver, with Put Yours Back in its
