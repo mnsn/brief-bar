@@ -22,9 +22,10 @@
   BriefBar sets its state in Azure DevOps, as you, so that your team sees your work there too: **To start** sets it to
   **New**; **In progress**, or any column after it up to **Waits**, to **Active**; **Merged** to **Resolved**, where its
   type has that state; and **Completed** to **Closed**; or to the states your team's process has instead, such as
-  **To Do**, **In Progress** and **Done**. Its card goes to its new column once Azure DevOps has it, the line under
-  the header says what changed, with **Undo**, and its right-click menu has **State** too. Your work outside the
-  sprint says to move it there first.
+  **To Do**, **In Progress** and **Done**. Once Azure DevOps has it, the card shows where its new state, its pull
+  requests and Copilot's work put it: a task with no pull request that you move to **Your review**, say, is **Active**
+  and shows in **In progress**. The line under the header says what changed, with **Undo**, and its right-click menu
+  has **State** too. Your work outside the sprint says to move it there first.
 - **The keyboard stays on the card you move.** On the Board, a card that **⌘→** or **⌘←** moves keeps the keyboard in its
   new column, so that the next key moves it on, though another card comes after it, which used to take it.
 - **Calmer rows.** Every row in the menu bar's lists, on the window's pages and in the Overview reads the same way, in
