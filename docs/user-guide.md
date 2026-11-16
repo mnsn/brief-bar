@@ -358,7 +358,9 @@ asks you or sends it to you, or new commits come after your vote, also while Cop
 the reviewers Azure DevOps requires approved yours, while it can't complete it yet, saying why, such as **Build
 running**, or who approved it; **Can merge** once Azure DevOps says it's ready to complete and BriefBar saw what its
 order puts before it merge; **Waits for another PR** while its order puts it after one that hasn't merged, or until you
-retarget one still targeting the branch of one that merged; and **Merged**. BriefBar works it out from Azure DevOps and
+retarget one still targeting the branch of one that merged; and **Merged**. Beside Can merge and Waits, a capsule says
+where its order puts it, such as **After !4102**; on the window's Pull Requests page, every stage's row has it. BriefBar
+works it out from Azure DevOps and
 your Copilot sessions, as far as what it shows takes yours, and never moves one of yours back on its own: a failed or
 expired build, conflicts, a merge Azure DevOps couldn't make, changes someone wants, and a Copilot session that writes
 it or asks you something are marks on it, wherever it is, after why it's there, in its label's tooltip, **Maria

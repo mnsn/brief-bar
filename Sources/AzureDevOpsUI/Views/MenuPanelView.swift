@@ -270,10 +270,18 @@ struct PullRequestRow: View {
             dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
             showDetails: details.hasPage() ? { details.showDetails(item) } : nil,
             opensDetails: inWindow || settings.opensPullRequestsInBriefBar, showsInWindow: !inWindow,
+            order: stage.flatMap { order(saidBy: $0.stage) },
             stage: stage, ordering: compact || !ordering.isOn ? nil : ordering
         ) {
             store.open(item)
         }
+    }
+
+    /// Where its order puts it, for its capsule, on a Can merge or Waits row, whose stage's words said it, "After !4079",
+    /// before they went to its pill's menu: as on the Pull Requests page. Another stage's row shows none here.
+    private func order(saidBy stage: PullRequestStage) -> OrderRowContext? {
+        let order = OrderRowContext.of(item.key.linkRef, in: ordering.missions, isReady: item.group == .ready, names: ordering.names)
+        return order?.isSaid(by: stage) == true ? order : nil
     }
 }
 

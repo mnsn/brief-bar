@@ -7,7 +7,8 @@ import Testing
 @testable import AzureDevOpsUI
 
 /// A pull request's row in four parts at most: its last, quiet line is one line high while its stage fits, says what's
-/// left but never what's done, and shows where its order puts it on every stage.
+/// left but never what's done, and shows where its order puts it: on every stage on the Pull Requests page, and where its
+/// stage's words said it in the menu bar's lists and the Overview.
 @MainActor
 @Suite struct PRQuietLineTests {
     private static let now = Date(timeIntervalSince1970: 1_792_000_000)
@@ -17,6 +18,7 @@ import Testing
     private static let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
     private static let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
     private static let sessions = PullRequestSessions(copilot: copilot, links: services.links)
+    private static let details = PullRequestDetailsStore()
     private static let left: [PRReadiness.Item] = [
         .init(kind: .comments, state: .needsYou, label: "Resolve 2 comments"),
         .init(kind: .approvals, state: nil, label: "1 of 2 approvals"),
@@ -28,9 +30,9 @@ import Testing
     ]
 
     /// One of yours, with what's left and what's done.
-    private static func item(readiness: [PRReadiness.Item]) throws -> PRSnapshot {
+    private static func item(_ number: Int = 4102, readiness: [PRReadiness.Item]) throws -> PRSnapshot {
         let pullRequest = PullRequest(
-            key: PRKey("contoso", 4102), title: "Add retry with backoff to the payments client", author: DemoData.me,
+            key: PRKey("contoso", number), title: "Add retry with backoff to the payments client", author: DemoData.me,
             createdAt: now.addingTimeInterval(-86_400), projectId: "7A0C4E1D", projectName: "Storefront",
             repositoryId: "Repository-Shop", repositoryName: "payments-api", sourceBranch: "robin/retry", targetBranch: "main"
         )
@@ -46,13 +48,53 @@ import Testing
         PullRequestOrder(defaults: MemoryDefaults(), isDemo: false, now: { now })
     }
 
-    private func size(_ view: some View, width: CGFloat? = nil) -> CGSize {
+    /// Pull Request Order on, with !4101, !4102 and !4103 of yours in one order, each after the one before, the first two
+    /// ready to complete: so !4101 can merge, !4102 waits for it, and !4103 waits for a reviewer, in Teammate's review.
+    private static func inOneOrder() throws -> PullRequestOrder {
+        let defaults = MemoryDefaults()
+        defaults.set(true, forKey: PullRequestOrderSetting.defaultsKey)
+        let numbers = [4101, 4102, 4103]
+        var orders = DeclaredOrders()
+        try orders.apply(
+            OrderRequest(entries: numbers.enumerated().map { place, number in
+                OrderRequest.Entry(
+                    link: "https://dev.azure.com/contoso/shop/_git/shop-web/pullrequest/\(number)",
+                    after: place == 0 ? [] : ["\(numbers[place - 1])"]
+                )
+            }),
+            now: now.addingTimeInterval(-600), newID: UUID()
+        )
+        orders.save(to: defaults)
+        let order = PullRequestOrder(defaults: defaults, isDemo: false, now: { now })
+        order.publish(
+            .azureDevOps,
+            pullRequests: numbers.map { number in
+                OrderPullRequest(
+                    ref: .pullRequest(organization: "contoso", number: number), repository: "contoso/7d3f9a12/shop-web",
+                    sourceBranch: "robin/\(number)", targetBranch: "main", author: "robin",
+                    createdAt: now.addingTimeInterval(-86_400 + Double(number))
+                )
+            },
+            stages: [
+                .pullRequest(organization: "contoso", number: 4101): StageFacts(role: .author, isReady: true, votes: "0", commit: "c4101"),
+                .pullRequest(organization: "contoso", number: 4102): StageFacts(role: .author, isReady: true, votes: "0", commit: "c4102"),
+                .pullRequest(organization: "contoso", number: 4103): StageFacts(role: .author, waitingFor: "Waiting on Priya", votes: "0"),
+            ],
+            account: "robin@contoso.com"
+        )
+        return order
+    }
+
+    private func size(_ view: some View, width: CGFloat? = nil, ordering: PullRequestOrder? = nil) -> CGSize {
         let hosted = view
             .frame(width: width)
             .environmentObject(Self.services)
             .environmentObject(Self.copilot)
             .environmentObject(Self.store)
             .environmentObject(Self.sessions)
+            .environmentObject(Self.settings)
+            .environmentObject(Self.details)
+            .environmentObject(ordering ?? Self.ordering())
         return NSHostingView(rootView: hosted).fittingSize
     }
 
@@ -71,8 +113,29 @@ import Testing
     }
 
     /// How big a view says it is in so wide a room, rather than the room's width.
-    private func ownSize(_ view: some View, width: CGFloat? = nil) -> CGSize {
-        size(Proposing(width: width) { view })
+    private func ownSize(_ view: some View, width: CGFloat? = nil, ordering: PullRequestOrder? = nil) -> CGSize {
+        size(Proposing(width: width) { view }, ordering: ordering)
+    }
+
+    /// In the menu bar's lists, the Overview and lists by state (`PullRequestRow`), a Can merge or Waits row shows where its
+    /// order puts it, which its stage's words said before they went to its pill's menu, as the Pull Requests page does, so
+    /// that it's as wide as its pill and its order's capsule side by side; another stage's row there shows none. Each row's
+    /// title and reason are short here, so that its quiet line is its widest part.
+    @Test func aListsRowSaysWhereItsOrderPutsItWhereItsStageSaidIt() throws {
+        let ordering = try Self.inOneOrder()
+        for (number, stage, shows) in [(4101, PullRequestStage.canMerge, true), (4102, .waits, true), (4103, .teammateReview, false)] {
+            let ref = ItemRef.pullRequest(organization: "contoso", number: number)
+            let reading = try #require(ordering.stage(of: ref))
+            #expect(reading.stage == stage, "!\(number)")
+            let order = try #require(OrderRowContext.of(ref, in: ordering.missions, isReady: false, names: ordering.names))
+            var item = try Self.item(number, readiness: [])
+            (item.title, item.headline, item.repository) = ("Fix", "Ready", "web")
+
+            let pill = ownSize(PRQuietLine(item: item, stage: reading, ordering: ordering, left: [])).width
+            let capsule = ownSize(PRQuietLine(item: item, order: order, left: [])).width
+            let row = ownSize(PullRequestRow(item: item), ordering: ordering).width
+            #expect((row >= pill + 6 + capsule) == shows, "!\(number): \(row) wide, its pill \(pill), its capsule \(capsule)")
+        }
     }
 
     /// Where its stage's pill and its order's capsule each fit, but not side by side, the line goes on more lines, as its
