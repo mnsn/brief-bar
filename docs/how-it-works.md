@@ -3369,11 +3369,14 @@ The change is the one above, from the same `StateChanges`, whose line shows unde
 Copilot's work put it, so that a task with no pull request moved to Your review is Active, and shows in In progress. It
 keeps the keyboard after ⌘→ or ⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`): owed
 the focus until the change is done, however long Azure DevOps takes, its ten seconds to be drawn anew start only then,
-where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already
-(`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose another card
-(`OrderBoardView.settle`, `choose`). Once a key's change is done, the column the card goes to shows for the moment where
-you hid it, as Show Them does, though you went to another card meanwhile (`showForTheMoment`). The card's menu has
-State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
+where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already,
+even before the change began (`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose
+another card (`OrderBoardView.settle`, `choose`). Where it goes isn't known until then, as Copilot may start or stop
+working on it meanwhile: the Board follows the card, from the key or the drop until it shows it in another column, or
+those ten seconds end (`PendingMove`, `land`). Once a key's card is there, that column shows for the moment where you
+hid it, as Show Them does, and a lane that folds once its work is all done stays open, though you went to another card
+meanwhile (`showForTheMoment`); while the card is owed the focus, the column opens too. The card's menu has State, with
+Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
 (`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved

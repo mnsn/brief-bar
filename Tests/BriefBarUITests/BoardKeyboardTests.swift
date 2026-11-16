@@ -107,7 +107,8 @@ import Testing
 
     /// What My Work's page knows of your work's states, as the Board asks for them, and the states moving a card set: each
     /// work item goes in it at once, as once Azure DevOps answered, or once the test answers for it, and its card where
-    /// that puts it. With none, as for a page that changes none, moving a work item's card changes nothing.
+    /// that puts it, and where Copilot's work, as the test has it, puts it. With none, as for a page that changes none,
+    /// moving a work item's card changes nothing.
     @MainActor
     private final class WorkStates: ObservableObject {
         /// The first state of each kind the work items' type has: a task's, with no resolved state.
@@ -116,6 +117,8 @@ import Testing
         private(set) var changes: [(ref: ItemRef, state: String)] = []
         /// Azure DevOps answers only as the test has it (`answer`), as it does a while after the change went.
         var answersLater = false
+        /// Whether a task you sent to Copilot works on a work item now, as the test has it, over what the sprint's work said.
+        @Published var copilotWorks: [ItemRef: Bool] = [:]
         private var unanswered: [(ref: ItemRef, progress: SprintWork.Progress, done: @MainActor (Bool) -> Void)] = []
         @Published private var progress: [ItemRef: SprintWork.Progress] = [:]
 
@@ -123,11 +126,12 @@ import Testing
             self.first = first
         }
 
-        /// The sprint's work, each in the state it was set to.
+        /// The sprint's work, each in the state it was set to, and with Copilot working on it as the test has it.
         func work(_ work: [SprintWork]) -> [SprintWork] {
             work.map { item in
                 var item = item
                 item.progress = progress[item.ref] ?? item.progress
+                item.copilotWorks = copilotWorks[item.ref] ?? item.copilotWorks
                 return item
             }
         }
@@ -238,6 +242,10 @@ import Testing
     }
 
     private static let ref = ItemRef.pullRequest(organization: "contoso", number: 4093)
+    /// The first state of each kind a bug has, as its process names them: it has a resolved state, which Merged sets.
+    private static let bugsStates: [SprintWork.Progress: String] = [
+        .toDo: "New", .inProgress: "Active", .resolved: "Resolved", .completed: "Closed",
+    ]
     /// Why a card can't go to Approved from Teammate's review, as the Board says it.
     private static let azureDevOpsDecides = "Azure DevOps decides when it's approved: once the reviewers it requires approve"
 
@@ -643,6 +651,90 @@ import Testing
             }
             #expect(details.shown == Self.ref, "The moved card took the keyboard from the draft's card you clicked")
             #expect(order.boardLayout == BoardLayout(hidden: [.completed]))
+        }
+    }
+
+    /// Where Copilot's work keeps a work item's card in In progress as a key resolves it, and stops before Azure DevOps
+    /// answers, the card goes where its new state puts it, Merged, and the Board follows it there: into a column you hid,
+    /// which shows for the moment, or in a story's lane its work then leaves all done, which stays open. It keeps the
+    /// keyboard there, and ⌘← starts it again.
+    @Test(arguments: [false, true])
+    func aKeysCardGoesWhereItsNewStatePutsItThoughCopilotStoppedMeanwhile(inAStorysLane: Bool) async throws {
+        let order = Self.order()
+        if !inAStorysLane { order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)])) }
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let bug = ItemRef.workItem(organization: "contoso", id: 5110)
+        let states = WorkStates(first: Self.bugsStates)
+        states.answersLater = true
+        let details = Details()
+        // The card's wait to be drawn anew lasts until the test ends, as a slow Mac may take longer than the app's ten seconds.
+        let waits = FocusWaits()
+        let sprint = Sprint(
+            work: [SprintWork(ref: bug, story: inAStorysLane ? story : nil, progress: .inProgress, copilotWorks: true)],
+            stories: inAStorysLane ? [story] : []
+        )
+        try await Self.showing(order, details: details, waits: waits, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the bug's card") { drawn.frames[bug] != nil }
+            Self.click(at: try #require(drawn.frames[bug]), in: host)
+            try await until("the click to show its details") { details.shown == bug }
+            try await Self.pressUntil("⌘→ to resolve it, which Copilot's work keeps in In progress") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            #expect(states.changes.last?.state == "Resolved")
+            states.copilotWorks[bug] = false
+            await Self.queuedWorkDone()
+            let before = drawn.frames[bug]?.minX
+            states.answer()
+            let merged = inAStorysLane ? "its lane still open" : "shown for it"
+            try await until("its card drawn in Merged, \(merged)") {
+                drawn.isDrawn(bug) && drawn.frames[bug]?.minX != before
+            }
+            await Self.queuedWorkDone()
+            try await Self.pressUntil("⌘← on the card, which kept the keyboard, to start it again") {
+                Self.press(.leftArrow, command: true, in: window)
+                return states.changes.count == 2
+            }
+            #expect(states.changes.last?.state == "Active")
+            if !inAStorysLane { #expect(order.boardLayout == BoardLayout(hidden: [.stage(.merged)])) }
+        }
+    }
+
+    /// Where Copilot's work starts on a work item as a key resolves it, before Azure DevOps answers, its card stays in In
+    /// progress, with the keyboard: Merged, where the key would have taken it, and which you hid, doesn't show for it.
+    @Test func aColumnYouHidDoesntShowForAKeysCardThatCopilotsWorkKeepsWhereItWas() async throws {
+        let order = Self.order()
+        order.setBoardLayout(BoardLayout(hidden: [.stage(.merged)]))
+        let bug = ItemRef.workItem(organization: "contoso", id: 5110)
+        let resolved = ItemRef.workItem(organization: "contoso", id: 5111)
+        let states = WorkStates(first: Self.bugsStates)
+        states.answersLater = true
+        let details = Details()
+        let sprint = Sprint(
+            work: [SprintWork(ref: bug, progress: .inProgress), SprintWork(ref: resolved, progress: .resolved)], stories: []
+        )
+        try await Self.showing(order, details: details, sprint: sprint, states: states) { window, host, drawn in
+            try await until("the bug's card") { drawn.frames[bug] != nil }
+            #expect(!drawn.isDrawn(resolved), "Merged, which you hid, showed")
+            Self.click(at: try #require(drawn.frames[bug]), in: host)
+            try await until("the click to show its details") { details.shown == bug }
+            try await Self.pressUntil("⌘→ to resolve it") {
+                Self.press(.rightArrow, command: true, in: window)
+                return states.changes.count == 1
+            }
+            #expect(states.changes.last?.state == "Resolved")
+            states.copilotWorks[bug] = true
+            await Self.queuedWorkDone()
+            states.answer()
+            await Self.queuedWorkDone()
+            details.shown = nil
+            try await Self.pressUntil("Return on the card, which kept the keyboard in In progress") {
+                Self.press(.return, in: window)
+                return details.shown != nil
+            }
+            #expect(details.shown == bug)
+            #expect(!drawn.isDrawn(resolved), "Merged showed for a card that stayed in In progress")
+            #expect(order.boardLayout == BoardLayout(hidden: [.stage(.merged)]))
         }
     }
 
