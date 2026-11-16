@@ -2647,14 +2647,9 @@ private struct BoardCardView: View {
                 select()
                 return .handled
             }
-            .help(
-                "\(content.label)\n" + (isRelated ? BoardText.related + "\n" : "")
-                    + "Click to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage"
-                    + (reorder == nil ? "" : "\n" + BoardText.reorderHelp)
-            )
+            .help(tooltip)
             .accessibilityElement(children: .ignore)
-            // That it's only related, before its name: VoiceOver says its label before its value.
-            .accessibilityLabel(isRelated ? "\(BoardText.related), \(content.label)" : content.label)
+            .accessibilityLabel(spokenLabel)
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Shows its details")
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -2722,6 +2717,22 @@ private struct BoardCardView: View {
         .padding(.vertical, 1.5)
         .background(Capsule().fill(badge.stage.color.opacity(0.2)))
         .help(badge.help)
+    }
+
+    /// Its tooltip: its name; that My Work's search shows it only as related to a card that matches; then what a click, a
+    /// drag and the keys do. A line at a time: in `body`'s one expression, Xcode 26's compiler gave up on it.
+    private var tooltip: String {
+        var lines = [content.label]
+        if isRelated { lines.append(BoardText.related) }
+        lines.append("Click to see its details. Drag it to another column, or click it and press ⌘→ or ⌘←, to change its stage")
+        if reorder != nil { lines.append(BoardText.reorderHelp) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// What VoiceOver calls it: its name, after that it's only related where My Work's search shows it so, as VoiceOver says
+    /// a label before its value.
+    private var spokenLabel: String {
+        isRelated ? "\(BoardText.related), \(content.label)" : content.label
     }
 
     private var accessibilityValue: String {
