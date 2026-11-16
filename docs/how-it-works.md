@@ -3345,21 +3345,28 @@ stage's column, though the card shows in In progress then, as started work witho
 the first of that kind its type has, in its process's order, as the Sprint page lists them, such as New, Active,
 Resolved and Closed, or To Do, In Progress and Done (`StateChanges.boardStates(for:)`, `MyWorkFacts.progress(of:)`).
 The change is the one above, from the same `StateChanges`, whose line shows under My Work's header too, with Undo
-(`StateChangeLine`); the card goes to its new column once the board has the new state, keeping the keyboard after ⌘→ or
-⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`). The
-card's menu has State, with Undo, and VoiceOver's actions each state (`StateMenuItems`, `StateActions`). Nothing moves
+(`StateChangeLine`); once the board has the new state, the card goes where its new state, its pull requests and
+Copilot's work put it, so that a task with no pull request moved to Your review is Active, and shows in In progress. It
+keeps the keyboard after ⌘→ or ⌘←, which go to the next column its type has a state for (`BoardTask.keyTarget`): owed
+the focus until the change is done, however long Azure DevOps takes, its ten seconds to be drawn anew start only then,
+where BriefBar reads its work item in its new state, as Azure DevOps answered or as a read found it there already
+(`StateChanges.change`); it's owed nothing where BriefBar doesn't, nor once you chose another card
+(`OrderBoardView.settle`, `choose`). Once a key's change is done, the column the card goes to shows for the moment where
+you hid it, as Show Them does, though you went to another card meanwhile (`showForTheMoment`). The card's menu has
+State, with Undo, and VoiceOver's actions each state, none while a change is on its way, which they couldn't make
+(`StateMenuItems`, `StateActions`, `StateChanges.actionChoices(for:)`). Nothing moves
 where nothing would change, saying why as you drag over it, or as a key tries it: another lane; a column whose kind of
 state it's in already, as To start for one still New while Copilot works on it; Merged for a type with no resolved
 state; while Make Changes in Azure DevOps is off, saying how to turn it on, or another change is on its way
 (`BoardTaskStates`); the line under its lane that says so goes once what moving it would do changes, as its state does
 or the change on its way ends (`BoardNotice.work`), since a work item has no stage whose change would take it away. On a
 joined column whose columns would each set the same state, as In review's, it goes on the first rather than ask you to
-choose. A key that leaves a story's work all resolved or done keeps its lane open, as if you'd opened it, rather than
-fold it under the card, which keeps the keyboard there (`BoardLane.finishesStory(moving:to:)`); a drop leaves it to
-fold, as a finished story's lane does. Your work outside the sprint, with + All My Tasks, which isn't on the sprint's
-board, says to move it there first (`MyWorkText.stateStays`); a type whose states the team's configuration doesn't map
-moves only by itself (`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull
-request linked to it.
+choose. A key that leaves the work in a story's lane, or a finished mission's, all resolved or done keeps that lane
+open, as if you'd opened it, rather than fold it under the card, which keeps the keyboard there
+(`BoardLane.finishesWork(moving:to:)`); a drop leaves it to fold, as a finished story's or mission's lane does. Your
+work outside the sprint, with + All My Tasks, which isn't on the sprint's board, says to move it there first
+(`MyWorkText.stateStays`); a type whose states the team's configuration doesn't map moves only by itself
+(`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull request linked to it.
 
 ### Send work to Copilot
 

@@ -575,16 +575,18 @@ shows the next on the Board, with the keyboard on it, its column opened for the 
 **Set your work's state.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), move a task, story or bug of yours in the sprint to another column of its lane on My Work's Board: drag it
 there, or click it, or Tab to it, and press **⌘→** or **⌘←**. BriefBar sets its state in Azure DevOps, as you, so that
-your team sees your work there too: **To start** sets it **New**; **In progress**, or any column after it up to
-**Waits**, **Active**, though its card shows in In progress, as started work with no pull request on your board does;
-**Merged** **Resolved**, where its type has a resolved state, as bugs and stories have in the Agile process; and
-**Completed** **Closed**. Each is the first state of that kind its type has in your team's process, as your team's
+your team sees your work there too: **To start** sets it to **New**; **In progress**, or any column after it up to
+**Waits**, to **Active**, though its card shows in In progress, as started work with no pull request on your board does;
+**Merged** to **Resolved**, where its type has a resolved state, as bugs and stories have in the Agile process; and
+**Completed** to **Closed**. Each is the first state of that kind its type has in your team's process, as your team's
 backlog configuration maps them, so that it may be **To Do**, **In Progress** or **Done** instead. ⌘→ and ⌘← go to the
-next column, past Merged for a type with no resolved state. Its card goes to its new column once
-Azure DevOps has it, keeping the keyboard after ⌘→ or ⌘←; the line under **Show** says what changed, with **Undo**, as
+next column, past Merged for a type with no resolved state. Once Azure DevOps has it, however long that takes, its card
+shows where its new state, its pull requests and Copilot's work put it, keeping the keyboard after ⌘→ or ⌘←, which show
+the column it goes to for the moment if you hid it; the line under **Show** says what changed, with **Undo**, as
 on the Sprint page, or why it didn't, with **Try Again** where it may help. Its right-click menu has **State** too, with
-every state its type has, which VoiceOver offers as actions. A key that finishes a story's last work keeps its lane
-open, with the card and the keyboard on it, until you fold it. As you drag it, a column that wouldn't change it says why:
+every state its type has, which VoiceOver offers as actions while no change is on its way. A key that finishes the last
+work in a story's lane, or a finished mission's, keeps that lane open, with the card and the keyboard on it, until you
+fold it. As you drag it, a column that wouldn't change it says why:
 another lane; one whose kind of state it's in already, such as To start for one still New while Copilot works on it;
 Merged for a type with no resolved state; anything while another change is on its way, or with the setting off, which
 says how to turn it on. Your work outside the sprint, with + All My Tasks, says to move it there first: only the sprint's

@@ -767,9 +767,9 @@ private struct MyWorkContent: View {
             isSelected: { ref in shownDetails.workItem?.linkRef == ref },
             select: { ref in if let item = workItem(ref) { showDetails(of: item) } },
             states: boardStates(of:),
-            setState: { task, state in
-                guard let item = sprintItem(task.ref) else { return }
-                Task { await states.change(item, to: state) }
+            setState: { task, state, done in
+                guard let item = sprintItem(task.ref) else { return done(false) }
+                Task { done(await states.change(item, to: state)) }
             }
         )
     }

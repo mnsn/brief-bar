@@ -349,13 +349,14 @@ extension BoardLane {
         story != nil && !tasks.isEmpty && !hasWorkToDo
     }
 
-    /// Whether moving one of its work items' cards to a column, which puts it in that column's state, makes it a finished
-    /// story's lane (`isFinishedStory`), which would fold under the card: as for its last work still to do, set done.
-    public func finishesStory(moving task: BoardTask, to column: BoardColumn) -> Bool {
-        guard !isFinishedStory, tasks.contains(where: { $0.ref == task.ref }) else { return false }
+    /// Whether moving one of its work items' cards to a column, which puts it in that column's state, leaves it no work still
+    /// to do (`hasWorkToDo`), which kept it open: as for its last work still to do, set done. A story's lane
+    /// (`isFinishedStory`), or a finished mission's, would fold under the card then.
+    public func finishesWork(moving task: BoardTask, to column: BoardColumn) -> Bool {
+        guard hasWorkToDo, tasks.contains(where: { $0.ref == task.ref }) else { return false }
         var moved = self
         moved.tasks = tasks.map { $0.ref == task.ref ? $0.moved(to: column) : $0 }
-        return moved.isFinishedStory
+        return !moved.hasWorkToDo
     }
 
     /// What a finished story's lane holds, on its folded line: "3 completed", "1 merged · 2 completed".

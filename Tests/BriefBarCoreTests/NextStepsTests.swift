@@ -1812,19 +1812,24 @@ import Testing
         #expect(toStart.keyTarget(forward: true, states: .fixed("Outside")) == .stage(.inProgress))
     }
 
-    /// A move that leaves a story's work all resolved or done finishes its lane, which would fold under the card: not one
-    /// that leaves work to do, nor in a lane that's no story's, or was finished already.
-    @Test func aMoveFinishesAStorysLaneOnlyWhereItLeavesNoWorkToDo() {
+    /// A move that leaves a lane's work all resolved or done finishes it, which would fold a story's lane, or a finished
+    /// mission's, under the card: not one that leaves work to do, nor one in a lane that had none left already, nor while
+    /// a pull request's card there names work still to do.
+    @Test func aMoveFinishesALanesWorkOnlyWhereItLeavesNoneToDo() {
         let started = BoardTask(Self.work(5103, .inProgress, story: 5001))
         let done = BoardTask(Self.work(5104, .completed, story: 5001))
-        let lane = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [started, done])
-        #expect(lane.finishesStory(moving: started, to: .completed))
-        #expect(lane.finishesStory(moving: started, to: .stage(.merged)))
-        #expect(!lane.finishesStory(moving: started, to: .stage(.yourReview)))
-        #expect(!lane.finishesStory(moving: done, to: .toStart))
-        let finished = BoardLane(kind: .story(Self.task(5001)), columns: [:], tasks: [done])
-        #expect(!finished.finishesStory(moving: done, to: .stage(.merged)))
-        #expect(!BoardLane(kind: .notInAMission, columns: [:], tasks: [started, done]).finishesStory(moving: started, to: .completed))
+        for kind in [BoardLane.Kind.story(Self.task(5001)), .mission(.story(Self.task(5001)))] {
+            let lane = BoardLane(kind: kind, columns: [:], tasks: [started, done])
+            #expect(lane.finishesWork(moving: started, to: .completed))
+            #expect(lane.finishesWork(moving: started, to: .stage(.merged)))
+            #expect(!lane.finishesWork(moving: started, to: .stage(.yourReview)))
+            #expect(!lane.finishesWork(moving: done, to: .toStart))
+            let finished = BoardLane(kind: kind, columns: [:], tasks: [done])
+            #expect(!finished.finishesWork(moving: done, to: .stage(.merged)))
+            var named = lane
+            named.namesWorkToDo = true
+            #expect(!named.finishesWork(moving: started, to: .completed))
+        }
     }
 
     /// With your work on the board, a merged pull request's card is in Completed once it's out and every work item of yours

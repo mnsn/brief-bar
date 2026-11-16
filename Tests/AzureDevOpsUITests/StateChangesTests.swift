@@ -119,6 +119,19 @@ import Testing
         #expect(!states.needsSetting(try item(sprint)))
     }
 
+    /// VoiceOver's actions on a work item's card offer each state it can go to but its own, and none while a change is on its
+    /// way, which they couldn't make, as its menus' are dimmed then.
+    @Test func voiceOversActionsOfferNoStateWhileAChangeIsOnItsWay() throws {
+        let (sprint, states, _) = live()
+        let task = try item(sprint)
+        #expect(states.actionChoices(for: task).map(\.name) == ["Active", "Closed"])
+        let other = StateChanges.Change(key: WorkItemKey(DemoData.organization, 5105), name: "Task 5105", title: "", from: "New", to: "Active")
+        states.showForRendering(.sending(other))
+        #expect(states.actionChoices(for: task).isEmpty)
+        states.showForRendering(.failed(other, .offline))
+        #expect(states.actionChoices(for: task).map(\.name) == ["Active", "Closed"])
+    }
+
     /// On My Work's Board, a work item on the sprint's board changes state as its card moves, whatever the setting: from the
     /// state it's in to the first of each kind its type has, held, saying why, while the setting's off or a change is on its
     /// way. One outside the sprint, or whose type's states the team's configuration doesn't say, doesn't. Moving a card
@@ -144,7 +157,8 @@ import Testing
             current: "New", first: task, held: "Task 5104 is changing to Active: one state changes at a time"
         ))
         states.showForRendering(nil)
-        await states.change(try item(sprint), to: "Active")
+        // It says once it's in that state, as the Board waits to know.
+        #expect(await states.change(try item(sprint), to: "Active"))
         #expect(azure.sent == [.setState(key, from: "New", to: "Active")])
         #expect(states.boardStates(for: try item(sprint)) == .changes(current: "Active", first: task, held: nil))
 
@@ -193,7 +207,7 @@ import Testing
     @Test func aChangeThatFailsSaysWhyAndCanBeTriedAgain() async throws {
         let (sprint, states, azure) = live()
         azure.fails = .offline
-        await states.change(try item(sprint), to: "Closed")
+        #expect(await !states.change(try item(sprint), to: "Closed"))
         let change = StateChanges.Change(
             key: key, name: "Task 5104", title: "Move a saved item back to the cart", from: "New", to: "Closed"
         )
@@ -241,7 +255,7 @@ import Testing
         // Read again while the token came: someone set it to Closed.
         try readAgain(sprint, in: "Closed")
         token?.resume()
-        await changing.value
+        #expect(await !changing.value)
         #expect(azure.sent.isEmpty)
         let change = StateChanges.Change(
             key: key, name: "Task 5104", title: task.title, from: "New", to: "Active", account: "robin@contoso.example"
@@ -273,6 +287,27 @@ import Testing
         #expect(states.undoable == nil)
     }
 
+    /// A change is called off as it waits for its token once a read finds its work item in the state it goes to, as someone
+    /// else put it there: nothing goes, and the line says nothing, but it says the work item is in that state, as BriefBar
+    /// reads it, for My Work's Board, where its card goes there.
+    @Test func aChangeCalledOffAsAReadFindsItWhereItGoesSaysItsThere() async throws {
+        let (sprint, states, azure) = live()
+        var token: CheckedContinuation<Void, Never>?
+        states.send = { write, account, wanted in
+            await withCheckedContinuation { token = $0 }
+            return try await azure.send(write, as: account, while: wanted)
+        }
+        let task = try item(sprint)
+        let changing = Task { await states.change(task, to: "Active") }
+        try await waitUntil { token != nil }
+        try readAgain(sprint, in: "Active")
+        token?.resume()
+        #expect(await changing.value)
+        #expect(azure.sent.isEmpty)
+        #expect(states.line == nil)
+        #expect(try item(sprint).state == "Active")
+    }
+
     /// Turned off as a change waits for its token, it never goes, and leaves nothing on its way; and turned off after one
     /// went, Undo goes with the line.
     @Test func turningItOffCallsOffWhatHasntGoneAndForgetsUndo() async throws {
@@ -286,7 +321,7 @@ import Testing
         let changing = Task { await states.change(task, to: "Active") }
         try await waitUntil { states.isBusy }
         states.settings.makesChanges = false
-        await changing.value
+        #expect(await !changing.value)
         #expect(azure.sent.isEmpty)
         #expect(states.line == nil)
         #expect(!states.isBusy)
