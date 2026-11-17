@@ -118,7 +118,13 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// 34: with Make Changes in Azure DevOps, on My Work, the state of a story, bug or task of yours in the sprint, set
     /// to that of the column you move its card to, a PATCH of its state, when you move it, after which BriefBar reads
     /// the sprint again.
-    nonisolated package static let descriptionVersion = 34
+    /// 35: only with My Work Page, the cards and steps you hide on My Work's Map, and the steps and lines you add or
+    /// take away there, kept in BriefBar's preferences, by reference and the names you give steps, never a title, until
+    /// you change them, choose Forget All Orders… or turn Azure DevOps off; none of it goes to Azure DevOps. As ✨ Ask
+    /// Copilot asks one of a mission's sessions what waits for what, with Send Work to Copilot on, what the window that
+    /// sends work reads of the Copilot app's sessions, for that one; its prompt, with the titles and links of what's on
+    /// that part of the Map, goes only to the session you choose, or to your clipboard.
+    nonisolated package static let descriptionVersion = 35
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
