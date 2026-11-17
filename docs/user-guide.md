@@ -537,20 +537,40 @@ the pull requests linked to them.
 
 **The Map.** My Work's **Board | Map**, in its header, shows the same cards as a graph of what holds what: each pull
 request, and with + Sprint Tasks or + All My Tasks each work item of yours with no pull request on the Board, is a node,
-in columns from left to right: **Done**, what merged, closed, resolved or completed; **Now**, what nothing still open
-holds; then **Then**, **Later** and on, a wave at a time. A line goes from a pull request to one that merges after it,
-solid where it's stacked on its branch and dashed where an order says so, as on the Pull Requests page's Map; a pull
-request's node names the work items of yours it's for, such as **Task 5112**, and a work item's its state, dashed and gray
-until it starts. **By Mission**, beside it, draws a graph for each of the Board's lanes, under its header: a mission's,
-with its next steps, a story's, and what's in no mission; **All** draws a graph for each set of cards that lines join,
-whatever their missions, naming them above it, then those no line joins, under **Not connected**. Hover a node to light up
-what it waits for and what waits for it. Click it for its details, as you would its card, or right-click it for its
-card's menu, which has **Hide on Map** for one that isn't your focus now: it leaves the Map, but not the Board, Up Next or
-any count, and a line that went through it is dotted, saying so in its node's tooltip. A band's **1 hidden**, or All's,
-lists what you hid, with **Show** for each and **Show All**. A graph of more than 40 cards shows as a line that offers
-the Board instead. Search shows only the cards that match on the Map too, and **2 more ›** goes to the Board. BriefBar
-remembers Board or Map and By Mission or All, and keeps the cards you hid in its preferences, by reference, never a title,
-up to 300, until you show them again, choose **Forget All Orders…** or turn Azure DevOps off.
+and so is each **step**, work with no pull request or work item yet, such as API tests, monitoring, enabling it in
+staging or in production, or announcing it. They go in columns from left to right: **Done**, what merged, closed,
+resolved, completed or was marked done; **Now**, what nothing still open holds; then **Then**, **Later** and on, a wave at
+a time. A line goes from what comes first to what waits for it: solid where a pull request is stacked on its branch, or
+where you or a session said so, and dashed where an order says so, as on the Pull Requests page's Map. Lines run only from
+the nearest of what holds each, so a step that waits for everything before it doesn't draw a line from each; hover a
+node to light up all it waits for and all that waits for it. A pull request's node names the work items of yours it's
+for, such as **Task 5112**, a work item's its state, dashed and gray until it starts, and a step's has a circle that marks
+it done, and ✨ where a session added it. **By Mission**, beside it, draws a graph for each of the Board's lanes, under its
+header: a mission's, with its next steps, a story's, and what's in no mission, with what its cards are joined to in other
+lanes, dimmed, naming where they are. **All** draws every graph together, their columns lined up, each named by the lanes
+its cards are in, then a grid of what no line joins, under **Not connected**.
+
+Edit it as you go, as an order doesn't always say it right: drag from a node onto what waits for it to draw a line,
+across graphs too, which joins them; click a line, then **Take Away**, for one that's wrong; right-click a node for its
+card's menu, with **Waits For**, which lists what it waits for, checked, and what it could, **Add Step After…** and **Hide
+on Map**, for one that isn't your focus now: it leaves the Map, but not the Board, Up Next or any count, and a line that
+went through it is dotted, saying so in its node's tooltip. **+ Step**, in a band's header or above All, adds a step on
+its own; a step's menu has **Rename…**, **Mark Done** and **Delete Step**. Every change has **Undo**, at the top of the
+Map, and only the Map changes: no order, stage, Up Next slot or count, and nothing in Azure DevOps. A band's **1 hidden**,
+or All's, lists what you hid, with **Show** for each and **Show All**.
+
+**✨ Ask Copilot**, in a band's header or over a graph of All, has a Copilot session work out what waits for what there:
+**Ask** one of the mission's sessions, or **a Fork** of it, so that its own work goes on as it was, with Send Work to
+Copilot on; or **Copy a Prompt for a New Session**. The prompt lists what's there, with links, and what waits for what
+now, and asks the session to read the code and the work, find what's missing, the steps left too, and tell BriefBar with
+its tools; as it does, the Map shows it, with which session told it, and you can change any of it. Sessions can do the
+same whenever you ask them what waits for what, with agents on.
+
+A graph of more than 60 cards and steps shows as a line that offers the Board instead. Search shows only the cards that
+match on the Map too, and **2 more ›** goes to the Board. BriefBar remembers Board or Map and By Mission or All, and keeps
+the cards and steps you hid, and the steps and lines you and sessions added or took away, in its preferences, by
+reference and the names you give steps, never a title, until you change them, choose **Forget All Orders…** or turn Azure
+DevOps off; a step done two weeks ago goes on its own.
 
 **Search.** On My Work, type in **Search by ID or name**, at the end of **Show**'s row, or press **⌘F** to get there,
 and the Board shows only the cards that match, in the lanes that hold one: each word you type has to be in a card's
@@ -1667,8 +1687,8 @@ DevOps' gear menu has **Watch a Pull Request…** too: it's the same setting.
 
 | Works with | Setting | Options |
 |---|---|---|
-| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed, and so do those of a task with no story, as one changed in several repositories, as its own. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, the suggested splits you kept together, the order you put your work in on My Work and the cards you hid on its Map; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
-| Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, and **+ All My Tasks** your tasks and bugs outside the sprint as well, with Show Links, and whose **Map** draws them as a graph of what holds what (see [Azure DevOps](#azure-devops)) |
+| Azure DevOps and GitHub | Pull Request Order | off by default: the window's Pull Requests pages, Azure DevOps' and GitHub's, can list your pull requests **By Mission**, those that go together in the order they merge, from the stacks BriefBar sees and what Copilot sessions tell it, and shows each Azure DevOps pull request's stage, what's next at the top of Azure DevOps' page, and a **Board** beside List and Map. An Azure DevOps pull request's **Mission** menu lets you change its mission yourself: **Set as Next to Merge**, **Merge After**, **Move to Mission**; a session's later change wins only where it goes against yours, and **Put Yours Back** and **Undo** are there. With **Show Links** on too, Azure DevOps' pull requests for one story's tasks go together as that story's mission, in its tasks' backlog order, with no merge order claimed, and so do those of a task with no story, as one changed in several repositories, as its own. While Apple Intelligence is on, it names each mission on your Mac from its pull requests', work items' and sessions' titles; **Rename…**, in a mission's **⋯**, gives one your own name, and **Use BriefBar's Name** takes it back. It also suggests splitting a mission whose pull requests have become different work: **Split** does it, with **Undo**, and **Keep Together** keeps it from asking again until the mission changes. With agents on, sessions tell it orders and stages as they work, and BriefBar's own prompts that change code end asking for the stage. **Forget All Orders…** forgets the orders sessions told it, your changes, the names you gave missions, the suggested splits you kept together, the order you put your work in on My Work, and the cards and steps you hid on its Map and the steps and lines you and sessions added there; **Forget Stages…**, the stages you and sessions set, how far each of your pull requests got, and what you chose in Up Next |
+| Azure DevOps only | My Work Page (preview) | off by default, and only with Pull Request Order on: Up Next and the Board move from Azure DevOps' Pull Requests page to a page of their own in the window, **My Work**, whose **+ Sprint Tasks** puts your sprint work on the Board too, and **+ All My Tasks** your tasks and bugs outside the sprint as well, with Show Links, and whose **Map** draws them, with the steps you and sessions add, as a graph of what holds what that you can edit and have Copilot work out (see [Azure DevOps](#azure-devops)) |
 | | Show To Review in the Menu Bar | off by default: the menu bar counts the pull requests you review too |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
@@ -1835,8 +1855,9 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
   a chat, which stay in memory, and those Copilot sessions set, for each session, by their numbers, for 30 days at
   most, and the pull request you choose for each of Up Next's slots, for each account, by its number, but one only sent
   to you in a chat, which stays in memory; with My Work Page, the order you put your work in there, in each lane's To
-  start and In progress, by reference, never a title, for the 50 lanes you ordered last, and the cards you hid on its
-  Map, by reference, up to 300; the tasks you sent to Copilot,
+  start and In progress, by reference, never a title, for the 50 lanes you ordered last, the cards and steps you hid on
+  its Map, by reference, up to 300, and the steps and lines you and Copilot sessions added or took away there, by
+  reference and the names given steps, up to 300 steps and 1,000 lines each; the tasks you sent to Copilot,
   and what Copilot printed at their end; which Copilot sessions you've cleared; the links you added or hid, with Show
   Links; with Make Changes in Azure DevOps, the tags you added to pull requests, up to 20 for each project, to suggest
   them; with Pull Request Order, the names you give missions with **Rename…**, up to 200, each forgotten once its

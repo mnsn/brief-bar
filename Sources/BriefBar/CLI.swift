@@ -210,6 +210,7 @@ enum CLI {
             changes.append(
                 tellsStages ? "the orders and stages sessions tell it of their pull requests" : "the orders sessions tell it their pull requests merge in"
             )
+            changes.append("what waits for what on its Map")
         }
         if !updateTools.isEmpty { changes.append("what sessions tell it they work on and opened") }
         var ordering = ""
@@ -224,6 +225,12 @@ enum CLI {
             ordering = """
                  When you open pull requests that must merge in an order, tell BriefBar with order_pull_requests, and again \
                 whenever that order changes. \(Self.stories)
+                """
+        }
+        if !orderTools.isEmpty {
+            ordering += """
+                 When the user asks what waits for what in their work, read work_map, then tell it with tell_dependencies, \
+                with steps such as enabling it in production: My Work's Map shows it.
                 """
         }
         if !updateTools.isEmpty {

@@ -1,6 +1,6 @@
 ---
 name: briefbar-pr-order
-description: Keep BriefBar, the user's macOS menu-bar app, current on your pull requests without being asked, with the order pull requests that go together merge in and each one's stage. Use it whenever you open, push to or hand off a pull request, split work into several, or the user tells you they reviewed one.
+description: Keep BriefBar, the user's macOS menu-bar app, current on your pull requests without being asked, with the order pull requests that go together merge in and each one's stage; and tell it what waits for what on its My Work Map. Use it whenever you open, push to or hand off a pull request, split work into several, the user tells you they reviewed one, or asks what waits for what.
 ---
 
 # Pull request order and stages, for BriefBar
@@ -66,6 +66,21 @@ first, as briefbar-order_pull_requests.
 - `pull_requests`: each by its link, or its number with `organization`.
 - Never claim a pull request is approved, can merge, waits or merged: BriefBar sees those itself, from Azure DevOps and
   the order.
+
+## What waits for what, on My Work's Map
+
+- BriefBar's My Work Map draws the user's pull requests, work items and steps as a graph of what holds what. Steps are
+  work with no pull request or work item yet: API tests, end-to-end tests, testing in dev, monitoring and alerts,
+  enabling it in staging and in production, announcing it.
+- When the user asks what waits for what, or asks you to work it out, as BriefBar's ✨ Ask Copilot does, read
+  `work_map` first, then tell it with `tell_dependencies`: `dependencies`, each an `item` with what it `waits_for`;
+  `remove` for a line that's wrong, whoever drew it; and `steps` to add, rename, mark `done` or `delete`.
+- Name pull requests and work items by their links, or their numbers with `organization`. Name a step BriefBar has as
+  step: and its ID, from `work_map` or an earlier answer; step: and a `name` adds a new step, even where another
+  mission has one of that name, and the rest of the same call can name it so.
+- Say only what holds each, and never invent a dependency: BriefBar draws a line only from the nearest of what holds
+  it, and the user sees which session told it.
+- Only the Map changes: never the merge order, which `order_pull_requests` tells, or a stage.
 
 ## Stories
 

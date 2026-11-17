@@ -1,11 +1,14 @@
 import Foundation
 
 // My Work's Map: the Board's cards as a graph of what holds what, as By Mission's Map draws a mission's pull requests, with
-// your work on the Board too. By Mission, each lane of the Board is a band: a mission's, a story's, or that of what's in no
-// mission. All draws each set of cards that lines join as a graph of its own, the one with the Board's first card first, and
-// the cards no line joins on one row after them. Its columns are what's done, then what can go now, then what comes after,
-// wave by wave; a line goes from a pull request to one that comes after it in an order, and through cards the Map doesn't show
-// there, such as those you hid, it's dotted. Only where things go, never how they're drawn: the views draw them.
+// your work on the Board too, and steps: work with no pull request or work item, such as API tests or enabling it in
+// production, which you or a session add on the Map (`MapEdits`). By Mission, each lane of the Board is a band, a mission's,
+// a story's, or that of what's in no mission, with the steps added there, and, dimmed, what its cards and steps are joined to
+// in other bands. All draws each set of cards and steps that lines join as a graph of its own, the one with the Board's first
+// card first, their columns lined up, then those no line joins, in a grid. Its columns are what's done, then what can go now,
+// then what comes after, wave by wave. A line goes from what comes first to what waits for it: from a pull request to one that
+// comes after it in an order, or as you or a session said on the Map; through what the Map doesn't show there, such as what
+// you hid, it's dotted. Only where things go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -58,74 +61,111 @@ public enum WorkMapGrouping: String, CaseIterable, Sendable {
     }
 }
 
-/// The cards you hid on My Work's Map, as they're not your focus now: by reference, the one you hid last first, at most
-/// `mostCards` of them, in the preferences (`order.map.hidden`), never a title. Hiding one changes only the Map: the Board, Up
-/// Next and every count still have it.
+/// The cards and steps you hid on My Work's Map, as they're not your focus now: by reference, the one you hid last first, at
+/// most `mostCards` of them, in the preferences (`order.map.hidden`), never a title. Hiding one changes only the Map: the
+/// Board, Up Next and every count still have it.
 public struct MapHidden: Equatable, Sendable {
     public static let defaultsKey = "order.map.hidden"
     /// How many it keeps: past them, the one you hid longest ago shows again.
     public static let mostCards = 300
 
     /// The one you hid last first.
-    public private(set) var refs: [ItemRef]
+    public private(set) var nodes: [MapNodeID]
 
-    /// - Parameter refs: the one you hid last first; each once, the first `mostCards` of them.
-    public init(_ refs: [ItemRef] = []) {
-        var seen: Set<ItemRef> = []
-        self.refs = Array(refs.filter { seen.insert($0).inserted }.prefix(Self.mostCards))
+    /// - Parameter nodes: the one you hid last first; each once, the first `mostCards` of them.
+    public init(_ nodes: [MapNodeID] = []) {
+        var seen: Set<MapNodeID> = []
+        self.nodes = Array(nodes.filter { seen.insert($0).inserted }.prefix(Self.mostCards))
     }
 
     public var isEmpty: Bool {
-        refs.isEmpty
+        nodes.isEmpty
     }
 
-    public func contains(_ ref: ItemRef) -> Bool {
-        refs.contains(ref)
+    public func contains(_ node: MapNodeID) -> Bool {
+        nodes.contains(node)
     }
 
-    /// Hides a card, the one you hid last now. Whether it wasn't hidden already.
+    /// Hides a card or a step, the one you hid last now. Whether it wasn't hidden already.
     @discardableResult
-    public mutating func hide(_ ref: ItemRef) -> Bool {
-        guard !refs.contains(ref) else { return false }
-        refs.insert(ref, at: 0)
-        if refs.count > Self.mostCards { refs.removeLast(refs.count - Self.mostCards) }
+    public mutating func hide(_ node: MapNodeID) -> Bool {
+        guard !nodes.contains(node) else { return false }
+        nodes.insert(node, at: 0)
+        if nodes.count > Self.mostCards { nodes.removeLast(nodes.count - Self.mostCards) }
         return true
     }
 
-    /// Shows cards again. Whether any was hidden.
+    /// Shows cards and steps again. Whether any was hidden.
     @discardableResult
-    public mutating func show(_ shown: some Sequence<ItemRef>) -> Bool {
+    public mutating func show(_ shown: some Sequence<MapNodeID>) -> Bool {
         let shown = Set(shown)
-        let count = refs.count
-        refs.removeAll { shown.contains($0) }
-        return refs.count != count
+        let count = nodes.count
+        nodes.removeAll { shown.contains($0) }
+        return nodes.count != count
     }
 
-    /// Forgets those of these kinds, as their source goes. Whether any went.
+    /// Forgets the cards of these kinds, as their source goes. Whether any went.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
-        show(refs.filter { kinds.contains($0.kind) })
+        show(nodes.filter { $0.ref.map { kinds.contains($0.kind) } ?? false })
+    }
+
+    /// Forgets the steps that are gone, but these. Whether any went.
+    @discardableResult
+    public mutating func keep(steps: Set<UUID>) -> Bool {
+        show(nodes.filter { $0.stepID.map { !steps.contains($0) } ?? false })
     }
 
     /// What the preferences keep, without what this build can't read.
     public static func load(from defaults: some SettingsStorage) -> MapHidden {
-        MapHidden(((defaults.object(forKey: defaultsKey) as? [String]) ?? []).compactMap(ItemRef.init))
+        MapHidden(((defaults.object(forKey: defaultsKey) as? [String]) ?? []).compactMap(MapNodeID.init))
     }
 
     public func save(to defaults: some SettingsStorage) {
-        if refs.isEmpty {
+        if nodes.isEmpty {
             defaults.removeObject(forKey: Self.defaultsKey)
         } else {
-            defaults.set(refs.map(\.description), forKey: Self.defaultsKey)
+            defaults.set(nodes.map(\.description), forKey: Self.defaultsKey)
         }
     }
 }
 
 // MARK: - A graph
 
+/// What a node of the Map is: a card of the Board, or a step.
+public enum WorkMapItem: Equatable, Sendable, Identifiable {
+    case card(BoardItem)
+    case step(MapStep)
+
+    public var id: MapNodeID {
+        switch self {
+        case .card(let item): .card(item.ref)
+        case .step(let step): .step(step.id)
+        }
+    }
+
+    /// Whether it holds nothing back now: a pull request that merged or closed, work that's resolved or done, a step done.
+    public var isDone: Bool {
+        switch self {
+        case .card(let item): WorkMapGraph.isDone(item)
+        case .step(let step): step.isDone
+        }
+    }
+
+    public var card: BoardItem? {
+        if case .card(let item) = self { return item }
+        return nil
+    }
+
+    public var step: MapStep? {
+        if case .step(let step) = self { return step }
+        return nil
+    }
+}
+
 /// A column of the Map: what's done, or a wave of what's left.
-public enum WorkMapColumn: Hashable, Sendable {
-    /// Pull requests that merged or closed, and work that's resolved or done: what holds nothing back now.
+public enum WorkMapColumn: Hashable, Comparable, Sendable {
+    /// Pull requests that merged or closed, work that's resolved or done, and steps done: what holds nothing back now.
     case done
     /// What's left, wave by wave: 0 can go now, 1 comes after what goes now, and so on.
     case wave(Int)
@@ -140,27 +180,47 @@ public enum WorkMapColumn: Hashable, Sendable {
         case .wave: nil
         }
     }
+
+    public static func < (lhs: WorkMapColumn, rhs: WorkMapColumn) -> Bool {
+        switch (lhs, rhs) {
+        case (.done, .wave): true
+        case (.wave(let left), .wave(let right)): left < right
+        default: false
+        }
+    }
 }
 
-/// A line of the Map, from a card to one that comes after it.
+/// How the Map knows that one thing waits for another.
+public enum WorkMapLink: Hashable, Sendable {
+    /// The later pull request targets the earlier one's branch, or comes right after it in a GitHub stack.
+    case stacked
+    /// It comes after it in an order: a session's, a story's, or as you changed a mission.
+    case order
+    /// You, or a session, said so on the Map.
+    case said(MapAuthor)
+}
+
+/// A line of the Map, from a card or step to one that waits for it.
 public struct WorkMapLine: Hashable, Sendable {
     public enum Style: Hashable, Sendable {
         /// Stacked: the later one targets the earlier one's branch, or comes right after it in a GitHub stack.
         case stacked
         /// It comes after it, as an order says.
         case order
-        /// It comes after it through these, which the Map doesn't show there, nearest to it last: cards you hid, and pull
-        /// requests that aren't on your board, or are in another band.
-        case through([ItemRef])
+        /// You, or a session, said it waits for it, on the Map.
+        case said(MapAuthor)
+        /// It waits for it through these, which the Map doesn't show there, nearest to it last: what you hid, pull requests
+        /// that aren't on your board, and, By Mission, what's in another band.
+        case through([MapNodeID])
     }
 
-    public var before: ItemRef
-    public var after: ItemRef
+    public var before: MapNodeID
+    public var after: MapNodeID
     public var style: Style
     /// The rows it runs along through the columns between its ends, from left to right: none between neighbouring columns.
     public var rows: [Int]
 
-    public init(before: ItemRef, after: ItemRef, style: Style, rows: [Int] = []) {
+    public init(before: MapNodeID, after: MapNodeID, style: Style, rows: [Int] = []) {
         self.before = before
         self.after = after
         self.style = style
@@ -168,19 +228,22 @@ public struct WorkMapLine: Hashable, Sendable {
     }
 }
 
-/// A card of the Map, in its place.
+/// A card or step of the Map, in its place.
 public struct WorkMapNode: Equatable, Sendable, Identifiable {
-    public var item: BoardItem
+    public var item: WorkMapItem
     public var column: Int
     public var row: Int
+    /// By Mission, for one of another band that this band's are joined to, shown dimmed: that band's lane. Nil for the band's
+    /// own, and with All.
+    public var elsewhere: BoardLane.Kind?
 
-    public var id: ItemRef { item.ref }
+    public var id: MapNodeID { item.id }
 }
 
-/// Cards of the Map as a graph, in columns, from left to right: what's done, then wave by wave. In each column, the cards
+/// Cards and steps of the Map as a graph, in columns, from left to right: what's done, then wave by wave. In each column, those
 /// lines join come first, ordered to cross as few lines as it finds, and each where the lines into it come from, so that a
-/// chain runs straight; the cards no line joins go after them. A line that skips columns keeps a row of each to itself, as
-/// a layered drawing's long edges do, so that no card sits on it.
+/// chain runs straight; those no line joins go after them. A line that skips columns keeps a row of each to itself, as a
+/// layered drawing's long edges do, so that no card sits on it.
 public struct WorkMapGraph: Equatable, Sendable {
     public private(set) var columns: [WorkMapColumn]
     /// Column by column, each from the top: as VoiceOver reads them.
@@ -199,22 +262,72 @@ public struct WorkMapGraph: Equatable, Sendable {
         }
     }
 
-    /// Lays out cards, in the order they come, and the lines between them, which come into one that's still to do.
+    /// Lays out cards and steps, in the order they come, and the lines between them, which come into one that's still to do.
     /// - Parameters:
-    ///   - waits: those of the cards that wait for something it doesn't show, such as a pull request in another mission:
-    ///     each goes at least one wave on.
-    init(_ items: [BoardItem], lines: [WorkMapLine], waits: Set<ItemRef> = []) {
-        let refs = items.map(\.ref)
-        let index = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        let done = Set(items.filter(Self.isDone).map(\.ref))
+    ///   - waits: those that wait for something it doesn't show, such as a pull request in another mission: each goes at
+    ///     least one wave on.
+    ///   - elsewhere: By Mission, those of other bands, with their bands.
+    ///   - shared: the columns it has, as All's graphs share them, so that they line up; nil for those its own take.
+    init(
+        _ items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID> = [], elsewhere: [MapNodeID: BoardLane.Kind] = [:],
+        columns shared: [WorkMapColumn]? = nil
+    ) {
+        let ids = items.map(\.id)
+        let index = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let done = Set(items.filter(\.isDone).map(\.id))
         let lines = lines.filter { index[$0.before] != nil && index[$0.after] != nil && !done.contains($0.after) }
+        let place = Self.places(items, lines: lines, waits: waits)
+        columns = shared ?? Set(place.values).sorted()
+        let columnIndex = Dictionary(columns.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let columnOf = Dictionary(ids.map { ($0, place[$0].flatMap { columnIndex[$0] } ?? 0) }, uniquingKeysWith: { first, _ in first })
 
-        // Each card still to do comes a wave after the last of what comes into it, and one that waits for something it
-        // doesn't show at least one wave on. The cards of a loop of lines, where none can go first, share a wave, as far on
-        // as what came into any of them, and what comes after the loop comes after that.
-        let open = lines.filter { !done.contains($0.before) }
-        let loops = Self.loops(refs.filter { !done.contains($0) }, lines: open)
-        let loopOf = Dictionary(loops.enumerated().flatMap { number, loop in loop.map { ($0, number) } }, uniquingKeysWith: { first, _ in first })
+        // A line that skips columns passes through a slot of each between its ends.
+        var layout = Layout(columns: columns.count)
+        for id in ids {
+            layout.add(.node(id), in: columnOf[id] ?? 0)
+        }
+        var forwards: [WorkMapLine] = []
+        for line in lines {
+            guard let from = columnOf[line.before], let to = columnOf[line.after], from < to else { continue }
+            forwards.append(line)
+            var previous = Slot.node(line.before)
+            for column in (from + 1)..<to {
+                let passing = Slot.passing(forwards.count - 1, column)
+                layout.add(passing, in: column)
+                layout.join(previous, passing)
+                previous = passing
+            }
+            layout.join(previous, .node(line.after))
+        }
+        layout.arrange()
+
+        rows = layout.height
+        crossings = layout.crossings()
+        nodes = items.map { item in
+            WorkMapNode(item: item, column: columnOf[item.id] ?? 0, row: layout.row[.node(item.id)] ?? 0, elsewhere: elsewhere[item.id])
+        }.sorted { ($0.column, $0.row) < ($1.column, $1.row) }
+        self.lines = forwards.enumerated().map { number, line in
+            var line = line
+            let from = columnOf[line.before] ?? 0, to = columnOf[line.after] ?? 0
+            line.rows = to - from > 1 ? ((from + 1)..<to).map { layout.row[.passing(number, $0)] ?? 0 } : []
+            return line
+        }
+    }
+
+    /// Where each goes: Done, for what's done; else a wave after the last of what comes into it, and, for one that waits for
+    /// something it doesn't show, at least one wave on. Those in a loop of lines, where none can go first, share a wave, as
+    /// far on as what came into any of them, and what comes after the loop comes after that.
+    static func places(_ items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID>) -> [MapNodeID: WorkMapColumn] {
+        let ids = items.map(\.id)
+        let members = Set(ids)
+        let done = Set(items.filter(\.isDone).map(\.id))
+        let open = lines.filter {
+            members.contains($0.before) && members.contains($0.after) && !done.contains($0.before) && !done.contains($0.after)
+        }
+        let loops = Self.loops(ids.filter { !done.contains($0) }, lines: open)
+        let loopOf = Dictionary(
+            loops.enumerated().flatMap { number, loop in loop.map { ($0, number) } }, uniquingKeysWith: { first, _ in first }
+        )
         var loopWave = loops.map { loop in loop.contains(where: waits.contains) ? 1 : 0 }
         var waitingFor = Array(repeating: 0, count: loops.count)
         var after = Array(repeating: [Int](), count: loops.count)
@@ -232,95 +345,61 @@ public struct WorkMapGraph: Equatable, Sendable {
                 if waitingFor[later] == 0 { ready.append(later) }
             }
         }
-        var wave: [ItemRef: Int] = [:]
-        for (ref, loop) in loopOf { wave[ref] = loopWave[loop] }
-        let waves = Set(wave.values).sorted()
-        columns = (done.isEmpty ? [] : [.done]) + waves.map(WorkMapColumn.wave)
-        let columnOf = Dictionary(refs.map { ref in
-            (ref, done.contains(ref) ? 0 : (done.isEmpty ? 0 : 1) + (waves.firstIndex(of: wave[ref] ?? 0) ?? 0))
-        }, uniquingKeysWith: { first, _ in first })
-
-        // A line that skips columns passes through a slot of each between its ends.
-        var layout = Layout(columns: columns.count)
-        for ref in refs {
-            layout.add(.card(ref), in: columnOf[ref] ?? 0)
+        var place: [MapNodeID: WorkMapColumn] = [:]
+        for id in ids {
+            place[id] = done.contains(id) ? .done : .wave(loopOf[id].map { loopWave[$0] } ?? 0)
         }
-        var forwards: [WorkMapLine] = []
-        for line in lines {
-            guard let from = columnOf[line.before], let to = columnOf[line.after], from < to else { continue }
-            forwards.append(line)
-            var previous = Slot.card(line.before)
-            for column in (from + 1)..<to {
-                let passing = Slot.passing(forwards.count - 1, column)
-                layout.add(passing, in: column)
-                layout.join(previous, passing)
-                previous = passing
-            }
-            layout.join(previous, .card(line.after))
-        }
-        layout.arrange()
-
-        rows = layout.height
-        crossings = layout.crossings()
-        nodes = items.map { item in
-            WorkMapNode(item: item, column: columnOf[item.ref] ?? 0, row: layout.row[.card(item.ref)] ?? 0)
-        }.sorted { ($0.column, $0.row) < ($1.column, $1.row) }
-        self.lines = forwards.enumerated().map { number, line in
-            var line = line
-            let from = columnOf[line.before] ?? 0, to = columnOf[line.after] ?? 0
-            line.rows = to - from > 1 ? ((from + 1)..<to).map { layout.row[.passing(number, $0)] ?? 0 } : []
-            return line
-        }
+        return place
     }
 
-    /// What takes a row in a column: a card, or a line passing through it.
+    /// What takes a row in a column: a card or step, or a line passing through it.
     enum Slot: Hashable {
-        case card(ItemRef)
+        case node(MapNodeID)
         /// The line of that number, as `init` counts those it draws, in that column.
         case passing(Int, Int)
     }
 
-    /// The loops among these cards, by these lines, each a card alone where it's in none, in the order their first cards
-    /// come, each in that order: their strongly connected components, as Tarjan finds them.
-    static func loops(_ refs: [ItemRef], lines: [WorkMapLine]) -> [[ItemRef]] {
-        let members = Set(refs)
-        var next: [ItemRef: [ItemRef]] = [:]
+    /// The loops among these, by these lines, each one alone where it's in none, in the order their first ones come, each in
+    /// that order: their strongly connected components, as Tarjan finds them.
+    static func loops(_ ids: [MapNodeID], lines: [WorkMapLine]) -> [[MapNodeID]] {
+        let members = Set(ids)
+        var next: [MapNodeID: [MapNodeID]] = [:]
         for line in lines where members.contains(line.before) && members.contains(line.after) {
             next[line.before, default: []].append(line.after)
         }
         var counter = 0
-        var number: [ItemRef: Int] = [:]
-        var lowest: [ItemRef: Int] = [:]
-        var stack: [ItemRef] = []
-        var onStack: Set<ItemRef> = []
-        var found: [[ItemRef]] = []
-        func visit(_ ref: ItemRef) {
-            number[ref] = counter
-            lowest[ref] = counter
+        var number: [MapNodeID: Int] = [:]
+        var lowest: [MapNodeID: Int] = [:]
+        var stack: [MapNodeID] = []
+        var onStack: Set<MapNodeID> = []
+        var found: [[MapNodeID]] = []
+        func visit(_ id: MapNodeID) {
+            number[id] = counter
+            lowest[id] = counter
             counter += 1
-            stack.append(ref)
-            onStack.insert(ref)
-            for later in next[ref] ?? [] {
+            stack.append(id)
+            onStack.insert(id)
+            for later in next[id] ?? [] {
                 if number[later] == nil {
                     visit(later)
-                    lowest[ref] = min(lowest[ref] ?? 0, lowest[later] ?? 0)
+                    lowest[id] = min(lowest[id] ?? 0, lowest[later] ?? 0)
                 } else if onStack.contains(later) {
-                    lowest[ref] = min(lowest[ref] ?? 0, number[later] ?? 0)
+                    lowest[id] = min(lowest[id] ?? 0, number[later] ?? 0)
                 }
             }
-            guard lowest[ref] == number[ref] else { return }
-            var loop: [ItemRef] = []
+            guard lowest[id] == number[id] else { return }
+            var loop: [MapNodeID] = []
             while let top = stack.popLast() {
                 onStack.remove(top)
                 loop.append(top)
-                if top == ref { break }
+                if top == id { break }
             }
             found.append(loop)
         }
-        for ref in refs where number[ref] == nil {
-            visit(ref)
+        for id in ids where number[id] == nil {
+            visit(id)
         }
-        let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let place = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return found.map { loop in loop.sorted { (place[$0] ?? 0) < (place[$1] ?? 0) } }
             .sorted { (place[$0[0]] ?? 0) < (place[$1[0]] ?? 0) }
     }
@@ -443,107 +522,196 @@ public struct WorkMapGraph: Equatable, Sendable {
 
 // MARK: - The Map
 
-/// My Work's Map, as the Board has its cards now: a band for each of its lanes, By Mission; and, for All, a graph for each set
-/// of cards lines join, and those no line joins. A graph has no more than `mostCards` cards: past them it's too many to read
-/// but to follow a path, and the Board shows them.
+/// My Work's Map, as the Board has its cards now, with the steps and lines you and sessions added: a band for each of its lanes,
+/// By Mission; and, for All, a graph for each set of cards and steps lines join, and those no line joins. A graph has no more
+/// than `mostCards` of its own: past them it's too many to read but to follow a path, and the Board shows them.
 public struct WorkMap: Equatable, Sendable {
-    /// A band By Mission: a lane of the Board, its cards as a graph.
+    /// A band By Mission: a lane of the Board, its cards and the steps added there as a graph, with what they're joined to in
+    /// other bands, dimmed.
     public struct Band: Equatable, Sendable, Identifiable {
         /// Its lane, whose header it has.
         public var lane: BoardLane
-        /// The cards it shows, but those you hid, as a graph; nil with none, or more than `mostCards`.
+        /// The key of its lane's order, which a step added in it keeps as where it was added.
+        public var key: LaneOrderKey
+        /// Its cards and steps, but those you hid, as a graph, with what they're joined to elsewhere; nil with none, or more
+        /// than `mostCards`.
         public var graph: WorkMapGraph?
-        /// How many cards it shows.
+        /// How many of its own it shows.
         public var count: Int
-        /// Its cards you hid, in its order.
-        public var hidden: [BoardItem]
+        /// Its cards and steps you hid, in its order.
+        public var hidden: [WorkMapItem]
 
         public var id: BoardLane.Kind { lane.kind }
     }
 
-    /// A set of cards that lines join, for All: as a graph, with the lanes of the Board its cards are in.
+    /// A set of cards and steps that lines join, for All: as a graph, with the lanes of the Board they're in.
     public struct Group: Equatable, Sendable, Identifiable {
-        /// Its cards as a graph; nil past `mostCards`.
+        /// Its cards and steps as a graph; nil past `mostCards`.
         public var graph: WorkMapGraph?
-        /// Its cards, in the Board's order.
-        public var items: [BoardItem]
-        /// The lanes of the Board its cards are in, in its order: what it's about.
+        /// Its cards and steps, in the Board's order, each band's steps after its cards.
+        public var items: [WorkMapItem]
+        /// The lanes of the Board they're in, in its order: what it's about.
         public var lanes: [BoardLane.Kind]
 
-        public var id: ItemRef { items[0].ref }
+        public var id: MapNodeID { items[0].id }
     }
 
-    public static let mostCards = 40
+    public static let mostCards = 60
+    /// How many of other bands a band shows, at most, dimmed.
+    public static let mostElsewhere = 12
 
-    /// By Mission: a band for each lane of the Board, in its order, but for one with no card, such as one kept only for an
-    /// Undo line.
+    /// By Mission: a band for each lane of the Board, in its order, but for one with nothing on the Map, such as one kept
+    /// only for an Undo line; then Not in a mission, for steps joined to no card, when the Board has no such lane.
     public private(set) var bands: [Band]
-    /// All: each set of cards that lines join, the one with the Board's first card first.
+    /// All: each set of cards and steps that lines join, the one with the Board's first card first.
     public private(set) var groups: [Group]
-    /// All: the cards no line joins, in the Board's order.
-    public private(set) var loose: [BoardItem]
-    /// All: the cards you hid, in the Board's order.
-    public private(set) var hidden: [BoardItem]
+    /// All: the columns its graphs share, so that they line up.
+    public private(set) var columns: [WorkMapColumn]
+    /// All: the cards and steps no line joins, those still to do first, each in the Board's order.
+    public private(set) var loose: [WorkMapItem]
+    /// All: the cards and steps you hid, in the Board's order.
+    public private(set) var hidden: [WorkMapItem]
+    /// Every card and step, hidden or not, in the Board's order, each band's steps after its cards: what menus list.
+    public private(set) var everything: [WorkMapItem]
+    private let edges: Edges
+    private let byID: [MapNodeID: WorkMapItem]
+    /// The band each card and step is in, a card's first.
+    private let bandOf: [MapNodeID: BoardLane.Kind]
 
     /// The Map of a board with a lane for each mission, and its sprint work when it has it.
     /// - Parameters:
-    ///   - missions: the missions, as By Mission lists them: their orders draw the lines.
-    ///   - hidden: the cards you hid.
-    public init(_ board: PullRequestBoard, missions: [OrderMission], hidden: MapHidden = MapHidden()) {
-        let edges = Edges(missions)
-        let hiddenRefs = Set(hidden.refs)
-        bands = board.lanes.compactMap { lane in
-            let items = Self.items(of: lane)
-            guard !items.isEmpty else { return nil }
-            let shown = items.filter { !hiddenRefs.contains($0.ref) }
-            let graph = shown.isEmpty || shown.count > Self.mostCards ? nil : edges.graph(of: shown)
-            return Band(lane: lane, graph: graph, count: shown.count, hidden: items.filter { hiddenRefs.contains($0.ref) })
-        }
-
+    ///   - missions: the missions, as By Mission lists them: their orders draw lines.
+    ///   - state: the steps and lines you and sessions added, or took away (`MapEdits.merged`).
+    ///   - hidden: the cards and steps you hid.
+    ///   - done: the cards that are done on the whole board, while a search shows only some of it (`done(on:)`): what came
+    ///     before one it leaves out holds nothing back through it.
+    public init(
+        _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
+        done: Set<ItemRef> = []
+    ) {
+        // Every card, once, with the lanes it's in.
+        var cards: [BoardItem] = []
+        var lanesOf: [MapNodeID: [BoardLane.Kind]] = [:]
         var seen: Set<ItemRef> = []
-        var all: [BoardItem] = []
-        var lanesOf: [ItemRef: [BoardLane.Kind]] = [:]
-        for band in bands {
-            for item in Self.items(of: band.lane) {
-                lanesOf[item.ref, default: []].append(band.lane.kind)
-                if seen.insert(item.ref).inserted { all.append(item) }
+        for lane in board.lanes {
+            for item in Self.items(of: lane) {
+                lanesOf[.card(item.ref), default: []].append(lane.kind)
+                if seen.insert(item.ref).inserted { cards.append(item) }
             }
         }
-        let shown = all.filter { !hiddenRefs.contains($0.ref) }
-        let lines = edges.lines(among: shown.map(\.ref))
-        // Which set of joined cards each is in: the first card of its set, in the Board's order.
-        var root = Dictionary(shown.map { ($0.ref, $0.ref) }, uniquingKeysWith: { first, _ in first })
-        func find(_ ref: ItemRef) -> ItemRef {
-            var ref = ref
-            while let parent = root[ref], parent != ref { ref = parent }
-            return ref
+        var byID = Dictionary(cards.map { (MapNodeID.card($0.ref), WorkMapItem.card($0)) }, uniquingKeysWith: { first, _ in first })
+        for step in state.steps {
+            byID[.step(step.id)] = .step(step)
         }
-        let place = Dictionary(shown.enumerated().map { ($1.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        // A work item a pull request's card names has no card of its own: what's said of it is said of those cards.
+        var aliases: [ItemRef: [ItemRef]] = [:]
+        for (pullRequest, work) in board.workOfPullRequests.sorted(by: { $0.key < $1.key }) where seen.contains(pullRequest) {
+            for ref in work where !seen.contains(ref) {
+                aliases[ref, default: []].append(pullRequest)
+            }
+        }
+        let edges = Edges(missions, state: state, items: byID, aliases: aliases, done: done)
+
+        // Each step goes in the band it was added in; else that of the nearest cards it's joined to; else Not in a mission.
+        var bandOf = lanesOf.compactMapValues(\.first)
+        let keys = Dictionary(board.lanes.map { (LaneOrderKey($0.kind, missions: missions), $0.kind) }, uniquingKeysWith: { first, _ in first })
+        for step in state.steps {
+            if let home = step.home, let kind = keys[home] { bandOf[.step(step.id)] = kind }
+        }
+        for step in state.steps where bandOf[.step(step.id)] == nil {
+            bandOf[.step(step.id)] = edges.nearest(.step(step.id), in: bandOf, order: board.lanes.map(\.kind)) ?? .notInAMission
+        }
+        var lanes = board.lanes
+        if state.steps.contains(where: { bandOf[.step($0.id)] == .notInAMission }), !lanes.contains(where: { $0.kind == .notInAMission }) {
+            lanes.append(BoardLane(kind: .notInAMission, columns: [:]))
+        }
+        let itemsOf = Dictionary(lanes.map { lane in
+            (lane.kind, Self.items(of: lane).map(WorkMapItem.card) + state.steps.filter { bandOf[.step($0.id)] == lane.kind }.map(WorkMapItem.step))
+        }, uniquingKeysWith: { first, _ in first })
+
+        var everything: [WorkMapItem] = []
+        var added: Set<MapNodeID> = []
+        for lane in lanes {
+            for item in itemsOf[lane.kind] ?? [] where added.insert(item.id).inserted {
+                everything.append(item)
+            }
+        }
+        let isHidden = Set(hidden.nodes)
+        let shown = everything.filter { !isHidden.contains($0.id) }
+        let shownIDs = Set(shown.map(\.id))
+        // The lines All draws, between all that shows: those that leave a band bring in, dimmed, what they're joined to.
+        let lines = edges.lines(among: shown.map(\.id))
+
+        bands = lanes.compactMap { lane in
+            let items = itemsOf[lane.kind] ?? []
+            guard !items.isEmpty else { return nil }
+            let own = items.filter { !isHidden.contains($0.id) }
+            let ownIDs = Set(own.map(\.id))
+            var elsewhere: [MapNodeID: BoardLane.Kind] = [:]
+            var others: [WorkMapItem] = []
+            for line in lines where ownIDs.contains(line.before) != ownIDs.contains(line.after) {
+                let other = ownIDs.contains(line.before) ? line.after : line.before
+                guard elsewhere[other] == nil, others.count < Self.mostElsewhere, let item = byID[other] else { continue }
+                elsewhere[other] = bandOf[other] ?? .notInAMission
+                others.append(item)
+            }
+            let graph = own.isEmpty || own.count > Self.mostCards ? nil : edges.graph(of: own + others, elsewhere: elsewhere)
+            return Band(
+                lane: lane, key: LaneOrderKey(lane.kind, missions: missions), graph: graph, count: own.count,
+                hidden: items.filter { isHidden.contains($0.id) }
+            )
+        }
+
+        // All: which set of joined ones each is in, the first of its set in the Board's order.
+        var root = Dictionary(shown.map { ($0.id, $0.id) }, uniquingKeysWith: { first, _ in first })
+        func find(_ id: MapNodeID) -> MapNodeID {
+            var id = id
+            while let parent = root[id], parent != id { id = parent }
+            return id
+        }
+        let place = Dictionary(shown.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         for line in lines {
             let (left, right) = (find(line.before), find(line.after))
             guard left != right else { continue }
             if (place[left] ?? 0) < (place[right] ?? 0) { root[right] = left } else { root[left] = right }
         }
-        var members: [ItemRef: [BoardItem]] = [:]
-        for item in shown { members[find(item.ref), default: []].append(item) }
-        var groups: [Group] = []
-        var loose: [BoardItem] = []
-        for item in shown where find(item.ref) == item.ref {
-            let items = members[item.ref] ?? [item]
-            guard items.count > 1 else {
-                loose.append(item)
-                continue
-            }
-            var kinds: [BoardLane.Kind] = []
-            for kind in items.flatMap({ lanesOf[$0.ref] ?? [] }) where !kinds.contains(kind) {
-                kinds.append(kind)
-            }
-            let graph = items.count > Self.mostCards ? nil : edges.graph(of: items)
-            groups.append(Group(graph: graph, items: items, lanes: kinds))
+        var members: [MapNodeID: [WorkMapItem]] = [:]
+        for item in shown {
+            members[find(item.id), default: []].append(item)
         }
-        self.groups = groups
-        self.loose = loose
-        self.hidden = all.filter { hiddenRefs.contains($0.ref) }
+        var sets: [[WorkMapItem]] = []
+        var single: [WorkMapItem] = []
+        for item in shown where find(item.id) == item.id {
+            let items = members[item.id] ?? [item]
+            if items.count > 1 { sets.append(items) } else { single.append(item) }
+        }
+        // Their graphs share their columns, so that what can go now lines up across them, and so on.
+        let laidOut = sets.map { items -> (items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID>)? in
+            guard items.count <= Self.mostCards else { return nil }
+            let ids = Set(items.map(\.id))
+            let waits = Set(items.filter { !$0.isDone && edges.waits($0.id, among: shownIDs) }.map(\.id))
+            return (items, lines.filter { ids.contains($0.before) && ids.contains($0.after) }, waits)
+        }
+        let shared = Set(laidOut.compactMap { $0 }.flatMap { WorkMapGraph.places($0.items, lines: $0.lines, waits: $0.waits).values })
+            .sorted()
+        columns = shared
+        groups = zip(sets, laidOut).map { items, laid in
+            var kinds: [BoardLane.Kind] = []
+            for item in items {
+                let lanes = lanesOf[item.id] ?? (bandOf[item.id].map { [$0] } ?? [])
+                for kind in lanes where !kinds.contains(kind) {
+                    kinds.append(kind)
+                }
+            }
+            let graph = laid.map { WorkMapGraph($0.items, lines: $0.lines, waits: $0.waits, columns: shared) }
+            return Group(graph: graph, items: items, lanes: kinds)
+        }
+        loose = single.filter { !$0.isDone } + single.filter(\.isDone)
+        self.hidden = everything.filter { isHidden.contains($0.id) }
+        self.everything = everything
+        self.edges = edges
+        self.byID = byID
+        self.bandOf = bandOf
     }
 
     /// A lane's cards, in the order its graph takes them: its pull requests in their mission's order, as By Mission lists
@@ -557,14 +725,55 @@ public struct WorkMap: Equatable, Sendable {
         return (cards.map(BoardItem.pullRequest) + lane.tasks.map(BoardItem.work)).filter { seen.insert($0.ref).inserted }
     }
 
-    /// What comes right before what, in every mission's order, with whether it's stacked on it, and what BriefBar knows of
-    /// each pull request's status: what the lines between cards are drawn from.
-    struct Edges {
-        /// What comes right before each, in any mission, and whether it's stacked on it there.
-        var before: [ItemRef: [ItemRef: Bool]] = [:]
-        var status: [ItemRef: OrderStatus] = [:]
+    /// The cards that are done on a board: what `init`'s `done` takes, from the board a search hasn't narrowed.
+    public static func done(on board: PullRequestBoard) -> Set<ItemRef> {
+        Set(board.lanes.flatMap(items(of:)).filter(WorkMapGraph.isDone).map(\.ref))
+    }
 
-        init(_ missions: [OrderMission]) {
+    // MARK: What menus need
+
+    /// A card or step on the Map, hidden or not.
+    public func item(_ node: MapNodeID) -> WorkMapItem? {
+        byID[node]
+    }
+
+    /// The band a card or step is in, By Mission: a card's first.
+    public func band(of node: MapNodeID) -> BoardLane.Kind? {
+        bandOf[node]
+    }
+
+    /// What a card or step waits for right before it, as the orders and the Map's lines say, with how: cards and steps on the
+    /// Map, and pull requests and work items that aren't, in order.
+    public func waitsFor(_ node: MapNodeID) -> [(node: MapNodeID, link: WorkMapLink)] {
+        (edges.before[node] ?? [:]).sorted { $0.key < $1.key }.map { (node: $0.key, link: $0.value) }
+    }
+
+    /// What waits for a card or step right after it, in order.
+    public func waitingFor(_ node: MapNodeID) -> [MapNodeID] {
+        edges.successors(node)
+    }
+
+    /// Whether `after` waiting for `before` closes a loop: `before` waits for `after` already, directly or through others,
+    /// done or not.
+    public func wouldLoop(before: MapNodeID, after: MapNodeID) -> Bool {
+        before == after || edges.reaches(before, back: after)
+    }
+
+    /// What comes right before what, in every mission's order and as you and sessions said on the Map, a work item a pull
+    /// request's card names standing for that card, and whether each is done: what the lines are drawn from.
+    struct Edges: Equatable, Sendable {
+        /// What comes right before each, and how.
+        var before: [MapNodeID: [MapNodeID: WorkMapLink]] = [:]
+        /// What comes right after each.
+        var after: [MapNodeID: Set<MapNodeID>] = [:]
+        /// What holds nothing back now: cards and steps that are done, and pull requests the orders say merged or closed.
+        var done: Set<MapNodeID> = []
+
+        init(
+            _ missions: [OrderMission], state: MapState, items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
+            done known: Set<ItemRef> = []
+        ) {
+            var status: [ItemRef: OrderStatus] = [:]
             let steps = missions.flatMap { $0.steps + $0.attached + $0.sameStory }
             // What a pull request's own step says of it first, then what another's prerequisite does.
             for step in steps where status[step.ref] == nil {
@@ -572,91 +781,156 @@ public struct WorkMap: Equatable, Sendable {
             }
             for step in steps {
                 for prerequisite in step.prerequisites where prerequisite.ref != step.ref {
-                    let stacked = prerequisite.origins.contains(where: \.isStacked)
-                    before[step.ref, default: [:]][prerequisite.ref] = (before[step.ref]?[prerequisite.ref] ?? false) || stacked
+                    let (earlier, later) = (MapNodeID.card(prerequisite.ref), MapNodeID.card(step.ref))
+                    let stacked = prerequisite.origins.contains(where: \.isStacked) || before[later]?[earlier] == .stacked
+                    before[later, default: [:]][earlier] = stacked ? .stacked : .order
                     if status[prerequisite.ref] == nil { status[prerequisite.ref] = prerequisite.status }
                 }
             }
+            // What you and sessions said, the latest of what's said of each line winning, of a work item a card names as of
+            // that card: one added where an order has it already keeps the order's look.
+            func nodes(_ node: MapNodeID) -> [MapNodeID] {
+                guard items[node] == nil, let ref = node.ref, let cards = aliases[ref], !cards.isEmpty else { return [node] }
+                return cards.map(MapNodeID.card)
+            }
+            var said: [MapEdits.Line: MapEdits.LineChange] = [:]
+            for (line, change) in state.lines.sorted(by: { $0.key < $1.key }) {
+                for earlier in nodes(line.before) {
+                    for later in nodes(line.after) where earlier != later {
+                        let key = MapEdits.Line(earlier, later)
+                        if said[key].map({ $0.at < change.at }) ?? true { said[key] = change }
+                    }
+                }
+            }
+            for (line, change) in said {
+                if change.isOn {
+                    if before[line.after]?[line.before] == nil { before[line.after, default: [:]][line.before] = .said(change.by) }
+                } else {
+                    before[line.after]?[line.before] = nil
+                }
+            }
+            for (later, earlier) in before {
+                for node in earlier.keys {
+                    after[node, default: []].insert(later)
+                }
+            }
+            done = Set(items.filter { $0.value.isDone }.keys).union(known.map(MapNodeID.card))
+            for (ref, status) in status where items[.card(ref)] == nil && status.hasEnded {
+                done.insert(.card(ref))
+            }
         }
 
-        /// What comes before a card, anywhere: what comes right before it, and before those, and so on.
-        func ancestors(of ref: ItemRef) -> Set<ItemRef> {
-            var reached: Set<ItemRef> = []
-            var pending = Array((before[ref] ?? [:]).keys)
+        func predecessors(_ node: MapNodeID) -> [MapNodeID] {
+            (before[node] ?? [:]).keys.sorted()
+        }
+
+        func successors(_ node: MapNodeID) -> [MapNodeID] {
+            (after[node] ?? []).sorted()
+        }
+
+        /// What a card or step waits for, anywhere: what comes right before it, and before those, and so on, but not past
+        /// what's done, which holds nothing back, nor what's before it, and not through `besides`.
+        func ancestors(of node: MapNodeID, besides excluded: MapNodeID? = nil) -> Set<MapNodeID> {
+            var reached: Set<MapNodeID> = []
+            var pending = predecessors(node)
             while let next = pending.popLast() {
-                guard reached.insert(next).inserted else { continue }
-                pending += (before[next] ?? [:]).keys
+                guard next != excluded, reached.insert(next).inserted else { continue }
+                if !done.contains(next) { pending += predecessors(next) }
             }
             return reached
         }
 
-        /// The lines into each of these cards from the nearest of them that come before it: right before it, or through cards
-        /// that aren't among them, but for one that another of them comes after, which says it already: not where the two
-        /// are in a loop, where neither comes first, nor where that one is done and this one isn't, as it holds nothing then.
-        func lines(among refs: [ItemRef]) -> [WorkMapLine] {
-            let shown = Set(refs)
+        /// Whether `node` comes after `earlier`, directly or through others, done or not.
+        func reaches(_ node: MapNodeID, back earlier: MapNodeID) -> Bool {
+            var reached: Set<MapNodeID> = []
+            var pending = predecessors(node)
+            while let next = pending.popLast() {
+                if next == earlier { return true }
+                guard reached.insert(next).inserted else { continue }
+                pending += predecessors(next)
+            }
+            return false
+        }
+
+        /// The band of the nearest cards and steps joined to one, either way, that have one: of those as near, the band most
+        /// of them are in, the first of those in `order`.
+        func nearest(_ node: MapNodeID, in bands: [MapNodeID: BoardLane.Kind], order: [BoardLane.Kind]) -> BoardLane.Kind? {
+            var visited: Set<MapNodeID> = [node]
+            var frontier = [node]
+            while !frontier.isEmpty {
+                var next: [MapNodeID] = []
+                var counts: [BoardLane.Kind: Int] = [:]
+                for current in frontier {
+                    for neighbour in predecessors(current) + successors(current) where visited.insert(neighbour).inserted {
+                        if let kind = bands[neighbour] { counts[kind, default: 0] += 1 }
+                        next.append(neighbour)
+                    }
+                }
+                if let most = counts.values.max() {
+                    return order.first { counts[$0] == most } ?? counts.first { $0.value == most }?.key
+                }
+                frontier = next
+            }
+            return nil
+        }
+
+        /// The lines into each of these from the nearest of them it waits for: right before it, or through ones that aren't
+        /// among them and aren't done, as a done one holds nothing back, nor does what's before it; but for one that another
+        /// of them waits for, which says it already: not where the two are in a loop, where neither comes first, nor where the
+        /// other is done, which holds nothing back.
+        func lines(among nodes: [MapNodeID]) -> [WorkMapLine] {
+            let shown = Set(nodes)
             var lines: [WorkMapLine] = []
-            for ref in refs {
+            for node in nodes {
                 // Back from it, breadth first, through what isn't shown, to the nearest of what is, with the way there.
-                var way: [ItemRef: [ItemRef]] = [:]
-                var found: [ItemRef] = []
-                var pending: [(ItemRef, [ItemRef])] = (before[ref] ?? [:]).keys.sorted().map { ($0, []) }
-                var visited: Set<ItemRef> = [ref]
+                var way: [MapNodeID: [MapNodeID]] = [:]
+                var found: [MapNodeID] = []
+                var pending: [(MapNodeID, [MapNodeID])] = predecessors(node).map { ($0, []) }
+                var visited: Set<MapNodeID> = [node]
                 while !pending.isEmpty {
                     let (next, through) = pending.removeFirst()
                     guard visited.insert(next).inserted else { continue }
                     if shown.contains(next) {
                         way[next] = through
                         found.append(next)
-                    } else {
-                        pending += (before[next] ?? [:]).keys.sorted().map { ($0, [next] + through) }
+                    } else if !done.contains(next) {
+                        pending += predecessors(next).map { ($0, [next] + through) }
                     }
                 }
-                let ancestry = Dictionary(found.map { ($0, ancestors(of: $0)) }, uniquingKeysWith: { first, _ in first })
-                // One that another of them comes after says it already, through that one: but not one in a loop with it,
-                // where neither comes first, nor one still open that a done one comes after, which no longer holds anything.
-                func says(_ later: ItemRef, _ earlier: ItemRef) -> Bool {
-                    guard later != earlier, ancestry[later]?.contains(earlier) == true, ancestry[earlier]?.contains(later) != true
-                    else { return false }
-                    return !isEnded(later) || isEnded(earlier)
+                // Not through this one: one in a loop with it would say all it waits for already.
+                let ancestry = Dictionary(found.map { ($0, ancestors(of: $0, besides: node)) }, uniquingKeysWith: { first, _ in first })
+                func says(_ later: MapNodeID, _ earlier: MapNodeID) -> Bool {
+                    later != earlier && !done.contains(later) && ancestry[later]?.contains(earlier) == true
+                        && ancestry[earlier]?.contains(later) != true
                 }
                 for earlier in found where !found.contains(where: { says($0, earlier) }) {
                     let through = way[earlier] ?? []
-                    let style: WorkMapLine.Style = if !through.isEmpty {
-                        .through(through)
-                    } else {
-                        before[ref]?[earlier] == true ? .stacked : .order
-                    }
-                    lines.append(WorkMapLine(before: earlier, after: ref, style: style))
+                    let style = through.isEmpty ? Self.style(of: before[node]?[earlier] ?? .order) : .through(through)
+                    lines.append(WorkMapLine(before: earlier, after: node, style: style))
                 }
             }
             return lines
         }
 
-        /// Whether a pull request merged or closed, as BriefBar knows it.
-        func isEnded(_ ref: ItemRef) -> Bool {
-            status[ref]?.hasEnded ?? false
-        }
-
-        /// Whether a card waits for a pull request still open that isn't among these, before reaching one that is: it goes at
-        /// least one wave on.
-        func waits(_ ref: ItemRef, among shown: Set<ItemRef>) -> Bool {
-            var pending = Array((before[ref] ?? [:]).keys)
-            var visited: Set<ItemRef> = [ref]
-            while let next = pending.popLast() {
-                guard visited.insert(next).inserted, !shown.contains(next) else { continue }
-                if !(status[next]?.hasEnded ?? false) { return true }
-                pending += (before[next] ?? [:]).keys
+        static func style(of link: WorkMapLink) -> WorkMapLine.Style {
+            switch link {
+            case .stacked: .stacked
+            case .order: .order
+            case .said(let author): .said(author)
             }
-            return false
         }
 
-        /// These cards as a graph.
-        func graph(of items: [BoardItem]) -> WorkMapGraph {
-            let refs = items.map(\.ref)
-            let shown = Set(refs)
-            let waiting = Set(items.filter { !WorkMapGraph.isDone($0) && waits($0.ref, among: shown) }.map(\.ref))
-            return WorkMapGraph(items, lines: lines(among: refs), waits: waiting)
+        /// Whether one waits for something still to do that isn't among these, right before it: it goes at least one wave on.
+        func waits(_ node: MapNodeID, among shown: Set<MapNodeID>) -> Bool {
+            predecessors(node).contains { !shown.contains($0) && !done.contains($0) }
+        }
+
+        /// These as a graph.
+        func graph(of items: [WorkMapItem], elsewhere: [MapNodeID: BoardLane.Kind] = [:]) -> WorkMapGraph {
+            let ids = items.map(\.id)
+            let shown = Set(ids)
+            let waiting = Set(items.filter { !$0.isDone && waits($0.id, among: shown) }.map(\.id))
+            return WorkMapGraph(items, lines: lines(among: ids), waits: waiting, elsewhere: elsewhere)
         }
     }
 }
@@ -664,24 +938,24 @@ public struct WorkMap: Equatable, Sendable {
 // MARK: - Words
 
 extension OrderText {
-    /// Why a band or a graph of My Work's Map shows no graph: "These 52 cards are too many to draw clearly. The Board shows
+    /// Why a band or a graph of My Work's Map shows no graph: "These 72 cards are too many to draw clearly. The Board shows
     /// them."
     public static func tooManyCards(_ count: Int) -> String {
         "These \(count) cards are too many to draw clearly. The Board shows them."
     }
 
-    /// What a dotted line on My Work's Map goes through, from its start: "Through !4103", "Through !4103 and !4105"; and
+    /// What a dotted line on My Work's Map goes through, from its start: "Through !4103", "Through !4103 and API tests"; and
     /// where you hid them, "Through !4103, which you hid", "Through !4103 and !4105, one of which you hid".
-    /// - Parameter hidden: the cards you hid.
-    public static func through(_ refs: [ItemRef], hidden: Set<ItemRef>) -> String {
-        let names = refs.map(\.shortOrderLabel)
+    /// - Parameters:
+    ///   - names: what each is called, "!4103", a step's name.
+    ///   - hidden: how many of them you hid.
+    public static func through(_ names: [String], hidden: Int) -> String {
         let list = names.count <= 1 ? names.joined() : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
-        let hid = refs.filter(hidden.contains).count
-        switch hid {
+        switch hidden {
         case 0: return "Through \(list)"
-        case refs.count: return "Through \(list), which you hid"
+        case names.count: return "Through \(list), which you hid"
         case 1: return "Through \(list), one of which you hid"
-        default: return "Through \(list), \(hid) of which you hid"
+        default: return "Through \(list), \(hidden) of which you hid"
         }
     }
 }

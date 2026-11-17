@@ -344,12 +344,12 @@ extension MyWorkPage {
         ]
         let demo = DemoData.organization
         let mapped: [(name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?)] = [
-            ("my-work-map", .byMission, CGSize(width: 1_400, height: 2_300), nil, nil),
-            ("my-work-map-all", .all, CGSize(width: 1_400, height: 1_900), nil, nil),
-            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_300), nil, nil),
-            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 2_900), 1.5, nil),
-            ("my-work-map-hidden", .byMission, CGSize(width: 1_400, height: 1_100), nil,
-             MapHidden([.pullRequest(organization: demo, number: 4102)])),
+            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil),
+            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil),
+            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil),
+            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil),
+            ("my-work-map-hidden", .byMission, CGSize(width: 2_000, height: 1_300), nil,
+             MapHidden([.card(.pullRequest(organization: demo, number: 4102))])),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
@@ -580,7 +580,7 @@ private struct MyWorkContent: View {
                 preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
-                content(board, naming: naming)
+                content(board, naming: naming, done: shownView == .map && board?.search != nil ? whole.map(WorkMap.done(on:)) ?? [] : [])
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
@@ -785,7 +785,9 @@ private struct MyWorkContent: View {
 
     /// Up Next, the lines about your sprint work and the Board, which the search shows only what matches of.
     /// - Parameter naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
-    private func content(_ board: PullRequestBoard?, naming: Set<ItemRef>) -> some View {
+    /// - Parameter done: while the search shows only part of the Map, the cards that are done on the whole board, which the
+    ///   Map doesn't count as holding anything back where it leaves them out.
+    private func content(_ board: PullRequestBoard?, naming: Set<ItemRef>, done: Set<ItemRef>) -> some View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
@@ -819,7 +821,9 @@ private struct MyWorkContent: View {
                     case .map:
                         let missions = PullRequestsByMission.missions(ordering.missions)
                         WorkMapView(
-                            map: WorkMap(board, missions: missions, hidden: hidden ?? ordering.mapHidden),
+                            map: WorkMap(
+                                board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done
+                            ),
                             grouping: grouping ?? ordering.mapGrouping,
                             missions: missions, order: ordering, content: mapContent(board)
                         )
@@ -869,8 +873,41 @@ private struct MyWorkContent: View {
                 }
             },
             related: board.related,
-            showBoard: { ordering.setMyWorkView(.board) }
+            showBoard: { ordering.setMyWorkView(.board) },
+            ask: { question, target in await askAboutMap(question, target, byRef: byRef) },
+            asksSessions: copilot.canSend && copilot.isOn
         )
+    }
+
+    /// ✨ Ask Copilot on the Map: the prompt, with the links of what's there, sent to a session of the mission or a fork of it,
+    /// or copied for a new one; what it did, to say under the band.
+    private func askAboutMap(_ question: WorkMapQuestion, _ target: WorkMapAsk, byRef: [ItemRef: PRSnapshot]) async -> String {
+        let prompt = WorkMapPrompt.prompt(question) { ref in
+            if let item = byRef[ref] { return WorkMapPrompt.Described(label: ref.shortOrderLabel, title: item.title, link: item.url) }
+            if let item = workItem(ref) {
+                return WorkMapPrompt.Described(label: "\(item.type) \(item.id)", title: item.title, link: item.webURL)
+            }
+            return nil
+        }
+        let (session, forking): (ItemRef?, Bool) = switch target {
+        case .copy: (nil, false)
+        case .session(let ref): (ref, false)
+        case .fork(let ref): (ref, true)
+        }
+        guard let session else {
+            ThisMac.copy(prompt)
+            return "Copied a prompt for a new session: paste it in one, and what it tells BriefBar shows here."
+        }
+        guard let choice = await copilot.sessionChoices(ids: [session.id]).first else {
+            ThisMac.copy(prompt)
+            return "BriefBar can't reach that session now, so it copied the prompt: paste it in a session."
+        }
+        switch await copilot.deliver(prompt, to: choice, forking: forking) {
+        case .sent: return "Asked ‘\(choice.name)’: what it tells BriefBar shows here."
+        case .forkedAndSent: return "Asked a fork of ‘\(choice.name)’: what it tells BriefBar shows here."
+        case .fellBack: return "Copied the prompt and opened ‘\(choice.name)’, to paste it there."
+        case .notSent(let why): return "Nothing went: \(why)"
+        }
     }
 
     /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work, each with the

@@ -2233,39 +2233,76 @@ page in the same window. Nothing else is read for it, but the team's sprints as 
 **Board | Map**, in My Work's header (`MyWorkViewPicker`, `order.myWork.view`), shows the Board's cards as a graph of
 what holds what instead (`WorkMap`, drawn by `WorkMapView`), from the same board, Show and search, but with a lane for each
 mission whatever the Board's lanes: a node for each pull request's card, and, with + Sprint Tasks or + All My Tasks, for
-each work item's own card, as the Board has them (`BoardItem`). **By Mission | All** (`MapGroupingPicker`,
-`order.map.grouping`) puts them together: By Mission, a band for each of the Board's lanes, with its header, a mission's
-with its next steps, a story's, or Not in a mission's (`WorkMap.Band`); All, a graph for each set of cards that lines join,
-whatever their lanes, the set with the Board's first card first, under the names of the lanes its cards are in
-(`WorkMap.Group`), then those no line joins under Not connected, what's still to do first. The lines come from the
-missions' orders, every mission's (`WorkMap.Edges`): into each card from the nearest cards shown in the same graph that come
-before it, right before it or through pull requests the graph doesn't show, hidden, not on the board or in another band,
-but for one another of them comes after, which says it already: not where the two are in a loop of lines, nor where that
-one is done and this one isn't (`WorkMap.Edges.lines`); solid where it's stacked on its branch or in a GitHub stack, dashed where
-an order says so, dotted through what isn't shown (`WorkMapLine.Style`), which its node's tooltip and VoiceOver name,
-"After !4101, through !4102, which you hid" (`OrderText.through`). Columns are Done, what merged or closed and work that's
-resolved or done (`WorkMapGraph.isDone`), then the waves of what's left: each comes a wave after the last of what still
-open comes into it, and one that waits for an open pull request the graph doesn't show at least one wave on, as the Pull
-Requests page's Map does; the cards of a loop of lines, where none can go first, share a wave, as far on as what came
-into any of them (`WorkMapGraph.loops`), and what comes after the loop comes after that. A line that skips columns keeps a
-row of each to itself, as a layered drawing's long edges do, so that no node sits on it; in each column, the cards lines
-join come first, ordered by where their neighbours are, a few sweeps each way, each placed level with the middle of what
-comes into it where the cards above let it, so that a chain runs straight, then neighbours swapped while that crosses
-fewer lines (`WorkMapGraph.Layout`); the cards no line joins go after them. A graph of more than 40 cards
-(`WorkMap.mostCards`) shows a line offering the Board instead. A node is its card's: a click shows its details, its menu
-is its card's, with Hide on Map, and VoiceOver hears it as the Board's card, with its actions; hovering one lights up what
-comes before it and after it, directly or through others (`WorkMapLines.related`), dimming the rest. A pull request's node
-has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items of yours it's for,
-"Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's gray, outlined
-dashed, In progress's, Merged's once resolved, and green once done.
+each work item's own card, as the Board has them (`BoardItem`), and for each step, work with no pull request or work item
+yet (`MapStep`, `WorkMapItem`), by ID (`MapNodeID`). **By Mission | All** (`MapGroupingPicker`, `order.map.grouping`)
+puts them together. By Mission, a band for each of the Board's lanes, with its header, a mission's with its next steps,
+a story's, or Not in a mission's (`WorkMap.Band`), its cards and the steps added there, and, dimmed and outlined dashed,
+naming their band, what those are joined to by a line in other bands, one step away, at most 12, so that each band reads
+on its own; a step goes in the band it was added in, by its lane's key (`LaneOrderKey`), else in the band of most of the
+nearest cards it's joined to, the Board's first of those as near, else in Not in a mission (`WorkMap.Edges.nearest`).
+All, on one canvas (`WorkMapCanvas`, laid out by a `Layout` of its own, in one sideways scroll): a graph for each set of
+cards and steps that lines join, whatever their lanes, the set with the Board's first card first, under the names of the
+lanes they're in (`WorkMap.Group`), their columns lined up (`WorkMap.columns`); then those no line joins, under Not
+connected, in a grid as wide as the page, at least four across, what's still to do first. A drag from any node onto
+another draws a line, across graphs too.
 
-Hide on Map keeps a card off the Map (`MapHidden`, `PullRequestOrder.hideOnMap`), not off the Board, Up Next or any count:
-in the preferences (`order.map.hidden`), by reference, never a title, the one you hid last first, up to 300
+The lines come from the missions' orders, every mission's, and from what you and sessions said on the Map
+(`WorkMap.Edges`): yours, `order.map.edits`, which only the app writes, and sessions', `order.map.told`, which only
+`--mcp` writes (`tell_dependencies`), each a line added or taken away, or a step's name, whether it's done, and that it's
+deleted, with when and by whom (`MapEdits`); the latest of each wins, wherever it was said (`MapEdits.merged`). A line
+taken away hides one an order draws, on the Map only; what's said of a work item a pull request's card names is said of
+that card. Into each node, a line comes from the nearest of what it waits for that the graph shows, right before it or
+through what it doesn't show, hidden, not on the board or, By Mission, beyond what's dimmed, but never through what's
+done, on the whole board even while a search leaves it out (`WorkMap.done(on:)`), which holds nothing back, nor does
+what's before it; not from one that another of them waits for, which says it already, other than through this one, but
+where the two are in a loop of lines, and never because of one that's done (`WorkMap.Edges.lines`,
+`ancestors`). Solid where it's stacked on its branch or in a GitHub stack, or you or a session said it, dashed where an
+order says so, dotted through what isn't shown (`WorkMapLine.Style`), which its node's tooltip and VoiceOver name,
+"API tests waits for !4101, through !4102, which you hid" (`OrderText.through`). Columns are Done, what merged or closed,
+work that's resolved or done, and steps done (`WorkMapItem.isDone`), then the waves of what's left: each comes a wave
+after the last of what's still open that comes into it, and one that waits right before it for something open the graph
+doesn't show at least one wave on (`WorkMap.Edges.waits`); the nodes of a loop of lines, where none can go first, share a
+wave, as far on as what came into any of them (`WorkMapGraph.loops`), and what comes after the loop comes after that. A
+line that skips columns keeps a row of each to itself, as a layered drawing's long edges do, so that no node sits on it;
+in each column, the nodes lines join come first, ordered by where their neighbours are, a few sweeps each way, each
+placed level with the middle of what comes into it where the nodes above let it, so that a chain runs straight, then
+neighbours swapped while that crosses fewer lines (`WorkMapGraph.Layout`); those no line joins go after them. A graph of
+more than 60 of a band's own (`WorkMap.mostCards`) shows a line offering the Board instead.
+
+A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
+on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
+Return renames it, and its menu has Rename…, Mark Done and Delete Step. Waits For lists what it waits for, checked, to
+take one away, then what it could wait for, its band's first, then Elsewhere, but what's done, hidden, or waits for it
+already, which would close a loop (`WorkMap.wouldLoop`). A drag says what it would draw as it goes, and draws nothing
+onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, saying
+what it is, with Take Away, or, for a dotted one, Show what you hid that it goes through; Escape lets it go. Hovering a
+node lights up what comes before it and after it, directly or through others (`WorkMapLines.related`), dimming the rest.
+A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items
+of yours it's for, "Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's
+gray, outlined dashed, In progress's, Merged's once resolved, and green once done; a step's is gray and dashed until it's
+done, then green, with ✨ where a session added it. Each of your changes is kept at once, with an Undo line at the top of
+the Map (`MapUndo`), which puts back the Map as it was.
+
+**✨ Ask Copilot**, in a band's header or over a graph of All, asks one of its missions' sessions, or a fork of it, while
+Send Work to Copilot can send it a prompt, or copies the prompt for a new session (`WorkMapAskMenu`): what's there, each
+pull request and work item with its title and link, each step by its ID, and what waits for what now, with what to do, work out
+what waits for what and the steps left, and tell BriefBar with `tell_dependencies` (`WorkMapPrompt`). It goes as the
+composer sends work (`CopilotTasksStore.deliver`), to the session's choice as its sessions read
+(`sessionChoices(ids:)`), and the band says what became of it.
+
+Hide on Map keeps a card or step off the Map (`MapHidden`, `PullRequestOrder.hideOnMap`), not off the Board, Up Next or
+any count: in the preferences (`order.map.hidden`), by reference, never a title, the one you hid last first, up to 300
 (`MapHidden.mostCards`), whether Pull Request Order is on or not, until you show it again from its band's, or All's,
-"1 hidden", which lists them with Show and Show All (`WorkMapHiddenButton`), choose Forget All Orders…, which counts them
-as something it keeps (`keepsAnything`), or turn Azure DevOps off (`PullRequestOrder.forget`). **2 more ›** goes to the
-Board, at its column; a pull request's mission in its details, and Show Them, scroll the Map to its band, or the graph
-that has the card. Nothing is read for the Map, and nothing goes to Azure DevOps.
+"1 hidden", which lists them with Show and Show All in a list that scrolls (`WorkMapHiddenButton`), choose Forget All
+Orders…, which counts them, and the steps and lines, as something it keeps (`keepsAnything`), or turn Azure DevOps off
+(`PullRequestOrder.forget`), which forgets all the Map's steps and lines, yours and sessions', as the Map is its My
+Work's; turning Copilot off forgets which session said what (`MapEdits.forget`). A step done, or deleted, two weeks before goes on its own, each side forgetting
+its own, the app yours as its clock looks and `--mcp` sessions' as one tells it something; one shows only while the side
+that added it keeps it, so that it never comes back from the other's (`MapEdits.prune`). At most 300 steps and 1,000
+lines each, those changed longest ago going first. **2 more ›** goes to the Board, at its column; a pull request's
+mission in its details, and Show Them, scroll the Map to its band, the graph that has the card or All's grid, and a
+search's Return gives its card's node the keyboard's focus. Nothing is read for the Map, and nothing goes to Azure
+DevOps.
 
 #### Moving a task to a sprint
 
@@ -5106,6 +5143,19 @@ number and organization, never by title; none of them makes or undoes your chang
 only reads what you set and changed; each session's stages are its own (see [A pull request's
 stage](#a-pull-requests-stage)), and the demo keeps them in memory, where its `needs_me` and `pull_request` read them
 (`CommandLineOptions.demoStages`).
+
+My Work's Map has two more of them (`PullRequestOrderMCP`): `work_map` reads the steps and the lines you and sessions
+added on it or took away, with who and when, the asking session's as its own, by reference and the steps' names
+(`MapEdits.describe`); `tell_dependencies` keeps what a session says waits for what there, as that session's, the
+latest of what's said of each line or step winning, yours too (`MapEdits.apply`): `dependencies` and `remove`, each an
+`item` and what it `waits_for`, and `steps` to add, rename, mark `done` or `delete`. It names Azure DevOps pull requests
+and work items by their links, or as `!4102` and `5104` with `organization`, and a step the Map has as `step:` and its
+ID; `step:` and a name adds a new step, which the rest of the same call can name so, but never names another step, as two
+missions' steps can share a name, such as API tests, and finding the other's would join their graphs. It refuses, changing nothing, what it can't read, a session's or a
+GitHub pull request, one waiting for itself, and everything while Azure DevOps is off, as My Work is its page; at most
+200 changes at once. It keeps it under `order.map.told`, which only `--mcp` writes, as the orders are kept
+(`OrderKeeper.changeMap`), forgetting there the steps done or deleted two weeks before, and tells the app, which reads it
+again (`PullRequestOrder.reloadMap`). It changes no order, stage or work item.
 
 What tells sessions to call it, so nobody has to ask: `--mcp`'s instructions, while it's listed; the tools'
 descriptions; Pull Request Order's skill, `briefbar-pr-order`, which says the session that did the work tells its stage,

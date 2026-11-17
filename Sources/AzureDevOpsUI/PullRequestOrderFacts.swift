@@ -102,8 +102,9 @@ final class PullRequestOrderFacts {
         order.tellDemo(sessionStages: DemoPullRequestOrder.sessionStages(now: store.now))
     }
 
-    /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, and the names Apple
-    /// Intelligence would give them and the split it would suggest.
+    /// The demo's orders, as if its sessions had told them, your made-up changes to its missions, the names Apple
+    /// Intelligence would give them and the split it would suggest, and the steps and lines you and its sessions added on My
+    /// Work's Map.
     private func tellDemo() {
         guard store.mode == .demo else { return }
         let now = store.now
@@ -111,6 +112,8 @@ final class PullRequestOrderFacts {
             DemoPullRequestOrder.orders(now: now), evidence: DemoPullRequestOrder.evidence(now: now), focus: DemoPullRequestOrder.focus,
             changes: DemoPullRequestOrder.changes(now: now), names: DemoPullRequestOrder.names, split: DemoPullRequestOrder.split
         )
+        let map = DemoPullRequestOrder.map(now: now)
+        order.tellDemo(map: map.yours, told: map.told)
     }
 
     /// Tells what the list shows now, or, while Pull Request Order is off, nothing.

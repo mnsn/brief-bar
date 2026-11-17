@@ -2,9 +2,10 @@ import BriefBarCore
 import Foundation
 
 /// Pull Request Order's tools, for agents through `--mcp`: a Copilot session tells BriefBar the order the pull requests it
-/// opened merge in, reads back the orders BriefBar keeps, and forgets one; and tells the stage of the pull requests it works
-/// on. They change only BriefBar's own orders and what sessions set, never anything in Azure DevOps or on GitHub, and
-/// answer with only what agents told BriefBar, and what the user set over it, by references and numbers.
+/// opened merge in, reads back the orders BriefBar keeps, and forgets one; reads and tells what waits for what on My Work's
+/// Map, and its steps; and tells the stage of the pull requests it works on. They change only BriefBar's own orders, Map and
+/// what sessions set, never anything in Azure DevOps or on GitHub, and answer with only what agents told BriefBar, what the
+/// user set over it, and the names of steps, by references and numbers.
 package enum PullRequestOrderMCP {
     /// What the tools answer while Pull Request Order is off.
     static let refusal = """
@@ -118,6 +119,57 @@ package enum PullRequestOrderMCP {
                 readOnly: false
             ) { arguments in
                 try await forget(arguments, keeper: keeper)
+            },
+            MCPTool(
+                name: "work_map",
+                title: "My Work's Map",
+                description: """
+                    The steps and dependencies the user and sessions added to My Work's Map in BriefBar, beyond what the \
+                    pull requests' merge orders say: each step, work with no pull request or work item yet, with its ID and \
+                    whether it's done; and each line, what waits for what, or no longer does, with who said it and when. \
+                    Read it before you change them with tell_dependencies.
+                    """,
+                inputSchema: MCPSchema.object()
+            ) { _ in
+                await readMap(keeper: keeper, session: session, now: now())
+            },
+            MCPTool(
+                name: "tell_dependencies",
+                title: "Tell Dependencies",
+                description: """
+                    Tells BriefBar what waits for what among the user's work, so that My Work's Map shows it: Azure DevOps \
+                    pull requests, work items, and steps, work with no pull request or work item yet, such as API tests, \
+                    end-to-end tests, testing in dev, monitoring and alerts, enabling it in staging or production, or \
+                    announcing it. Name a pull request by its link, or as !1234, and a work item by its link, or by its ID, \
+                    with organization for numbers. Name a step BriefBar has as step: and its ID, from work_map or an earlier \
+                    answer; step: and a name adds a new step, which the rest of the same call can name so. Say only what \
+                    holds each: BriefBar draws a line only from the nearest of what holds it. Only the \
+                    Map changes: nothing in Azure DevOps or on GitHub, and no merge order, which order_pull_requests tells. \
+                    The user sees which session told what, and can change it.
+                    """,
+                inputSchema: MCPSchema.object([
+                    "dependencies": array("What waits for what", items: waitsSchema("What waits for these")),
+                    "remove": array(
+                        "What no longer waits for what, such as a line that's wrong, whoever drew it",
+                        items: waitsSchema("What no longer waits for these")
+                    ),
+                    "steps": array(
+                        "Steps to add, rename, mark done or not, or delete",
+                        items: MCPSchema.object([
+                            "step": MCPSchema.string(
+                                "The step to change, by its ID, or the name of one this call adds; leave it out to add one called name"
+                            ),
+                            "name": MCPSchema.string("Its name, short, such as Enable in production"),
+                            "done": MCPSchema.boolean("Whether it's done"),
+                            "delete": MCPSchema.boolean("Deletes it, with its lines"),
+                        ])
+                    ),
+                    "organization": MCPSchema.string("The Azure DevOps organization of the numbers, such as contoso"),
+                    "session": MCPSchema.string("Your Copilot session's ID, when BriefBar can't tell which session you are"),
+                ]),
+                readOnly: false
+            ) { arguments in
+                try await tellMap(arguments, keeper: keeper, sourcesOn: sourcesOn, session: session, now: now())
             },
         ]
         if let stages, let session {
@@ -244,6 +296,76 @@ package enum PullRequestOrderMCP {
             try orders.forget(plan: text, revision: revision)
         }
         return "BriefBar forgot order \(forgotten.value.id.uuidString.lowercased())."
+    }
+
+    /// `work_map`: the steps and the lines the user and sessions added to My Work's Map, or took away, with who and when.
+    static func readMap(keeper: OrderKeeper, session: ItemRef?, now: Date) async -> String {
+        let (yours, told) = await keeper.map
+        return MapEdits.describe(yours: yours, told: told, now: now, session: session)
+    }
+
+    /// `tell_dependencies`: what waits for what on My Work's Map, and its steps, as the session that tells it says, the
+    /// latest of what's said of each winning, the user's too. Refused while Azure DevOps is off, as My Work is its page.
+    static func tellMap(
+        _ arguments: JSONValue, keeper: OrderKeeper, sourcesOn: @Sendable () -> Set<ItemRef.Kind>, session: ItemRef?, now: Date
+    ) async throws -> String {
+        guard sourcesOn().contains(.pullRequest) else { throw MCPToolError(AgentAccess.refusal(source: "Azure DevOps")) }
+        let request = try mapRequest(arguments)
+        let teller = arguments["session"]?.string.flatMap { ItemRef.session($0.trimmingCharacters(in: .whitespaces)) } ?? session
+        let lines = try await keeper.changeMap(now: now) { told, yours in
+            do {
+                return try told.apply(request, yours: yours, by: .session(teller), now: now)
+            } catch let refusal as MapRequestError {
+                throw MCPToolError(refusal.description)
+            }
+        }
+        let demo = keeper.demo ? " (The demo keeps it in memory.)" : ""
+        guard !lines.isEmpty else { return "BriefBar's Map has all this already.\(demo)" }
+        return """
+            BriefBar's Map shows this now:\(demo)
+            \(lines.map { "- \($0)" }.joined(separator: "\n"))
+
+            Only the Map changed: no merge order, stage or work item.
+            """
+    }
+
+    /// What the agent told of the Map, before BriefBar reads its names (`MapEdits.apply`).
+    static func mapRequest(_ arguments: JSONValue) throws -> MapRequest {
+        func waits(_ field: String) throws -> [MapRequest.Wait] {
+            switch arguments[field] {
+            case nil, .null?: return []
+            case .array(let values)?:
+                return try values.map { value in
+                    guard let item = value["item"]?.string else {
+                        throw MCPToolError(#"Give each of \#(field) as {"item": "…", "waits_for": ["…"]}."#)
+                    }
+                    return MapRequest.Wait(item: item, waitsFor: try names(value["waits_for"], in: "waits_for"))
+                }
+            default:
+                throw MCPToolError(#"Give \#(field) as a list of {"item": "…", "waits_for": ["…"]}."#)
+            }
+        }
+        var steps: [MapRequest.Step] = []
+        switch arguments["steps"] {
+        case nil, .null?: break
+        case .array(let values)?:
+            for value in values {
+                if let name = value.string {
+                    steps.append(MapRequest.Step(name: name))
+                    continue
+                }
+                guard case .object = value else { throw MCPToolError(#"Give each of steps as {"name": "…"}, or with step to change one."#) }
+                steps.append(MapRequest.Step(
+                    step: value["step"]?.string, name: value["name"]?.string, done: value["done"]?.bool, delete: value["delete"]?.bool ?? false
+                ))
+            }
+        default:
+            throw MCPToolError(#"Give steps as a list of {"name": "…"}."#)
+        }
+        return MapRequest(
+            dependencies: try waits("dependencies"), remove: try waits("remove"), steps: steps,
+            organization: arguments["organization"]?.string
+        )
     }
 
     /// `pull_request_stage`: sets the stage of pull requests the session that started `--mcp` works on, as that
@@ -536,6 +658,16 @@ package enum PullRequestOrderMCP {
     private static func integer(_ description: String) -> JSONValue {
         .object(["type": .string("integer"), "description": .string(description)])
     }
+
+    /// One thing and what it waits for, as `tell_dependencies` takes them.
+    private static func waitsSchema(_ waits: String) -> JSONValue {
+        MCPSchema.object([
+            "item": MCPSchema.string(
+                "A pull request or a work item, by its link, !1234 or its ID; or a step, as step: and its ID, or a new step's name"
+            ),
+            "waits_for": array(waits, items: .object(["type": .string("string")])),
+        ], required: ["item", "waits_for"])
+    }
 }
 
 /// The orders BriefBar keeps, and the stages sessions set, as `--mcp` reads and changes them: one change at a time, saved
@@ -582,6 +714,25 @@ actor OrderKeeper {
     /// Whether Pull Request Order is on, asked with each call: the demo's always is.
     var isOn: Bool {
         demo || PullRequestOrderSetting.isOn(in: defaults)
+    }
+
+    /// What the user and sessions said of My Work's Map, as the app and `--mcp` keep them.
+    var map: (yours: MapEdits, told: MapEdits) {
+        (MapEdits.load(from: defaults, key: MapEdits.yoursKey), MapEdits.load(from: defaults, key: MapEdits.toldKey))
+    }
+
+    /// Changes what sessions told of My Work's Map, against what the user said, which only the app writes, and saves it when
+    /// that changed it, forgetting the steps done or deleted long enough ago, telling the app.
+    func changeMap<Value: Sendable>(now: Date, _ body: @Sendable (inout MapEdits, MapEdits) throws -> Value) throws -> Value {
+        let yours = MapEdits.load(from: defaults, key: MapEdits.yoursKey)
+        var told = MapEdits.load(from: defaults, key: MapEdits.toldKey)
+        let before = told
+        let value = try body(&told, yours)
+        _ = told.prune(with: yours, now: now)
+        guard told != before else { return value }
+        told.save(to: defaults, key: MapEdits.toldKey)
+        if !demo { announce() }
+        return value
     }
 
     /// Changes the orders, and saves them when that changed them, telling the app.
