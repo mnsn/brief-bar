@@ -4,7 +4,8 @@ import SwiftUI
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does
 /// for you, and all it does and reads behind ⓘ; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
 /// pull requests, the mission you focus on, your changes to missions, the names you gave missions, the suggested splits
-/// you kept together and the order you put your work in on My Work; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
+/// you kept together, the order you put your work in on My Work, and the cards and steps you hid on its Map and the steps and lines you and sessions
+/// added there; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
 /// got, and the pull requests you chose in Up Next.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
@@ -41,8 +42,8 @@ package struct PullRequestOrderSettingView: View {
         BriefBar works it out from Azure DevOps and Copilot, never moving one of yours back on its own, or as you or a \
         session set it, the latest winning; what's next, at \
         the top of the Pull Requests page, where you can choose which pull request each kind shows; and a Board beside \
-        List and Map. With agents on, sessions get the tools to tell BriefBar an order, and each pull request's stage, as \
-        they work, and Copilot gets a skill that says when to. It keeps the orders and your changes to missions, by \
+        List and Map. With agents on, sessions get the tools to tell BriefBar an order, each pull request's stage, and \
+        what waits for what on My Work's Map, as they work, and Copilot gets a skill that says when to. It keeps the orders and your changes to missions, by \
         reference, the names you give missions, and the pull request you choose for each kind of next, by reference, with \
         the account you chose it with, until it moves on; how far each of your pull requests got, for each account, by \
         reference, until it merges or closes; and the stages you set, for each Azure DevOps account you sign \
@@ -81,7 +82,8 @@ package struct PullRequestOrderSettingView: View {
                 Text("""
                     BriefBar forgets every order sessions told it, what it saw become of their pull requests, the mission you \
                     focus on, your changes to missions, the names you gave missions, the suggested splits you kept together, \
-                    and the order you put your work in on My Work. Sessions that name an order are told it's forgotten.
+                    the order you put your work in on My Work, the cards and steps you hid on its Map, and the steps and lines \
+                    you and sessions added there. Sessions that name an order are told it's forgotten.
                     """)
             }
     }

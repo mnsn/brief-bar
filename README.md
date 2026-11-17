@@ -107,6 +107,9 @@ stage to change it, or **Finished My Review**, as you point at its row, to pass 
   repositories, in the order they merge where BriefBar can tell: from stacked branches, and what Copilot sessions tell it. **Map** draws each mission in
   merge waves. Apple Intelligence names each mission on your Mac, and suggests a split when one has become two pieces
   of work.
+- **My Work's Map**, with My Work Page on, draws your pull requests, tasks and the steps left, such as tests or
+  enabling it in production, as a graph of what holds what, by mission or all together. Drag to connect, click a line
+  to take it away, and **✨ Ask Copilot** has a session work out what waits for what.
 
 Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps.
 [Pull Request Order, Up Next and the Board →](docs/user-guide.md#azure-devops)

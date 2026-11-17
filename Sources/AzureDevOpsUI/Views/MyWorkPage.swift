@@ -303,13 +303,19 @@ struct MyWorkPage: View {
     var lanes: BoardLanes? = nil
     /// What the Board's search starts with, for pictures; nil for nothing.
     var search: String? = nil
+    /// The Board or the Map, for pictures; nil for the one you chose.
+    var view: MyWorkView? = nil
+    /// How the Map puts its cards together, for pictures; nil for how you chose.
+    var grouping: WorkMapGrouping? = nil
+    /// The cards hidden on the Map, for pictures; nil for those you hid.
+    var hidden: MapHidden? = nil
 
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
         MyWorkContent(
             links: services.links, linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes,
-            search: search
+            search: search, view: view, grouping: grouping, hidden: hidden
         )
     }
 }
@@ -318,7 +324,8 @@ extension MyWorkPage {
     /// My Work's pictures, while Pull Request Order is on: with + Sprint Tasks, wide enough for every column, in a narrow
     /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
     /// and in a narrow window, for “!4115”, whose task's other pull request shows as related, and for a session's name,
-    /// “migrate stored”; and what + Sprint Tasks says while Show Links is off.
+    /// “migrate stored”; what + Sprint Tasks says while Show Links is off; and the Map, with + Sprint Tasks, By Mission, All,
+    /// in a narrow window, with text at 150%, and with !4102 hidden.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -335,13 +342,39 @@ extension MyWorkPage {
             ("my-work-search-related", .allTasks, .missions, CGSize(width: 1_600, height: 650), "!4115"),
             ("my-work-search-session", .allTasks, .missions, CGSize(width: 1_600, height: 650), "migrate stored"),
         ]
+        let demo = DemoData.organization
+        let mapped: [(name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?)] = [
+            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil),
+            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil),
+            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil),
+            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil),
+            ("my-work-map-hidden", .byMission, CGSize(width: 2_000, height: 1_300), nil,
+             MapHidden([.card(.pullRequest(organization: demo, number: 4102))])),
+        ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
             .frame(width: 700, alignment: .leading)
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
         let foot = (name: "my-work-show-links-off", view: environment(AnyView(showLinksOff)))
-        return [foot] + shown.map { name, shows, lanes, size, search in
+        let maps = mapped.map { name, grouping, size, scale, hidden in
+            let page = MyWorkPage(
+                linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: .sprintTasks, view: .map,
+                grouping: grouping, hidden: hidden
+            )
+                .environment(\.panelStyle, .page)
+            let scaled: AnyView = if let scale {
+                AnyView(page.environment(\.textScale, scale))
+            } else {
+                AnyView(page.textSize(from: services))
+            }
+            let framed = scaled
+                .frame(width: size.width, height: size.height)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            return (name: name, view: environment(AnyView(framed)))
+        }
+        let boards = shown.map { name, shows, lanes, size, search in
             let page = MyWorkPage(
                 linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes, search: search
             )
@@ -352,6 +385,7 @@ extension MyWorkPage {
                 .environment(\.isRendering, true)
             return (name: name, view: environment(AnyView(page)))
         }
+        return [foot] + boards + maps
     }
 }
 
@@ -428,6 +462,9 @@ private struct MyWorkContent: View {
     let linkedWorkItem: (WorkItemKey) -> WorkItem?
     let shows: MyWorkShows?
     let lanes: BoardLanes?
+    let view: MyWorkView?
+    let grouping: WorkMapGrouping?
+    let hidden: MapHidden?
 
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var store: PRStore
@@ -453,19 +490,27 @@ private struct MyWorkContent: View {
     /// - Parameter search: what the Board's search starts with, for pictures.
     init(
         links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?,
-        shows: MyWorkShows?, lanes: BoardLanes?, search: String?
+        shows: MyWorkShows?, lanes: BoardLanes?, search: String?, view: MyWorkView?, grouping: WorkMapGrouping?, hidden: MapHidden?
     ) {
         self.links = links
         self.linkedPullRequest = linkedPullRequest
         self.linkedWorkItem = linkedWorkItem
         self.shows = shows
         self.lanes = lanes
+        self.view = view
+        self.grouping = grouping
+        self.hidden = hidden
         _searchText = LocalState(wrappedValue: search ?? "")
     }
 
     /// What the Board shows: your pull requests, or your sprint work with them, and your work outside the sprint too.
     private var shown: MyWorkShows {
         shows ?? settings.myWorkShows
+    }
+
+    /// The Board or the Map.
+    private var shownView: MyWorkView {
+        view ?? ordering.myWorkView
     }
 
     /// The sprint's work goes on the Board: + Sprint Tasks or + All My Tasks, with Show Links on, which is how it goes with
@@ -488,14 +533,26 @@ private struct MyWorkContent: View {
 
     var body: some View {
         // Worked out once each time the page draws, for the search's count and the Board; which cards name their
-        // repository, by the whole board, so that a card says the same while the search shows only part of its lane.
-        let whole = self.board
+        // repository, by the whole board, so that a card says the same while the search shows only part of its lane. The
+        // Map has a band for each mission, whatever the Board's lanes; Up Next stays as the Board has it, with the lanes you
+        // chose, whose order Start next follows.
+        let chosen = self.board
+        let ownLanes = shownView == .map && (lanes ?? ordering.lanes) != .missions
+        let whole = ownLanes ? board(showing: shown, lanes: .missions) : chosen
         let board = searched(whole)
+        let upNext = ownLanes ? searched(chosen) : board
         let naming = PullRequestsPage.namingRepositories(on: whole, items: store.items)
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
                 PageRefreshStatus(page: .pullRequests, withSprint: showsWork)
-                BoardLanesPicker(order: ordering, shown: lanes)
+                if ordering.isOn {
+                    MyWorkViewPicker(order: ordering, shown: view)
+                }
+                if shownView == .map {
+                    MapGroupingPicker(order: ordering, shown: grouping)
+                } else {
+                    BoardLanesPicker(order: ordering, shown: lanes)
+                }
             }
             showPicker(board)
             // What a move to another sprint is doing, or did, under Show, with the header: in sight wherever the page is
@@ -527,7 +584,7 @@ private struct MyWorkContent: View {
                 preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
-                content(board, naming: naming)
+                content(board, upNext: upNext, naming: naming, done: mapDone(whole, searched: board))
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
@@ -670,10 +727,10 @@ private struct MyWorkContent: View {
         board(showing: shown)
     }
 
-    /// The Board as a choice of Show's has it, in your order (`LaneOrders`).
-    private func board(showing shown: MyWorkShows) -> PullRequestBoard? {
+    /// The Board as a choice of Show's has it, in your order (`LaneOrders`), with its lanes, or those you chose.
+    private func board(showing shown: MyWorkShows, lanes: BoardLanes? = nil) -> PullRequestBoard? {
         guard ordering.isOn else { return nil }
-        let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? ordering.lanes)
+        let board = ordering.board(kinds: PullRequestsByMission.kinds, lanes: lanes ?? self.lanes ?? ordering.lanes)
         let missions = PullRequestsByMission.missions(ordering.missions)
         guard shown.showsWork, links.isOn else { return board.inYourOrder(ordering.laneOrders, missions: missions) }
         let sprintBoard = sprint.board
@@ -730,18 +787,31 @@ private struct MyWorkContent: View {
         }
     }
 
+    /// While the search shows only part of the Map, the cards that are done on the whole board; none otherwise.
+    private func mapDone(_ whole: PullRequestBoard?, searched: PullRequestBoard?) -> Set<ItemRef> {
+        guard shownView == .map, searched?.search != nil, let whole else { return [] }
+        return WorkMap.done(on: whole)
+    }
+
     /// Up Next, the lines about your sprint work and the Board, which the search shows only what matches of.
-    /// - Parameter naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
-    private func content(_ board: PullRequestBoard?, naming: Set<ItemRef>) -> some View {
+    /// - Parameters:
+    ///   - upNext: the board Up Next comes from: the Board's, with the lanes you chose, while the Map shows.
+    ///   - naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
+    ///   - done: while the search shows only part of the Map, the cards that are done on the whole board, which the Map
+    ///     doesn't count as holding anything back where it leaves them out.
+    private func content(
+        _ board: PullRequestBoard?, upNext: PullRequestBoard?, naming: Set<ItemRef>, done: Set<ItemRef>
+    ) -> some View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
-                if let board, store.hasLoaded, !store.items.isEmpty || board.startNext != nil {
-                    // "2 more ›" scrolls the Board here to its column.
+                if let upNext, store.hasLoaded, !store.items.isEmpty || upNext.startNext != nil {
+                    // "2 more ›" scrolls the Board here to its column, from the Map too.
                     UpNextView(
-                        upNext: board.upNext, order: ordering, startNext: board.startNext.map { startNext($0, on: board) },
-                        startsWork: board.showsWork, now: store.now, select: showDetails(of:)
+                        upNext: upNext.upNext, order: ordering, startNext: upNext.startNext.map { startNext($0, on: upNext) },
+                        startsWork: upNext.showsWork, now: store.now, select: showDetails(of:)
                     ) { stage in
+                        if view == nil { ordering.setMyWorkView(.board) }
                         ordering.revealedColumn = stage
                     }
                 }
@@ -749,20 +819,111 @@ private struct MyWorkContent: View {
                     workLines
                 }
                 if let board {
-                    PullRequestsByMission(
-                        view: .board, ordering: ordering, items: store.items, row: { _, _ in AnyView(EmptyView()) },
-                        card: { item, card in boardCard(item, card, board: board, namesRepository: naming.contains(item.key.linkRef)) },
-                        isSelected: isSelected, select: select,
-                        shownOnTop: shownDetails.pullRequestOnTop, rest: { _ in AnyView(EmptyView()) }, board: board,
-                        showByStatus: {
-                            settings.pullRequestOrder = .status
-                            services.openWindow(.azureDevOpsPullRequests)
-                        },
-                        now: store.now, work: showsWork ? workContent : nil, saysStoriesNeedShowLinks: shown == .pullRequests
-                    )
+                    switch shownView {
+                    case .board:
+                        PullRequestsByMission(
+                            view: .board, ordering: ordering, items: store.items, row: { _, _ in AnyView(EmptyView()) },
+                            card: { item, card in boardCard(item, card, board: board, namesRepository: naming.contains(item.key.linkRef)) },
+                            isSelected: isSelected, select: select,
+                            shownOnTop: shownDetails.pullRequestOnTop, rest: { _ in AnyView(EmptyView()) }, board: board,
+                            showByStatus: {
+                                settings.pullRequestOrder = .status
+                                services.openWindow(.azureDevOpsPullRequests)
+                            },
+                            now: store.now, work: showsWork ? workContent : nil, saysStoriesNeedShowLinks: shown == .pullRequests
+                        )
+                    case .map:
+                        let missions = PullRequestsByMission.missions(ordering.missions)
+                        WorkMapView(
+                            map: WorkMap(
+                                board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
+                                linked: linkedWork(on: board)
+                            ),
+                            grouping: grouping ?? ordering.mapGrouping,
+                            missions: missions, order: ordering, content: mapContent(board)
+                        )
+                    }
                 }
             }
         }
+    }
+
+    /// The work items Show Links links to each pull request on the board, for the Map, whatever Show shows: what's said of one
+    /// with no card of its own is said of those pull requests' cards. None while Show Links is off.
+    private func linkedWork(on board: PullRequestBoard) -> [ItemRef: [ItemRef]] {
+        var linked: [ItemRef: [ItemRef]] = [:]
+        for ref in board.lanes.flatMap(WorkMap.items(of:)).map(\.ref) where ref.kind.isPullRequest && linked[ref] == nil {
+            linked[ref] = links.connections(of: ref).map(\.item.ref).filter { $0.kind == .workItem }
+        }
+        return linked
+    }
+
+    /// What the Map draws of the Board's cards: a pull request's node has its card's menu and words, and names the work items
+    /// of yours it's for; a work item's, its type, ID, state and title.
+    private func mapContent(_ board: PullRequestBoard) -> WorkMapContent {
+        let byRef = Dictionary(store.items.map { ($0.key.linkRef, $0) }, uniquingKeysWith: { first, _ in first })
+        return WorkMapContent(
+            card: { card in byRef[card.ref].map { boardCard($0, card, board: board, namesRepository: false) } },
+            work: showsWork ? workContent : nil,
+            face: { task in
+                workItem(task.ref).map { item in
+                    WorkMapFace(
+                        label: "\(item.type) \(item.id)", title: item.title, state: item.state, symbol: item.typeSymbol, color: item.typeColor
+                    )
+                }
+            },
+            workOf: { ref in
+                let names = (board.workOfPullRequests[ref] ?? []).map { ref in
+                    workItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
+                }
+                return names.isEmpty ? nil : names.joined(separator: ", ")
+            },
+            place: { ref in byRef[ref].flatMap { $0.repository.isEmpty ? nil : $0.repository } },
+            laneTitle: { kind in
+                switch kind {
+                case .mission(let key): UpNextView.missionTitle(key, order: ordering)
+                case .story(let ref): sprintItem(ref)?.title ?? ref.shortOrderLabel
+                case .notInAMission: "Not in a mission"
+                case .all: ""
+                }
+            },
+            isSelected: { ref in
+                ref.kind == .workItem ? shownDetails.workItem?.linkRef == ref : shownDetails.pullRequest?.key.linkRef == ref
+            },
+            select: { ref in
+                if ref.kind == .workItem {
+                    if let item = workItem(ref) { showDetails(of: item) }
+                } else {
+                    showDetails(of: ref)
+                }
+            },
+            related: board.related,
+            showBoard: { ordering.setMyWorkView(.board) },
+            ask: { question, target in await askAboutMap(question, target, byRef: byRef) },
+            asksSessions: copilot.canSend && copilot.isOn
+        )
+    }
+
+    /// ✨ Ask Copilot on the Map: the prompt, with the links of what's there, sent to a session of the mission or a fork of it,
+    /// or copied for a new one; what it did, to say under the band.
+    private func askAboutMap(_ question: WorkMapQuestion, _ target: WorkMapAsk, byRef: [ItemRef: PRSnapshot]) async -> String {
+        let prompt = WorkMapPrompt.prompt(question) { ref in
+            if let item = byRef[ref] { return WorkMapPrompt.Described(label: ref.shortOrderLabel, title: item.title, link: item.url) }
+            if let item = workItem(ref) {
+                return WorkMapPrompt.Described(label: "\(item.type) \(item.id)", title: item.title, link: item.webURL)
+            }
+            return nil
+        }
+        let (session, forking): (ItemRef?, Bool) = switch target {
+        case .copy: (nil, false)
+        case .session(let ref): (ref, false)
+        case .fork(let ref): (ref, true)
+        }
+        guard let session else {
+            ThisMac.copy(prompt)
+            return "Copied a prompt for a new session: paste it in one, and what it tells BriefBar shows here."
+        }
+        return await copilot.askAboutMap(prompt, session: session.id, forking: forking)
     }
 
     /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work, each with the

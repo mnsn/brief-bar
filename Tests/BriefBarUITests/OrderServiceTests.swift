@@ -371,6 +371,108 @@ private final class Clock {
         #expect(!order.keepsAnything)
     }
 
+    /// My Work's Board or Map, and how the Map groups, are remembered; the cards you hid on the Map are kept too, on or off,
+    /// by reference, until you show them again, their source goes, or Forget All Orders… forgets them.
+    @Test func itKeepsWhatYouChoseAndHidOnMyWorksMap() {
+        let defaults = MemoryDefaults()
+        let task = MapNodeID.card(.workItem(organization: "contoso", id: 5104))
+        let (first, second) = (MapNodeID.card(Self.ref(4101)), MapNodeID.card(Self.ref(4102)))
+        let order = Self.service(defaults)
+        #expect(order.myWorkView == .board && order.mapGrouping == .byMission && order.mapHidden.isEmpty)
+        order.setMyWorkView(.map)
+        order.setMapGrouping(.all)
+        order.hideOnMap(first, undo: "You hid !4101 on the Map.")
+        order.hideOnMap(second, undo: "You hid !4102 on the Map.")
+        order.hideOnMap(task, undo: "You hid Task 5104 on the Map.")
+        #expect(order.keepsAnything)
+        // Undo shows the last one again.
+        #expect(order.mapUndo?.text == "You hid Task 5104 on the Map.")
+        order.undoMapChange()
+        #expect(order.mapHidden.nodes == [second, first] && order.mapUndo == nil)
+        order.hideOnMap(task, undo: "You hid Task 5104 on the Map.")
+
+        let again = Self.service(defaults)
+        #expect(again.myWorkView == .map && again.mapGrouping == .all)
+        #expect(again.mapHidden.nodes == [task, second, first])
+        again.showOnMap([first])
+        #expect(Self.service(defaults).mapHidden.nodes == [task, second])
+
+        // As Azure DevOps goes, so do its cards.
+        again.forget(.azureDevOps)
+        #expect(again.mapHidden.isEmpty && defaults.object(forKey: MapHidden.defaultsKey) == nil)
+
+        again.hideOnMap(task, undo: "")
+        again.forgetAll()
+        #expect(again.mapHidden.isEmpty && defaults.object(forKey: MapHidden.defaultsKey) == nil)
+        #expect(!again.keepsAnything)
+    }
+
+    /// What you change of My Work's Map, lines and steps, is kept, by reference and the names you typed, each change with an
+    /// Undo; what sessions told through `--mcp` is read again as an agent changes something, and what you said later wins;
+    /// steps done two weeks ago go; and all of it goes with Forget All Orders… or as its source does. Nothing else changes:
+    /// no order, no mission.
+    @Test func itKeepsYourLinesAndStepsOnTheMapAndReadsWhatSessionsTold() throws {
+        let defaults = MemoryDefaults()
+        let clock = Clock()
+        let order = Self.service(defaults, clock: clock)
+        let (first, second) = (MapNodeID.card(Self.ref(4101)), MapNodeID.card(Self.ref(4102)))
+        order.setMapLine(from: first, to: second, on: true, undo: "You drew a line: !4102 waits for !4101.")
+        let step = try #require(order.addMapStep(named: "  Enable in\nproduction ", home: .notInAMission, after: second, undo: "Added."))
+        #expect(order.mapState.steps.map(\.name) == ["Enable in production"])
+        #expect(order.mapState.lines[MapEdits.Line(second, .step(step))]?.isOn == true)
+        #expect(order.addMapStep(named: "   ", home: nil, undo: "") == nil)
+        order.renameMapStep(step, to: "Enable it in production", undo: "Renamed.")
+        order.setMapStep(step, done: true, undo: "Done.")
+        #expect(order.mapState.step(step)?.isDone == true)
+        order.undoMapChange()
+        #expect(order.mapState.step(step)?.isDone == false && order.mapState.step(step)?.name == "Enable it in production")
+        #expect(order.keepsAnything && defaults.data(forKey: MapEdits.yoursKey) != nil)
+        #expect(order.orders.plans.isEmpty && order.changes.isEmpty)
+
+        // What a session tells, as `--mcp` keeps it, shows once an agent says something changed; what you say after wins.
+        var told = MapEdits()
+        told.set(MapEdits.Line(first, second), on: false, by: .session(nil), at: clock.now + 1)
+        told.save(to: defaults, key: MapEdits.toldKey)
+        #expect(order.mapState.lines[MapEdits.Line(first, second)]?.isOn == true)
+        order.agentChanged()
+        #expect(order.mapState.lines[MapEdits.Line(first, second)]?.isOn == false)
+        clock.now += 2
+        order.setMapLine(from: first, to: second, on: true, undo: "")
+        #expect(order.mapState.lines[MapEdits.Line(first, second)]?.isOn == true)
+
+        // Deleted, it's gone, with what you hid of it; done two weeks ago, it goes, once the clock looks.
+        order.hideOnMap(.step(step), undo: "")
+        order.deleteMapStep(step, undo: "You deleted the step.")
+        #expect(order.mapState.steps.isEmpty && order.mapHidden.isEmpty)
+        order.undoMapChange()
+        #expect(order.mapState.steps.map(\.id) == [step] && order.mapHidden.nodes == [MapNodeID.step(step)])
+        order.setMapStep(step, done: true, undo: "")
+        clock.advance(days: 15)
+        order.setOn(true)
+        order.timePassed()
+        #expect(order.mapState.steps.isEmpty && order.mapEdits.steps.isEmpty && order.mapHidden.isEmpty)
+
+        // Shown again after a change, a card stays shown through its Undo; once that would put back nothing, it goes.
+        order.hideOnMap(first, undo: "")
+        order.setMapLine(from: second, to: first, on: true, undo: "You drew a line.")
+        order.showOnMap([first])
+        order.undoMapChange()
+        #expect(order.mapHidden.isEmpty && order.mapState.lines[MapEdits.Line(second, first)] == nil)
+        order.hideOnMap(second, undo: "You hid !4102 on the Map.")
+        order.showOnMap([second])
+        #expect(order.mapUndo == nil)
+
+        // As Azure DevOps goes, all of the Map goes, what sessions told too; Forget All Orders… forgets what's added since.
+        _ = try #require(order.addMapStep(named: "Announce it", home: nil, after: first, undo: ""))
+        order.forget(.azureDevOps)
+        #expect(order.mapEdits.isEmpty && order.mapTold.isEmpty && order.mapState.steps.isEmpty)
+        _ = try #require(order.addMapStep(named: "Announce it", home: nil, undo: ""))
+        order.forgetAll()
+        #expect(order.mapEdits.isEmpty && order.mapTold.isEmpty && order.mapUndo == nil)
+        #expect(defaults.data(forKey: MapEdits.yoursKey) == nil && defaults.data(forKey: MapEdits.toldKey) == nil)
+        #expect(!order.keepsAnything)
+    }
+
     @Test func itNamesWhatTheSourcesDescribe() throws {
         let order = Self.service(try Self.defaults(on: true))
         let item = LinkedItem(

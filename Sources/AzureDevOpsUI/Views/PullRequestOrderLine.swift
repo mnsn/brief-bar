@@ -91,7 +91,8 @@ private struct OrderLineContent: View {
             let numbered = mission.steps.filter { $0.number != nil }.count
             let place = step?.number.map { "\(Self.ordinal($0)) of \(numbered)" }
             let rest = [place, step.flatMap { OrderText.capsule($0) }].compactMap { $0 }.joined(separator: " · ")
-            // On My Work, its lane on the Board, which is there: the Pull Requests page lists By Mission as you left it.
+            // On My Work, its lane on the Board, or its band on the Map, which is there: the Pull Requests page lists By
+            // Mission as you left it.
             let button = Button(title) {
                 if isOnMyWork {
                     order.revealOnBoard(mission.key)
@@ -103,8 +104,8 @@ private struct OrderLineContent: View {
             .buttonStyle(.plain)
             .font(size: 12.5, weight: .semibold)
             .lineLimit(1)
-            .help(isOnMyWork ? "Show its mission's lane on the Board" : "Show its mission By Mission")
-            .accessibilityHint(isOnMyWork ? "Shows its mission's lane on the Board" : "Shows its mission By Mission")
+            .help(isOnMyWork ? "Show its mission on My Work" : "Show its mission By Mission")
+            .accessibilityHint(isOnMyWork ? "Shows its mission on My Work" : "Shows its mission By Mission")
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     button

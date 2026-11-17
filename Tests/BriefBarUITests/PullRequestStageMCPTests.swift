@@ -106,10 +106,12 @@ private final class Announcements: Sendable {
                 .map(\.name)
         }
         let stages = MCPStages { _ in MCPStages.Read(account: nil, facts: [:]) }
-        #expect(names(session: Self.session, stages: stages)
-            == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage"])
+        #expect(names(session: Self.session, stages: stages) == [
+            "order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies", "pull_request_stage",
+        ])
         #expect(!names(session: Self.session, stages: nil).contains("pull_request_stage"))
-        #expect(names(session: nil, stages: stages) == ["order_pull_requests", "pull_request_order", "forget_pull_request_order"])
+        #expect(names(session: nil, stages: stages)
+            == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies"])
         #expect(!names(session: "nonsense", stages: stages).contains("pull_request_stage"))
 
         let tool = try #require(Self.tools(Self.settings())["pull_request_stage"])

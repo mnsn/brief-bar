@@ -139,4 +139,84 @@ enum DemoPullRequestOrder {
             OrderChange(ref: slowQueries, after: [buildAgents], placement: mine, changedAt: now.addingTimeInterval(-29 * 60)),
         ])
     }
+
+    // MARK: My Work's Map
+
+    /// The Copilot demo's "Save items for later", which worked out what waits for what in the checkout redesign.
+    static let savedItems = ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11")!
+
+    /// The demo's steps on My Work's Map, made up, with fixed IDs.
+    static let apiTests = step(1), endToEndTests = step(2), testInDev = step(3), monitoring = step(4), staging = step(5),
+        production = step(6), announcement = step(7), loadTest = step(8), retriesInProduction = step(9), couponData = step(10)
+
+    private static func step(_ number: Int) -> UUID {
+        UUID(uuidString: String(format: "5e9a1c00-3b7d-4f2a-9c11-%012d", number))!
+    }
+
+    private static func workItem(_ id: Int) -> MapNodeID {
+        .card(.workItem(organization: DemoData.organization, id: id))
+    }
+
+    /// What you and the demo's sessions said on My Work's Map, as if "Save items for later" had worked out what waits for
+    /// what in the checkout redesign, through ✨ Ask Copilot, and "Fix the payments bugs" in the payments' work:
+    /// - The checkout redesign's three flows: the one-click checkout (!4105) after the checkout page's speed-up (!4113) and
+    ///   the delivery estimates (!4088); the Cancel button (!4116) after the cancellation endpoint (!4115); and moving a saved
+    ///   item back to the cart (Task 5104) after showing them (Task 5103), which you said, after the saved items' table
+    ///   (Task 5102). Then API tests after all of them, end-to-end tests after the three flows, testing in dev after the API
+    ///   tests, monitoring and alerts after that, enabling it in staging after all that, in production after everything, and
+    ///   your announcement after production.
+    /// - The payments: load testing the retries after the retry (!4102) and the public API's rate limiting (!4060), then
+    ///   enabling them in production; and migrating the coupon data after the rounding fix (!4091), before the legacy coupon
+    ///   API's removal (!3990).
+    static func map(now: Date) -> (yours: MapEdits, told: MapEdits) {
+        let checkout = MapAuthor.session(savedItems)
+        let payments = MapAuthor.session(Self.payments)
+        var told = MapEdits()
+        var yours = MapEdits()
+        var at = now.addingTimeInterval(-5 * 3_600)
+        func next() -> Date {
+            at += 1
+            return at
+        }
+        for (id, name) in [
+            (apiTests, "API tests"), (endToEndTests, "End-to-end tests"), (testInDev, "Test in dev"), (monitoring, "Monitoring and alerts"),
+            (staging, "Enable in staging"), (production, "Enable in production"),
+        ] {
+            told.addStep(id, name: name, home: nil, by: checkout, at: next())
+        }
+        let flows: [MapNodeID] = [.card(checkoutSpeed), .card(deliveryEstimates), .card(oneClickCheckout), .card(pullRequest(4115)),
+                                  .card(pullRequest(4116)), workItem(5103), workItem(5104)]
+        // Piece by piece, as one expression takes the compiler too long on a slower Mac.
+        var lines: [(MapNodeID, MapNodeID)] = [
+            (.card(checkoutSpeed), .card(oneClickCheckout)), (.card(deliveryEstimates), .card(oneClickCheckout)),
+            (.card(pullRequest(4115)), .card(pullRequest(4116))),
+        ]
+        lines += flows.map { ($0, MapNodeID.step(apiTests)) }
+        let flowEnds: [MapNodeID] = [.card(oneClickCheckout), .card(pullRequest(4116)), workItem(5104)]
+        lines += flowEnds.map { ($0, MapNodeID.step(endToEndTests)) }
+        lines += [(.step(apiTests), .step(testInDev)), (.step(testInDev), .step(monitoring))]
+        lines += [apiTests, endToEndTests, testInDev, monitoring].map { (MapNodeID.step($0), MapNodeID.step(staging)) }
+        let beforeProduction: [MapNodeID] = flows + [.step(staging)]
+        lines += beforeProduction.map { ($0, MapNodeID.step(production)) }
+        for (before, after) in lines {
+            told.set(MapEdits.Line(before, after), on: true, by: checkout, at: next())
+        }
+        yours.set(MapEdits.Line(workItem(5102), workItem(5103)), on: true, by: .you, at: next())
+        yours.set(MapEdits.Line(workItem(5103), workItem(5104)), on: true, by: .you, at: next())
+        yours.addStep(announcement, name: "Announce it", home: .story(checkoutRedesign), by: .you, at: next())
+        yours.set(MapEdits.Line(.step(production), .step(announcement)), on: true, by: .you, at: next())
+
+        at = now.addingTimeInterval(-3 * 3_600)
+        for (id, name) in [(loadTest, "Load test the retries"), (retriesInProduction, "Enable retries in production"), (couponData, "Migrate coupon data")] {
+            told.addStep(id, name: name, home: nil, by: payments, at: next())
+        }
+        for (before, after) in [
+            (MapNodeID.card(retry), MapNodeID.step(loadTest)), (.card(pullRequest(4060)), .step(loadTest)),
+            (.step(loadTest), .step(retriesInProduction)), (.card(couponRounding), .step(couponData)),
+            (.step(couponData), .card(legacyCoupons)),
+        ] {
+            told.set(MapEdits.Line(before, after), on: true, by: payments, at: next())
+        }
+        return (yours, told)
+    }
 }

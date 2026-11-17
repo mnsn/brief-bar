@@ -74,8 +74,11 @@ private final class Announcements: Sendable {
         #expect(Self.tools(Self.settings(on: false)).isEmpty)
 
         let tools = PullRequestOrderMCP.tools(defaults: Self.settings(), demo: false, sourcesOn: { [] }, session: nil)
-        #expect(tools.map(\.name) == ["order_pull_requests", "pull_request_order", "forget_pull_request_order"])
-        #expect(tools.map(\.readOnly) == [false, true, false])
+        #expect(tools.map(\.name)
+            == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies"])
+        #expect(tools.map(\.readOnly) == [false, true, false, true, false])
+        #expect(tools.map(\.isIdempotent) == [true, true, true, true, false])
+        #expect(tools.map(\.isDestructive) == [false, false, false, false, true])
     }
 
     @Test func aSessionTellsAnOrderReadsItBackAndForgetsIt() async throws {
@@ -135,6 +138,54 @@ private final class Announcements: Sendable {
             == "No session has told BriefBar an order of pull requests.")
     }
 
+    /// A session tells what waits for what on My Work's Map, steps too, by links, numbers and names, and reads it back; only
+    /// what sessions told changes, and the app hears of it. While Azure DevOps is off, or for what it can't read, nothing
+    /// changes.
+    @Test func aSessionTellsWhatWaitsForWhatOnMyWorksMapAndReadsItBack() async throws {
+        let defaults = Self.settings()
+        let announcements = Announcements()
+        let tools = Self.tools(defaults, announcements: announcements)
+        let tell = try #require(tools["tell_dependencies"])
+
+        let told = try await tell.run(try Self.arguments("""
+            {"dependencies": [{"item": "step:API tests", "waits_for": ["\(Self.link(4105))", "5104"]},
+                              {"item": "step:Enable in production", "waits_for": ["step:api tests"]}],
+             "remove": [{"item": "!4116", "waits_for": ["!4115"]}],
+             "organization": "contoso"}
+            """))
+
+        let kept = MapEdits.load(from: defaults, key: MapEdits.toldKey)
+        let steps = MapEdits.merged([kept], now: Self.now).steps
+        #expect(steps.map(\.name) == ["API tests", "Enable in production"])
+        #expect(steps.allSatisfy { $0.addedBy == .session(ItemRef.session(Self.session)) })
+        let (api, production) = (steps[0].id.uuidString.lowercased(), steps[1].id.uuidString.lowercased())
+        #expect(told == """
+            BriefBar's Map shows this now:
+            - Added step “API tests” (step:\(api)).
+            - “API tests” (step:\(api)) waits for !4105 in contoso and work item 5104 in contoso.
+            - Added step “Enable in production” (step:\(production)).
+            - “Enable in production” (step:\(production)) waits for “API tests” (step:\(api)).
+            - !4116 in contoso no longer waits for !4115 in contoso.
+
+            Only the Map changed: no merge order, stage or work item.
+            """)
+        #expect(announcements.total == 1)
+        #expect(MapEdits.load(from: defaults, key: MapEdits.yoursKey).isEmpty && DeclaredOrders.load(from: defaults).plans.isEmpty)
+
+        let read = try await #require(tools["work_map"]).run(.object([:]))
+        #expect(read.contains("- “API tests” (step:\(api)): to do. Added by your session."))
+        #expect(read.contains("- !4116 in contoso doesn't wait for !4115 in contoso: taken away by your session on \(Self.today)."))
+
+        let unreadable = await Self.failure {
+            try await tell.run(try Self.arguments(#"{"dependencies": [{"item": "!4116", "waits_for": ["!4115"]}]}"#))
+        }
+        #expect(unreadable == MapRequestError.noOrganization("!4116").description)
+        let off = try #require(Self.tools(defaults, sourcesOn: [.gitHubPullRequest])["tell_dependencies"])
+        let refusal = await Self.failure { try await off.run(try Self.arguments(#"{"steps": ["Docs"]}"#)) }
+        #expect(refusal?.contains("Azure DevOps") == true)
+        #expect(MapEdits.load(from: defaults, key: MapEdits.toldKey) == kept && announcements.total == 1)
+    }
+
     /// Turning Pull Request Order off keeps the orders, and the tools of an agent that started with it on say it's off.
     @Test func turnedOffEveryCallIsRefusedAndTheOrdersStay() async throws {
         let defaults = Self.settings()
@@ -143,7 +194,7 @@ private final class Announcements: Sendable {
 
         defaults.set(false, forKey: PullRequestOrderSetting.defaultsKey)
 
-        for name in ["order_pull_requests", "pull_request_order", "forget_pull_request_order"] {
+        for name in ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies"] {
             let refusal = await Self.failure { try await #require(tools[name]).run(try Self.arguments(Self.userExample)) }
             #expect(refusal?.hasPrefix("Pull Request Order is off in BriefBar") == true, "\(name)")
         }

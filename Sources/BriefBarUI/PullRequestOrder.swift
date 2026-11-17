@@ -91,6 +91,22 @@ package final class PullRequestOrder: ObservableObject {
     /// kept in the preferences, by reference, whether Pull Request Order is on or not, until you reset a lane's, or turn
     /// Azure DevOps off.
     @Published package private(set) var laneOrders: LaneOrders
+    /// What My Work shows under Up Next, the Board or the Map, remembered.
+    @Published package private(set) var myWorkView: MyWorkView
+    /// How My Work's Map puts its cards together, By Mission or All, remembered.
+    @Published package private(set) var mapGrouping: WorkMapGrouping
+    /// The cards and steps you hid on My Work's Map (`MapHidden`): kept in the preferences, by reference, whether Pull Request
+    /// Order is on or not, until you show them again, choose Forget All Orders… or turn Azure DevOps off.
+    @Published package private(set) var mapHidden: MapHidden
+    /// The steps and lines you added, or took away, on My Work's Map (`MapEdits`, `order.map.edits`): kept in the preferences,
+    /// by reference, with the names you gave steps, whether Pull Request Order is on or not, until you change them, choose
+    /// Forget All Orders… or turn Azure DevOps off. Only the Map changes for them: no order, stage, slot or count does.
+    @Published package private(set) var mapEdits: MapEdits
+    /// What sessions told of My Work's Map through BriefBar's tools for agents (`order.map.told`), as `--mcp` keeps it: read
+    /// again as an agent changes something; the demo's in memory.
+    @Published package private(set) var mapTold: MapEdits
+    /// Your last change of the Map, which its Undo line takes back, until you make another. In memory only.
+    @Published package private(set) var mapUndo: MapUndo?
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -232,6 +248,11 @@ package final class PullRequestOrder: ObservableObject {
         boardFolds = BoardFolds.load(from: defaults)
         boardLayout = BoardLayout.load(from: defaults)
         laneOrders = LaneOrders.load(from: defaults)
+        myWorkView = MyWorkView.load(from: defaults)
+        mapGrouping = WorkMapGrouping.load(from: defaults)
+        mapHidden = MapHidden.load(from: defaults)
+        mapEdits = MapEdits.load(from: defaults, key: MapEdits.yoursKey)
+        mapTold = MapEdits.load(from: defaults, key: MapEdits.toldKey)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -339,20 +360,22 @@ package final class PullRequestOrder: ObservableObject {
         revealed = key
     }
 
-    /// Asks My Work's Board to show a mission, as its name in a pull request's details there does: with Lanes: None, which
-    /// has no lane for it, the Board shows a lane for each mission again, remembered.
+    /// Asks My Work to show a mission, as its name in a pull request's details there does: on the Board with Lanes: None,
+    /// which has no lane for it, the Board shows a lane for each mission again, remembered; the Map, which has a band for
+    /// each mission whatever the Board's lanes, scrolls to it.
     package func revealOnBoard(_ key: MissionKey) {
-        setLanes(.missions)
+        if myWorkView == .board { setLanes(.missions) }
         revealed = key
     }
 
     /// Whether BriefBar keeps anything for Pull Request Order, on or off: an order, what it saw become of their pull
-    /// requests, the mission you focus on, a change of yours, a name you gave a mission, a suggestion you kept together, or
-    /// the order you put your work in on My Work.
+    /// requests, the mission you focus on, a change of yours, a name you gave a mission, a suggestion you kept together, the
+    /// order you put your work in on My Work, or the cards you hid on its Map, and the steps and lines you and sessions
+    /// added there.
     package var keepsAnything: Bool {
         let keys = [
             DeclaredOrders.defaultsKey, OrderEvidence.defaultsKey, OrderFocus.defaultsKey, OrderChanges.defaultsKey, MissionNames.defaultsKey,
-            KeptTogether.defaultsKey, LaneOrders.defaultsKey,
+            KeptTogether.defaultsKey, LaneOrders.defaultsKey, MapHidden.defaultsKey, MapEdits.yoursKey, MapEdits.toldKey,
         ]
         return !changesInMemory.isEmpty || !evidenceInMemory.records.isEmpty || keys.contains { defaults.object(forKey: $0) != nil }
     }
@@ -456,13 +479,43 @@ package final class PullRequestOrder: ObservableObject {
             SessionStages.prune(in: defaults, now: date)
             sessionStages = SessionStages.load(from: defaults, now: date)
         }
+        pruneMap(now: date)
         rebuild()
     }
 
-    /// An agent told or changed something through `--mcp`: the orders, and the stages sessions set, read again.
+    /// An agent told or changed something through `--mcp`: the orders, the stages sessions set, and what they told of My
+    /// Work's Map, read again.
     package func agentChanged() {
         reloadOrders()
         reloadSessionStages()
+        reloadMap()
+    }
+
+    /// Reads what sessions told of My Work's Map again, as one told something through `--mcp`. The demo's are in memory.
+    package func reloadMap() {
+        guard !isDemo else { return }
+        let told = MapEdits.load(from: defaults, key: MapEdits.toldKey)
+        if told != mapTold { mapTold = told }
+    }
+
+    /// Forgets the steps of yours on My Work's Map that are done, or deleted, long enough ago (`MapEdits.prune`), and the
+    /// cards and steps you hid that are gone.
+    private func pruneMap(now date: Date) {
+        var edits = mapEdits
+        if edits.prune(with: mapTold, now: date) {
+            mapEdits = edits
+            edits.save(to: defaults, key: MapEdits.yoursKey)
+        }
+        keepHiddenSteps()
+    }
+
+    /// Forgets the steps you hid on the Map that it no longer has.
+    private func keepHiddenSteps() {
+        var hidden = mapHidden
+        if hidden.keep(steps: Set(mapState.steps.map(\.id))) {
+            mapHidden = hidden
+            hidden.save(to: defaults)
+        }
     }
 
     /// Reads the orders again, as an agent told or forgot one through `--mcp`.
@@ -606,10 +659,21 @@ package final class PullRequestOrder: ObservableObject {
         if reached.forget(kinds) { reached.save(to: defaults) }
         var picks = UpNextPicks.Kept.load(from: defaults)
         if picks.forget(kinds) { picks.save(to: defaults) }
-        // Your order on My Work, on or off.
+        // Your order on My Work, on or off, and the cards you hid on its Map.
         var laneOrders = LaneOrders.load(from: defaults)
         if laneOrders.forget(kinds) { laneOrders.save(to: defaults) }
         if laneOrders != self.laneOrders { self.laneOrders = laneOrders }
+        var hidden = MapHidden.load(from: defaults)
+        if hidden.forget(kinds) { hidden.save(to: defaults) }
+        if hidden != mapHidden { mapHidden = hidden }
+        // The steps and lines you and sessions added on the Map about its things.
+        for key in [MapEdits.yoursKey, MapEdits.toldKey] {
+            var edits = MapEdits.load(from: defaults, key: key)
+            if edits.forget(kinds) { edits.save(to: defaults, key: key) }
+            if key == MapEdits.yoursKey { mapEdits = edits } else { mapTold = edits }
+        }
+        mapUndo = nil
+        keepHiddenSteps()
         forgetInMemory(kinds)
         // What sessions set: on its pull requests, or, with GitHub Copilot, everything, as its sessions told it.
         if !isDemo { SessionStages.forget(kinds, in: defaults, now: now()) }
@@ -738,6 +802,126 @@ package final class PullRequestOrder: ObservableObject {
         laneOrders.save(to: defaults)
     }
 
+    /// The Board or the Map, on My Work, remembered.
+    package func setMyWorkView(_ view: MyWorkView) {
+        guard view != myWorkView else { return }
+        myWorkView = view
+        view.save(to: defaults)
+    }
+
+    /// By Mission or All, on My Work's Map, remembered.
+    package func setMapGrouping(_ grouping: WorkMapGrouping) {
+        guard grouping != mapGrouping else { return }
+        mapGrouping = grouping
+        grouping.save(to: defaults)
+    }
+
+    /// Hides a card or step on My Work's Map, remembered: only there, as it's not your focus now. Its Undo shows it again.
+    package func hideOnMap(_ node: MapNodeID, undo text: String) {
+        let before = mapHidden
+        guard mapHidden.hide(node) else { return }
+        mapHidden.save(to: defaults)
+        mapUndo = MapUndo(text: text, edits: mapEdits, hidden: before)
+    }
+
+    /// Shows cards and steps you hid on My Work's Map again: Undo of your last change, which puts back the Map as it was,
+    /// doesn't hide them again, and goes once it would put back nothing.
+    package func showOnMap(_ nodes: [MapNodeID]) {
+        guard mapHidden.show(nodes) else { return }
+        mapHidden.save(to: defaults)
+        if var undo = mapUndo {
+            undo.hidden.show(nodes)
+            mapUndo = undo.edits == mapEdits && undo.hidden == mapHidden ? nil : undo
+        }
+    }
+
+    /// The steps and lines you and sessions added, or took away, as the Map draws them (`MapEdits.merged`).
+    package var mapState: MapState {
+        MapEdits.merged([mapEdits, mapTold], now: now())
+    }
+
+    /// Says on My Work's Map that `after` waits for `before`, or no longer does, as you: only the Map changes, never an
+    /// order, a stage or Up Next. Its Undo takes it back.
+    package func setMapLine(from before: MapNodeID, to after: MapNodeID, on: Bool, undo text: String) {
+        guard before != after else { return }
+        let date = now()
+        editMap(text) { $0.set(MapEdits.Line(before, after), on: on, by: .you, at: date) }
+    }
+
+    /// Adds a step to My Work's Map, as you named it, in the band you added it in, after and before what you added it
+    /// between. Its Undo takes it away. Nil for a name of nothing but spaces.
+    @discardableResult
+    package func addMapStep(
+        named typed: String, home: LaneOrderKey?, after earlier: MapNodeID? = nil, before later: MapNodeID? = nil, undo text: String
+    ) -> UUID? {
+        guard let name = MapEdits.name(typed) else { return nil }
+        let id = UUID()
+        let date = now()
+        editMap(text) { edits in
+            edits.addStep(id, name: name, home: home, by: .you, at: date)
+            if let earlier { edits.set(MapEdits.Line(earlier, .step(id)), on: true, by: .you, at: date) }
+            if let later { edits.set(MapEdits.Line(.step(id), later), on: true, by: .you, at: date) }
+        }
+        return id
+    }
+
+    /// Renames a step of My Work's Map, as you typed it.
+    package func renameMapStep(_ id: UUID, to typed: String, undo text: String) {
+        guard let name = MapEdits.name(typed), name != mapState.step(id)?.name else { return }
+        let date = now()
+        editMap(text) { $0.rename(id, to: name, by: .you, at: date) }
+    }
+
+    /// Marks a step of My Work's Map done, or not.
+    package func setMapStep(_ id: UUID, done: Bool, undo text: String) {
+        let date = now()
+        editMap(text) { $0.setDone(id, done, by: .you, at: date) }
+    }
+
+    /// Deletes a step of My Work's Map, with its lines: for good, whoever added it, but for its Undo.
+    package func deleteMapStep(_ id: UUID, undo text: String) {
+        let date = now()
+        editMap(text) { $0.delete(id, by: .you, at: date) }
+        keepHiddenSteps()
+    }
+
+    /// Undo: the Map as it was before your last change of it.
+    package func undoMapChange() {
+        guard let undo = mapUndo else { return }
+        mapUndo = nil
+        if undo.edits != mapEdits {
+            mapEdits = undo.edits
+            mapEdits.save(to: defaults, key: MapEdits.yoursKey)
+        }
+        if undo.hidden != mapHidden {
+            mapHidden = undo.hidden
+            mapHidden.save(to: defaults)
+        }
+    }
+
+    /// Dismisses the Undo line of your last change of the Map.
+    package func dismissMapUndo() {
+        mapUndo = nil
+    }
+
+    /// Changes what you said of the Map, kept at once, with an Undo that puts back what it was.
+    private func editMap(_ text: String, _ change: (inout MapEdits) -> Void) {
+        var edits = mapEdits
+        change(&edits)
+        guard edits != mapEdits else { return }
+        mapUndo = MapUndo(text: text, edits: mapEdits, hidden: mapHidden)
+        mapEdits = edits
+        edits.save(to: defaults, key: MapEdits.yoursKey)
+    }
+
+    /// The demo's steps and lines on My Work's Map, as if you and its sessions had added them, unless it has some: only in the
+    /// demo, while it's on.
+    package func tellDemo(map yours: MapEdits, told: MapEdits) {
+        guard isDemo, isOn, mapEdits.isEmpty, mapTold.isEmpty else { return }
+        mapEdits = yours
+        mapTold = told
+    }
+
     /// You decided what a slot shows since your last stage change: its Undo no longer chooses the pull request it changed for
     /// that slot, whatever becomes of what you decided.
     private func undoChoosesNothing(for slot: UpNextSlot) {
@@ -824,8 +1008,9 @@ package final class PullRequestOrder: ObservableObject {
     }
 
     /// Forget All Orders: every order, what BriefBar saw become of their pull requests, the mission you focus on, your changes
-    /// to missions, the names you gave missions, the suggestions you kept together and the order you put your work in on My
-    /// Work, whether Pull Request Order is on or not.
+    /// to missions, the names you gave missions, the suggestions you kept together, the order you put your work in on My
+    /// Work, the cards and steps you hid on its Map, and the steps and lines you and sessions added there, whether Pull
+    /// Request Order is on or not.
     package func forgetAll() {
         objectWillChange.send()
         DeclaredOrders.forgetAll(in: defaults)
@@ -842,6 +1027,13 @@ package final class PullRequestOrder: ObservableObject {
         splitsShownAgain = []
         laneOrders = LaneOrders()
         laneOrders.save(to: defaults)
+        mapHidden = MapHidden()
+        mapHidden.save(to: defaults)
+        mapEdits = MapEdits()
+        mapEdits.save(to: defaults, key: MapEdits.yoursKey)
+        mapTold = MapEdits()
+        mapTold.save(to: defaults, key: MapEdits.toldKey)
+        mapUndo = nil
         rebuild()
     }
 
@@ -2260,4 +2452,11 @@ package enum LastChange: Equatable {
         guard case .order(let change) = self else { return nil }
         return change
     }
+}
+
+/// Your last change of My Work's Map, for its Undo line: what it says, "You hid !4102 on the Map.", and the Map as it was.
+package struct MapUndo: Equatable {
+    package var text: String
+    var edits: MapEdits
+    var hidden: MapHidden
 }

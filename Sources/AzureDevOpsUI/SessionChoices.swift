@@ -163,6 +163,52 @@ extension CopilotTasksStore {
         return availability(of: all)
     }
 
+    /// The sessions with these IDs, as choices a prompt can go to, in the order given, such as a mission's for ✨ Ask Copilot on
+    /// My Work's Map: BriefBar's tasks' whose worktrees are still there, and the Copilot app's. Read only while Send Work to
+    /// Copilot is on, as `sessionChoices(for:)` reads them.
+    func sessionChoices(ids: [String]) async -> [SessionChoice] {
+        let wanted = Set(ids.map { $0.lowercased() })
+        guard canSend, isOn, !hasStopped, !wanted.isEmpty else { return [] }
+        let home = appHome
+        let cliHome = CopilotCLI.home(environment: await environment())
+        // Again after that wait: Azure DevOps may have stopped meanwhile, which nothing cancels this for.
+        guard canSend, isOn, !hasStopped, !Task.isCancelled else { return [] }
+        let tasks = tasks { wanted.contains($0.id.lowercased()) ? .toldBriefBar : nil }.map { entry, run, reason in
+            SessionChoice(
+                kind: .task(run), name: name(of: entry), place: run.onPullRequest?.repository ?? run.repository.lastPathComponent,
+                lastActive: entry.status.since ?? entry.startedAt, reasons: [reason], isBusy: entry.status.phase.isActive
+            )
+        }
+        let taken = Set(tasks.map { $0.id.lowercased() })
+        let reading = Task.detached(priority: .userInitiated) { () -> (sessions: [AppSession], open: Set<String>, folders: [String: URL]) in
+            let sessions = ((try? AppSessions.load(home: home)) ?? []).filter {
+                wanted.contains($0.id.lowercased()) && !taken.contains($0.id.lowercased())
+            }
+            let open = Set((tasks.map(\.id) + sessions.map(\.id)).filter { id in
+                AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
+            })
+            let folders = sessions.reduce(into: [String: URL]()) { folders, session in
+                folders[session.id] = AppSessions.folder(of: session.id, home: home)
+            }
+            return (sessions, open, folders)
+        }
+        let found = await withTaskCancellationHandler { await reading.value } onCancel: { reading.cancel() }
+        guard canSend, isOn, !hasStopped, !Task.isCancelled else { return [] }
+        let apps = found.sessions.map { session in
+            SessionChoice(
+                kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
+                reasons: [.toldBriefBar]
+            )
+        }
+        var all = tasks + apps
+        for index in all.indices {
+            all[index].isOpenInApp = found.open.contains(all[index].id)
+            if all[index].appSession != nil { all[index].appFolder = found.folders[all[index].id] }
+        }
+        let place = Dictionary(ids.enumerated().map { ($1.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
+        return availability(of: all.sorted { (place[$0.id.lowercased()] ?? .max) < (place[$1.id.lowercased()] ?? .max) })
+    }
+
     /// The sessions as they stand now, for the composer to keep up with BriefBar's tasks while it's open: which ones a task
     /// works in, or in whose folders, as when two of the app's sessions share a checkout; opening such a session in the app,
     /// or starting another run in it, would fork its history or mix their work. Everything else stays as it was found.

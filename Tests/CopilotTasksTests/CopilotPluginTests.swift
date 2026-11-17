@@ -35,7 +35,8 @@ import Testing
     /// Pull Request Order's tools, which `--demo --mcp` lists, as Pull Request Order is on there. Its own skill tells
     /// agents about them, not `/briefbar`, which leaves them out.
     static let orderTools: Set<String> = [
-        "order_pull_requests", "pull_request_order", "forget_pull_request_order", "pull_request_stage",
+        "order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies",
+        "pull_request_stage",
     ]
 
     /// What Pull Request Order's skill may name besides its tools, their arguments and values: the todos with dependencies

@@ -25,7 +25,10 @@ public enum AgentAccess {
     /// `pull_request`; and, in the order tools' answers, what you changed in the orders sessions told, which still
     /// holds. Whatever the setting, each Azure DevOps pull request's work items and the story each is for, in
     /// `pull_request`, and the pull requests linked to a work item's tasks, in `work_item`.
-    public static let version = 7
+    /// 8: with Pull Request Order on, `work_map`, the steps and the lines you and sessions added or took away on My
+    /// Work's Map, with who and when, and `tell_dependencies`, for sessions to tell what waits for what there and add,
+    /// rename, mark done or delete steps; both change only BriefBar's Map.
+    public static let version = 8
 
     public static let defaultsKey = "agents"
 

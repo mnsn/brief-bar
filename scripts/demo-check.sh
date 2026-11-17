@@ -81,7 +81,7 @@ MCP="$(printf '%s\n' \
     within 60 env COPILOT_AGENT_SESSION_ID=0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
-EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","pull_request_stage","working_on","changed_in_azure_devops"]'
+EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions","order_pull_requests","pull_request_order","forget_pull_request_order","work_map","tell_dependencies","pull_request_stage","working_on","changed_in_azure_devops"]'
 TOOLS="$(jq -sc 'map(select(.id == 2))[0].result.tools | map(.name)' <<<"$MCP")"
 [[ "$TOOLS" == "$EXPECTED_TOOLS" ]] || fail "--demo --mcp lists the tools $TOOLS"
 NEEDS_ME="$(jq -sr 'map(select(.id == 3))[0].result.content[0].text' <<<"$MCP")"
