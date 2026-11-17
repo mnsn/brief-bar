@@ -104,20 +104,26 @@ package struct MCPTool: Sendable {
     /// The JSON Schema of its arguments (`MCPSchema.object`).
     package var inputSchema: JSONValue
     /// It only reads: running it changes nothing, in BriefBar or anywhere else. The others change only BriefBar's own
-    /// settings, the same way each time, and remove nothing.
+    /// settings, the same way each time, and remove nothing, but where they say otherwise.
     package var readOnly: Bool
+    /// Running it again with the same arguments changes nothing more.
+    package var isIdempotent: Bool
+    /// It can remove something of BriefBar's own, rather than only add or replace.
+    package var isDestructive: Bool
     /// Its answer, in Markdown, to the arguments it's given. What it throws is what the agent reads went wrong.
     package var run: @Sendable (_ arguments: JSONValue) async throws -> String
 
     package init(
         name: String, title: String, description: String, inputSchema: JSONValue = MCPSchema.object(), readOnly: Bool = true,
-        run: @escaping @Sendable (_ arguments: JSONValue) async throws -> String
+        idempotent: Bool = true, destructive: Bool = false, run: @escaping @Sendable (_ arguments: JSONValue) async throws -> String
     ) {
         self.name = name
         self.title = title
         self.description = description
         self.inputSchema = inputSchema
         self.readOnly = readOnly
+        isIdempotent = idempotent
+        isDestructive = destructive
         self.run = run
     }
 
@@ -158,8 +164,8 @@ package struct MCPTool: Sendable {
             "annotations": .object([
                 "title": .string(title),
                 "readOnlyHint": .bool(readOnly),
-                "destructiveHint": .bool(false),
-                "idempotentHint": .bool(true),
+                "destructiveHint": .bool(isDestructive),
+                "idempotentHint": .bool(isIdempotent),
             ]),
         ])
     }

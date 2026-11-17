@@ -897,10 +897,12 @@ public struct WorkMap: Equatable, Sendable {
                         pending += predecessors(next).map { ($0, [next] + through) }
                     }
                 }
-                // Not through this one: one in a loop with it would say all it waits for already.
+                // Not through this one: one in a loop with it would say all it waits for already. Nor does one in a loop with
+                // it say anything, as what comes into the loop comes into each of them.
                 let ancestry = Dictionary(found.map { ($0, ancestors(of: $0, besides: node)) }, uniquingKeysWith: { first, _ in first })
+                let inLoop = Set(found.filter { ancestors(of: $0).contains(node) })
                 func says(_ later: MapNodeID, _ earlier: MapNodeID) -> Bool {
-                    later != earlier && !done.contains(later) && ancestry[later]?.contains(earlier) == true
+                    later != earlier && !done.contains(later) && !inLoop.contains(later) && ancestry[later]?.contains(earlier) == true
                         && ancestry[earlier]?.contains(later) != true
                 }
                 for earlier in found where !found.contains(where: { says($0, earlier) }) {

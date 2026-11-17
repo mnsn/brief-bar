@@ -168,10 +168,11 @@ extension CopilotTasksStore {
     /// Copilot is on, as `sessionChoices(for:)` reads them.
     func sessionChoices(ids: [String]) async -> [SessionChoice] {
         let wanted = Set(ids.map { $0.lowercased() })
-        guard canSend, isOn, !wanted.isEmpty else { return [] }
+        guard canSend, isOn, !hasStopped, !wanted.isEmpty else { return [] }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
-        guard canSend, isOn, !Task.isCancelled else { return [] }
+        // Again after that wait: Azure DevOps may have stopped meanwhile, which nothing cancels this for.
+        guard canSend, isOn, !hasStopped, !Task.isCancelled else { return [] }
         let tasks = tasks { wanted.contains($0.id.lowercased()) ? .toldBriefBar : nil }.map { entry, run, reason in
             SessionChoice(
                 kind: .task(run), name: name(of: entry), place: run.onPullRequest?.repository ?? run.repository.lastPathComponent,
@@ -192,7 +193,7 @@ extension CopilotTasksStore {
             return (sessions, open, folders)
         }
         let found = await withTaskCancellationHandler { await reading.value } onCancel: { reading.cancel() }
-        guard canSend, isOn, !Task.isCancelled else { return [] }
+        guard canSend, isOn, !hasStopped, !Task.isCancelled else { return [] }
         let apps = found.sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,

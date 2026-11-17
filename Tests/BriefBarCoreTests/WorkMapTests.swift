@@ -272,6 +272,19 @@ import Testing
         #expect(map.groups.map { $0.items.count } == [3] && map.loose.isEmpty)
     }
 
+    /// An open card that both cards of a loop wait for keeps its line into each: neither says it already for the other.
+    @Test func aCardBeforeBothOfALoopKeepsItsLineIntoEach() throws {
+        let mission = Steps.mission([
+            Steps.step(4200, .next, place: 1), Steps.step(4201, Self.waits(on: [4200, 4202]), place: 2, after: [4200, 4202]),
+            Steps.step(4202, Self.waits(on: [4200, 4201]), place: 3, after: [4200, 4201]),
+        ])
+        let map = WorkMap(Steps.board(Self.open([4200, 4201, 4202]), missions: [mission]), missions: [mission])
+        let graph = try #require(map.bands.first?.graph)
+        #expect(Self.lines(graph, in: map) == ["!4200 > !4201", "!4200 > !4202"])
+        #expect(graph.columns == [.wave(0), .wave(1)])
+        #expect(map.groups.map { $0.items.count } == [3] && map.loose.isEmpty)
+    }
+
     /// While a search shows only part of the Map, a card it leaves out that's done on the whole board holds nothing back: what
     /// waits for it can go now.
     @Test func aDoneCardTheSearchLeavesOutHoldsNothingBack() throws {

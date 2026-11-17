@@ -77,6 +77,8 @@ private final class Announcements: Sendable {
         #expect(tools.map(\.name)
             == ["order_pull_requests", "pull_request_order", "forget_pull_request_order", "work_map", "tell_dependencies"])
         #expect(tools.map(\.readOnly) == [false, true, false, true, false])
+        #expect(tools.map(\.isIdempotent) == [true, true, true, true, false])
+        #expect(tools.map(\.isDestructive) == [false, false, false, false, true])
     }
 
     @Test func aSessionTellsAnOrderReadsItBackAndForgetsIt() async throws {

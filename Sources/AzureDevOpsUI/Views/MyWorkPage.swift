@@ -919,7 +919,7 @@ private struct MyWorkContent: View {
         switch await copilot.deliver(prompt, to: choice, forking: forking) {
         case .sent: return "Asked ‘\(choice.name)’: what it tells BriefBar shows here."
         case .forkedAndSent: return "Asked a fork of ‘\(choice.name)’: what it tells BriefBar shows here."
-        case .fellBack: return "Copied the prompt and opened ‘\(choice.name)’, to paste it there."
+        case .fellBack(let fallback): return CopilotComposerView.fallbackNote(fallback)
         case .notSent(let why): return "Nothing went: \(why)"
         }
     }

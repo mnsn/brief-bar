@@ -167,7 +167,8 @@ package enum PullRequestOrderMCP {
                     "organization": MCPSchema.string("The Azure DevOps organization of the numbers, such as contoso"),
                     "session": MCPSchema.string("Your Copilot session's ID, when BriefBar can't tell which session you are"),
                 ]),
-                readOnly: false
+                // A new step's name adds another each time, and it can delete steps and take lines away.
+                readOnly: false, idempotent: false, destructive: true
             ) { arguments in
                 try await tellMap(arguments, keeper: keeper, sourcesOn: sourcesOn, session: session, now: now())
             },
