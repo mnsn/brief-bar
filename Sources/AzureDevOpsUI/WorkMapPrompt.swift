@@ -71,3 +71,22 @@ enum WorkMapPrompt {
         return names.dropLast().joined(separator: ", ") + " and " + last
     }
 }
+
+extension CopilotTasksStore {
+    /// Sends ✨ Ask Copilot's prompt to a mission's session, or to a fork of it, and says what happened. When BriefBar can't
+    /// find the session, it copies the prompt to paste in one; but once it can't send anything, as when Send Work to Copilot
+    /// was turned off or Azure DevOps stopped as it looked, nothing goes, nor is copied, as `deliver` does then.
+    func askAboutMap(_ prompt: String, session id: String, forking: Bool) async -> String {
+        guard let choice = await sessionChoices(ids: [id]).first else {
+            guard canSend, isOn, !hasStopped, !Task.isCancelled else { return "Nothing went: \(Self.cantSendNow)" }
+            ThisMac.copy(prompt)
+            return "BriefBar can't reach that session now, so it copied the prompt: paste it in a session."
+        }
+        switch await deliver(prompt, to: choice, forking: forking) {
+        case .sent: return "Asked ‘\(choice.name)’: what it tells BriefBar shows here."
+        case .forkedAndSent: return "Asked a fork of ‘\(choice.name)’: what it tells BriefBar shows here."
+        case .fellBack(let fallback): return CopilotComposerView.fallbackNote(fallback)
+        case .notSent(let why): return "Nothing went: \(why)"
+        }
+    }
+}

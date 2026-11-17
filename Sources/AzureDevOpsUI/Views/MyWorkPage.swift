@@ -912,16 +912,7 @@ private struct MyWorkContent: View {
             ThisMac.copy(prompt)
             return "Copied a prompt for a new session: paste it in one, and what it tells BriefBar shows here."
         }
-        guard let choice = await copilot.sessionChoices(ids: [session.id]).first else {
-            ThisMac.copy(prompt)
-            return "BriefBar can't reach that session now, so it copied the prompt: paste it in a session."
-        }
-        switch await copilot.deliver(prompt, to: choice, forking: forking) {
-        case .sent: return "Asked ‘\(choice.name)’: what it tells BriefBar shows here."
-        case .forkedAndSent: return "Asked a fork of ‘\(choice.name)’: what it tells BriefBar shows here."
-        case .fellBack(let fallback): return CopilotComposerView.fallbackNote(fallback)
-        case .notSent(let why): return "Nothing went: \(why)"
-        }
+        return await copilot.askAboutMap(prompt, session: session.id, forking: forking)
     }
 
     /// A pull request's card, naming the work items of yours it's for while the Board shows your sprint work, each with the

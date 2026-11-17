@@ -300,6 +300,24 @@ private final class TakenAt: Sendable {
         #expect(ext.received == ["Fix the comments"])
     }
 
+    /// ✨ Ask Copilot on My Work's Map copies the prompt when BriefBar can't find the session, to paste in one; but once BriefBar
+    /// can't send anything, Send Work to Copilot turned off or Azure DevOps stopped, nothing goes and nothing's copied.
+    @Test func askingAboutTheMapCopiesNothingOnceBriefBarCantSend() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let notes = ThisMac.Notes()
+        let ask = { await ThisMac.$noting.withValue(notes) { await store.askAboutMap("What waits?", session: session, forking: false) } }
+
+        #expect(await ask() == "BriefBar can't reach that session now, so it copied the prompt: paste it in a session.")
+        #expect(notes.refused == ["copy What waits?"])
+        store.settings.copilotEnabled = false
+        #expect(await ask() == "Nothing went: \(CopilotTasksStore.cantSendNow)")
+        store.settings.copilotEnabled = true
+        store.stop()
+        #expect(await ask() == "Nothing went: \(CopilotTasksStore.cantSendNow)")
+        #expect(notes.refused == ["copy What waits?"])
+    }
+
     /// `.opensNothing` fails a test whose code did any of that, unless the test notes it itself, as the one above does.
     @Test func failsATestWhoseCodeOpensSomething() async throws {
         let test = try #require(Test.current)
