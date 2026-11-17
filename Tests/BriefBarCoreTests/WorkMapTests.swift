@@ -272,6 +272,41 @@ import Testing
         #expect(map.groups.map { $0.items.count } == [3] && map.loose.isEmpty)
     }
 
+    /// What's said of a work item with no card of its own is said of the cards of the pull requests Show Links links to it,
+    /// whatever Show shows, as with + Sprint Tasks of those the cards name: the task's pull request is joined, and a line
+    /// said of the task on one side only stays.
+    @Test func aWorkItemsLinesGoToThePullRequestsLinkedToItWhateverShowShows() throws {
+        let board = Steps.board(Self.open([4300, 4301, 4302, 4303]))
+        let told = MapEdits.merged([
+            Self.edits(lines: [(Self.work(5300), Self.node(4301)), (Self.node(4302), Self.work(5300)), (Self.work(5301), Self.node(4303))]),
+        ], now: Self.day)
+        let without = WorkMap(board, missions: [], state: told)
+        #expect(without.groups.map { Self.lines($0.graph, in: without) } == [["!4302 > !4301"]])
+        #expect(without.loose.map(\.id) == [Self.node(4300), Self.node(4303)])
+
+        let linked = [Self.pr(4300): [Steps.task(5300)], Self.pr(4303): [], Self.pr(4301): [Steps.task(5301)]]
+        let map = WorkMap(board, missions: [], state: told, linked: linked)
+        let group = try #require(map.groups.first)
+        #expect(map.groups.count == 1 && map.loose.isEmpty)
+        #expect(Self.lines(group.graph, in: map) == ["!4302 > !4300", "!4300 > !4301", "!4301 > !4303"])
+    }
+
+    /// A graph as big as the Map draws, whose lines skip many waves and so take a slot in each, lays out at once: a swap of
+    /// neighbours weighs only the lines it changes, rather than counting every crossing again.
+    @Test(.onTestThreads) func aBigGraphWithLongLinesLaysOutQuickly() throws {
+        // A chain of 30 steps, and 30 more, each after its first and before its last.
+        var lines = (1..<30).map { (MapNodeID.step(Self.id($0)), MapNodeID.step(Self.id($0 + 1))) }
+        for number in 31...60 {
+            lines += [(.step(Self.id(1)), .step(Self.id(number))), (.step(Self.id(number)), .step(Self.id(30)))]
+        }
+        let state = MapEdits.merged([Self.edits(steps: (1...60).map { ($0, "Step \($0)") }, lines: lines)], now: Self.day)
+        let start = ContinuousClock.now
+        let map = WorkMap(Steps.board([:]), missions: [], state: state)
+        #expect(ContinuousClock.now - start < .seconds(2))
+        let graph = try #require(map.bands.first?.graph)
+        #expect(graph.nodes.count == 60 && graph.columns.count == 30 && graph.crossings == 0)
+    }
+
     /// An open card that both cards of a loop wait for keeps its line into each: neither says it already for the other.
     @Test func aCardBeforeBothOfALoopKeepsItsLineIntoEach() throws {
         let mission = Steps.mission([

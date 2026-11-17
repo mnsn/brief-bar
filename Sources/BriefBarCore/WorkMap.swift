@@ -435,50 +435,62 @@ public struct WorkMapGraph: Equatable, Sendable {
 
         /// Orders each column, the slots lines join first, by where their neighbours are, a few times each way; then gives
         /// each a row: where the lines into it come from, as far as the slots above it let it; then swaps neighbours while
-        /// that crosses fewer lines.
+        /// that crosses fewer lines. Each swap weighs only the lines it changes, rather than counting every crossing again, as
+        /// a graph with many long lines has many slots.
         mutating func arrange() {
             columns = columns.map { slots in slots.filter { isJoined($0) } + slots.filter { !isJoined($0) } }
+            var order: [Slot: Double] = [:]
+            for slots in columns {
+                for (index, slot) in slots.enumerated() { order[slot] = Double(index) }
+            }
             for _ in 0..<4 {
-                for column in columns.indices.dropFirst() { sort(column, by: predecessors) }
-                for column in columns.indices.dropLast().reversed() { sort(column, by: successors) }
+                for column in columns.indices.dropFirst() { sort(column, by: predecessors, order: &order) }
+                for column in columns.indices.dropLast().reversed() { sort(column, by: successors, order: &order) }
             }
             for column in columns.indices { place(column) }
             var improved = true
             var passes = 0
-            var best = crossings()
             while improved, passes < 8 {
                 improved = false
                 passes += 1
                 for column in columns.indices {
                     for at in columns[column].indices.dropLast() {
                         let (upper, lower) = (columns[column][at], columns[column][at + 1])
-                        guard isJoined(upper), isJoined(lower) else { continue }
+                        guard isJoined(upper), isJoined(lower), crossingsGained(swapping: upper, lower) < 0 else { continue }
                         swapRows(upper, lower, column: column, at: at)
-                        let count = crossings()
-                        if count < best {
-                            best = count
-                            improved = true
-                        } else {
-                            swapRows(lower, upper, column: column, at: at)
-                        }
+                        improved = true
                     }
                 }
             }
         }
 
         /// Orders a column's slots that lines join by the average place of their neighbours on one side, keeping their order
-        /// where they have none there, or the same; those no line joins stay last.
-        private mutating func sort(_ column: Int, by neighbours: [Slot: [Slot]]) {
-            var place: [Slot: Double] = [:]
-            for slots in columns {
-                for (index, slot) in slots.enumerated() { place[slot] = Double(index) }
-            }
+        /// where they have none there, or the same; those no line joins stay last. `order` has each slot's place in its
+        /// column, which this keeps for the column it orders.
+        private mutating func sort(_ column: Int, by neighbours: [Slot: [Slot]], order: inout [Slot: Double]) {
             let keyed = columns[column].enumerated().map { index, slot -> (slot: Slot, key: Double, index: Int) in
-                let around = (neighbours[slot] ?? []).compactMap { place[$0] }
+                let around = (neighbours[slot] ?? []).compactMap { order[$0] }
                 return (slot, around.isEmpty ? Double(index) : around.reduce(0, +) / Double(around.count), index)
             }
             let joined = keyed.filter { isJoined($0.slot) }.sorted { ($0.key, $0.index) < ($1.key, $1.index) }
             columns[column] = joined.map(\.slot) + keyed.filter { !isJoined($0.slot) }.map(\.slot)
+            for (index, slot) in columns[column].enumerated() { order[slot] = Double(index) }
+        }
+
+        /// How many more lines would cross, fewer below zero, were two neighbours of a column, `upper` right above `lower`,
+        /// to swap rows: only lines into or out of both change, each two on the same side crossing where they didn't, or the
+        /// other way round, but two that share their other end, which never cross; as `crossings()` counts them.
+        private func crossingsGained(swapping upper: Slot, _ lower: Slot) -> Int {
+            var gained = 0
+            for neighbours in [predecessors, successors] {
+                for first in neighbours[upper] ?? [] {
+                    for second in neighbours[lower] ?? [] where first != second {
+                        // They cross now where the upper one's other end is below the lower one's.
+                        gained += (row[first] ?? 0) > (row[second] ?? 0) ? -1 : 1
+                    }
+                }
+            }
+            return gained
         }
 
         /// Gives a column's slots their rows, in their order: each where the middle of the lines into it come from, but below
@@ -585,9 +597,11 @@ public struct WorkMap: Equatable, Sendable {
     ///   - hidden: the cards and steps you hid.
     ///   - done: the cards that are done on the whole board, while a search shows only some of it (`done(on:)`): what came
     ///     before one it leaves out holds nothing back through it.
+    ///   - linked: the work items Show Links links to each pull request on the board, whatever Show shows: what's said of
+    ///     one with no card of its own is said of those pull requests' cards, as of those the cards name.
     public init(
         _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
-        done: Set<ItemRef> = []
+        done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:]
     ) {
         // Every card, once, with the lanes it's in.
         var cards: [BoardItem] = []
@@ -603,10 +617,12 @@ public struct WorkMap: Equatable, Sendable {
         for step in state.steps {
             byID[.step(step.id)] = .step(step)
         }
-        // A work item a pull request's card names has no card of its own: what's said of it is said of those cards.
+        // What's said of a work item with no card of its own is said of the cards of its pull requests: those whose cards name
+        // it and, whatever Show shows, those Show Links links it to, so that a line a session told of a task stays with Show.
         var aliases: [ItemRef: [ItemRef]] = [:]
-        for (pullRequest, work) in board.workOfPullRequests.sorted(by: { $0.key < $1.key }) where seen.contains(pullRequest) {
-            for ref in work where !seen.contains(ref) {
+        let named = board.workOfPullRequests.merging(linked) { named, linked in named + linked }
+        for (pullRequest, work) in named.sorted(by: { $0.key < $1.key }) where seen.contains(pullRequest) {
+            for ref in work where !seen.contains(ref) && aliases[ref]?.contains(pullRequest) != true {
                 aliases[ref, default: []].append(pullRequest)
             }
         }

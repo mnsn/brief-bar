@@ -836,7 +836,8 @@ private struct MyWorkContent: View {
                         let missions = PullRequestsByMission.missions(ordering.missions)
                         WorkMapView(
                             map: WorkMap(
-                                board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done
+                                board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
+                                linked: linkedWork(on: board)
                             ),
                             grouping: grouping ?? ordering.mapGrouping,
                             missions: missions, order: ordering, content: mapContent(board)
@@ -845,6 +846,16 @@ private struct MyWorkContent: View {
                 }
             }
         }
+    }
+
+    /// The work items Show Links links to each pull request on the board, for the Map, whatever Show shows: what's said of one
+    /// with no card of its own is said of those pull requests' cards. None while Show Links is off.
+    private func linkedWork(on board: PullRequestBoard) -> [ItemRef: [ItemRef]] {
+        var linked: [ItemRef: [ItemRef]] = [:]
+        for ref in board.lanes.flatMap(WorkMap.items(of:)).map(\.ref) where ref.kind.isPullRequest && linked[ref] == nil {
+            linked[ref] = links.connections(of: ref).map(\.item.ref).filter { $0.kind == .workItem }
+        }
+        return linked
     }
 
     /// What the Map draws of the Board's cards: a pull request's node has its card's menu and words, and names the work items

@@ -2250,25 +2250,27 @@ The lines come from the missions' orders, every mission's, and from what you and
 (`WorkMap.Edges`): yours, `order.map.edits`, which only the app writes, and sessions', `order.map.told`, which only
 `--mcp` writes (`tell_dependencies`), each a line added or taken away, or a step's name, whether it's done, and that it's
 deleted, with when and by whom (`MapEdits`); the latest of each wins, wherever it was said (`MapEdits.merged`). A line
-taken away hides one an order draws, on the Map only; what's said of a work item a pull request's card names is said of
-that card. Into each node, a line comes from the nearest of what it waits for that the graph shows, right before it or
-through what it doesn't show, hidden, not on the board or, By Mission, beyond what's dimmed, but never through what's
-done, on the whole board even while a search leaves it out (`WorkMap.done(on:)`), which holds nothing back, nor does
-what's before it; not from one that another of them waits for, which says it already, other than through this one, but
-where the two are in a loop of lines, and never because of one that's done (`WorkMap.Edges.lines`,
-`ancestors`). Solid where it's stacked on its branch or in a GitHub stack, or you or a session said it, dashed where an
-order says so, dotted through what isn't shown (`WorkMapLine.Style`), which its node's tooltip and VoiceOver name,
-"API tests waits for !4101, through !4102, which you hid" (`OrderText.through`). Columns are Done, what merged or closed,
-work that's resolved or done, and steps done (`WorkMapItem.isDone`), then the waves of what's left: each comes a wave
-after the last of what's still open that comes into it, and one that waits right before it for something open the graph
-doesn't show at least one wave on (`WorkMap.Edges.waits`); the nodes of a loop of lines, where none can go first, share a
-wave, as far on as what came into any of them (`WorkMapGraph.loops`), and what comes after the loop comes after that. A
-line that skips columns keeps a row of each to itself, as a layered drawing's long edges do, so that no node sits on it;
-in each column, the nodes lines join come first, ordered by where their neighbours are, a few sweeps each way, each
-placed level with the middle of what comes into it where the nodes above let it, so that a chain runs straight, then
-neighbours swapped while that crosses fewer lines (`WorkMapGraph.Layout`); those no line joins go after them. A graph of
-more than 60 of a band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board
-doesn't show, in a grid of their own, to change there.
+taken away hides one an order draws, on the Map only; what's said of a work item with no card of its own is said of the
+cards of its pull requests: those whose cards name it and, whatever Show shows, those Show Links links it to
+(`MyWorkContent.linkedWork`). Into each node, a line comes from the nearest of what it waits for that the graph shows,
+right before it or through what it doesn't show, hidden, not on the board or, By Mission, beyond what's dimmed, but never
+through what's done, on the whole board even while a search leaves it out (`WorkMap.done(on:)`), which holds nothing
+back, nor does what's before it; not from one that another of them waits for, which says it already, other than through
+this one, but where the two are in a loop of lines, or that other is in one with this one, and never because of one
+that's done (`WorkMap.Edges.lines`, `ancestors`). Solid where it's stacked on its branch or in a GitHub stack, or you or
+a session said it, dashed where an order says so, dotted through what isn't shown (`WorkMapLine.Style`), which its node's
+tooltip and VoiceOver name, "API tests waits for !4101, through !4102, which you hid" (`OrderText.through`). Columns are
+Done, what merged or closed, work that's resolved or done, and steps done (`WorkMapItem.isDone`), then the waves of
+what's left: each comes a wave after the last of what's still open that comes into it, and one that waits right before it
+for something open the graph doesn't show at least one wave on (`WorkMap.Edges.waits`); the nodes of a loop of lines,
+where none can go first, share a wave, as far on as what came into any of them (`WorkMapGraph.loops`), and what comes
+after the loop comes after that. A line that skips columns keeps a row of each to itself, as a layered drawing's long
+edges do, so that no node sits on it; in each column, the nodes lines join come first, ordered by where their neighbours
+are, a few sweeps each way, each placed level with the middle of what comes into it where the nodes above let it, so that
+a chain runs straight, then neighbours swapped while that crosses fewer lines, each swap weighing only the lines into and
+out of the two (`WorkMapGraph.Layout`); those no line joins go after them. A graph of more than 60 of a band's own
+(`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board doesn't show, in a grid of
+their own, to change there.
 
 A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
 on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
