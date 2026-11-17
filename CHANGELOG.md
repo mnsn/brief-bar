@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.24.2 - 2026-11-17
+
+- **A task changed in several repositories goes together on the Board.** With Show Links and Pull Request Order on, a
+  task with no story is a mission of its own once it has two pull requests or more, as a story's tasks are, so a task
+  with a pull request in each of two repositories has one lane for both, its header naming each repository, such as
+  **payments-api and shop-web**. Where a lane has pull requests of more than one repository, each card names its own.
+  On My Work, a pull request's card names the task's other pull requests on the Board, such as **Task 5152 with
+  !4116**, and a task's own card names every pull request linked to it, not just the first.
+- **See a pull request's Copilot sessions on its Board card.** With Show Links on, a card shows its links' capsules
+  beside its stage, as its row does: the Copilot sessions on it, in the color of the one that needs you most, and the
+  work items it doesn't name.
+- **Search My Work's Board by repository, branch or Copilot session.** A pull request's card now matches its
+  repository, such as **shop-web**, and its branch; with Show Links on, it matches the names of its Copilot sessions
+  too, and a work item's card matches its pull requests' repositories and its sessions. Paste a session's link, or its
+  ID, to find the cards it works on.
+- **See a task's other pull requests as you search.** With Show Links on, the Board shows the other pull requests for
+  the same work item as a pull request that matches, faded, such as the task's pull request in another repository, and
+  the field counts them apart, as in **1 card · 1 related**. **Return** still goes to the first card that matches.
+- **A card a key moves stays in sight, with the keyboard, while Copilot's work changes where it goes.** On My Work's
+  Board, when Copilot stopped working on a work item while the state that **⌘→** or **⌘←** set was on its way to Azure
+  DevOps, its card lost the keyboard where it went, which could be out of sight: into a column you hid or folded, or
+  into a story's or finished mission's lane that then folded. Now it keeps the keyboard wherever it goes, even twice,
+  once as Copilot stops and again as Azure DevOps answers: while the change is on its way, its lane stays open, and its
+  column shows and opens while the card is there, and stays in sight for a card you go to there meanwhile; and the
+  column it ends up in shows for the moment. And when Copilot starts working on it meanwhile, so that its card stays
+  where it was, a column you hid no longer shows for it.
+
 ## 0.24.1 - 2026-11-16
 
 - **Search My Work's Board.** Type in **Search by ID or name**, at the end of **Show**'s row, and the Board shows only the
