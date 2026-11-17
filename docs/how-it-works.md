@@ -2301,8 +2301,9 @@ Orders…, which counts them, and the steps and lines, as something it keeps (`k
 (`PullRequestOrder.forget`), which forgets all the Map's steps and lines, yours and sessions', as the Map is its My
 Work's; turning Copilot off forgets which session said what (`MapEdits.forget`). A step done, or deleted, two weeks before goes on its own, each side forgetting
 its own, the app yours as its clock looks and `--mcp` sessions' as one tells it something; one shows only while the side
-that added it keeps it, so that it never comes back from the other's (`MapEdits.prune`). At most 300 steps and 1,000
-lines each, those changed longest ago going first. **2 more ›** goes to the Board, at its column; a pull request's
+that added it keeps it, so that it never comes back from the other's (`MapEdits.prune`). At most 300 steps each side
+added and 1,000 lines each, those changed longest ago going first; what a side said of the other's steps, such as that you
+deleted one, stays until that side forgets the step, so that it doesn't come back either. **2 more ›** goes to the Board, at its column; a pull request's
 mission in its details, and Show Them, scroll the Map to its band, the graph that has the card or All's grid, and a
 search's Return gives its card's node the keyboard's focus. Nothing is read for the Map, and nothing goes to Azure
 DevOps.
