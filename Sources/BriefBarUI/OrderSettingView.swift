@@ -4,7 +4,7 @@ import SwiftUI
 /// Pull Request Order, on the Pull Requests page in Settings, as rows of its form: off until you turn it on, what it does
 /// for you, and all it does and reads behind ⓘ; Forget All Orders…, which forgets, on or off, every order sessions told BriefBar, what it saw become of their
 /// pull requests, the mission you focus on, your changes to missions, the names you gave missions, the suggested splits
-/// you kept together and the order you put your work in on My Work; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
+/// you kept together, the order you put your work in on My Work and the cards you hid on its Map; and Forget Stages…, which forgets the stages you and sessions set, how far each of your pull requests
 /// got, and the pull requests you chose in Up Next.
 package struct PullRequestOrderSettingView: View {
     @ObservedObject private var order: PullRequestOrder
@@ -81,7 +81,8 @@ package struct PullRequestOrderSettingView: View {
                 Text("""
                     BriefBar forgets every order sessions told it, what it saw become of their pull requests, the mission you \
                     focus on, your changes to missions, the names you gave missions, the suggested splits you kept together, \
-                    and the order you put your work in on My Work. Sessions that name an order are told it's forgotten.
+                    the order you put your work in on My Work and the cards you hid on its Map. Sessions that name an order \
+                    are told it's forgotten.
                     """)
             }
     }

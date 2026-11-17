@@ -2228,6 +2228,45 @@ Only with + All My Tasks are the pull requests linked to them read too, with the
 (`SprintStore.showsOutside`). Each window shows it as a viewer of its own (`myWork.window.<id>`), apart from the Sprint
 page in the same window. Nothing else is read for it, but the team's sprints as you move a task to the next (below).
 
+#### My Work's Map
+
+**Board | Map**, in My Work's header (`MyWorkViewPicker`, `order.myWork.view`), shows the Board's cards as a graph of
+what holds what instead (`WorkMap`, drawn by `WorkMapView`), from the same board, Show and search, but with a lane for each
+mission whatever the Board's lanes: a node for each pull request's card, and, with + Sprint Tasks or + All My Tasks, for
+each work item's own card, as the Board has them (`BoardItem`). **By Mission | All** (`MapGroupingPicker`,
+`order.map.grouping`) puts them together: By Mission, a band for each of the Board's lanes, with its header, a mission's
+with its next steps, a story's, or Not in a mission's (`WorkMap.Band`); All, a graph for each set of cards that lines join,
+whatever their lanes, the set with the Board's first card first, under the names of the lanes its cards are in
+(`WorkMap.Group`), then those no line joins under Not connected, what's still to do first. The lines come from the
+missions' orders, every mission's (`WorkMap.Edges`): into each card from the nearest cards shown in the same graph that come
+before it, right before it or through pull requests the graph doesn't show, hidden, not on the board or in another band,
+but for one another of them comes after, which says it already: not where the two are in a loop of lines, nor where that
+one is done and this one isn't (`WorkMap.Edges.lines`); solid where it's stacked on its branch or in a GitHub stack, dashed where
+an order says so, dotted through what isn't shown (`WorkMapLine.Style`), which its node's tooltip and VoiceOver name,
+"After !4101, through !4102, which you hid" (`OrderText.through`). Columns are Done, what merged or closed and work that's
+resolved or done (`WorkMapGraph.isDone`), then the waves of what's left: each comes a wave after the last of what still
+open comes into it, and one that waits for an open pull request the graph doesn't show at least one wave on, as the Pull
+Requests page's Map does; the cards of a loop of lines, where none can go first, share a wave, as far on as what came
+into any of them (`WorkMapGraph.loops`), and what comes after the loop comes after that. A line that skips columns keeps a
+row of each to itself, as a layered drawing's long edges do, so that no node sits on it; in each column, the cards lines
+join come first, ordered by where their neighbours are, a few sweeps each way, each placed level with the middle of what
+comes into it where the cards above let it, so that a chain runs straight, then neighbours swapped while that crosses
+fewer lines (`WorkMapGraph.Layout`); the cards no line joins go after them. A graph of more than 40 cards
+(`WorkMap.mostCards`) shows a line offering the Board instead. A node is its card's: a click shows its details, its menu
+is its card's, with Hide on Map, and VoiceOver hears it as the Board's card, with its actions; hovering one lights up what
+comes before it and after it, directly or through others (`WorkMapLines.related`), dimming the rest. A pull request's node
+has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items of yours it's for,
+"Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's gray, outlined
+dashed, In progress's, Merged's once resolved, and green once done.
+
+Hide on Map keeps a card off the Map (`MapHidden`, `PullRequestOrder.hideOnMap`), not off the Board, Up Next or any count:
+in the preferences (`order.map.hidden`), by reference, never a title, the one you hid last first, up to 300
+(`MapHidden.mostCards`), whether Pull Request Order is on or not, until you show it again from its band's, or All's,
+"1 hidden", which lists them with Show and Show All (`WorkMapHiddenButton`), choose Forget All Orders…, which counts them
+as something it keeps (`keepsAnything`), or turn Azure DevOps off (`PullRequestOrder.forget`). **2 more ›** goes to the
+Board, at its column; a pull request's mission in its details, and Show Them, scroll the Map to its band, or the graph
+that has the card. Nothing is read for the Map, and nothing goes to Azure DevOps.
+
 #### Moving a task to a sprint
 
 With **Make Changes in Azure DevOps** on, a task or bug of yours outside the sprint, on My Work with + All My Tasks,

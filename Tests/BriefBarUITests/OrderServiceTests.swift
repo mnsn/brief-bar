@@ -371,6 +371,36 @@ private final class Clock {
         #expect(!order.keepsAnything)
     }
 
+    /// My Work's Board or Map, and how the Map groups, are remembered; the cards you hid on the Map are kept too, on or off,
+    /// by reference, until you show them again, their source goes, or Forget All Orders… forgets them.
+    @Test func itKeepsWhatYouChoseAndHidOnMyWorksMap() {
+        let defaults = MemoryDefaults()
+        let task = ItemRef.workItem(organization: "contoso", id: 5104)
+        let order = Self.service(defaults)
+        #expect(order.myWorkView == .board && order.mapGrouping == .byMission && order.mapHidden.isEmpty)
+        order.setMyWorkView(.map)
+        order.setMapGrouping(.all)
+        order.hideOnMap(Self.ref(4101))
+        order.hideOnMap(Self.ref(4102))
+        order.hideOnMap(task)
+        #expect(order.keepsAnything)
+
+        let again = Self.service(defaults)
+        #expect(again.myWorkView == .map && again.mapGrouping == .all)
+        #expect(again.mapHidden.refs == [task, Self.ref(4102), Self.ref(4101)])
+        again.showOnMap([Self.ref(4101)])
+        #expect(Self.service(defaults).mapHidden.refs == [task, Self.ref(4102)])
+
+        // As Azure DevOps goes, so do its cards.
+        again.forget(.azureDevOps)
+        #expect(again.mapHidden.isEmpty && defaults.object(forKey: MapHidden.defaultsKey) == nil)
+
+        again.hideOnMap(task)
+        again.forgetAll()
+        #expect(again.mapHidden.isEmpty && defaults.object(forKey: MapHidden.defaultsKey) == nil)
+        #expect(!again.keepsAnything)
+    }
+
     @Test func itNamesWhatTheSourcesDescribe() throws {
         let order = Self.service(try Self.defaults(on: true))
         let item = LinkedItem(
