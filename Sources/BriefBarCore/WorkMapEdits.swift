@@ -309,8 +309,11 @@ public struct MapEdits: Equatable, Sendable {
     /// forgets it after, with lines to steps neither side has. Whether anything went.
     public mutating func prune(with other: MapEdits, now: Date) -> Bool {
         let cutoff = now.addingTimeInterval(-Self.doneStepsStay)
-        let state = Self.merged([self, other], now: .distantPast)
-        let ended = Set(state.steps.filter { $0.isDone && $0.changedAt < cutoff }.map(\.id)).union(
+        // Done long enough ago that the Map no longer shows it, by when it was marked done, as `merged` says, however much
+        // changed since, such as its name.
+        let shown = Set(Self.merged([self, other], now: now).steps.map(\.id))
+        let done = Self.merged([self, other], now: .distantPast).steps.filter { $0.isDone && !shown.contains($0.id) }
+        let ended = Set(done.map(\.id)).union(
             [self, other].flatMap { edits in edits.steps.filter { $0.value.deletedAt.map { $0 < cutoff } == true }.map(\.key) }
         )
         var gone: Set<UUID> = []

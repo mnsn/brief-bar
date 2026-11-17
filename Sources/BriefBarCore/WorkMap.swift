@@ -632,7 +632,14 @@ public struct WorkMap: Equatable, Sendable {
         var bandOf = lanesOf.compactMapValues(\.first)
         let keys = Dictionary(board.lanes.map { (LaneOrderKey($0.kind, missions: missions), $0.kind) }, uniquingKeysWith: { first, _ in first })
         for step in state.steps {
-            if let home = step.home, let kind = keys[home] { bandOf[.step(step.id)] = kind }
+            guard let home = step.home else { continue }
+            if let kind = keys[home] {
+                bandOf[.step(step.id)] = kind
+            } else if home == .notInAMission {
+                // Added in Not in a mission, it stays there, joined to a mission's card or not, though the Board has no
+                // such lane.
+                bandOf[.step(step.id)] = .notInAMission
+            }
         }
         for step in state.steps where bandOf[.step(step.id)] == nil {
             bandOf[.step(step.id)] = edges.nearest(.step(step.id), in: bandOf, order: board.lanes.map(\.kind)) ?? .notInAMission

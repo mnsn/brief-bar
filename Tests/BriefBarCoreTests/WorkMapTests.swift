@@ -307,6 +307,20 @@ import Testing
         #expect(graph.nodes.count == 60 && graph.columns.count == 30 && graph.crossings == 0)
     }
 
+    /// A step added in Not in a mission stays there once a line joins it to a mission's card, though the Board has no such
+    /// lane: only one added nowhere goes where what it's joined to is.
+    @Test func aStepAddedInNotInAMissionStaysThereJoined() {
+        let mission = Steps.mission([Steps.step(4400, .next, place: 1)])
+        let board = Steps.board(Self.open([4400]), missions: [mission])
+        #expect(!board.lanes.contains { $0.kind == .notInAMission })
+        let added = Self.edits(steps: [(1, "Announce it")], lines: [(Self.node(4400), .step(Self.id(1)))], by: .you, home: .notInAMission)
+        let told = Self.edits(steps: [(2, "Enable in prod")], lines: [(Self.node(4400), .step(Self.id(2)))])
+        let map = WorkMap(board, missions: [mission], state: MapEdits.merged([added, told], now: Self.day))
+        #expect(map.band(of: .step(Self.id(1))) == .notInAMission)
+        #expect(map.band(of: .step(Self.id(2))) == .mission(mission.key))
+        #expect(map.bands.map(\.lane.kind) == [.mission(mission.key), .notInAMission])
+    }
+
     /// An open card that both cards of a loop wait for keeps its line into each: neither says it already for the other.
     @Test func aCardBeforeBothOfALoopKeepsItsLineIntoEach() throws {
         let mission = Steps.mission([
@@ -575,6 +589,22 @@ import Testing
         #expect(MapEdits.name("  API\ntests  ") == "API tests")
         #expect(MapEdits.name(" \n ") == nil)
         #expect(MapEdits.name(String(repeating: "x", count: 100))?.count == MapEdits.mostCharacters)
+    }
+
+    /// A step done two weeks ago goes then, as the Map stops showing it, though its name changed since: each side forgets
+    /// it by when it was marked done, not by its last change.
+    @Test func aStepDoneTwoWeeksAgoGoesThoughRenamedSince() {
+        let step = Map.id(1)
+        var yours = MapEdits()
+        yours.addStep(step, name: "API tests", home: nil, by: .you, at: Map.day - 30 * 86_400)
+        yours.setDone(step, true, by: .you, at: Map.day - 20 * 86_400)
+        var told = MapEdits()
+        told.rename(step, to: "API and contract tests", by: .session(Map.session), at: Map.day - 5 * 86_400)
+        #expect(MapEdits.merged([yours, told], now: Map.day).steps.isEmpty)
+        let prunedYours = yours.prune(with: told, now: Map.day)
+        #expect(prunedYours && yours.steps.isEmpty)
+        let prunedTold = told.prune(with: yours, now: Map.day)
+        #expect(prunedTold && told.steps.isEmpty)
     }
 
     /// Kept as references, dates and the names typed, without what this build can't read; and forgotten with the source of

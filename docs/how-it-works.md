@@ -2238,13 +2238,13 @@ yet (`MapStep`, `WorkMapItem`), by ID (`MapNodeID`). **By Mission | All** (`MapG
 puts them together. By Mission, a band for each of the Board's lanes, with its header, a mission's with its next steps,
 a story's, or Not in a mission's (`WorkMap.Band`), its cards and the steps added there, and, dimmed and outlined dashed,
 naming their band, what those are joined to by a line in other bands, one step away, at most 12, so that each band reads
-on its own; a step goes in the band it was added in, by its lane's key (`LaneOrderKey`), else in the band of most of the
-nearest cards it's joined to, the Board's first of those as near, else in Not in a mission (`WorkMap.Edges.nearest`).
-All, on one canvas (`WorkMapCanvas`, laid out by a `Layout` of its own, in one sideways scroll): a graph for each set of
-cards and steps that lines join, whatever their lanes, the set with the Board's first card first, under the names of the
-lanes they're in (`WorkMap.Group`), their columns lined up (`WorkMap.columns`); then those no line joins, under Not
-connected, in a grid as wide as the page, at least four across, what's still to do first. A drag from any node onto
-another draws a line, across graphs too.
+on its own; a step goes in the band it was added in, by its lane's key (`LaneOrderKey`), Not in a mission's even while
+the Board has no such lane, else in the band of most of the nearest cards it's joined to, the Board's first of those as
+near, else in Not in a mission (`WorkMap.Edges.nearest`). All, on one canvas (`WorkMapCanvas`, laid out by a `Layout` of
+its own, in one sideways scroll): a graph for each set of cards and steps that lines join, whatever their lanes, the set
+with the Board's first card first, under the names of the lanes they're in (`WorkMap.Group`), their columns lined up
+(`WorkMap.columns`); then those no line joins, under Not connected, in a grid as wide as the page, at least four across,
+what's still to do first. A drag from any node onto another draws a line, across graphs too.
 
 The lines come from the missions' orders, every mission's, and from what you and sessions said on the Map
 (`WorkMap.Edges`): yours, `order.map.edits`, which only the app writes, and sessions', `order.map.told`, which only
