@@ -2267,7 +2267,8 @@ line that skips columns keeps a row of each to itself, as a layered drawing's lo
 in each column, the nodes lines join come first, ordered by where their neighbours are, a few sweeps each way, each
 placed level with the middle of what comes into it where the nodes above let it, so that a chain runs straight, then
 neighbours swapped while that crosses fewer lines (`WorkMapGraph.Layout`); those no line joins go after them. A graph of
-more than 60 of a band's own (`WorkMap.mostCards`) shows a line offering the Board instead.
+more than 60 of a band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board
+doesn't show, in a grid of their own, to change there.
 
 A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
 on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
@@ -5154,7 +5155,7 @@ ID; `step:` and a name adds a new step, which the rest of the same call can name
 missions' steps can share a name, such as API tests, and finding the other's would join their graphs. It refuses, changing nothing, what it can't read, a session's or a
 GitHub pull request, one waiting for itself, and everything while Azure DevOps is off, as My Work is its page; at most
 200 changes at once. It keeps it under `order.map.told`, which only `--mcp` writes, as the orders are kept
-(`OrderKeeper.changeMap`), forgetting there the steps done or deleted two weeks before, and tells the app, which reads it
+(`OrderKeeper.changeMap`), so two sessions telling it at the very same moment can lose one's change, as with the orders, forgetting there the steps done or deleted two weeks before, and tells the app, which reads it
 again (`PullRequestOrder.reloadMap`). It changes no order, stage or work item.
 
 What tells sessions to call it, so nobody has to ask: `--mcp`'s instructions, while it's listed; the tools'

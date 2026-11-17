@@ -186,14 +186,18 @@ enum DemoPullRequestOrder {
         }
         let flows: [MapNodeID] = [.card(checkoutSpeed), .card(deliveryEstimates), .card(oneClickCheckout), .card(pullRequest(4115)),
                                   .card(pullRequest(4116)), workItem(5103), workItem(5104)]
-        let lines: [(MapNodeID, MapNodeID)] = [
+        // Piece by piece, as one expression takes the compiler too long on a slower Mac.
+        var lines: [(MapNodeID, MapNodeID)] = [
             (.card(checkoutSpeed), .card(oneClickCheckout)), (.card(deliveryEstimates), .card(oneClickCheckout)),
             (.card(pullRequest(4115)), .card(pullRequest(4116))),
-        ] + flows.map { ($0, .step(apiTests)) }
-            + [.card(oneClickCheckout), .card(pullRequest(4116)), workItem(5104)].map { ($0, .step(endToEndTests)) }
-            + [(.step(apiTests), .step(testInDev)), (.step(testInDev), .step(monitoring))]
-            + [apiTests, endToEndTests, testInDev, monitoring].map { (.step($0), .step(staging)) }
-            + (flows + [.step(staging)]).map { ($0, .step(production)) }
+        ]
+        lines += flows.map { ($0, MapNodeID.step(apiTests)) }
+        let flowEnds: [MapNodeID] = [.card(oneClickCheckout), .card(pullRequest(4116)), workItem(5104)]
+        lines += flowEnds.map { ($0, MapNodeID.step(endToEndTests)) }
+        lines += [(.step(apiTests), .step(testInDev)), (.step(testInDev), .step(monitoring))]
+        lines += [apiTests, endToEndTests, testInDev, monitoring].map { (MapNodeID.step($0), MapNodeID.step(staging)) }
+        let beforeProduction: [MapNodeID] = flows + [.step(staging)]
+        lines += beforeProduction.map { ($0, MapNodeID.step(production)) }
         for (before, after) in lines {
             told.set(MapEdits.Line(before, after), on: true, by: checkout, at: next())
         }

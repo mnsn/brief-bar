@@ -445,7 +445,7 @@ private final class Clock {
         order.deleteMapStep(step, undo: "You deleted the step.")
         #expect(order.mapState.steps.isEmpty && order.mapHidden.isEmpty)
         order.undoMapChange()
-        #expect(order.mapState.steps.map(\.id) == [step] && order.mapHidden.nodes == [.step(step)])
+        #expect(order.mapState.steps.map(\.id) == [step] && order.mapHidden.nodes == [MapNodeID.step(step)])
         order.setMapStep(step, done: true, undo: "")
         clock.advance(days: 15)
         order.setOn(true)

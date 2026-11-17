@@ -566,7 +566,8 @@ now, and asks the session to read the code and the work, find what's missing, th
 its tools; as it does, the Map shows it, with which session told it, and you can change any of it. Sessions can do the
 same whenever you ask them what waits for what, with agents on.
 
-A graph of more than 60 cards and steps shows as a line that offers the Board instead. Search shows only the cards that
+A graph of more than 60 cards and steps shows as a line that offers the Board instead, with its steps, which the
+Board doesn't show, in a grid below it. Search shows only the cards that
 match on the Map too, and **2 more ›** goes to the Board. BriefBar remembers Board or Map and By Mission or All, and keeps
 the cards and steps you hid, and the steps and lines you and sessions added or took away, in its preferences, by
 reference and the names you give steps, never a title, until you change them, choose **Forget All Orders…** or turn Azure

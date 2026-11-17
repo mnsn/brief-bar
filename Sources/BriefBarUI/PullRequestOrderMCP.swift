@@ -670,10 +670,10 @@ package enum PullRequestOrderMCP {
     }
 }
 
-/// The orders BriefBar keeps, and the stages sessions set, as `--mcp` reads and changes them: one change at a time, saved
-/// as the app saves them, and the app told at once. Two programs changing the orders at the very same moment can lose one
-/// change, as the preferences have no transactions; an order's revision keeps an agent from replacing a newer one than it
-/// read. Each session's stages are under its own key, which only its `--mcp` writes (`SessionStages`).
+/// The orders BriefBar keeps, what sessions told of My Work's Map, and the stages sessions set, as `--mcp` reads and
+/// changes them: one change at a time, saved as the app saves them, and the app told at once. Two programs changing the
+/// orders, or the Map, at the very same moment can lose one change, as the preferences have no transactions; an order's
+/// revision keeps an agent from replacing a newer one than it read. Each session's stages are under its own key, which only its `--mcp` writes (`SessionStages`).
 actor OrderKeeper {
     /// The app's settings, which any thread can read and write.
     final class Settings: @unchecked Sendable {

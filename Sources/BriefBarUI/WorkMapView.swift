@@ -293,6 +293,7 @@ package struct WorkMapView: View {
                 .scrollingSideways()
             } else if band.count > WorkMap.mostCards {
                 tooMany(band.count)
+                stepsGrid(shownSteps { map.band(of: $0) == band.lane.kind }, home: band.key)
             } else {
                 Text(WorkMapText.allHidden)
                     .font(size: 11.5)
@@ -393,6 +394,7 @@ package struct WorkMapView: View {
                     .font(size: 12, weight: .semibold)
                     .foregroundStyle(.secondary)
                 tooMany(group.items.count)
+                stepsGrid(group.items.filter { $0.step != nil }, home: nil)
             }
         }
         let drawn = map.groups.filter { $0.graph != nil }
@@ -449,6 +451,28 @@ package struct WorkMapView: View {
     }
 
     // MARK: Pieces
+
+    /// The steps the Map shows, but those you hid, in its order, of those that `in` takes.
+    private func shownSteps(in kept: (MapNodeID) -> Bool) -> [WorkMapItem] {
+        map.everything.filter { $0.step != nil && !order.mapHidden.contains($0.id) && kept($0.id) }
+    }
+
+    /// The steps of a band or a graph of All too big to draw, which the Board doesn't show, as a grid of their nodes, so
+    /// that they can still be done, renamed, joined, hidden or deleted.
+    @ViewBuilder
+    private func stepsGrid(_ steps: [WorkMapItem], home: LaneOrderKey?) -> some View {
+        if !steps.isEmpty {
+            let m = metrics
+            let available: CGFloat = max(width - 24, 0)
+            let fit = Int((available + m.columnGap) / (m.nodeWidth + m.columnGap))
+            WorkMapCanvas(
+                blocks: [], columns: [], grid: steps, gridColumns: max(fit, 2), gridTitle: WorkMapText.stepsTitle,
+                editor: editor(home: home), order: order, focus: $focused
+            )
+            .padding(12)
+            .scrollingSideways()
+        }
+    }
 
     private func tooMany(_ count: Int) -> some View {
         HStack(spacing: 8) {
@@ -722,6 +746,8 @@ struct WorkMapCanvas: View {
     let grid: [WorkMapItem]
     /// How many columns the grid has at least: as many as fit the page.
     let gridColumns: Int
+    /// The grid's title: Not connected, with All.
+    var gridTitle: String = WorkMapText.notConnected
     let editor: WorkMapEditor
     @ObservedObject var order: PullRequestOrder
     var focus: FocusState<MapNodeID?>.Binding
@@ -829,9 +855,9 @@ struct WorkMapCanvas: View {
                 }
             }
             if let top = geometry.gridTop {
-                Text(WorkMapText.notConnected)
+                Text(gridTitle)
                     .font(size: 13, weight: .semibold)
-                    .help(WorkMapText.notConnectedHelp)
+                    .help(gridTitle == WorkMapText.notConnected ? WorkMapText.notConnectedHelp : WorkMapText.stepsHelp)
                     .accessibilityAddTraits(.isHeader)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .at(CGRect(x: 0, y: top, width: geometry.size.width, height: m.blockTitle))
@@ -1721,6 +1747,11 @@ package enum WorkMapText {
 
     /// All's last part's title: the cards no line joins.
     static let notConnected = "Not connected"
+
+    /// The title of the steps of a band or graph too big to draw.
+    static let stepsTitle = "Its steps"
+
+    static let stepsHelp = "Its steps, which the Board doesn't show: right-click one to rename it, mark it done or delete it"
 
     static let notConnectedHelp = """
         No line joins these to other cards or steps: drag from one to what waits for it, or onto it from what it waits for

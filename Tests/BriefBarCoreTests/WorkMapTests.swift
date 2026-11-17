@@ -364,15 +364,19 @@ import Testing
         let (api, e2e, dev, monitoring, staging, production, announce) =
             (MapNodeID.step(Self.id(1)), MapNodeID.step(Self.id(2)), MapNodeID.step(Self.id(3)), MapNodeID.step(Self.id(4)),
              MapNodeID.step(Self.id(5)), MapNodeID.step(Self.id(6)), MapNodeID.step(Self.id(7)))
-        let told = Self.edits(
-            steps: [
-                (1, "API tests"), (2, "E2E tests"), (3, "Test in dev"), (4, "Monitoring and alerts"), (5, "Enable in staging"),
-                (6, "Enable in production"), (7, "Announce it"), (8, "Load test"),
-            ],
-            lines: features.map { ($0, api) } + ends.map { ($0, e2e) } + [(api, dev), (dev, monitoring)]
-                + [api, e2e, dev, monitoring].map { ($0, staging) } + (features + [api, e2e, dev, monitoring, staging]).map { ($0, production) }
-                + [(production, announce), (Self.node(4402), .step(Self.id(8)))]
-        )
+        // Piece by piece, as one expression takes the compiler too long on a slower Mac.
+        var lines: [(MapNodeID, MapNodeID)] = features.map { ($0, api) }
+        lines += ends.map { ($0, e2e) }
+        lines += [(api, dev), (dev, monitoring)]
+        lines += [api, e2e, dev, monitoring].map { ($0, staging) }
+        let beforeProduction: [MapNodeID] = features + [api, e2e, dev, monitoring, staging]
+        lines += beforeProduction.map { ($0, production) }
+        lines += [(production, announce), (Self.node(4402), MapNodeID.step(Self.id(8)))]
+        let steps: [(Int, String)] = [
+            (1, "API tests"), (2, "E2E tests"), (3, "Test in dev"), (4, "Monitoring and alerts"), (5, "Enable in staging"),
+            (6, "Enable in production"), (7, "Announce it"), (8, "Load test"),
+        ]
+        let told = Self.edits(steps: steps, lines: lines)
         let map = WorkMap(
             Steps.board(Self.open([4301, 4302, 4311, 4312, 4313, 4321, 4322, 4401, 4402]), missions: missions), missions: missions,
             state: MapEdits.merged([told], now: Self.day)
@@ -387,7 +391,10 @@ import Testing
             "API tests > Test in dev", "Test in dev > Monitoring and alerts", "Monitoring and alerts > Enable in staging",
             "E2E tests > Enable in staging", "Enable in staging > Enable in production", "Enable in production > Announce it",
         ])
-        let columns = Dictionary(feature.nodes.map { (Self.name($0.item), feature.columns[$0.column]) }, uniquingKeysWith: { first, _ in first })
+        var columns: [String: WorkMapColumn] = [:]
+        for node in feature.nodes {
+            columns[Self.name(node.item)] = feature.columns[node.column]
+        }
         #expect(columns["!4311"] == .wave(0))
         #expect(columns["!4313"] == .wave(1))
         #expect(columns["API tests"] == .wave(2))
@@ -400,12 +407,15 @@ import Testing
 
         // By Mission, the steps go where most of the cards they wait for are, the entity page's, which shows the other flows'
         // ends they wait for, dimmed; and each other flow's band shows the tests its end holds.
-        let bands = Dictionary(map.bands.map { ($0.lane.kind, $0) }, uniquingKeysWith: { first, _ in first })
-        let entityBand = try #require(bands[.mission(entity.key)])
+        func elsewhere(_ mission: OrderMission) -> [String] {
+            let band = map.bands.first { $0.lane.kind == .mission(mission.key) }
+            let nodes: [WorkMapNode] = band?.graph?.nodes ?? []
+            return nodes.filter { $0.elsewhere != nil }.map { Self.name($0.item) }.sorted()
+        }
+        let entityBand = try #require(map.bands.first { $0.lane.kind == .mission(entity.key) })
         #expect(entityBand.count == 10)
-        #expect(entityBand.graph?.nodes.filter { $0.elsewhere != nil }.map { Self.name($0.item) }.sorted() == ["!4302", "!4322"])
-        #expect(bands[.mission(search.key)]?.graph?.nodes.filter { $0.elsewhere != nil }.map { Self.name($0.item) }.sorted()
-            == ["API tests", "E2E tests"])
+        #expect(elsewhere(entity) == ["!4302", "!4322"])
+        #expect(elsewhere(search) == ["API tests", "E2E tests"])
         #expect(map.band(of: announce) == .mission(entity.key))
         #expect(map.band(of: .step(Self.id(8))) == .mission(payments.key))
     }
@@ -582,7 +592,7 @@ import Testing
         let production = try #require(state.steps.last?.id)
         let renamed = try told.apply(
             MapRequest(steps: [
-                .init(step: api.uuidString, name: "API and contract tests", done: true),
+                .init(step: "step:\(api.uuidString.lowercased())", name: "API and contract tests", done: true),
                 .init(step: "\(production.uuidString.lowercased()) (“Enable in production”)", delete: true),
             ]),
             yours: yours, by: by, now: Map.day + 20

@@ -603,7 +603,9 @@ extension MapEdits {
         /// add one, a new step of that name. Never another step by its name: two missions' steps can share one, such as API
         /// tests, and a name that found the other's would join their graphs.
         func step(_ text: String, adding: Bool) throws -> UUID {
-            let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // As work_map and the prompt name it, step: and its ID, or as a bare ID.
+            if text.lowercased().hasPrefix("step:") { text = String(text.dropFirst("step:".count)).trimmingCharacters(in: .whitespaces) }
             if let id = UUID(uuidString: String(text.prefix(36))) {
                 guard steps.contains(where: { $0.id == id }) else { throw MapRequestError.noSuchStep(text) }
                 return id

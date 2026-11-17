@@ -534,9 +534,13 @@ private struct MyWorkContent: View {
     var body: some View {
         // Worked out once each time the page draws, for the search's count and the Board; which cards name their
         // repository, by the whole board, so that a card says the same while the search shows only part of its lane. The
-        // Map has a band for each mission, whatever the Board's lanes.
-        let whole = shownView == .map ? board(showing: shown, lanes: .missions) : self.board
+        // Map has a band for each mission, whatever the Board's lanes; Up Next stays as the Board has it, with the lanes you
+        // chose, whose order Start next follows.
+        let chosen = self.board
+        let ownLanes = shownView == .map && (lanes ?? ordering.lanes) != .missions
+        let whole = ownLanes ? board(showing: shown, lanes: .missions) : chosen
         let board = searched(whole)
+        let upNext = ownLanes ? searched(chosen) : board
         let naming = PullRequestsPage.namingRepositories(on: whole, items: store.items)
         VStack(spacing: 0) {
             PageHeader(title: "My Work", subtitle: subtitle) {
@@ -580,7 +584,7 @@ private struct MyWorkContent: View {
                 preferredWidth: detailsShown.workItem != nil ? $settings.sprintDetailsWidth : $settings.pullRequestDetailsWidth,
                 listRoomGrowsWithText: true
             ) {
-                content(board, naming: naming, done: shownView == .map && board?.search != nil ? whole.map(WorkMap.done(on:)) ?? [] : [])
+                content(board, upNext: upNext, naming: naming, done: mapDone(whole, searched: board))
             } details: {
                 // A pull request's, or one linked to a work item's, shows its mission's lane here.
                 Group {
@@ -783,19 +787,29 @@ private struct MyWorkContent: View {
         }
     }
 
+    /// While the search shows only part of the Map, the cards that are done on the whole board; none otherwise.
+    private func mapDone(_ whole: PullRequestBoard?, searched: PullRequestBoard?) -> Set<ItemRef> {
+        guard shownView == .map, searched?.search != nil, let whole else { return [] }
+        return WorkMap.done(on: whole)
+    }
+
     /// Up Next, the lines about your sprint work and the Board, which the search shows only what matches of.
-    /// - Parameter naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
-    /// - Parameter done: while the search shows only part of the Map, the cards that are done on the whole board, which the
-    ///   Map doesn't count as holding anything back where it leaves them out.
-    private func content(_ board: PullRequestBoard?, naming: Set<ItemRef>, done: Set<ItemRef>) -> some View {
+    /// - Parameters:
+    ///   - upNext: the board Up Next comes from: the Board's, with the lanes you chose, while the Map shows.
+    ///   - naming: the pull requests whose cards name their repository (`PullRequestBoard.namingRepositories`).
+    ///   - done: while the search shows only part of the Map, the cards that are done on the whole board, which the Map
+    ///     doesn't count as holding anything back where it leaves them out.
+    private func content(
+        _ board: PullRequestBoard?, upNext: PullRequestBoard?, naming: Set<ItemRef>, done: Set<ItemRef>
+    ) -> some View {
         PageScroll {
             VStack(alignment: .leading, spacing: 18) {
                 notices
-                if let board, store.hasLoaded, !store.items.isEmpty || board.startNext != nil {
+                if let upNext, store.hasLoaded, !store.items.isEmpty || upNext.startNext != nil {
                     // "2 more ›" scrolls the Board here to its column, from the Map too.
                     UpNextView(
-                        upNext: board.upNext, order: ordering, startNext: board.startNext.map { startNext($0, on: board) },
-                        startsWork: board.showsWork, now: store.now, select: showDetails(of:)
+                        upNext: upNext.upNext, order: ordering, startNext: upNext.startNext.map { startNext($0, on: upNext) },
+                        startsWork: upNext.showsWork, now: store.now, select: showDetails(of:)
                     ) { stage in
                         if view == nil { ordering.setMyWorkView(.board) }
                         ordering.revealedColumn = stage
