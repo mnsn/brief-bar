@@ -2276,18 +2276,21 @@ so that their columns still line up. A tier takes only the rows its nodes and th
 (`WorkMapGraph.rows(in:)`), with the titles of its columns that have one over it; a line from a tier to the next goes on
 past the tier's end, down under it, back along the gap and into the next tier's first column, each in a lane of its own,
 the one that leaves from highest outermost past the end, lowest under the tier and innermost at the next's start, so
-that they don't cross (`WorkMapCanvas.Geometry`). Only where not even one column fits does a canvas scroll sideways. A
-graph of more than 60 of a band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which
-the Board doesn't show, in a grid of their own, to change there.
+that they don't cross (`WorkMapCanvas.Geometry`); where one column fits but not the room beside it, the lanes squeeze
+closer to it, sideways. Only where not even one column fits does a canvas scroll sideways. A graph of more than 60 of a
+band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board doesn't show,
+in a grid of their own, to change there.
 
 A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
 on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
 Return renames it, and its menu has Rename…, Mark Done and Delete Step. Waits For lists what it waits for, checked, to
 take one away, then what it could wait for, its band's first, then Elsewhere, but what's done, hidden, or waits for it
 already, which would close a loop (`WorkMap.wouldLoop`). A drag says what it would draw as it goes, and draws nothing
-onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, saying
-what it is, with Take Away, or, for a dotted one, Show what you hid that it goes through; Escape lets it go. Hovering a
-node lights up what comes before it and after it, directly or through others (`WorkMapLines.related`), dimming the rest.
+onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, the
+nearest within a few points of the click, as lines that wrap round together run closer than that
+(`WorkMapCanvas.Geometry.line(at:within:)`), saying what it is, with Take Away, or, for a dotted one, Show what you hid
+that it goes through; Escape lets it go. Hovering a node lights up what comes before it and after it, directly or
+through others (`WorkMapLines.related`), dimming the rest.
 A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items
 of yours it's for, "Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's
 gray, outlined dashed, In progress's, Merged's once resolved, and green once done; a step's is gray and dashed until it's

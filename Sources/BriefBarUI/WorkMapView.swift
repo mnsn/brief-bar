@@ -861,10 +861,9 @@ struct WorkMapCanvas: View {
         geometry.nodes.first { $0.frame.contains(point) }?.id
     }
 
-    /// The line a point is on, give or take a few points.
+    /// The line a point is on, give or take a few points: the nearest.
     private func line(at point: CGPoint, in geometry: Geometry) -> WorkMapLineID? {
-        let width = 9 * textScale
-        return geometry.lines.first { $0.path.strokedPath(StrokeStyle(lineWidth: width, lineCap: .round)).contains(point) }?.id
+        geometry.line(at: point, within: 4.5 * textScale)
     }
 
     /// What a dotted line into a node goes through, for its tooltip and VoiceOver.
@@ -1085,8 +1084,9 @@ extension WorkMapCanvas.Geometry {
     /// fit across `width`, they fold into tiers (`WorkMapFold`), as many across as fit beside the room the lines that wrap
     /// round need, and only the rows each tier's cards, steps and lines take. A line from one tier to the next goes on past the
     /// tier's end, down under it, back along the gap to the next's start and into it, each in a lane of its own: the one that
-    /// leaves from highest outermost and lowest, so that they don't cross. The grid has as many columns as fit, or
-    /// `gridColumns` until the page knows its width.
+    /// leaves from highest outermost and lowest, so that they don't cross. Where one column fits but not that room beside it,
+    /// the lanes squeeze closer together, sideways, to fit. The grid has as many columns as fit, or `gridColumns` until the
+    /// page knows its width.
     init(
         blocks: [WorkMapCanvas.Block], columns: [WorkMapColumn], grid: [WorkMapItem], width: CGFloat?, gridColumns: Int,
         metrics m: WorkMapMetrics
@@ -1094,6 +1094,8 @@ extension WorkMapCanvas.Geometry {
         let spans: [[ClosedRange<Int>]] = blocks.map(\.graph.spans)
         let fold: WorkMapFold
         var inset: CGFloat = 0
+        /// How much of their room the lanes take sideways: less than all of it only where one column fits, but not the room.
+        var squeeze: CGFloat = 1
         if let width, columns.count > Self.across(width, metrics: m) {
             var across = Self.across(width, metrics: m)
             var folded = WorkMapFold(columns: columns.count, across: across, spans: spans.flatMap { $0 })
@@ -1103,8 +1105,12 @@ extension WorkMapCanvas.Geometry {
                 folded = WorkMapFold(columns: columns.count, across: across, spans: spans.flatMap { $0 })
                 room = m.margin(for: Self.mostWrapping(folded, spans: spans))
             }
+            let tier = m.x(across) - m.columnGap
+            if room > 0, tier <= width, tier + 2 * room > width {
+                squeeze = (width - tier) / (2 * room)
+            }
             fold = folded
-            inset = room
+            inset = room * squeeze
         } else {
             fold = WorkMapFold(columns: columns.count)
         }
@@ -1210,9 +1216,9 @@ extension WorkMapCanvas.Geometry {
                         let count = lanes[tier] ?? 1
                         let gap = m.laneGap(of: count)
                         let outer = gap * CGFloat(count - 1 - at)
-                        let right = point.x + m.wrapReach + outer
+                        let right = point.x + (m.wrapReach + outer) * squeeze
                         let under = (tierBottom[fold.tier(of: column - 1)] ?? point.y) + m.foldGap + outer
-                        let left = entry.x - m.wrapReach - gap * CGFloat(at)
+                        let left = entry.x - (m.wrapReach + gap * CGFloat(at)) * squeeze
                         let corners: [CGPoint] = [
                             CGPoint(x: right, y: point.y), CGPoint(x: right, y: under),
                             CGPoint(x: left, y: under), CGPoint(x: left, y: entry.y),
@@ -1273,6 +1279,77 @@ extension WorkMapCanvas.Geometry {
     /// How many columns fit across a width: at least one.
     static func across(_ width: CGFloat, metrics m: WorkMapMetrics) -> Int {
         max(Int((width + m.columnGap) / (m.nodeWidth + m.columnGap)), 1)
+    }
+
+    /// The line the pointer is on, or a click: the nearest within `tolerance` of the point, as the lines that wrap round a
+    /// fold together run a few points apart, closer than that.
+    func line(at point: CGPoint, within tolerance: CGFloat) -> WorkMapLineID? {
+        var nearest: (id: WorkMapLineID, distance: CGFloat)?
+        for drawn in lines where drawn.path.boundingRect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) {
+            let distance = Self.distance(from: point, to: drawn.path)
+            if distance <= tolerance, distance < (nearest?.distance ?? .infinity) {
+                nearest = (drawn.id, distance)
+            }
+        }
+        return nearest?.id
+    }
+
+    /// How far a point is from a path: from the nearest of its straight pieces, each curve as many short ones.
+    static func distance(from point: CGPoint, to path: Path) -> CGFloat {
+        let pieces = 24
+        var nearest = CGFloat.infinity
+        var start = CGPoint.zero
+        var current = CGPoint.zero
+        func reach(_ end: CGPoint) {
+            nearest = min(nearest, distance(from: point, toSegmentFrom: current, to: end))
+            current = end
+        }
+        path.forEach { element in
+            switch element {
+            case .move(let to):
+                start = to
+                current = to
+            case .line(let to):
+                reach(to)
+            case .quadCurve(let to, let control):
+                // As the cubic curve it is: its control points two thirds of the way to the quadratic's.
+                let from = current
+                let control1 = CGPoint(x: from.x + (control.x - from.x) * 2 / 3, y: from.y + (control.y - from.y) * 2 / 3)
+                let control2 = CGPoint(x: to.x + (control.x - to.x) * 2 / 3, y: to.y + (control.y - to.y) * 2 / 3)
+                for step in 1...pieces {
+                    reach(Self.point(from, control1, control2, to, at: CGFloat(step) / CGFloat(pieces)))
+                }
+            case .curve(let to, let control1, let control2):
+                let from = current
+                for step in 1...pieces {
+                    reach(Self.point(from, control1, control2, to, at: CGFloat(step) / CGFloat(pieces)))
+                }
+            case .closeSubpath:
+                reach(start)
+            }
+        }
+        return nearest
+    }
+
+    /// A point of a cubic Bézier curve, by its start, its control points and its end, at `t` along it.
+    static func point(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint, at t: CGFloat) -> CGPoint {
+        let u: CGFloat = 1 - t
+        let a: CGFloat = u * u * u
+        let b: CGFloat = 3 * u * u * t
+        let c: CGFloat = 3 * u * t * t
+        let d: CGFloat = t * t * t
+        let x: CGFloat = a * p0.x + b * p1.x + c * p2.x + d * p3.x
+        let y: CGFloat = a * p0.y + b * p1.y + c * p2.y + d * p3.y
+        return CGPoint(x: x, y: y)
+    }
+
+    /// How far a point is from a straight piece.
+    static func distance(from point: CGPoint, toSegmentFrom a: CGPoint, to b: CGPoint) -> CGFloat {
+        let (dx, dy) = (b.x - a.x, b.y - a.y)
+        let length: CGFloat = dx * dx + dy * dy
+        let along: CGFloat = length > 0 ? ((point.x - a.x) * dx + (point.y - a.y) * dy) / length : 0
+        let t = min(max(along, 0), 1)
+        return hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
     }
 
     /// The most lines of one graph that wrap round into one tier of a fold together.

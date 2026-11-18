@@ -88,6 +88,59 @@ import Testing
         #expect(narrow.size.width <= 950)
     }
 
+    /// Two lines that wrap round together run closer than a click's give, yet a click on either picks that one, the nearest,
+    /// for Take Away to take away the line you meant.
+    @Test func aClickOnALineThatWrapsBesideAnotherPicksThatOne() throws {
+        let graph = try #require(Self.map(chain: 7, loose: 3, lines: [(8, 6)]).bands.first?.graph)
+        let narrow = Self.geometry(graph, width: 950)
+        let wrapped = [Self.step(4), Self.step(8)].compactMap { before in narrow.lines.first { $0.line.before == before } }
+        #expect(wrapped.count == 2)
+        let tracks = wrapped.map { Self.track(of: $0.path) }
+        #expect(abs(tracks[0].y - tracks[1].y) < 4.5)
+        for (drawn, track) in zip(wrapped, tracks) {
+            #expect(narrow.line(at: track, within: 4.5) == drawn.id)
+        }
+        #expect(narrow.line(at: CGPoint(x: tracks[0].x, y: max(tracks[0].y, tracks[1].y) + 9), within: 4.5) == nil)
+    }
+
+    /// Where one column fits but not the room its wrapping lines need beside it, they squeeze closer to it: nothing is wider
+    /// than the page.
+    @Test func oneColumnThatFitsSqueezesItsLanesRatherThanOverflow() throws {
+        let m = Self.metrics
+        let graph = try #require(Self.map(chain: 2).bands.first?.graph)
+        let width = m.nodeWidth + m.margin(for: 1)
+        let narrow = Self.geometry(graph, width: width)
+        #expect(narrow.fold.starts == [0, 1])
+        #expect(narrow.size.width <= width)
+        #expect(narrow.nodes.allSatisfy { $0.frame.minX >= 0 && $0.frame.maxX <= width })
+        let wrapped = try #require(narrow.lines.first).path.boundingRect
+        #expect(wrapped.minX >= 0 && wrapped.maxX <= width)
+        #expect(wrapped.minX < narrow.nodes[0].frame.minX && wrapped.maxX > narrow.nodes[0].frame.maxX)
+    }
+
+    /// The middle of a path's longest straight piece: for a line that wraps round, its track under its tier.
+    static func track(of path: Path) -> CGPoint {
+        var current = CGPoint.zero
+        var longest: (length: CGFloat, middle: CGPoint) = (-1, .zero)
+        path.forEach { element in
+            switch element {
+            case .move(let to):
+                current = to
+            case .line(let to):
+                let length = hypot(to.x - current.x, to.y - current.y)
+                if length > longest.length {
+                    longest = (length, CGPoint(x: (current.x + to.x) / 2, y: (current.y + to.y) / 2))
+                }
+                current = to
+            case .quadCurve(let to, _), .curve(let to, _, _):
+                current = to
+            case .closeSubpath:
+                break
+            }
+        }
+        return longest.middle
+    }
+
     /// The grid has as many columns as fit the page, at least one, and as many as it's given until the page knows its width.
     @Test func theGridHasAsManyColumnsAsFit() {
         let loose = Self.map(chain: 1, loose: 4).loose
