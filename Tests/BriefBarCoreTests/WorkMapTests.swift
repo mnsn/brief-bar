@@ -475,6 +475,8 @@ import Testing
         #expect(map.item(Self.work(5299))?.workItem == MapWorkItem(ref: Steps.task(5299), isAdded: true, isKnown: false))
         #expect(map.band(of: Self.work(5299)) == .notInAMission)
         #expect(map.everything.filter { $0.workItem != nil }.map(Self.name) == ["5210", "5299"])
+        // + Task offers none the Map has, on its own or as its pull requests' cards: not 5103, whose card is !4101's.
+        #expect(map.workItemsOnMap == [Steps.task(5103), Steps.task(5150), Steps.task(5210), Steps.task(5299)])
     }
 
     /// All: each set of cards lines join is a group, the one with the Board's first card first; the cards no line joins are

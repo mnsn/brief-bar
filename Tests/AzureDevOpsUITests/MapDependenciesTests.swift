@@ -84,6 +84,7 @@ import Testing
         dependencies.send = { write, _, wanted in try await azure.send(write, while: wanted) }
         dependencies.read = { key in try azure.read(key) }
         dependencies.changed = { dependency, linked in told.changes.append((dependency, linked)) }
+        dependencies.reread = { told.rereads += 1 }
         return (dependencies, azure, told, sprint)
     }
 
@@ -91,6 +92,8 @@ import Testing
     @MainActor
     final class Box {
         var changes: [(WorkDependency, Bool)] = []
+        /// How many times it asked for the sprint to be read again.
+        var rereads = 0
     }
 
     /// Off, nothing goes, and the Map's buttons say how to turn it on; on, a dependency is linked on the later work item, from
@@ -213,6 +216,28 @@ import Testing
         #expect(azure.reads == [key(5104)])
         #expect(dependencies.known.isEmpty && told.changes.isEmpty)
         #expect(dependencies.line == nil && dependencies.undoable == nil)
+        withExtendedLifetime(sprint) {}
+    }
+
+    /// A change Azure DevOps didn't answer in time may have gone: the sprint is read again, to show how it stands, and it
+    /// isn't counted as made, so Undo doesn't offer to take it back; where the work item's links couldn't be read first,
+    /// nothing went, and nothing needs reading again.
+    @Test func aChangeAzureDevOpsDidntAnswerHasTheSprintReadAgain() async {
+        let (dependencies, azure, told, sprint) = live()
+        azure.readFails = .offline
+        await dependencies.link([dependency(5103, 5104)], words: "Task 5104 waits for Task 5103")
+        #expect(azure.sent.isEmpty && told.rereads == 0)
+
+        azure.readFails = nil
+        azure.fails = .network(ADOClient.unansweredMessage)
+        await dependencies.link([dependency(5103, 5104)], words: "Task 5104 waits for Task 5103")
+        #expect(azure.sent.count == 1 && told.rereads == 1)
+        guard case .failed(_, let problem, let done, let written)? = dependencies.line else {
+            Issue.record("Expected it unanswered, got \(String(describing: dependencies.line))")
+            return
+        }
+        #expect(problem == .unanswered && done == 0 && written.isEmpty)
+        #expect(dependencies.undoable == nil && dependencies.known.isEmpty && told.changes.isEmpty)
         withExtendedLifetime(sprint) {}
     }
 

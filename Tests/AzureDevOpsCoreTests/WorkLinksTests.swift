@@ -91,6 +91,15 @@ import Testing
         await engine.changed(dependency, linked: false)
         #expect(await engine.currentLinks().dependencies.isEmpty)
         #expect(count(server, "/_apis/wit/workitems") == 4)
+
+        // One between work items the sprint doesn't have, which no read of it says, stays as BriefBar changed it.
+        let outside = WorkDependency(WorkItemKey("contoso", 9001), WorkItemKey("contoso", 9002))
+        clock.advance(1)
+        await engine.changed(outside, linked: true)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(count(server, "/_apis/wit/workitems") == 6)
+        #expect(await engine.currentLinks().dependencies == [outside])
     }
 
     @Test func readsOnlyPullRequestLinksThatAreWhole() {

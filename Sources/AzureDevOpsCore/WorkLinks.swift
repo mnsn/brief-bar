@@ -424,6 +424,13 @@ public actor LinkEngine {
         await refresh()
     }
 
+    /// Reads the sprint again now, as after a change to a dependency that Azure DevOps may have made though it didn't say:
+    /// what it reads shows how it stands.
+    public func rereadSprint() async {
+        asked["sprint"] = now()
+        await refresh()
+    }
+
     /// The most pull requests, and work items, a re-read reads again at once.
     static let mostRereads = 10
 
@@ -555,8 +562,11 @@ public actor LinkEngine {
         }
         links.pullRequestsOfWorkItems = found.filter { inputs.sprintItems.contains($0.key) && !$0.value.isEmpty }
         readDependencies = dependencies
-        // What BriefBar changed before this read started, Azure DevOps says now.
-        dependencyChanges = dependencyChanges.filter { $0.value.at > date }
+        // What BriefBar changed before this read started, Azure DevOps says now, where it read either end; of work items
+        // the sprint doesn't have, no read says, so it stays.
+        dependencyChanges = dependencyChanges.filter { dependency, change in
+            change.at > date || !items.contains(dependency.before) && !items.contains(dependency.after)
+        }
         sprintRead = (items, date)
         failures["sprint"] = nil
         settle("sprint", readAt: date)

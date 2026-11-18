@@ -64,6 +64,17 @@ final class WorkLinksStore {
     weak var dependencies: MapDependencies? {
         didSet { dependencies?.told(read.dependencies) }
     }
+
+    /// Whether a window shows My Work on screen (`AzureDevOpsSource.setMyWorkVisible`): what only its Map names is read
+    /// only while one does, with the Map chosen.
+    private(set) var myWorkIsOnScreen = false
+
+    /// A window started showing My Work on screen, or the last one stopped.
+    func setMyWorkOnScreen(_ onScreen: Bool) {
+        guard myWorkIsOnScreen != onScreen else { return }
+        myWorkIsOnScreen = onScreen
+        updateEngine()
+    }
     /// Who's signed in to the Azure CLI, as the pull requests' refresh last told.
     private var account: String?
     /// Whether it tells the details about its things: from `start` or `loadOnce`, until `stop`, whether Show Links is on
@@ -226,6 +237,13 @@ final class WorkLinksStore {
         Task { await engine.changed(dependency, linked: linked) }
     }
 
+    /// Reads the sprint's links again, as after a change to a dependency that Azure DevOps may have made though it didn't
+    /// say (`LinkEngine.rereadSprint`); nothing in the demo.
+    func rereadDependencies() {
+        guard store.mode == .live, let engine else { return }
+        Task { await engine.rereadSprint() }
+    }
+
     /// What the engine was told to read last, while it reads.
     var engineInputs: LinkEngine.Inputs? {
         engine == nil ? nil : lastInputs
@@ -278,9 +296,10 @@ final class WorkLinksStore {
         )
     }
 
-    /// The work items My Work's Map can show that aren't `listed`, while it shows (`mapLookups`); none otherwise.
+    /// The work items My Work's Map can show that aren't `listed`, while a window shows it on screen (`mapLookups`); none
+    /// otherwise.
     private func mapNames(listed: Set<ItemRef>) -> Set<ItemRef> {
-        guard let order, order.showsMyWork, order.myWorkView == .map else { return [] }
+        guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map else { return [] }
         let state = order.mapState
         let said = state.lines.keys.flatMap { [$0.before.ref, $0.after.ref] }.compactMap { $0 }.filter { $0.kind == .workItem }
         let linked = read.dependencies.flatMap { [$0.before.linkRef, $0.after.linkRef] }

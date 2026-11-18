@@ -131,9 +131,9 @@ import Testing
         #expect(inputs.parentLookups == Set([5110, 5140, 5180].map { WorkItemKey(organization, $0) }))
     }
 
-    /// The dependencies Azure DevOps links go to My Work's Map as Show Links reads them; and, only while My Work shows its
-    /// Map, Show Links reads what the work items it can show that no list or sprint has are: those you added, and those the
-    /// lines you said name.
+    /// The dependencies Azure DevOps links go to My Work's Map as Show Links reads them; and, only while a window shows My
+    /// Work on screen with its Map chosen, Show Links reads what the work items it can show that no list or sprint has are:
+    /// those you added, and those the lines you said name.
     @Test func theMapGetsItsDependenciesAndHasWhatItNamesReadOnlyWhileItShows() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
@@ -159,11 +159,17 @@ import Testing
         #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
         order.setMyWorkPage(true)
         order.setMyWorkView(.map)
+        // Chosen, but with no window showing it, nothing.
+        #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
+        workLinks.setMyWorkOnScreen(true)
         let lookups = workLinks.inputs().workItemLookups
         #expect(lookups.isSuperset(of: [added, named]))
         // Those the sprint has it reads already.
         #expect(lookups.isDisjoint(with: demo.map(\.before)))
         order.setMyWorkView(.board)
+        #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
+        order.setMyWorkView(.map)
+        workLinks.setMyWorkOnScreen(false)
         #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
     }
 

@@ -753,6 +753,9 @@ public struct WorkMap: Equatable, Sendable {
     /// Every card, work item and step, hidden or not, in the Board's order, each band's work items and steps after its
     /// cards: what menus list.
     public private(set) var everything: [WorkMapItem]
+    /// The work items it has, hidden or not: those with a node of their own, and those with none whose pull requests'
+    /// cards stand for them, as what's said of them is said of those cards. + Task offers none of them.
+    public private(set) var workItemsOnMap: Set<ItemRef>
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
     /// The band each card and step is in, a card's first.
@@ -949,6 +952,8 @@ public struct WorkMap: Equatable, Sendable {
         self.lines = lines
         self.azureDevOps = azureDevOps
         workOfPullRequests = board.workOfPullRequests
+        let nodes = byID.keys.compactMap(\.ref).filter { $0.kind == .workItem }
+        workItemsOnMap = Set(nodes).union(aliases.keys)
     }
 
     /// At most how many of others' work the Map shows (`init(showsOthers:)`).

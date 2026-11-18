@@ -2401,8 +2401,8 @@ struct WorkMapAddTaskButton: View {
 }
 
 /// + Task's search: a field for an ID or words of a title, and the work items that match, those the Map has already left
-/// out, a click or Return adding the first; for an ID that matches none the page knows, Find, which asks Azure DevOps; for
-/// one the Map has, that it has it.
+/// out, as its own or as its pull requests' cards (`WorkMap.workItemsOnMap`), a click or Return adding the first; for an
+/// ID that matches none the page knows, Find, which asks Azure DevOps; for one the Map has, that it has it.
 struct WorkMapTaskSearch: View {
     let map: WorkMap
     let finder: WorkMapFinder
@@ -2423,7 +2423,7 @@ struct WorkMapTaskSearch: View {
     @FocusState private var isTyping: Bool
 
     var body: some View {
-        let found = Array(finder.search(text).filter { map.item(.card($0.ref)) == nil }.prefix(Self.mostFound))
+        let found = Array(finder.search(text).filter { !map.workItemsOnMap.contains($0.ref) }.prefix(Self.mostFound))
         let id = Self.id(in: text)
         let isOnMap = id.map(hasOnMap) ?? false
         VStack(alignment: .leading, spacing: 8) {
@@ -2513,12 +2513,9 @@ struct WorkMapTaskSearch: View {
         }
     }
 
-    /// Whether the Map has the work item with this ID already, hidden or not.
+    /// Whether the Map has the work item with this ID already, hidden or not, on its own or as its pull requests' cards.
     private func hasOnMap(_ id: Int) -> Bool {
-        map.everything.contains { item in
-            guard let ref = item.id.ref else { return false }
-            return ref.kind == .workItem && ref.number == id
-        }
+        map.workItemsOnMap.contains { $0.number == id }
     }
 
     /// Asks Azure DevOps for a work item by its ID: adds it once it's there, else says it isn't.

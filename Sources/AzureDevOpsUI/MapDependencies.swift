@@ -59,6 +59,8 @@ final class MapDependencies: ObservableObject {
     var read: (WorkItemKey) async throws -> ADOWorkItemLinks
     /// Tells Show Links a dependency is linked now, or isn't, for it to read the sprint again, showing it so meanwhile.
     var changed: (WorkDependency, Bool) -> Void = { _, _ in }
+    /// Asks Show Links to read the sprint again, after a change that Azure DevOps may have made though it didn't say.
+    var reread: () -> Void = {}
     var now: () -> Date = Date.init
     /// The change on its way, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
     /// (`forgetAll`): one that hasn't gone never does.
@@ -190,7 +192,11 @@ final class MapDependencies: ObservableObject {
         } catch {
             // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
             guard lifetime == self.lifetime else { return }
-            let problem = ADOWriteProblem(error, now: now())
+            let sent = error as? Unsettled
+            let problem = ADOWriteProblem(sent?.error ?? error, now: now())
+            // Azure DevOps may have made it, though it didn't say: the sprint, read again, shows how it stands. Undo still
+            // takes back only what it said it made.
+            if sent != nil, problem.mayHaveGone { reread() }
             guard generation == self.generation else {
                 if case .sending(change)? = line { line = nil }
                 return
@@ -234,13 +240,24 @@ final class MapDependencies: ObservableObject {
             mark(dependency, linked: !unlinks)
             return false
         }
-        _ = try await dispatch(write, as: account, in: generation) { [weak self] in
-            await self?.isStillWanted() ?? false
+        do {
+            _ = try await dispatch(write, as: account, in: generation) { [weak self] in
+                await self?.isStillWanted() ?? false
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Unsettled(error: error)
         }
         // It went, as the last one's: what's known now is someone else's, or nothing.
         guard lifetime == self.lifetime else { return true }
         mark(dependency, linked: !unlinks)
         return true
+    }
+
+    /// A change that failed once it was sent, which Azure DevOps may have made all the same, as when it didn't answer in time.
+    private struct Unsettled: Error {
+        var error: Error
     }
 
     /// A dependency is linked now, or isn't: so it shows at once, and Show Links reads it again.

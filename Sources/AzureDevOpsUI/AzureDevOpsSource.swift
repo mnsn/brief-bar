@@ -424,6 +424,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         stateChanges = StateChanges(sprint: sprint, settings: settings, client: store.client)
         let dependencies = MapDependencies(sprint: sprint, settings: settings, client: store.client)
         dependencies.changed = { [weak workLinks] dependency, linked in workLinks?.changed(dependency, linked: linked) }
+        dependencies.reread = { [weak workLinks] in workLinks?.rereadDependencies() }
         workLinks?.dependencies = dependencies
         mapDependencies = dependencies
         let drafts = DetailsDrafts(settings: settings)
@@ -932,6 +933,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             sprint?.setVisible(false, for: name)
             sprint?.setOutside(nil, for: name)
         }
+        workLinks?.setMyWorkOnScreen(!myWorkViewers.isEmpty)
     }
 
     /// What My Work's viewer is called among the sprint's and the details' others, such as the Sprint page in the same window.
