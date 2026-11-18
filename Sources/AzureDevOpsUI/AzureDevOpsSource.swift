@@ -124,7 +124,20 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// Copilot asks one of a mission's sessions what waits for what, with Send Work to Copilot on, what the window that
     /// sends work reads of the Copilot app's sessions, for that one; its prompt, with the titles and links of what's on
     /// that part of the Map, goes only to the session you choose, or to your clipboard.
-    nonisolated package static let descriptionVersion = 35
+    /// 36: with Show Links on, who has each linked work item that no list shows, with what it is. Only with My Work
+    /// Page, while it shows + Sprint Tasks or + All My Tasks: the dependencies Azure DevOps links the sprint's work
+    /// items with, predecessors and successors, which come with the links BriefBar reads of them already, for My Work's
+    /// Map; and, while My Work shows its Map, what the work items it can show that no list or sprint has are, with who
+    /// has each: those the dependencies and the Map's lines name, and those you add with + Task, which finds the
+    /// sprint's by ID or title in what BriefBar has read, and any other by its ID, one request when you ask. The work
+    /// items you add to the Map are kept in its preferences with its steps and lines, by reference, never a title, the
+    /// 100 added last, and so is whether it shows others' work. With Make Changes in Azure DevOps, on My Work's Map,
+    /// the dependencies between work items a line stands for, each linked, or taken away, a PATCH of the later work
+    /// item's links, right after one request for them, when you click it, after which BriefBar reads the sprint's links
+    /// again. With Make Changes in Azure DevOps, on My Work, the state you choose for a story, bug or task of yours in
+    /// the sprint, in its card's menu or from the state its card starts with on the Map, a PATCH of its state, when you
+    /// click it, after which BriefBar reads the sprint again.
+    nonisolated package static let descriptionVersion = 36
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
