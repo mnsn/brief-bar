@@ -109,6 +109,8 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var mapUndo: MapUndo?
     /// Others' work on My Work's Map (`MapOthersWork`): off until you turn it on, remembered.
     @Published package private(set) var mapShowsOthers: Bool
+    /// Done on My Work's Map (`MapDoneWork`): what's done, in its Done column, until you turn it off, remembered.
+    @Published package private(set) var mapShowsDone: Bool
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -256,6 +258,7 @@ package final class PullRequestOrder: ObservableObject {
         mapEdits = MapEdits.load(from: defaults, key: MapEdits.yoursKey)
         mapTold = MapEdits.load(from: defaults, key: MapEdits.toldKey)
         mapShowsOthers = MapOthersWork.load(from: defaults)
+        mapShowsDone = MapDoneWork.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -824,6 +827,13 @@ package final class PullRequestOrder: ObservableObject {
         guard shows != mapShowsOthers else { return }
         mapShowsOthers = shows
         MapOthersWork.save(shows, to: defaults)
+    }
+
+    /// Done on My Work's Map, remembered.
+    package func setMapShowsDone(_ shows: Bool) {
+        guard shows != mapShowsDone else { return }
+        mapShowsDone = shows
+        MapDoneWork.save(shows, to: defaults)
     }
 
     /// Adds a work item the Board doesn't have to My Work's Map, as you found it, in the band you added it in, with what waits

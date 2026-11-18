@@ -10,8 +10,9 @@ import Foundation
 // comes after it in an order, or as you or a session said on the Map, or as Azure DevOps links two work items, a predecessor
 // and its successor; through what the Map doesn't show there, such as what you hid, it's dotted. With Others' work, work
 // items the Board doesn't have, such as a teammate's task yours waits for, are nodes too, faded, and so is any you added.
-// Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as text wraps
-// (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
+// With Done off, what's done leaves the Map, with no dotted line through it, as it holds nothing back. Where the page is too
+// narrow for a graph's columns, they fold into tiers, one under the other, as text wraps (`WorkMapFold`). Only where things
+// go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -79,6 +80,26 @@ public enum MapOthersWork {
             defaults.set(true, forKey: defaultsKey)
         } else {
             defaults.removeObject(forKey: defaultsKey)
+        }
+    }
+}
+
+/// Done, on My Work's Map: whether it shows what's done, pull requests that merged or closed, work that's resolved or done,
+/// and steps done, in its Done column, or leaves them out, for what's left (`WorkMap(showsDone:)`). On until you turn it off,
+/// remembered.
+public enum MapDoneWork {
+    /// Where it's kept, while it's off.
+    public static let defaultsKey = "order.map.hidesDone"
+
+    public static func load(from defaults: some SettingsStorage) -> Bool {
+        !defaults.bool(forKey: defaultsKey)
+    }
+
+    public static func save(_ shows: Bool, to defaults: some SettingsStorage) {
+        if shows {
+            defaults.removeObject(forKey: defaultsKey)
+        } else {
+            defaults.set(true, forKey: defaultsKey)
         }
     }
 }
@@ -740,7 +761,8 @@ public struct WorkMap: Equatable, Sendable {
     public static let mostElsewhere = 12
 
     /// By Mission: a band for each lane of the Board, in its order, but for one with nothing on the Map, such as one kept
-    /// only for an Undo line; then Not in a mission, for steps joined to no card, when the Board has no such lane.
+    /// only for an Undo line, or one whose cards and steps are all done while Done is off; then Not in a mission, for steps
+    /// joined to no card, when the Board has no such lane.
     public private(set) var bands: [Band]
     /// All: each set of cards and steps that lines join, the one with the Board's first card first.
     public private(set) var groups: [Group]
@@ -748,7 +770,7 @@ public struct WorkMap: Equatable, Sendable {
     public private(set) var columns: [WorkMapColumn]
     /// All: the cards and steps no line joins, those still to do first, each in the Board's order.
     public private(set) var loose: [WorkMapItem]
-    /// All: the cards and steps you hid, in the Board's order.
+    /// All: the cards and steps you hid, in the Board's order, but what's done while Done is off.
     public private(set) var hidden: [WorkMapItem]
     /// Every card, work item and step, hidden or not, in the Board's order, each band's work items and steps after its
     /// cards: what menus list.
@@ -756,6 +778,10 @@ public struct WorkMap: Equatable, Sendable {
     /// The work items it has, hidden or not: those with a node of their own, and those with none whose pull requests'
     /// cards stand for them, as what's said of them is said of those cards. + Task offers none of them.
     public private(set) var workItemsOnMap: Set<ItemRef>
+    /// Whether it shows what's done, in its Done column (`MapDoneWork`).
+    public let showsDone: Bool
+    /// How many of its cards, work items and steps are done, but those you hid: what Done shows, or leaves out.
+    public private(set) var doneCount: Int
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
     /// The band each card and step is in, a card's first.
@@ -785,10 +811,12 @@ public struct WorkMap: Equatable, Sendable {
     ///   - showsOthers: Others' work: the work items the Board doesn't have that are still open and that what the Map has
     ///     waits for, and what those wait for, and those that wait right after what it has, are nodes too, at most
     ///     `mostOthers`, the nearest first.
+    ///   - showsDone: Done: what's done, in its Done column; off, what's done is off the Map, as what you hid is, but listed
+    ///     nowhere, and, as it holds nothing back, with no dotted line through it.
     public init(
         _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
         done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:], azureDevOps: Set<MapEdits.Line> = [],
-        work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false
+        work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false, showsDone: Bool = true
     ) {
         // Every card, once, with the lanes it's in.
         var cards: [BoardItem] = []
@@ -874,13 +902,15 @@ public struct WorkMap: Equatable, Sendable {
             }
         }
         let isHidden = Set(hidden.nodes)
-        let shown = everything.filter { !isHidden.contains($0.id) }
+        // What's done, while Done is off, is off the Map as what you hid is, but listed nowhere.
+        let isLeftOut = { (item: WorkMapItem) in !showsDone && item.isDone }
+        let shown = everything.filter { !isHidden.contains($0.id) && !isLeftOut($0) }
         let shownIDs = Set(shown.map(\.id))
         // The lines All draws, between all that shows: those that leave a band bring in, dimmed, what they're joined to.
         let lines = edges.lines(among: shown.map(\.id))
 
         bands = lanes.compactMap { lane in
-            let items = itemsOf[lane.kind] ?? []
+            let items = (itemsOf[lane.kind] ?? []).filter { !isLeftOut($0) }
             guard !items.isEmpty else { return nil }
             let own = items.filter { !isHidden.contains($0.id) }
             let ownIDs = Set(own.map(\.id))
@@ -944,8 +974,10 @@ public struct WorkMap: Equatable, Sendable {
             return Group(graph: graph, items: items, lanes: kinds)
         }
         loose = single.filter { !$0.isDone } + single.filter(\.isDone)
-        self.hidden = everything.filter { isHidden.contains($0.id) }
+        self.hidden = everything.filter { isHidden.contains($0.id) && !isLeftOut($0) }
         self.everything = everything
+        self.showsDone = showsDone
+        doneCount = everything.filter { $0.isDone && !isHidden.contains($0.id) }.count
         self.edges = edges
         self.byID = byID
         self.bandOf = bandOf

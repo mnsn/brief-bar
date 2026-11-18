@@ -374,6 +374,47 @@ import Testing
         #expect(WorkMap.done(on: whole) == [Steps.task(5102)])
     }
 
+    /// Done off leaves what's done off the Map, as what you hid is, but listed nowhere: pull requests that merged, work
+    /// that's done and steps done, and with them the Done column and a band with nothing else, but for one that keeps what
+    /// you hid; no line goes through them, as they hold nothing back. On until you turn it off, remembered.
+    @Test func doneOffLeavesWhatsDoneOffTheMap() throws {
+        let finished = Steps.mission([Steps.step(4201, .merged, status: .merged, place: 1)])
+        let missions = [Self.chain, finished]
+        let stages = Self.chainStages.merging([4201: Steps.reading(.merged, .merged, at: 5)]) { first, _ in first }
+        let board = Steps.board(stages, missions: missions)
+            .withWork([Steps.work(5106, .completed), Steps.work(5150, .toDo)], missions: missions, stories: [])
+        var yours = Self.edits(steps: [(1, "API tests")], lines: [(Self.node(4103), .step(Self.id(1)))], by: .you)
+        yours.setDone(Self.id(1), true, by: .you, at: Self.day + 10)
+        let state = MapEdits.merged([yours], now: Self.day + 20)
+        let hidden = MapHidden([Self.work(5150), Self.node(4100)])
+
+        let shown = WorkMap(board, missions: missions, state: state, hidden: hidden)
+        #expect(shown.showsDone && shown.doneCount == 3)
+        #expect(shown.bands.count == 3)
+        #expect(shown.hidden.map(Self.name) == ["!4100", "5150"])
+
+        let map = WorkMap(board, missions: missions, state: state, hidden: hidden, showsDone: false)
+        #expect(!map.showsDone && map.doneCount == 3)
+        #expect(map.bands.map(\.lane.kind) == [.mission(Self.chain.key), .notInAMission])
+        let chain = try #require(map.bands.first?.graph)
+        #expect(chain.columns == [.wave(0), .wave(1), .wave(2)])
+        #expect(Self.places(chain) == ["!4101 0,0", "!4102 1,0", "!4103 2,0"])
+        #expect(Self.lines(chain, in: map) == ["!4101 > !4102", "!4102 > !4103"])
+        let rest = try #require(map.bands.last)
+        #expect(rest.graph == nil && rest.count == 0 && rest.hidden.map(Self.name) == ["5150"])
+        #expect(map.groups.map { $0.items.map(Self.name) } == [["!4101", "!4102", "!4103"]])
+        #expect(map.loose.isEmpty && map.columns == [.wave(0), .wave(1), .wave(2)])
+        #expect(map.hidden.map(Self.name) == ["5150"])
+
+        let defaults = MemorySettings()
+        #expect(MapDoneWork.load(from: defaults))
+        MapDoneWork.save(false, to: defaults)
+        #expect(defaults.object(forKey: "order.map.hidesDone") as? Bool == true)
+        #expect(!MapDoneWork.load(from: defaults))
+        MapDoneWork.save(true, to: defaults)
+        #expect(defaults.object(forKey: "order.map.hidesDone") == nil)
+    }
+
     /// Azure DevOps' dependencies are lines too, solid, of a work item a pull request's card names as of that card; taken away
     /// on the Map, one goes from the Map only.
     @Test func azureDevOpsDependenciesDrawLinesOntoTheirCards() throws {

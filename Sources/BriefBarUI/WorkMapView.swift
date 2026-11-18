@@ -5,11 +5,13 @@ import SwiftUI
 // My Work's Map (`WorkMap`): By Mission, a band for each lane of the Board, with its header as the Board has it, its cards and
 // the steps added there, and, dimmed, what they're joined to in other bands; All, one canvas: a graph for each set of cards and
 // steps lines join, their columns lined up, then those no line joins, in a grid. Each is a node: a card's click shows its
-// details, as the Board's card does, and a step's circle marks it done; a right-click has the card's menu with Waits For, Add
+// details, as the Board's card does, a work item's state, with Make Changes in Azure DevOps on, is a menu of the states it can
+// be put in, as on the Sprint page, and a step's circle marks it done; a right-click has the card's menu with Waits For, Add
 // Step After… and Hide on Map, and a step's Rename…, Mark Done and Delete Step. A drag from one node onto another draws a
 // line: the other waits for it. A click on a line selects it, to take it away, or to link in Azure DevOps the dependencies it
-// stands for, or unlink them, each marked on the line once Azure DevOps links them. Others' work, at the top, shows faded the
-// work items of others that yours wait for or that wait for yours; + Task adds any of the sprint's, found by ID or title.
+// stands for, or unlink them, each marked on the line once Azure DevOps links them. Done, at the top, shows or leaves out
+// what's done; Others' work shows faded the work items of others that yours wait for or that wait for yours; + Task adds any
+// of the sprint's, found by ID or title.
 // Hovering a node lights up what it waits for and what waits for it. ✨ Ask Copilot, on a band or a graph, asks its session,
 // a fork of it or a new one to work out what waits for what there and tell BriefBar, which draws what it tells as it hears
 // it. Only the Map changes for any of it, but what you link or unlink in Azure DevOps. Where the page is too narrow for a
@@ -50,6 +52,9 @@ package struct WorkMapContent {
     /// What links a line's dependencies in Azure DevOps, or takes them away; nil while the Board shows none of your sprint
     /// work.
     package var azureDevOps: WorkMapAzureDevOps?
+    /// A work item's own card's state, which its node starts with, as the Sprint page's task line does: with Make Changes in
+    /// Azure DevOps on, a menu of the states it can be put in, else its symbol; nil for its state's symbol alone.
+    package var state: (BoardTask) -> AnyView?
 
     package init(
         card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (ItemRef) -> WorkMapFace?,
@@ -57,7 +62,7 @@ package struct WorkMapContent {
         laneTitle: @escaping (BoardLane.Kind) -> String, isSelected: @escaping (ItemRef) -> Bool,
         select: @escaping (ItemRef) -> Void, related: Set<ItemRef> = [], showBoard: @escaping () -> Void,
         ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false, find: WorkMapFinder? = nil,
-        azureDevOps: WorkMapAzureDevOps? = nil
+        azureDevOps: WorkMapAzureDevOps? = nil, state: @escaping (BoardTask) -> AnyView? = { _ in nil }
     ) {
         self.card = card
         self.work = work
@@ -73,6 +78,7 @@ package struct WorkMapContent {
         self.asksSessions = asksSessions
         self.find = find
         self.azureDevOps = azureDevOps
+        self.state = state
     }
 }
 
@@ -83,19 +89,30 @@ package struct WorkMapFace {
     package var title: String
     /// Its state, as its process names it: "New", "Active".
     package var state: String
-    /// Its type's symbol and color.
+    /// Its type's symbol and color, which its node shows before its label, as the Sprint page does, but for a task: most are.
     package var symbol: String
     package var color: Color
     /// Whose it is, for one that isn't yours: a first name, "Sam", or "Unassigned"; nil for yours.
     package var owner: String?
+    /// Its state's symbol and color, as the Sprint page has them, which its node starts with.
+    package var stateSymbol: String
+    package var stateColor: Color
+    /// It's a task, whose type's symbol its node leaves out.
+    package var isTask: Bool
 
-    package init(label: String, title: String, state: String, symbol: String, color: Color, owner: String? = nil) {
+    package init(
+        label: String, title: String, state: String, symbol: String, color: Color, owner: String? = nil, stateSymbol: String,
+        stateColor: Color, isTask: Bool
+    ) {
         self.label = label
         self.title = title
         self.state = state
         self.symbol = symbol
         self.color = color
         self.owner = owner
+        self.stateSymbol = stateSymbol
+        self.stateColor = stateColor
+        self.isTask = isTask
     }
 }
 
@@ -336,14 +353,19 @@ package struct WorkMapView: View {
         }
     }
 
-    /// What's over the bands, or All's canvas: Others' work, with how many it shows, and Link in Azure DevOps… for the lines
-    /// Azure DevOps doesn't link yet; and, with All, + Task, + Step and what you hid there.
+    /// What's over the bands, or All's canvas: Done, while the Map has anything done, with how many it leaves out while it's
+    /// off; Others' work, with how many it shows; and Link in Azure DevOps… for the lines Azure DevOps doesn't link yet; and,
+    /// with All, + Task, + Step and what you hid there.
     @ViewBuilder
     private var controls: some View {
         let unlinked = content.azureDevOps == nil ? [] : map.unlinked
         let showsAll = grouping == .all
-        if content.find != nil || !unlinked.isEmpty || showsAll {
+        let offersDone = map.doneCount > 0 || !map.showsDone
+        if offersDone || content.find != nil || !unlinked.isEmpty || showsAll {
             HStack(spacing: 10) {
+                if offersDone {
+                    WorkMapDoneToggle(order: order, isOn: map.showsDone, count: map.doneCount)
+                }
                 if content.find != nil {
                     WorkMapOthersToggle(
                         order: order, count: map.everything.filter { $0.workItem.map { !$0.isAdded } ?? false }.count, shown: shownOthers
@@ -381,8 +403,9 @@ package struct WorkMapView: View {
         return links.flatMap(\.missing).filter { seen.insert($0).inserted }
     }
 
+    /// With nothing to draw: nothing yet, or, while Done is off, nothing but what's done.
     private var nothingYet: some View {
-        Text(WorkMapText.nothingYet)
+        Text(!map.showsDone && map.doneCount > 0 ? WorkMapText.allDone : WorkMapText.nothingYet)
             .font(size: 12.5)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -601,9 +624,9 @@ package struct WorkMapView: View {
 
     // MARK: Pieces
 
-    /// The steps the Map shows, but those you hid, in its order, of those that `in` takes.
+    /// The steps the Map shows, but those you hid and, while Done is off, those done, in its order, of those that `in` takes.
     private func shownSteps(in kept: (MapNodeID) -> Bool) -> [WorkMapItem] {
-        map.everything.filter { $0.step != nil && !order.mapHidden.contains($0.id) && kept($0.id) }
+        map.everything.filter { $0.step != nil && !order.mapHidden.contains($0.id) && (map.showsDone || !$0.isDone) && kept($0.id) }
     }
 
     /// The steps of a band or a graph of All too big to draw, which the Board doesn't show, as a grid of their nodes, so
@@ -1699,13 +1722,14 @@ enum WorkMapLines {
 // MARK: - A node
 
 /// A card's node: a pull request's mark, number and short title, with the work items of yours it's for, in its stage's
-/// color; or a work item's type, ID, state and title, in the color of where it is: gray, outlined dashed, before it starts,
-/// then In progress's, Merged's once resolved, and green once done. A work item the Board doesn't have, someone else's,
-/// faded and outlined dashed, says whose it is: "Task 5120 · Sam · Active"; gray, and green once done. Or a step's: its
-/// circle, which marks it done, its name, and who added it, outlined dashed until it's done, then green. Of another band, By
-/// Mission, dimmed, with that band's name. A click does what clicking its card does, shows a work item's details, or, on a
-/// step, Rename…; its menu is its card's, with what it waits for, Waits for a Task…, Add Step After… and Hide on Map, and,
-/// for a work item you added, Remove from Map.
+/// color; or a work item's state, as the Sprint page's task line starts with it, a menu of the states it can be put in with
+/// Make Changes in Azure DevOps on, then its type, but a task's, ID, state and title, in the color of where it is: gray,
+/// outlined dashed, before it starts, then In progress's, Merged's once resolved, and green once done. A work item the Board
+/// doesn't have, someone else's, faded and outlined dashed, says whose it is: "Task 5120 · Sam · Active"; gray, and green once
+/// done, its state's symbol never a menu. Or a step's: its circle, which marks it done, its name, and who added it, outlined
+/// dashed until it's done, then green. Of another band, By Mission, dimmed, with that band's name. A click does what clicking
+/// its card does, shows a work item's details, or, on a step, Rename…; its menu is its card's, with what it waits for, Waits
+/// for a Task…, Add Step After… and Hide on Map, and, for a work item you added, Remove from Map.
 struct WorkMapNodeView: View {
     let item: WorkMapItem
     /// The band it's in, for one of another band's, By Mission; nil for the band's own.
@@ -1904,12 +1928,14 @@ struct WorkMapNodeView: View {
         case .card(.work(let task)):
             let face = editor.content.face(task.ref)
             HStack(spacing: 7) {
-                Image(systemName: face?.symbol ?? "checklist")
-                    .font(size: 10, weight: .semibold)
-                    .foregroundStyle(face?.color ?? .secondary)
-                    .accessibilityHidden(true)
+                if let state = editor.content.state(task) {
+                    state
+                } else {
+                    stateSymbol(face)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 3) {
+                        typeSymbol(face)
                         Text(face?.label ?? task.ref.shortOrderLabel)
                             .font(size: 11, weight: .semibold)
                             .monospacedDigit()
@@ -1931,10 +1957,7 @@ struct WorkMapNodeView: View {
         case .workItem(let work):
             let face = editor.content.face(work.ref)
             HStack(spacing: 7) {
-                Image(systemName: face?.symbol ?? "checklist")
-                    .font(size: 10, weight: .semibold)
-                    .foregroundStyle(face?.color ?? .secondary)
-                    .accessibilityHidden(true)
+                stateSymbol(face)
                 VStack(alignment: .leading, spacing: 1) {
                     // What doesn't fit gives way: its state first, then its owner's name; never its ID.
                     ViewThatFits(in: .horizontal) {
@@ -1989,10 +2012,32 @@ struct WorkMapNodeView: View {
         "Step · " + (elsewhere.map { "in " + $0 } ?? (step.isDone ? "Done" : "To do"))
     }
 
+    /// A work item's state's symbol, which its node starts with, as the Sprint page's task line does, as wide as the menu its
+    /// own card's is.
+    private func stateSymbol(_ face: WorkMapFace?) -> some View {
+        Image(systemName: face?.stateSymbol ?? "circle.dashed")
+            .font(size: 12, weight: .medium)
+            .foregroundStyle(face?.stateColor ?? .secondary)
+            .frame(width: 15 * textScale)
+            .accessibilityHidden(true)
+    }
+
+    /// A work item's type's symbol, before its label, but for a task, as the Sprint page has it.
+    @ViewBuilder
+    private func typeSymbol(_ face: WorkMapFace?) -> some View {
+        if let face, !face.isTask {
+            Image(systemName: face.symbol)
+                .font(size: 9, weight: .semibold)
+                .foregroundStyle(face.color)
+                .accessibilityHidden(true)
+        }
+    }
+
     /// A work item's first line: "Task 5122 · Active", or, someone else's, with their first name after a person symbol,
     /// "Task 5122 Alex · Active"; with `details`, its state, or the band it's in.
     private func workLine(_ work: MapWorkItem, face: WorkMapFace?, details: Bool) -> some View {
         HStack(spacing: 3) {
+            typeSymbol(face)
             Text(editor.label(work.id))
                 .font(size: 11, weight: .semibold)
                 .monospacedDigit()
@@ -2345,6 +2390,33 @@ struct WorkMapHiddenButton: View {
     }
 }
 
+// MARK: - Done
+
+/// Done, over the Map: a checkbox, remembered, and, while it's off, how many it leaves out.
+struct WorkMapDoneToggle: View {
+    let order: PullRequestOrder
+    /// Whether the Map shows what's done, as it draws it now: as you chose, or as a picture has it.
+    let isOn: Bool
+    /// How many of its cards and steps are done, but those you hid.
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { isOn }, set: { order.setMapShowsDone($0) })) {
+                Text("Done")
+                    .font(size: 12, weight: .medium)
+            }
+            .toggleStyle(.checkbox)
+            .help(WorkMapText.doneHelp)
+            if !isOn, count > 0 {
+                Text(WorkMapText.doneLeftOut(count))
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 // MARK: - Others' work and + Task
 
 /// Others' work, over the Map: a checkbox, remembered, and, while it's on, how many it shows.
@@ -2551,6 +2623,9 @@ package enum WorkMapText {
     /// With nothing to draw.
     static let nothingYet = "Nothing to draw yet: your pull requests show here as they come, and, with + Sprint Tasks, your sprint work."
 
+    /// With nothing to draw but what's done, while Done is off.
+    static let allDone = "All of it is done: check Done to show it."
+
     /// Until you or a session first change the Map.
     static let tip = """
         Drag from a card to what waits for it to draw a line; click a line to take it away. + Step adds what has no pull \
@@ -2604,6 +2679,18 @@ package enum WorkMapText {
         By Mission: a graph for each mission, as the Board's lanes. All: every graph together, whatever their missions, and \
         a grid of what no line joins
         """
+
+    // MARK: Done
+
+    static let doneHelp = """
+        Show what's done in the Done column: pull requests that merged or closed, work that's resolved or done, and steps \
+        done. Off, the Map leaves them out, for what's left; the Board still has them
+        """
+
+    /// What Done leaves out while it's off: "1 left out", "4 left out".
+    static func doneLeftOut(_ count: Int) -> String {
+        "\(count) left out"
+    }
 
     // MARK: Others' work and + Task
 
