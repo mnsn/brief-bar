@@ -14,6 +14,11 @@ extension WorkItem {
     var linkRef: ItemRef { .workItem(organization: organization, id: id) }
 }
 
+extension WorkItemKey {
+    /// The work item, for Show Links and the Map.
+    var linkRef: ItemRef { .workItem(organization: organization, id: id) }
+}
+
 /// A pull request's links on its row, but for the task Copilot is doing on it, which its own capsule shows.
 struct PullRequestLinks: View {
     let key: PRKey

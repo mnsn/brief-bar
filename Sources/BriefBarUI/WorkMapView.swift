@@ -7,12 +7,14 @@ import SwiftUI
 // steps lines join, their columns lined up, then those no line joins, in a grid. Each is a node: a card's click shows its
 // details, as the Board's card does, and a step's circle marks it done; a right-click has the card's menu with Waits For, Add
 // Step After… and Hide on Map, and a step's Rename…, Mark Done and Delete Step. A drag from one node onto another draws a
-// line: the other waits for it. A click on a line selects it, to take it away. Hovering a node lights up what it waits for
-// and what waits for it. ✨ Ask Copilot, on a band or a graph, asks its session, a fork of it or a new one to work out what
-// waits for what there and tell BriefBar, which draws what it tells as it hears it. Only the Map changes for any of it.
-// Where the page is too narrow for a graph's columns, as with a card's details beside it, they fold into tiers, one under
-// the other, and the lines from one tier to the next wrap round, down and back. Everything scales with the text size of
-// windows' pages.
+// line: the other waits for it. A click on a line selects it, to take it away, or to link in Azure DevOps the dependencies it
+// stands for, or unlink them, each marked on the line once Azure DevOps links them. Others' work, at the top, shows faded the
+// work items of others that yours wait for or that wait for yours; + Task adds any of the sprint's, found by ID or title.
+// Hovering a node lights up what it waits for and what waits for it. ✨ Ask Copilot, on a band or a graph, asks its session,
+// a fork of it or a new one to work out what waits for what there and tell BriefBar, which draws what it tells as it hears
+// it. Only the Map changes for any of it, but what you link or unlink in Azure DevOps. Where the page is too narrow for a
+// graph's columns, as with a card's details beside it, they fold into tiers, one under the other, and the lines from one tier
+// to the next wrap round, down and back. Everything scales with the text size of windows' pages.
 
 /// What a page draws of its cards on My Work's Map.
 package struct WorkMapContent {
@@ -21,17 +23,17 @@ package struct WorkMapContent {
     package var card: (BoardCard) -> BoardCardContent?
     /// Your sprint work's cards, and the headers of its stories' bands; nil while the Board shows none.
     package var work: BoardWorkContent?
-    /// How a work item's node looks; nil for one the page doesn't know.
-    package var face: (BoardTask) -> WorkMapFace?
+    /// How a work item's node looks, its own card's or one the Board doesn't have; nil for one the page doesn't know.
+    package var face: (ItemRef) -> WorkMapFace?
     /// The work items of yours a pull request's node names: "Task 5112"; nil for none.
     package var workOf: (ItemRef) -> String?
     /// The repository a pull request is in, as the page names it.
     package var place: (ItemRef) -> String?
     /// What a lane of the Board is called, for what a graph of All is about: a mission's name, a story's title.
     package var laneTitle: (BoardLane.Kind) -> String
-    /// Whether a card's details show.
+    /// Whether a card's details show, or a work item's the Board doesn't have.
     package var isSelected: (ItemRef) -> Bool
-    /// Shows a card's details.
+    /// Shows a card's details, or a work item's the Board doesn't have.
     package var select: (ItemRef) -> Void
     /// The pull requests the search shows faded, as related to what it found (`PullRequestBoard.related`).
     package var related: Set<ItemRef>
@@ -42,13 +44,20 @@ package struct WorkMapContent {
     package var ask: ((WorkMapQuestion, WorkMapAsk) async -> String)?
     /// Whether ✨ Ask Copilot offers the missions' sessions, as Send Work to Copilot can send them prompts; else it only copies.
     package var asksSessions: Bool
+    /// + Task's search, for work items to add to the Map, and Others' work: nil while the Board shows none of your sprint
+    /// work, which Azure DevOps' links come with.
+    package var find: WorkMapFinder?
+    /// What links a line's dependencies in Azure DevOps, or takes them away; nil while the Board shows none of your sprint
+    /// work.
+    package var azureDevOps: WorkMapAzureDevOps?
 
     package init(
-        card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (BoardTask) -> WorkMapFace?,
+        card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (ItemRef) -> WorkMapFace?,
         workOf: @escaping (ItemRef) -> String?, place: @escaping (ItemRef) -> String?,
         laneTitle: @escaping (BoardLane.Kind) -> String, isSelected: @escaping (ItemRef) -> Bool,
         select: @escaping (ItemRef) -> Void, related: Set<ItemRef> = [], showBoard: @escaping () -> Void,
-        ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false
+        ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false, find: WorkMapFinder? = nil,
+        azureDevOps: WorkMapAzureDevOps? = nil
     ) {
         self.card = card
         self.work = work
@@ -62,6 +71,8 @@ package struct WorkMapContent {
         self.showBoard = showBoard
         self.ask = ask
         self.asksSessions = asksSessions
+        self.find = find
+        self.azureDevOps = azureDevOps
     }
 }
 
@@ -75,13 +86,68 @@ package struct WorkMapFace {
     /// Its type's symbol and color.
     package var symbol: String
     package var color: Color
+    /// Whose it is, for one that isn't yours: a first name, "Sam", or "Unassigned"; nil for yours.
+    package var owner: String?
 
-    package init(label: String, title: String, state: String, symbol: String, color: Color) {
+    package init(label: String, title: String, state: String, symbol: String, color: Color, owner: String? = nil) {
         self.label = label
         self.title = title
         self.state = state
         self.symbol = symbol
         self.color = color
+        self.owner = owner
+    }
+}
+
+/// A work item + Task can add to the Map.
+package struct WorkMapFound: Identifiable {
+    package var ref: ItemRef
+    package var face: WorkMapFace
+
+    package init(ref: ItemRef, face: WorkMapFace) {
+        self.ref = ref
+        self.face = face
+    }
+
+    package var id: ItemRef { ref }
+}
+
+/// + Task's search: the work items a page can add to the Map, by what you type.
+package struct WorkMapFinder {
+    /// The work items whose ID or title has each word typed, in the page's order, as it knows them: the sprint's, and yours
+    /// outside it.
+    package var search: (String) -> [WorkMapFound]
+    /// One by its ID that the page doesn't know, as Azure DevOps has it; nil for none, or one it can't read. Nil where it
+    /// can't look.
+    package var lookUp: ((Int) async -> WorkMapFound?)?
+
+    package init(search: @escaping (String) -> [WorkMapFound], lookUp: ((Int) async -> WorkMapFound?)? = nil) {
+        self.search = search
+        self.lookUp = lookUp
+    }
+}
+
+/// What links in Azure DevOps the dependencies a line of the Map stands for, or takes them away, when you click: one change
+/// at a time, with Make Changes in Azure DevOps on.
+package struct WorkMapAzureDevOps {
+    /// Why it can't now, for its buttons' tooltips: with Make Changes in Azure DevOps off, or while a change is on its way;
+    /// nil when it can.
+    package var held: String?
+    /// Links these dependencies, each from the work item a later one waits for, saying what they are in these words.
+    package var link: ([MapEdits.Line], String) -> Void
+    /// Takes these dependencies away.
+    package var unlink: ([MapEdits.Line], String) -> Void
+    /// What its last change is doing, or did, for the top of the Map; nil for none.
+    package var line: AnyView?
+
+    package init(
+        held: String?, link: @escaping ([MapEdits.Line], String) -> Void, unlink: @escaping ([MapEdits.Line], String) -> Void,
+        line: AnyView? = nil
+    ) {
+        self.held = held
+        self.link = link
+        self.unlink = unlink
+        self.line = line
     }
 }
 
@@ -128,6 +194,8 @@ package struct WorkMapView: View {
     let missions: [OrderMission]
     @ObservedObject var order: PullRequestOrder
     let content: WorkMapContent
+    /// Whether it shows others' work, for pictures; nil for what you chose.
+    let shownOthers: Bool?
 
     @Environment(\.shownSection) private var section
     @Environment(\.shownWindow) private var window
@@ -139,6 +207,8 @@ package struct WorkMapView: View {
     @LocalState private var inSight: [WorkMapGrouping: [String: Set<MissionKey>]] = [:]
     /// A step's name being asked for.
     @LocalState private var naming: StepNaming?
+    /// The dependencies Link All in Azure DevOps… asks you to confirm linking.
+    @LocalState private var confirming: [MapEdits.Line]?
     /// What ✨ Ask Copilot did last, for each band and graph.
     @LocalState private var asked: [String: String] = [:]
     /// How wide the page is, for the graphs to fold to it and the grids to fill it.
@@ -146,12 +216,16 @@ package struct WorkMapView: View {
     /// The node that has the keyboard's focus, in any band or graph: one a search found takes it.
     @FocusState private var focused: MapNodeID?
 
-    package init(map: WorkMap, grouping: WorkMapGrouping, missions: [OrderMission], order: PullRequestOrder, content: WorkMapContent) {
+    package init(
+        map: WorkMap, grouping: WorkMapGrouping, missions: [OrderMission], order: PullRequestOrder, content: WorkMapContent,
+        shownOthers: Bool? = nil
+    ) {
         self.map = map
         self.grouping = grouping
         self.missions = missions
         self.order = order
         self.content = content
+        self.shownOthers = shownOthers
     }
 
     package var body: some View {
@@ -161,6 +235,7 @@ package struct WorkMapView: View {
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 18) {
                 topLines
+                controls
                 switch grouping {
                 case .byMission:
                     if map.bands.isEmpty {
@@ -185,6 +260,16 @@ package struct WorkMapView: View {
             }
             .onChange(of: onScreen) { _, keys in order.showing(keys, in: viewer, on: page) }
             .onDisappear { order.stopShowing(in: viewer) }
+            // On the stack rather than beside the other alert, which one view can't have two of.
+            .alert(
+                WorkMapText.linkAllTitle(confirming?.count ?? 0),
+                isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })
+            ) {
+                Button(WorkMapText.linkAll(confirming?.count ?? 0)) { linkAll() }
+                Button("Cancel", role: .cancel) { confirming = nil }
+            } message: {
+                Text(WorkMapText.list(OrderText.dependencies(confirming ?? [], name: editor(home: nil).label)))
+            }
         }
         .alert(naming?.title ?? "", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
             TextField("Name", text: Binding(get: { naming?.name ?? "" }, set: { naming?.name = $0 }))
@@ -195,6 +280,13 @@ package struct WorkMapView: View {
                 Text(WorkMapText.stepMessage)
             }
         }
+    }
+
+    /// Links in Azure DevOps the dependencies Link All asked to, as you confirmed.
+    private func linkAll() {
+        guard let pairs = confirming, let azureDevOps = content.azureDevOps else { return }
+        confirming = nil
+        azureDevOps.link(pairs, WorkMapText.dependencies(pairs.count))
     }
 
     /// The window's page this is, when it's on one, for Pull Request Order to know when it's on screen.
@@ -217,18 +309,22 @@ package struct WorkMapView: View {
         width > 0 ? max(width - 24, 0) : nil
     }
 
-    /// What you changed last, of the Map and of missions no band shows; why BriefBar didn't make a change; and, until you or
-    /// a session first change the Map, how to.
+    /// What you changed last, of the Map and of missions no band shows; what linking in Azure DevOps is doing, or did; why
+    /// BriefBar didn't make a change; and, until you or a session first change the Map, how to.
     @ViewBuilder
     private var topLines: some View {
         let shown = Set(map.bands.compactMap(\.lane.mission))
         let showsOrders = grouping == .all || order.said.contains(where: { OrderUndoLine.shows($0, about: nil, in: nil, outside: shown) })
-        if showsOrders || order.mapUndo != nil || order.mapEdits.isEmpty && order.mapTold.isEmpty {
+        let linking = content.azureDevOps?.line
+        if showsOrders || order.mapUndo != nil || linking != nil || order.mapEdits.isEmpty && order.mapTold.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 if showsOrders {
                     OrderUndoLine(order: order, outside: grouping == .all ? nil : shown)
                 }
                 WorkMapUndoLine(order: order)
+                if let linking {
+                    linking
+                }
                 if order.mapEdits.isEmpty, order.mapTold.isEmpty, order.mapUndo == nil, !map.bands.isEmpty {
                     Label(WorkMapText.tip, systemImage: "hand.draw")
                         .font(size: 12)
@@ -238,6 +334,51 @@ package struct WorkMapView: View {
             }
             .padding(.horizontal, 4)
         }
+    }
+
+    /// What's over the bands, or All's canvas: Others' work, with how many it shows, and Link in Azure DevOps… for the lines
+    /// Azure DevOps doesn't link yet; and, with All, + Task, + Step and what you hid there.
+    @ViewBuilder
+    private var controls: some View {
+        let unlinked = content.azureDevOps == nil ? [] : map.unlinked
+        let showsAll = grouping == .all
+        if content.find != nil || !unlinked.isEmpty || showsAll {
+            HStack(spacing: 10) {
+                if content.find != nil {
+                    WorkMapOthersToggle(
+                        order: order, count: map.everything.filter { $0.workItem.map { !$0.isAdded } ?? false }.count, shown: shownOthers
+                    )
+                }
+                Spacer(minLength: 0)
+                if let azureDevOps = content.azureDevOps, !unlinked.isEmpty {
+                    let pairs = Self.pairs(of: unlinked.map(\.links))
+                    Button {
+                        confirming = pairs
+                    } label: {
+                        WorkMapControlLabel(title: WorkMapText.linkLines(unlinked.count), systemImage: "link")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(azureDevOps.held != nil)
+                    .help(azureDevOps.held ?? WorkMapText.linkAllHelp)
+                }
+                if showsAll {
+                    if let find = content.find {
+                        addTaskButton(home: nil, find: find)
+                    }
+                    addStepButton(home: nil)
+                    if !map.hidden.isEmpty {
+                        WorkMapHiddenButton(hidden: map.hidden, order: order, editor: editor(home: nil))
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    /// The dependencies these lines stand for that Azure DevOps doesn't link yet, each once, in their order.
+    static func pairs(of links: [MapLineLinks]) -> [MapEdits.Line] {
+        var seen: Set<MapEdits.Line> = []
+        return links.flatMap(\.missing).filter { seen.insert($0).inserted }
     }
 
     private var nothingYet: some View {
@@ -342,6 +483,9 @@ package struct WorkMapView: View {
                     MissionNextStepsLine(lane: band.lane, order: order, select: content.select)
                 }
                 Spacer(minLength: 0)
+                if let find = content.find {
+                    addTaskButton(home: band.key, find: find)
+                }
                 addStepButton(home: band.key)
                 if let ask = content.ask, let graph = band.graph {
                     WorkMapAskMenu(
@@ -369,6 +513,14 @@ package struct WorkMapView: View {
         .accessibilityLabel("Add a Step")
     }
 
+    /// + Task: finds a work item of the sprint's, or any by its ID, and adds it to the Map, in this band.
+    private func addTaskButton(home: LaneOrderKey?, find: WorkMapFinder) -> some View {
+        WorkMapAddTaskButton(map: map, finder: find) { ref in
+            let editor = editor(home: home)
+            order.addMapItem(ref, home: home, undo: "You added \(editor.label(.card(ref))) to the Map.")
+        }
+    }
+
     /// The repositories its pull requests are in, the one with the most first: "payments-api and shop-web".
     private func place(of mission: OrderMission) -> String? {
         OrderText.places(mission.steps(of: [.pullRequest]).compactMap { content.place($0.ref) })
@@ -385,14 +537,6 @@ package struct WorkMapView: View {
 
     @ViewBuilder
     private var all: some View {
-        HStack(spacing: 10) {
-            Spacer(minLength: 0)
-            addStepButton(home: nil)
-            if !map.hidden.isEmpty {
-                WorkMapHiddenButton(hidden: map.hidden, order: order, editor: editor(home: nil))
-            }
-        }
-        .padding(.horizontal, 4)
         if map.groups.isEmpty, map.loose.isEmpty {
             nothingYet
         }
@@ -576,12 +720,16 @@ struct WorkMapEditor {
     /// Shows a band, for one of its cards or steps dimmed in another.
     let showBand: (BoardLane.Kind) -> Void
 
-    /// What a card or step is called in menus and lines: "!4102", "Task 5104", a step's name.
+    /// What a card, work item or step is called in menus and lines: "!4102", "Task 5104", a step's name; a work item the page
+    /// doesn't know, "Work item 5210".
     func label(_ node: MapNodeID) -> String {
         switch map.item(node) {
-        case .card(.work(let task))?: content.face(task)?.label ?? task.ref.shortOrderLabel
-        case .step(let step)?: step.name
-        default: node.ref?.shortOrderLabel ?? "A step"
+        case .step(let step)?: return step.name
+        case .card(.pullRequest(let card))?: return card.ref.shortOrderLabel
+        default:
+            guard let ref = node.ref else { return "A step" }
+            guard ref.kind == .workItem else { return ref.shortOrderLabel }
+            return content.face(ref)?.label ?? "Work item \(ref.id)"
         }
     }
 
@@ -648,6 +796,39 @@ struct WorkMapEditor {
         order.deleteMapStep(step.id, undo: "You deleted the step “\(step.name)”.")
     }
 
+    /// Adds a work item to the Map that `node` waits for, as + Task found it, with that line.
+    func add(_ ref: ItemRef, before node: MapNodeID) {
+        let found = MapNodeID.card(ref)
+        order.addMapItem(
+            ref, home: home(near: node), before: node, undo: "You added \(label(found)) to the Map: \(label(node)) waits for it."
+        )
+    }
+
+    /// Takes a work item you added off the Map, with the lines you drew to it.
+    func remove(_ item: MapWorkItem) {
+        order.removeMapItem(item.ref, undo: "You took \(label(item.id)) off the Map.")
+    }
+
+    /// What a line stands for in Azure DevOps (`WorkMap.links(of:)`), where the page can link it.
+    func links(of line: WorkMapLine) -> MapLineLinks? {
+        content.azureDevOps == nil ? nil : map.links(of: line)
+    }
+
+    /// Dependencies in words: "Task 5106 waits for Task 5104; Task 5107 waits for Task 5106".
+    func words(_ pairs: [MapEdits.Line]) -> String {
+        OrderText.dependencies(pairs, name: label).joined(separator: "; ")
+    }
+
+    /// Links in Azure DevOps what a line stands for that it doesn't link yet.
+    func link(_ links: MapLineLinks) {
+        content.azureDevOps?.link(links.missing, words(links.missing))
+    }
+
+    /// Takes away in Azure DevOps what a line stands for.
+    func unlink(_ links: MapLineLinks) {
+        content.azureDevOps?.unlink(links.pairs, words(links.pairs))
+    }
+
     /// Who said a line, for what it says of it: "You said so", "‘Cart’ said so".
     func who(_ author: MapAuthor) -> String {
         switch author {
@@ -657,16 +838,20 @@ struct WorkMapEditor {
         }
     }
 
-    /// What a line says, for its tooltip, VoiceOver and when it's selected: "API tests waits for !4105 · You said so".
+    /// What a line says, for its tooltip, VoiceOver and when it's selected: "API tests waits for !4105 · You said so", and
+    /// "· In Azure DevOps" where Azure DevOps links all it stands for.
     func words(_ line: WorkMapLine) -> String {
         let (first, then) = (label(line.before), label(line.after))
-        return switch line.style {
+        let said = switch line.style {
         case .stacked: "\(then) is stacked on \(first)"
         case .order: "\(then) comes after \(first) in its order"
+        case .azureDevOps: "\(then) waits for \(first)"
         case .said(let author): "\(then) waits for \(first) · \(who(author))"
         case .through(let nodes):
             "\(then) waits for \(first), " + OrderText.through(nodes.map(label), hidden: nodes.filter(isHidden).count).lowercasedFirst
         }
+        let isLinked = links(of: line).map(\.isLinked) ?? (line.style == .azureDevOps)
+        return isLinked ? said + " · In Azure DevOps" : said
     }
 }
 
@@ -810,6 +995,7 @@ struct WorkMapCanvas: View {
         let into = Dictionary(grouping: lines, by: \.after)
         let target = drawing.flatMap { drawing in node(at: drawing.to, in: geometry).flatMap { $0 == drawing.from ? nil : $0 } }
         let across = geometry.size.width - geometry.inset
+        let linked = Set(geometry.lines.filter { editor.links(of: $0.line)?.isLinked == true }.map(\.id))
         CanvasLayout(size: geometry.size) {
             ForEach(Array(geometry.titles.enumerated()), id: \.offset) { _, title in
                 Text(title.text)
@@ -819,7 +1005,7 @@ struct WorkMapCanvas: View {
                     .at(title.frame)
                     .accessibilityHidden(true)
             }
-            linesLayer(geometry, lit: lit, metrics: m)
+            linesLayer(geometry, lit: lit, linked: linked, metrics: m)
                 .at(CGRect(origin: .zero, size: geometry.size))
             ForEach(geometry.blocks, id: \.id) { placed in
                 if let block = blocks.first(where: { $0.id == placed.id }), let title = block.title, let top = placed.titleTop {
@@ -842,9 +1028,10 @@ struct WorkMapCanvas: View {
             drawingLayer(geometry, target: target, metrics: m)
                 .at(CGRect(origin: .zero, size: geometry.size))
             if let id = selectedLine, let drawn = geometry.lines.first(where: { $0.id == id }) {
-                selectedLineCard(drawn)
+                let links = editor.links(of: drawn.line)
+                selectedLineCard(drawn, links: links)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .at(geometry.card(for: drawn, metrics: m))
+                    .at(geometry.card(for: drawn, wide: links != nil, metrics: m))
             }
         }
         .coordinateSpace(.named(Self.space))
@@ -874,7 +1061,13 @@ struct WorkMapCanvas: View {
 
     // MARK: Lines
 
-    private func linesLayer(_ geometry: Geometry, lit: Set<MapNodeID>?, metrics m: WorkMapMetrics) -> some View {
+    /// Azure DevOps' blue, for the mark of a line it links.
+    static let azureDevOpsBlue = Color(red: 0, green: 0.47, blue: 0.83)
+
+    /// The lines, each marked at its middle where Azure DevOps links all it stands for (`linked`).
+    private func linesLayer(
+        _ geometry: Geometry, lit: Set<MapNodeID>?, linked: Set<WorkMapLineID>, metrics m: WorkMapMetrics
+    ) -> some View {
         Canvas { context, _ in
             for drawn in geometry.lines {
                 let isPicked = drawn.id == selectedLine || drawn.id == hoveredLine
@@ -888,12 +1081,20 @@ struct WorkMapCanvas: View {
                 }
                 let width = (isPicked ? 2.5 : 1.5) * m.scale
                 let style = switch drawn.line.style {
-                case .stacked, .said: StrokeStyle(lineWidth: width, lineCap: .round)
+                case .stacked, .said, .azureDevOps: StrokeStyle(lineWidth: width, lineCap: .round)
                 case .order: StrokeStyle(lineWidth: width, lineCap: .round, dash: [3 * m.scale, 3 * m.scale])
                 case .through: StrokeStyle(lineWidth: width, lineCap: .round, dash: [0.5, 3.5 * m.scale])
                 }
                 context.stroke(drawn.path, with: .color(color), style: style)
                 context.fill(Self.arrowhead(at: drawn.end, size: 4.5 * m.scale), with: .color(color))
+                if linked.contains(drawn.id) {
+                    let radius = 6 * m.scale
+                    let badge = CGRect(x: drawn.middle.x - radius, y: drawn.middle.y - radius, width: 2 * radius, height: 2 * radius)
+                    context.fill(Path(ellipseIn: badge), with: .color(Self.azureDevOpsBlue.opacity(isLit == false ? 0.3 : 1)))
+                    var mark = context.resolve(Image(systemName: "link"))
+                    mark.shading = .color(.white)
+                    context.draw(mark, in: badge.insetBy(dx: 2.5 * m.scale, dy: 2.5 * m.scale))
+                }
             }
         }
         .contentShape(Rectangle())
@@ -919,7 +1120,8 @@ struct WorkMapCanvas: View {
         .accessibilityHidden(true)
     }
 
-    /// A line's menu: Take Away This Line, or, for a dotted one, Show what you hid that it goes through.
+    /// A line's menu: Link in Azure DevOps, or Unlink there, where it stands for dependencies there, and Take This Line Away;
+    /// or, for a dotted one, Show what you hid that it goes through.
     @ViewBuilder
     private func lineMenu(_ line: WorkMapLine) -> some View {
         if case .through(let nodes) = line.style {
@@ -931,6 +1133,13 @@ struct WorkMapCanvas: View {
                 }
             }
         } else {
+            if let links = editor.links(of: line), let azureDevOps = editor.content.azureDevOps {
+                Button(links.isLinked ? "Unlink in Azure DevOps" : "Link in Azure DevOps") {
+                    if links.isLinked { editor.unlink(links) } else { editor.link(links) }
+                    selectedLine = nil
+                }
+                .disabled(azureDevOps.held != nil)
+            }
             Button("Take This Line Away") {
                 editor.stopWaiting(line.after, for: line.before)
                 selectedLine = nil
@@ -938,9 +1147,10 @@ struct WorkMapCanvas: View {
         }
     }
 
-    /// A selected line's card, at its middle: what it says, and Take Away. What it says shortens in the middle where the card
-    /// is as wide as a narrow canvas lets it be; its buttons never do.
-    private func selectedLineCard(_ drawn: Geometry.Drawn) -> some View {
+    /// A selected line's card, at its middle: what it says; Link in Azure DevOps, or Unlink there, where it stands for
+    /// dependencies there; and Take Away. What it says shortens in the middle where the card is as wide as a narrow canvas
+    /// lets it be; its buttons never do.
+    private func selectedLineCard(_ drawn: Geometry.Drawn, links: MapLineLinks?) -> some View {
         HStack(spacing: 8) {
             Text(editor.words(drawn.line))
                 .font(size: 11.5)
@@ -957,13 +1167,26 @@ struct WorkMapCanvas: View {
                     .fixedSize()
                 }
             } else {
+                if let links, let azureDevOps = editor.content.azureDevOps {
+                    let pairs = links.isLinked ? links.pairs : links.missing
+                    Button(links.isLinked ? "Unlink in Azure DevOps" : "Link in Azure DevOps") {
+                        if links.isLinked { editor.unlink(links) } else { editor.link(links) }
+                        selectedLine = nil
+                    }
+                    .buttonStyle(.borderless)
+                    .fixedSize()
+                    .disabled(azureDevOps.held != nil)
+                    .help(azureDevOps.held ?? WorkMapText.linkHelp(editor.words(pairs), unlinks: links.isLinked))
+                }
                 Button("Take Away") {
                     editor.stopWaiting(drawn.line.after, for: drawn.line.before)
                     selectedLine = nil
                 }
                 .buttonStyle(.borderless)
                 .fixedSize()
-                .help("Only on the Map: \(editor.label(drawn.line.after)) no longer waits for \(editor.label(drawn.line.before)) there")
+                .help(WorkMapText.takeAwayHelp(
+                    editor.label(drawn.line.after), waitsFor: editor.label(drawn.line.before), isLinked: links?.linked.isEmpty == false
+                ))
             }
             Button {
                 selectedLine = nil
@@ -1285,10 +1508,10 @@ extension WorkMapCanvas.Geometry {
         max(Int((width + m.columnGap) / (m.nodeWidth + m.columnGap)), 1)
     }
 
-    /// Where a selected line's card goes: at the line's middle, 340 points wide, but no wider than the canvas and within it,
-    /// as a canvas folded to one column is narrower than that.
-    func card(for drawn: Drawn, metrics m: WorkMapMetrics) -> CGRect {
-        let width = min(340 * m.scale, size.width)
+    /// Where a selected line's card goes: at the line's middle, 340 points wide, or 470 with Link or Unlink in Azure DevOps
+    /// (`wide`), but no wider than the canvas and within it, as a canvas folded to one column is narrower than that.
+    func card(for drawn: Drawn, wide: Bool = false, metrics m: WorkMapMetrics) -> CGRect {
+        let width = min((wide ? 470 : 340) * m.scale, size.width)
         let x = min(max(drawn.middle.x - width / 2, 0), size.width - width)
         return CGRect(x: x, y: drawn.middle.y - 16 * m.scale, width: width, height: 32 * m.scale)
     }
@@ -1477,10 +1700,12 @@ enum WorkMapLines {
 
 /// A card's node: a pull request's mark, number and short title, with the work items of yours it's for, in its stage's
 /// color; or a work item's type, ID, state and title, in the color of where it is: gray, outlined dashed, before it starts,
-/// then In progress's, Merged's once resolved, and green once done. Or a step's: its circle, which marks it done, its name,
-/// and who added it, outlined dashed until it's done, then green. Of another band, By Mission, dimmed, with that band's name.
-/// A click does what clicking its card does, or, on a step, Rename…; its menu is its card's, with what it waits for, Add Step
-/// After… and Hide on Map.
+/// then In progress's, Merged's once resolved, and green once done. A work item the Board doesn't have, someone else's,
+/// faded and outlined dashed, says whose it is: "Task 5120 · Sam · Active"; gray, and green once done. Or a step's: its
+/// circle, which marks it done, its name, and who added it, outlined dashed until it's done, then green. Of another band, By
+/// Mission, dimmed, with that band's name. A click does what clicking its card does, shows a work item's details, or, on a
+/// step, Rename…; its menu is its card's, with what it waits for, Waits for a Task…, Add Step After… and Hide on Map, and,
+/// for a work item you added, Remove from Map.
 struct WorkMapNodeView: View {
     let item: WorkMapItem
     /// The band it's in, for one of another band's, By Mission; nil for the band's own.
@@ -1498,13 +1723,15 @@ struct WorkMapNodeView: View {
     var showsHandle = false
 
     @Environment(\.textScale) private var textScale
+    /// Waits for a Task… is finding a work item it waits for.
+    @LocalState private var findsWhatItWaitsFor = false
 
     var body: some View {
         let card = cardContent
-        let isSelected = item.card.map { editor.content.isSelected($0.ref) } ?? false
+        let isSelected = (item.card?.ref ?? item.workItem?.ref).map { editor.content.isSelected($0) } ?? false
         let color = self.color
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        let isDashed = (isToStart || elsewhere != nil) && !isSelected && !isTarget
+        let isDashed = (isToStart || isOthers || elsewhere != nil) && !isSelected && !isTarget
         face
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1536,9 +1763,23 @@ struct WorkMapNodeView: View {
                 press()
                 return .handled
             }
-            .opacity(isDimmed ? 0.45 : elsewhere != nil ? 0.6 : item.card.map { editor.content.related.contains($0.ref) } == true ? 0.55 : 1)
+            .opacity(opacity)
             .help(help(card))
             .contextMenu { menu(card) }
+            .popover(isPresented: $findsWhatItWaitsFor, arrowEdge: .bottom) {
+                if let find = editor.content.find {
+                    WorkMapTaskSearch(
+                        map: editor.map, finder: find, title: "Add What \(editor.label(item.id)) Waits For",
+                        refusal: { ref in
+                            let verdict = editor.verdict(.card(ref), before: item.id)
+                            return verdict.allowed ? nil : verdict.words.isEmpty ? "" : verdict.words + "."
+                        }
+                    ) { ref in
+                        findsWhatItWaitsFor = false
+                        editor.add(ref, before: item.id)
+                    }
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label(card))
             .accessibilityValue(((details(card)) + through).joined(separator: ", "))
@@ -1548,12 +1789,27 @@ struct WorkMapNodeView: View {
             .accessibilityActions { actions(card) }
     }
 
-    /// A card's click shows its details; a step's takes the focus, which lights up what it's joined to, or, for one of another
-    /// band, shows that band.
+    /// Someone else's work item, which the Board doesn't have: faded.
+    private var isOthers: Bool {
+        item.workItem.map { !$0.isYours } ?? false
+    }
+
+    /// Dimmed while another is lit up; faded for another band's, for someone else's work item, or for a pull request the
+    /// search shows as related to what it found.
+    private var opacity: Double {
+        if isDimmed { return 0.45 }
+        if elsewhere != nil || isOthers { return 0.6 }
+        return item.card.map { editor.content.related.contains($0.ref) } == true ? 0.55 : 1
+    }
+
+    /// A card's click shows its details, as a work item's does; a step's takes the focus, which lights up what it's joined
+    /// to, or, for one of another band, shows that band.
     private func click() {
         switch item {
         case .card(let card):
             editor.content.select(card.ref)
+        case .workItem(let work):
+            editor.content.select(work.ref)
         case .step:
             if elsewhere != nil, let band = editor.map.band(of: item.id) {
                 editor.showBand(band)
@@ -1576,7 +1832,7 @@ struct WorkMapNodeView: View {
         switch item {
         case .card(.pullRequest(let card)): editor.content.card(card)
         case .card(.work(let task)): editor.content.work?.card(task)
-        case .step: nil
+        case .step, .workItem: nil
         }
     }
 
@@ -1585,6 +1841,7 @@ struct WorkMapNodeView: View {
         case .card(.work(let task)): task.column == .toStart
         case .card(.pullRequest): false
         case .step(let step): !step.isDone
+        case .workItem: false
         }
     }
 
@@ -1601,6 +1858,8 @@ struct WorkMapNodeView: View {
             }
         case .step(let step):
             step.isDone ? .green : .secondary
+        case .workItem(let work):
+            work.isDone ? .green : .secondary
         }
     }
 
@@ -1643,7 +1902,7 @@ struct WorkMapNodeView: View {
                 }
             }
         case .card(.work(let task)):
-            let face = editor.content.face(task)
+            let face = editor.content.face(task.ref)
             HStack(spacing: 7) {
                 Image(systemName: face?.symbol ?? "checklist")
                     .font(size: 10, weight: .semibold)
@@ -1662,6 +1921,27 @@ struct WorkMapNodeView: View {
                         }
                     }
                     Text(face?.title ?? "")
+                        .font(size: 10.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
+            }
+        case .workItem(let work):
+            let face = editor.content.face(work.ref)
+            HStack(spacing: 7) {
+                Image(systemName: face?.symbol ?? "checklist")
+                    .font(size: 10, weight: .semibold)
+                    .foregroundStyle(face?.color ?? .secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    // What doesn't fit gives way: its state first, then its owner's name; never its ID.
+                    ViewThatFits(in: .horizontal) {
+                        workLine(work, face: face, details: true)
+                        workLine(work, face: face, details: elsewhere != nil)
+                    }
+                    Text(face?.title ?? (work.isKnown ? "" : WorkMapText.notReadYet))
                         .font(size: 10.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1709,10 +1989,38 @@ struct WorkMapNodeView: View {
         "Step · " + (elsewhere.map { "in " + $0 } ?? (step.isDone ? "Done" : "To do"))
     }
 
+    /// A work item's first line: "Task 5122 · Active", or, someone else's, with their first name after a person symbol,
+    /// "Task 5122 Alex · Active"; with `details`, its state, or the band it's in.
+    private func workLine(_ work: MapWorkItem, face: WorkMapFace?, details: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(editor.label(work.id))
+                .font(size: 11, weight: .semibold)
+                .monospacedDigit()
+                .fixedSize()
+            if let owner = face?.owner, elsewhere == nil {
+                Image(systemName: "person.fill")
+                    .font(size: 8, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(owner)
+                    .font(size: 10.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if details, let words = elsewhere.map({ "in " + $0 }) ?? face?.state {
+                Text("· " + words)
+                    .font(size: 10.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
     private func label(_ card: BoardCardContent?) -> String {
         switch item {
         case .card(let item): card?.label ?? item.ref.shortOrderLabel
         case .step(let step): "Step: \(step.name)"
+        case .workItem(let work): [editor.label(work.id), editor.content.face(work.ref)?.title].compactMap { $0 }.joined(separator: ": ")
         }
     }
 
@@ -1725,6 +2033,12 @@ struct WorkMapNodeView: View {
         case .step(let step):
             details.append(step.isDone ? "Done" : "To do")
             details.append(editor.who(step.addedBy).replacingOccurrences(of: "said so", with: "added it"))
+        case .workItem(let work):
+            let face = editor.content.face(work.ref)
+            if let owner = face?.owner { details.append(owner == WorkMapText.unassigned ? owner : "\(owner)'s") }
+            if let state = face?.state { details.append(state) }
+            if !work.isKnown { details.append(WorkMapText.notReadYet) }
+            details.append(work.isAdded ? "You added it to the Map" : WorkMapText.othersNode)
         }
         if let elsewhere { details.append("In \(elsewhere)") }
         return details
@@ -1733,7 +2047,8 @@ struct WorkMapNodeView: View {
     /// Its tooltip: what it is, then what its card says of it, what dotted lines into it go through, and how to draw a line
     /// from it.
     private func help(_ card: BoardCardContent?) -> String {
-        let lines = [card?.label ?? (item.step.map { "Step: \($0.name)" } ?? item.card?.ref.fullOrderLabel ?? "")] + details(card)
+        let name = card?.label ?? item.step.map { "Step: \($0.name)" } ?? item.workItem.map { _ in label(card) } ?? item.card?.ref.fullOrderLabel
+        let lines = [name ?? ""] + details(card)
         return (lines + through + [WorkMapText.dragHelp]).joined(separator: "\n")
     }
 
@@ -1749,8 +2064,14 @@ struct WorkMapNodeView: View {
             Divider()
         }
         WorkMapWaitsMenu(node: item.id, editor: editor)
+        if editor.content.find != nil, !item.isDone {
+            Button("Waits for a Task…") { findsWhatItWaitsFor = true }
+        }
         Button("Add Step After…") { editor.addStep(after: item.id) }
         Button("Hide on Map") { editor.hide(item.id) }
+        if let work = item.workItem, work.isAdded {
+            Button("Remove from Map") { editor.remove(work) }
+        }
         if elsewhere != nil, let band = editor.map.band(of: item.id) {
             Button("Show Its Band") { editor.showBand(band) }
         }
@@ -1768,8 +2089,14 @@ struct WorkMapNodeView: View {
             Button(step.isDone ? "Mark Not Done" : "Mark Done") { editor.toggle(step) }
             Button("Delete Step") { editor.delete(step) }
         }
+        if editor.content.find != nil, !item.isDone {
+            Button("Waits for a Task") { findsWhatItWaitsFor = true }
+        }
         Button("Add Step After") { editor.addStep(after: item.id) }
         Button("Hide on Map") { editor.hide(item.id) }
+        if let work = item.workItem, work.isAdded {
+            Button("Remove from Map") { editor.remove(work) }
+        }
     }
 }
 
@@ -2009,10 +2336,211 @@ struct WorkMapHiddenButton: View {
         case .card(.pullRequest(let card)):
             (card.ref.shortOrderLabel, order.describe(card.ref)?.title ?? "")
         case .card(.work(let task)):
-            editor.content.face(task).map { ($0.label, $0.title) } ?? (task.ref.shortOrderLabel, "")
+            editor.content.face(task.ref).map { ($0.label, $0.title) } ?? (task.ref.shortOrderLabel, "")
+        case .workItem(let work):
+            (editor.label(work.id), editor.content.face(work.ref)?.title ?? "")
         case .step(let step):
             ("Step", step.name)
         }
+    }
+}
+
+// MARK: - Others' work and + Task
+
+/// Others' work, over the Map: a checkbox, remembered, and, while it's on, how many it shows.
+struct WorkMapOthersToggle: View {
+    @ObservedObject var order: PullRequestOrder
+    /// How many of others' work items the Map shows.
+    let count: Int
+    /// Whether it's on, for pictures; nil for what you chose.
+    var shown: Bool?
+
+    var body: some View {
+        let isOn = shown ?? order.mapShowsOthers
+        HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { isOn }, set: { order.setMapShowsOthers($0) })) {
+                Text("Others' work")
+                    .font(size: 12, weight: .medium)
+            }
+            .toggleStyle(.checkbox)
+            .help(WorkMapText.othersHelp)
+            if isOn {
+                Text(WorkMapText.othersCount(count))
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// + Task, in a band's header or over All: finds a work item, of the sprint's by ID or title, or any by its ID, and adds it to
+/// the Map.
+struct WorkMapAddTaskButton: View {
+    let map: WorkMap
+    let finder: WorkMapFinder
+    let add: (ItemRef) -> Void
+
+    @LocalState private var isShown = false
+
+    var body: some View {
+        Button {
+            isShown = true
+        } label: {
+            WorkMapControlLabel(title: "Task", systemImage: "plus")
+        }
+        .buttonStyle(.plain)
+        .help(WorkMapText.addTaskHelp)
+        .accessibilityLabel("Add a Task")
+        .popover(isPresented: $isShown, arrowEdge: .bottom) {
+            WorkMapTaskSearch(map: map, finder: finder, title: "Add a Task to the Map") { ref in
+                isShown = false
+                add(ref)
+            }
+        }
+    }
+}
+
+/// + Task's search: a field for an ID or words of a title, and the work items that match, those the Map has already left
+/// out, as its own or as its pull requests' cards (`WorkMap.workItemsOnMap`), a click or Return adding the first; for an
+/// ID that matches none the page knows, Find, which asks Azure DevOps; for one the Map has, that it has it.
+struct WorkMapTaskSearch: View {
+    let map: WorkMap
+    let finder: WorkMapFinder
+    let title: String
+    /// Why one it found can't be picked, as for Waits for a Task… one that waits for this already: nil where it can; empty,
+    /// without a word.
+    var refusal: (ItemRef) -> String? = { _ in nil }
+    let pick: (ItemRef) -> Void
+
+    /// At most how many it lists.
+    static let mostFound = 8
+
+    @LocalState private var text = ""
+    /// The ID it's asking Azure DevOps for.
+    @LocalState private var looking: Int?
+    /// Why what you picked, or what it asked Azure DevOps for, didn't come.
+    @LocalState private var note: String?
+    @FocusState private var isTyping: Bool
+
+    var body: some View {
+        let found = Array(finder.search(text).filter { !map.workItemsOnMap.contains($0.ref) }.prefix(Self.mostFound))
+        let id = Self.id(in: text)
+        let isOnMap = id.map(hasOnMap) ?? false
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(size: 13, weight: .semibold)
+            TextField("ID or title", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(size: 12.5)
+                .focused($isTyping)
+                .onSubmit {
+                    if let first = found.first { choose(first.ref) } else if let id, !isOnMap { lookUp(id) }
+                }
+                .onChange(of: text) { _, _ in note = nil }
+            if found.isEmpty, text.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text(WorkMapText.searchHint(findsAny: finder.lookUp != nil))
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(found) { work in
+                Button {
+                    choose(work.ref)
+                } label: {
+                    row(work.face)
+                }
+                .buttonStyle(.plain)
+            }
+            if let id, isOnMap {
+                Text(WorkMapText.onMapAlready(id))
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let id, finder.lookUp != nil, !found.contains(where: { $0.ref.number == id }) {
+                if looking == id {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Looking for \(id) in Azure DevOps…")
+                            .font(size: 11.5)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button("Find Work Item \(id) in Azure DevOps") { lookUp(id) }
+                        .buttonStyle(.borderless)
+                        .font(size: 12)
+                }
+            }
+            if let note {
+                Text(note)
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(width: 380, alignment: .leading)
+        .onAppear { isTyping = true }
+    }
+
+    private func row(_ face: WorkMapFace) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: face.symbol)
+                .font(size: 10, weight: .semibold)
+                .foregroundStyle(face.color)
+            VStack(alignment: .leading, spacing: 1) {
+                Text([face.label, face.owner, face.state].compactMap { $0 }.joined(separator: " · "))
+                    .font(size: 12, weight: .semibold)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                Text(face.title)
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Picks a work item it found, unless it can't be: then says why.
+    private func choose(_ ref: ItemRef) {
+        if let why = refusal(ref) {
+            note = why.isEmpty ? nil : why
+        } else {
+            pick(ref)
+        }
+    }
+
+    /// Whether the Map has the work item with this ID already, hidden or not, on its own or as its pull requests' cards.
+    private func hasOnMap(_ id: Int) -> Bool {
+        map.workItemsOnMap.contains { $0.number == id }
+    }
+
+    /// Asks Azure DevOps for a work item by its ID: adds it once it's there, else says it isn't.
+    private func lookUp(_ id: Int) {
+        guard let lookUp = finder.lookUp, looking != id else { return }
+        looking = id
+        note = nil
+        Task { @MainActor in
+            let found = await lookUp(id)
+            guard looking == id else { return }
+            looking = nil
+            if let found {
+                choose(found.ref)
+            } else {
+                note = WorkMapText.noWorkItem(id)
+            }
+        }
+    }
+
+    /// The ID a search is, when it's a number alone: "5120", "#5120".
+    static func id(in text: String) -> Int? {
+        var digits = text.trimmingCharacters(in: .whitespaces)
+        if digits.hasPrefix("#") { digits.removeFirst() }
+        guard !digits.isEmpty, digits.count <= 10, digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber) else { return nil }
+        return Int(digits).flatMap { $0 > 0 ? $0 : nil }
     }
 }
 
@@ -2076,6 +2604,91 @@ package enum WorkMapText {
         By Mission: a graph for each mission, as the Board's lanes. All: every graph together, whatever their missions, and \
         a grid of what no line joins
         """
+
+    // MARK: Others' work and + Task
+
+    static let othersHelp = """
+        Show, faded, the work items of others that your work waits for, and what those wait for, and those that wait right \
+        after yours, as Azure DevOps links them and you or sessions said on the Map
+        """
+
+    /// What Others' work shows, while it's on: "none found", "1 shown", "3 shown".
+    static func othersCount(_ count: Int) -> String {
+        count == 0 ? "none found" : "\(count) shown"
+    }
+
+    /// What an other's node is, for VoiceOver and its tooltip.
+    static let othersNode = "Others' work: on the Map only as your work waits for it, or it waits for yours"
+
+    /// Whose a work item is with no one assigned.
+    package static let unassigned = "Unassigned"
+
+    /// A work item you added that the page hasn't read yet.
+    static let notReadYet = "Not read yet"
+
+    static let addTaskHelp = """
+        Add a task to the Map: one of the sprint's, by its ID or title, or any by its ID, such as a teammate's that yours \
+        waits for. It shows on the Map only
+        """
+
+    /// Under + Task's field, before you type.
+    /// What + Task's search finds: anyone's work in the sprint, and, where it can ask Azure DevOps, any work item by its ID.
+    static func searchHint(findsAny: Bool) -> String {
+        "Type the ID, or words of the title, of anyone's work in the sprint" + (findsAny ? ", or the ID of any work item." : ".")
+    }
+
+    /// "Azure DevOps has no work item 5120 you can see."
+    static func noWorkItem(_ id: Int) -> String {
+        "Azure DevOps has no work item \(id) you can see."
+    }
+
+    /// "Work item 5120 is on the Map already."
+    static func onMapAlready(_ id: Int) -> String {
+        "Work item \(id) is on the Map already."
+    }
+
+    // MARK: In Azure DevOps
+
+    /// "Link 1 Line in Azure DevOps…", "Link 3 Lines in Azure DevOps…".
+    static func linkLines(_ count: Int) -> String {
+        "Link \(count) \(count == 1 ? "Line" : "Lines") in Azure DevOps…"
+    }
+
+    static let linkAllHelp = """
+        Link in Azure DevOps the lines it doesn't have, as dependencies of their work items: each later one a successor of \
+        what it waits for. You see them first
+        """
+
+    /// Link All's question: "Link 3 dependencies in Azure DevOps?"
+    static func linkAllTitle(_ count: Int) -> String {
+        "Link \(dependencies(count)) in Azure DevOps?"
+    }
+
+    /// Link All's button: "Link 3".
+    static func linkAll(_ count: Int) -> String {
+        "Link \(count)"
+    }
+
+    /// "1 dependency", "3 dependencies".
+    package static func dependencies(_ count: Int) -> String {
+        count == 1 ? "1 dependency" : "\(count) dependencies"
+    }
+
+    /// Dependencies in words, a line each, the first 12, then how many more.
+    static func list(_ words: [String]) -> String {
+        let shown = words.prefix(12).map { $0 + "." }
+        return (shown + (words.count > 12 ? ["And \(words.count - 12) more."] : [])).joined(separator: "\n")
+    }
+
+    /// A line's Link in Azure DevOps, or Unlink there, as its tooltip says it.
+    static func linkHelp(_ words: String, unlinks: Bool) -> String {
+        unlinks ? "Take away in Azure DevOps: \(words)" : "Link in Azure DevOps: \(words)"
+    }
+
+    /// A line's Take Away, as its tooltip says it: on the Map only, Azure DevOps keeping what it links.
+    static func takeAwayHelp(_ later: String, waitsFor earlier: String, isLinked: Bool) -> String {
+        "Only on the Map: \(later) no longer waits for \(earlier) there" + (isLinked ? ". Azure DevOps keeps its link" : "")
+    }
 }
 
 private extension String {

@@ -108,10 +108,12 @@ stage to change it, or **Finished My Review**, as you point at its row, to pass 
   merge waves. Apple Intelligence names each mission on your Mac, and suggests a split when one has become two pieces
   of work.
 - **My Work's Map**, with My Work Page on, draws your pull requests, tasks and the steps left, such as tests or
-  enabling it in production, as a graph of what holds what, by mission or all together. Drag to connect, click a line
-  to take it away, and **✨ Ask Copilot** has a session work out what waits for what.
+  enabling it in production, as a graph of what holds what, by mission or all together, with the dependencies Azure
+  DevOps links between work items. Drag to connect, click a line to take it away or link it in Azure DevOps, and
+  **✨ Ask Copilot** has a session work out what waits for what. Check **Others' work** to see, faded, a teammate's task
+  that yours waits for, and add any of the sprint's with **+ Task**.
 
-Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps.
+Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps but what you link there.
 [Pull Request Order, Up Next and the Board →](docs/user-guide.md#azure-devops)
 
 ## Follow the work, not the notifications
@@ -205,7 +207,8 @@ work or a new one, and the model.
 - **Or do it yourself.** With **Make Changes in Azure DevOps** on, reply to comments, resolve threads, edit or delete
   your own comments and change tags, as you, without opening Azure DevOps; on the Sprint page, set a story, bug or
   task to **New**, **Active**, **Closed** or another of its states from its state's menu, and on My Work, drag your
-  sprint work's card to another column, such as **In progress** or **Completed**, to set its state there.
+  sprint work's card to another column, such as **In progress** or **Completed**, to set its state there, and link the
+  Map's lines as predecessors and successors.
 
 Fixes don't push unless you ask, and Pre-review changes and posts nothing. Turn on **Send Prompts to Copilot
 Sessions** in **Settings › Agents**, and BriefBar sends a prompt to one of the Copilot app's sessions itself, or to a
@@ -272,8 +275,9 @@ unless you add `--greedy`), and keep Full Disk Access.
 Sources are read-only, but for one opt-in: with **Make Changes in Azure DevOps**, off by default,
 BriefBar posts your replies in pull requests' threads, sets threads' statuses, edits and deletes your own
 comments, adds and removes pull requests' tags, moves a task or bug of yours to your team's current or next
-sprint on My Work, and sets the state you choose for a work item on the Sprint page, or by moving its card on My
-Work's Board, as you, only when you click or move it.
+sprint on My Work, sets the state you choose for a work item on the Sprint page, or by moving its card on My
+Work's Board, and links or unlinks the dependencies a line of My Work's Map stands for, as you, only when you click or
+move it.
 Azure DevOps and GitHub use
 your existing CLI sign-ins, and Teams and Copilot tracking reads files on your Mac. Full Disk Access is needed for
 Teams and the optional **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.

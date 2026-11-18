@@ -473,6 +473,31 @@ private final class Clock {
         #expect(!order.keepsAnything)
     }
 
+    /// A work item you add to My Work's Map is kept with your lines and steps, by reference, with the line from it to what
+    /// waits for it, each with an Undo; Remove from Map takes it away with that line. Others' work stays off until you turn
+    /// it on, and is remembered then.
+    @Test func itKeepsTheWorkItemsYouAddToTheMapAndWhetherItShowsOthersWork() {
+        let defaults = MemoryDefaults()
+        let order = Self.service(defaults)
+        let teammates = ItemRef.workItem(organization: "contoso", id: 5122)
+        let yours = MapNodeID.card(.workItem(organization: "contoso", id: 5150))
+        order.addMapItem(teammates, home: .notInAMission, before: yours, undo: "You added Task 5122 to the Map: Task 5150 waits for it.")
+        #expect(order.mapState.items[teammates]?.home == .notInAMission)
+        #expect(order.mapState.lines[MapEdits.Line(.card(teammates), yours)]?.isOn == true)
+        #expect(order.mapUndo?.text == "You added Task 5122 to the Map: Task 5150 waits for it.")
+        #expect(Self.service(defaults).mapState.items[teammates] != nil)
+        order.removeMapItem(teammates, undo: "You took Task 5122 off the Map.")
+        #expect(order.mapState.items.isEmpty && order.mapState.lines.isEmpty)
+        order.undoMapChange()
+        #expect(order.mapState.items[teammates] != nil && order.mapState.lines.count == 1)
+
+        #expect(!order.mapShowsOthers)
+        order.setMapShowsOthers(true)
+        #expect(Self.service(defaults).mapShowsOthers)
+        order.setMapShowsOthers(false)
+        #expect(!Self.service(defaults).mapShowsOthers)
+    }
+
     @Test func itNamesWhatTheSourcesDescribe() throws {
         let order = Self.service(try Self.defaults(on: true))
         let item = LinkedItem(

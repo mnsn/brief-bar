@@ -7,9 +7,11 @@ import Foundation
 // in other bands. All draws each set of cards and steps that lines join as a graph of its own, the one with the Board's first
 // card first, their columns lined up, then those no line joins, in a grid. Its columns are what's done, then what can go now,
 // then what comes after, wave by wave. A line goes from what comes first to what waits for it: from a pull request to one that
-// comes after it in an order, or as you or a session said on the Map; through what the Map doesn't show there, such as what
-// you hid, it's dotted. Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as
-// text wraps (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
+// comes after it in an order, or as you or a session said on the Map, or as Azure DevOps links two work items, a predecessor
+// and its successor; through what the Map doesn't show there, such as what you hid, it's dotted. With Others' work, work
+// items the Board doesn't have, such as a teammate's task yours waits for, are nodes too, faded, and so is any you added.
+// Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as text wraps
+// (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -58,6 +60,25 @@ public enum WorkMapGrouping: String, CaseIterable, Sendable {
         switch self {
         case .byMission: "By Mission"
         case .all: "All"
+        }
+    }
+}
+
+/// Others' work, on My Work's Map: whether it shows the work items that aren't yours that your work waits for, and what those
+/// wait for, and those that wait right after yours, faded, with whose they are (`WorkMap(showsOthers:)`). Off until you turn
+/// it on, remembered.
+public enum MapOthersWork {
+    public static let defaultsKey = "order.map.others"
+
+    public static func load(from defaults: some SettingsStorage) -> Bool {
+        defaults.bool(forKey: defaultsKey)
+    }
+
+    public static func save(_ shows: Bool, to defaults: some SettingsStorage) {
+        if shows {
+            defaults.set(true, forKey: defaultsKey)
+        } else {
+            defaults.removeObject(forKey: defaultsKey)
         }
     }
 }
@@ -133,15 +154,41 @@ public struct MapHidden: Equatable, Sendable {
 
 // MARK: - A graph
 
-/// What a node of the Map is: a card of the Board, or a step.
+/// A work item on the Map that the Board doesn't have, by its reference: someone else's that your work waits for, or that
+/// waits for yours, with Others' work (`WorkMap(showsOthers:)`); or one you added to the Map (`MapEdits.addItem`).
+public struct MapWorkItem: Equatable, Sendable, Identifiable {
+    public var ref: ItemRef
+    /// Resolved, done or removed: it holds nothing back.
+    public var isDone: Bool
+    /// It's assigned to you, as one of yours outside the sprint can be.
+    public var isYours: Bool
+    /// You added it to the Map, rather than its lines bringing it there.
+    public var isAdded: Bool
+    /// The page knows what it is: one you added that it hasn't read yet isn't.
+    public var isKnown: Bool
+
+    public init(ref: ItemRef, isDone: Bool = false, isYours: Bool = false, isAdded: Bool = false, isKnown: Bool = true) {
+        self.ref = ref
+        self.isDone = isDone
+        self.isYours = isYours
+        self.isAdded = isAdded
+        self.isKnown = isKnown
+    }
+
+    public var id: MapNodeID { .card(ref) }
+}
+
+/// What a node of the Map is: a card of the Board, a step, or a work item the Board doesn't have.
 public enum WorkMapItem: Equatable, Sendable, Identifiable {
     case card(BoardItem)
     case step(MapStep)
+    case workItem(MapWorkItem)
 
     public var id: MapNodeID {
         switch self {
         case .card(let item): .card(item.ref)
         case .step(let step): .step(step.id)
+        case .workItem(let item): item.id
         }
     }
 
@@ -150,6 +197,7 @@ public enum WorkMapItem: Equatable, Sendable, Identifiable {
         switch self {
         case .card(let item): WorkMapGraph.isDone(item)
         case .step(let step): step.isDone
+        case .workItem(let item): item.isDone
         }
     }
 
@@ -160,6 +208,11 @@ public enum WorkMapItem: Equatable, Sendable, Identifiable {
 
     public var step: MapStep? {
         if case .step(let step) = self { return step }
+        return nil
+    }
+
+    public var workItem: MapWorkItem? {
+        if case .workItem(let item) = self { return item }
         return nil
     }
 }
@@ -197,6 +250,8 @@ public enum WorkMapLink: Hashable, Sendable {
     case stacked
     /// It comes after it in an order: a session's, a story's, or as you changed a mission.
     case order
+    /// Azure DevOps links their work items: the earlier one is the later one's predecessor.
+    case azureDevOps
     /// You, or a session, said so on the Map.
     case said(MapAuthor)
 }
@@ -208,6 +263,8 @@ public struct WorkMapLine: Hashable, Sendable {
         case stacked
         /// It comes after it, as an order says.
         case order
+        /// Azure DevOps links their work items, a predecessor and its successor.
+        case azureDevOps
         /// You, or a session, said it waits for it, on the Map.
         case said(MapAuthor)
         /// It waits for it through these, which the Map doesn't show there, nearest to it last: what you hid, pull requests
@@ -693,25 +750,45 @@ public struct WorkMap: Equatable, Sendable {
     public private(set) var loose: [WorkMapItem]
     /// All: the cards and steps you hid, in the Board's order.
     public private(set) var hidden: [WorkMapItem]
-    /// Every card and step, hidden or not, in the Board's order, each band's steps after its cards: what menus list.
+    /// Every card, work item and step, hidden or not, in the Board's order, each band's work items and steps after its
+    /// cards: what menus list.
     public private(set) var everything: [WorkMapItem]
+    /// The work items it has, hidden or not: those with a node of their own, and those with none whose pull requests'
+    /// cards stand for them, as what's said of them is said of those cards. + Task offers none of them.
+    public private(set) var workItemsOnMap: Set<ItemRef>
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
     /// The band each card and step is in, a card's first.
     private let bandOf: [MapNodeID: BoardLane.Kind]
+    /// The lines All draws, between all that shows.
+    private let lines: [WorkMapLine]
+    /// The dependencies Azure DevOps links between work items, by their references.
+    private let azureDevOps: Set<MapEdits.Line>
+    /// The work items of yours each pull request's card names (`PullRequestBoard.workOfPullRequests`).
+    private let workOfPullRequests: [ItemRef: [ItemRef]]
 
     /// The Map of a board with a lane for each mission, and its sprint work when it has it.
     /// - Parameters:
     ///   - missions: the missions, as By Mission lists them: their orders draw lines.
-    ///   - state: the steps and lines you and sessions added, or took away (`MapEdits.merged`).
+    ///   - state: the steps and lines you and sessions added, or took away, and the work items you added
+    ///     (`MapEdits.merged`).
     ///   - hidden: the cards and steps you hid.
     ///   - done: the cards that are done on the whole board, while a search shows only some of it (`done(on:)`): what came
     ///     before one it leaves out holds nothing back through it.
     ///   - linked: the work items Show Links links to each pull request on the board, whatever Show shows: what's said of
     ///     one with no card of its own is said of those pull requests' cards, as of those the cards name.
+    ///   - azureDevOps: the dependencies Azure DevOps links between work items, each from a predecessor to its successor,
+    ///     which waits for it, by their references: what's said of one with no card of its own is said of its pull requests'
+    ///     cards, as with what you and sessions said.
+    ///   - work: what the page knows of a work item the Board doesn't have, such as a teammate's: whether it's done, and
+    ///     whether it's yours; nil for one it doesn't know.
+    ///   - showsOthers: Others' work: the work items the Board doesn't have that are still open and that what the Map has
+    ///     waits for, and what those wait for, and those that wait right after what it has, are nodes too, at most
+    ///     `mostOthers`, the nearest first.
     public init(
         _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
-        done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:]
+        done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:], azureDevOps: Set<MapEdits.Line> = [],
+        work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false
     ) {
         // Every card, once, with the lanes it's in.
         var cards: [BoardItem] = []
@@ -736,30 +813,57 @@ public struct WorkMap: Equatable, Sendable {
                 aliases[ref, default: []].append(pullRequest)
             }
         }
-        let edges = Edges(missions, state: state, items: byID, aliases: aliases, done: done)
+        // The work items you added that the Board doesn't have, nor a pull request's card for them, in the order you added
+        // them: as the page knows them, else by their references alone, still to do, until it does.
+        var items: [MapWorkItem] = []
+        for (ref, _) in state.items.sorted(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) }) {
+            guard !seen.contains(ref), aliases[ref] == nil else { continue }
+            var item = work(ref) ?? MapWorkItem(ref: ref, isKnown: false)
+            item.isAdded = true
+            items.append(item)
+            byID[item.id] = .workItem(item)
+        }
+        // Of the work items the Board doesn't have that lines name, those the page knows are done hold nothing back.
+        var known = done
+        for ref in Self.workItems(named: state, azureDevOps) where !seen.contains(ref) && work(ref)?.isDone == true {
+            known.insert(ref)
+        }
+        let edges = Edges(missions, state: state, items: byID, aliases: aliases, done: known, azureDevOps: azureDevOps)
+        if showsOthers {
+            for item in Self.others(waitingWith: byID, edges: edges, work: work) {
+                items.append(item)
+                byID[item.id] = .workItem(item)
+            }
+        }
 
-        // Each step goes in the band it was added in; else that of the nearest cards it's joined to; else Not in a mission.
+        // Each step, and each work item the Board doesn't have, goes in the band it was added in; else that of the nearest
+        // cards it's joined to; else Not in a mission.
         var bandOf = lanesOf.compactMapValues(\.first)
         let keys = Dictionary(board.lanes.map { (LaneOrderKey($0.kind, missions: missions), $0.kind) }, uniquingKeysWith: { first, _ in first })
-        for step in state.steps {
-            guard let home = step.home else { continue }
+        let homes: [(MapNodeID, LaneOrderKey?)] = state.steps.map { (MapNodeID.step($0.id), $0.home) }
+            + items.map { ($0.id, state.items[$0.ref]?.home) }
+        for (node, home) in homes {
+            guard let home else { continue }
             if let kind = keys[home] {
-                bandOf[.step(step.id)] = kind
+                bandOf[node] = kind
             } else if home == .notInAMission {
                 // Added in Not in a mission, it stays there, joined to a mission's card or not, though the Board has no
                 // such lane.
-                bandOf[.step(step.id)] = .notInAMission
+                bandOf[node] = .notInAMission
             }
         }
-        for step in state.steps where bandOf[.step(step.id)] == nil {
-            bandOf[.step(step.id)] = edges.nearest(.step(step.id), in: bandOf, order: board.lanes.map(\.kind)) ?? .notInAMission
+        for (node, _) in homes where bandOf[node] == nil {
+            bandOf[node] = edges.nearest(node, in: bandOf, order: board.lanes.map(\.kind)) ?? .notInAMission
         }
         var lanes = board.lanes
-        if state.steps.contains(where: { bandOf[.step($0.id)] == .notInAMission }), !lanes.contains(where: { $0.kind == .notInAMission }) {
+        if homes.contains(where: { bandOf[$0.0] == .notInAMission }), !lanes.contains(where: { $0.kind == .notInAMission }) {
             lanes.append(BoardLane(kind: .notInAMission, columns: [:]))
         }
-        let itemsOf = Dictionary(lanes.map { lane in
-            (lane.kind, Self.items(of: lane).map(WorkMapItem.card) + state.steps.filter { bandOf[.step($0.id)] == lane.kind }.map(WorkMapItem.step))
+        let itemsOf = Dictionary(lanes.map { lane -> (BoardLane.Kind, [WorkMapItem]) in
+            let cards: [WorkMapItem] = Self.items(of: lane).map(WorkMapItem.card)
+            let work: [WorkMapItem] = items.filter { bandOf[$0.id] == lane.kind }.map(WorkMapItem.workItem)
+            let steps: [WorkMapItem] = state.steps.filter { bandOf[.step($0.id)] == lane.kind }.map(WorkMapItem.step)
+            return (lane.kind, cards + work + steps)
         }, uniquingKeysWith: { first, _ in first })
 
         var everything: [WorkMapItem] = []
@@ -845,6 +949,50 @@ public struct WorkMap: Equatable, Sendable {
         self.edges = edges
         self.byID = byID
         self.bandOf = bandOf
+        self.lines = lines
+        self.azureDevOps = azureDevOps
+        workOfPullRequests = board.workOfPullRequests
+        let nodes = byID.keys.compactMap(\.ref).filter { $0.kind == .workItem }
+        workItemsOnMap = Set(nodes).union(aliases.keys)
+    }
+
+    /// At most how many of others' work the Map shows (`init(showsOthers:)`).
+    public static let mostOthers = 30
+
+    /// The work items these name: those lines join, Azure DevOps' and what you and sessions said, and those you added.
+    static func workItems(named state: MapState, _ azureDevOps: Set<MapEdits.Line>) -> Set<ItemRef> {
+        let lines = Array(state.lines.keys) + Array(azureDevOps)
+        let ends = lines.flatMap { [$0.before.ref, $0.after.ref] }.compactMap { $0 }
+        return Set(ends.filter { $0.kind == .workItem } + Array(state.items.keys))
+    }
+
+    /// Others' work: the work items the Board doesn't have, still open, that the page knows, that what the Map has and is
+    /// still open waits for, and what those wait for, back to the nearest of what's done or isn't a work item, the nearest
+    /// first; then those that wait right after what the Map has: at most `mostOthers` of them.
+    static func others(
+        waitingWith items: [MapNodeID: WorkMapItem], edges: Edges, work: (ItemRef) -> MapWorkItem?
+    ) -> [MapWorkItem] {
+        var found: [MapWorkItem] = []
+        var met = Set(items.keys)
+        /// One that's others' work, met for the first time.
+        func other(_ node: MapNodeID) -> MapWorkItem? {
+            guard found.count < mostOthers, !met.contains(node), let ref = node.ref, ref.kind == .workItem,
+                  let item = work(ref), !item.isDone
+            else { return nil }
+            met.insert(node)
+            found.append(item)
+            return item
+        }
+        let open = items.values.filter { !$0.isDone }.map(\.id).sorted()
+        var pending = open.flatMap { edges.predecessors($0) }
+        while !pending.isEmpty {
+            let next = pending.removeFirst()
+            if other(next) != nil { pending += edges.predecessors(next) }
+        }
+        for node in open {
+            for later in edges.successors(node) { _ = other(later) }
+        }
+        return found
     }
 
     /// A lane's cards, in the order its graph takes them: its pull requests in their mission's order, as By Mission lists
@@ -892,8 +1040,50 @@ public struct WorkMap: Equatable, Sendable {
         before == after || edges.reaches(before, back: after)
     }
 
-    /// What comes right before what, in every mission's order and as you and sessions said on the Map, a work item a pull
-    /// request's card names standing for that card, and whether each is done: what the lines are drawn from.
+    // MARK: In Azure DevOps
+
+    /// The work items a node stands for in Azure DevOps: a work item's own card, or one the Board doesn't have, that work
+    /// item; a pull request's card, the work items of yours it names (`PullRequestBoard.workOfPullRequests`), which it names
+    /// only with your sprint work on the Board; none for a step.
+    public func workItems(of node: MapNodeID) -> [ItemRef] {
+        guard let ref = node.ref else { return [] }
+        if ref.kind == .workItem { return [ref] }
+        return workOfPullRequests[ref] ?? []
+    }
+
+    /// What a line of the Map stands for in Azure DevOps (`MapLineLinks`): a dependency of each work item its later end
+    /// stands for on each its earlier end does, in the same organization, never of one on itself; where Azure DevOps links
+    /// it, or you or a session said it, only between the work items it was said of. Nil for one that stands for none: a
+    /// dotted one, through what the Map doesn't show, one with a step, or with a pull request that names no work item of
+    /// yours.
+    public func links(of line: WorkMapLine) -> MapLineLinks? {
+        if case .through = line.style { return nil }
+        let said = edges.facts[MapEdits.Line(line.before, line.after)] ?? []
+        let ends = said.isEmpty ? [MapEdits.Line(line.before, line.after)] : said.sorted()
+        var pairs: Set<MapEdits.Line> = []
+        for end in ends {
+            for earlier in workItems(of: end.before) {
+                for later in workItems(of: end.after) where earlier != later && earlier.scope == later.scope {
+                    pairs.insert(MapEdits.Line(.card(earlier), .card(later)))
+                }
+            }
+        }
+        guard !pairs.isEmpty else { return nil }
+        return MapLineLinks(pairs: pairs.sorted(), linked: pairs.intersection(azureDevOps))
+    }
+
+    /// The lines the Map draws now, between what shows, that stand for dependencies Azure DevOps doesn't link yet, in the
+    /// Map's order: what Link All links.
+    public var unlinked: [(line: WorkMapLine, links: MapLineLinks)] {
+        lines.compactMap { line in
+            guard let links = links(of: line), !links.isLinked else { return nil }
+            return (line, links)
+        }
+    }
+
+    /// What comes right before what, in every mission's order, as Azure DevOps links work items and as you and sessions said
+    /// on the Map, a work item a pull request's card names standing for that card, and whether each is done: what the lines
+    /// are drawn from.
     struct Edges: Equatable, Sendable {
         /// What comes right before each, and how.
         var before: [MapNodeID: [MapNodeID: WorkMapLink]] = [:]
@@ -901,10 +1091,13 @@ public struct WorkMap: Equatable, Sendable {
         var after: [MapNodeID: Set<MapNodeID>] = [:]
         /// What holds nothing back now: cards and steps that are done, and pull requests the orders say merged or closed.
         var done: Set<MapNodeID> = []
+        /// What each line was said of, where Azure DevOps links it, or you or a session said it: between what each was said
+        /// of, before a work item a card names stood for that card. A line an order draws alone is said of its cards.
+        var facts: [MapEdits.Line: Set<MapEdits.Line>] = [:]
 
         init(
             _ missions: [OrderMission], state: MapState, items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
-            done known: Set<ItemRef> = []
+            done known: Set<ItemRef> = [], azureDevOps: Set<MapEdits.Line> = []
         ) {
             var status: [ItemRef: OrderStatus] = [:]
             let steps = missions.flatMap { $0.steps + $0.attached + $0.sameStory }
@@ -920,18 +1113,30 @@ public struct WorkMap: Equatable, Sendable {
                     if status[prerequisite.ref] == nil { status[prerequisite.ref] = prerequisite.status }
                 }
             }
-            // What you and sessions said, the latest of what's said of each line winning, of a work item a card names as of
-            // that card: one added where an order has it already keeps the order's look.
             func nodes(_ node: MapNodeID) -> [MapNodeID] {
                 guard items[node] == nil, let ref = node.ref, let cards = aliases[ref], !cards.isEmpty else { return [node] }
                 return cards.map(MapNodeID.card)
             }
+            // What Azure DevOps links, of a work item a card names as of that card: where an order has it already, it keeps
+            // the order's look.
+            for line in azureDevOps.sorted() {
+                for earlier in nodes(line.before) {
+                    for later in nodes(line.after) where earlier != later {
+                        if before[later]?[earlier] == nil { before[later, default: [:]][earlier] = .azureDevOps }
+                        facts[MapEdits.Line(earlier, later), default: []].insert(line)
+                    }
+                }
+            }
+            // What you and sessions said, the latest of what's said of each line winning, of a work item a card names as of
+            // that card: one added where an order, or Azure DevOps, has it already keeps its look, and one taken away goes,
+            // on the Map only.
             var said: [MapEdits.Line: MapEdits.LineChange] = [:]
             for (line, change) in state.lines.sorted(by: { $0.key < $1.key }) {
                 for earlier in nodes(line.before) {
                     for later in nodes(line.after) where earlier != later {
                         let key = MapEdits.Line(earlier, later)
                         if said[key].map({ $0.at < change.at }) ?? true { said[key] = change }
+                        if change.isOn { facts[key, default: []].insert(line) }
                     }
                 }
             }
@@ -1051,6 +1256,7 @@ public struct WorkMap: Equatable, Sendable {
             switch link {
             case .stacked: .stacked
             case .order: .order
+            case .azureDevOps: .azureDevOps
             case .said(let author): .said(author)
             }
         }
@@ -1070,6 +1276,31 @@ public struct WorkMap: Equatable, Sendable {
     }
 }
 
+// MARK: - In Azure DevOps
+
+/// What a line of My Work's Map stands for in Azure DevOps (`WorkMap.links(of:)`): dependencies between work items, each from
+/// the earlier to the later, which waits for it, as Azure DevOps links a predecessor and its successor, by their references;
+/// and those it links already.
+public struct MapLineLinks: Equatable, Sendable {
+    public var pairs: [MapEdits.Line]
+    public var linked: Set<MapEdits.Line>
+
+    public init(pairs: [MapEdits.Line], linked: Set<MapEdits.Line> = []) {
+        self.pairs = pairs
+        self.linked = linked
+    }
+
+    /// Those Azure DevOps doesn't link yet: what Link in Azure DevOps links.
+    public var missing: [MapEdits.Line] {
+        pairs.filter { !linked.contains($0) }
+    }
+
+    /// Azure DevOps links every one of them: Unlink in Azure DevOps takes them away.
+    public var isLinked: Bool {
+        missing.isEmpty
+    }
+}
+
 // MARK: - Words
 
 extension OrderText {
@@ -1077,6 +1308,16 @@ extension OrderText {
     /// them."
     public static func tooManyCards(_ count: Int) -> String {
         "These \(count) cards are too many to draw clearly. The Board shows them."
+    }
+
+    /// Dependencies between work items, each later one with what it waits for, by what each is called: "Task 5106 waits for
+    /// Task 5104", "Task 5160 waits for Task 5110 and Task 5112".
+    public static func dependencies(_ pairs: [MapEdits.Line], name: (MapNodeID) -> String) -> [String] {
+        let byLater = Dictionary(grouping: pairs, by: \.after)
+        return byLater.keys.sorted().map { later in
+            let earlier = (byLater[later] ?? []).map(\.before).sorted().map(name)
+            return "\(name(later)) waits for \(MapEdits.list(earlier))"
+        }
     }
 
     /// What a dotted line on My Work's Map goes through, from its start: "Through !4103", "Through !4103 and API tests"; and

@@ -12,7 +12,10 @@ import SwiftUI
 /// as one is written (`ItemStories`). It reads Azure DevOps for it only while Show Links is on, with the pull requests'
 /// client: after each of their refreshes (`LinkEngine`), and for a summary (`context`). While Pull Request Order is on too,
 /// it works out which stories your pull requests are for (`WorkItemStories`), with the parent and place in the backlog of
-/// their work items, and what those stories are when nothing else has them, which the engine reads then.
+/// their work items, and what those stories are when nothing else has them, which the engine reads then. And it tells My
+/// Work's Map the dependencies Azure DevOps links the sprint's work items with (`MapDependencies`), and, while My Work shows
+/// the Map, has the engine read what the work items the Map can show that no list or sprint has are: those the
+/// dependencies, and the lines you and sessions said, name, and those you added.
 @MainActor
 final class WorkLinksStore {
     /// The stories your pull requests are for, while Show Links reads them and Pull Request Order wants them.
@@ -57,6 +60,21 @@ final class WorkLinksStore {
     private var detailsRead: AnyCancellable?
     /// Shows one of your pull requests in its details on the window's Pull Requests page: whether it could. The source's.
     var showPullRequest: (PRKey) -> Bool = { _ in false }
+    /// My Work's Map's dependencies, which it tells what Azure DevOps links.
+    weak var dependencies: MapDependencies? {
+        didSet { dependencies?.told(read.dependencies) }
+    }
+
+    /// Whether a window shows My Work on screen (`AzureDevOpsSource.setMyWorkVisible`): what only its Map names is read
+    /// only while one does, with the Map chosen.
+    private(set) var myWorkIsOnScreen = false
+
+    /// A window started showing My Work on screen, or the last one stopped.
+    func setMyWorkOnScreen(_ onScreen: Bool) {
+        guard myWorkIsOnScreen != onScreen else { return }
+        myWorkIsOnScreen = onScreen
+        updateEngine()
+    }
     /// Who's signed in to the Azure CLI, as the pull requests' refresh last told.
     private var account: String?
     /// Whether it tells the details about its things: from `start` or `loadOnce`, until `stop`, whether Show Links is on
@@ -107,6 +125,15 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.update() } }
             .store(in: &cancellables)
+        // What My Work's Map names, while it shows: what you and sessions changed of it, and whether it shows.
+        if let order {
+            order.$mapEdits.map { _ in () }
+                .merge(with: order.$mapTold.map { _ in () }, order.$myWorkView.map { _ in () }, order.$myWorkPage.map { _ in () })
+                .dropFirst()
+                .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+                .sink { [weak self] in MainActor.assumeIsolated { self?.updateEngine() } }
+                .store(in: &cancellables)
+        }
     }
 
     func stop() {
@@ -114,6 +141,7 @@ final class WorkLinksStore {
         stopEngine()
         lastInputs = nil
         read = WorkLinks()
+        dependencies?.told([])
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
         tellsStories = false
@@ -200,6 +228,22 @@ final class WorkLinksStore {
         Task { await engine.reread(pullRequests: pullRequests, workItems: workItems) }
     }
 
+    /// A dependency BriefBar just linked in Azure DevOps, or took away, from My Work's Map: it shows so at once, and the sprint
+    /// is read again (`LinkEngine.changed`), which says so too once Azure DevOps does; in the demo, its made-up links change.
+    func changed(_ dependency: WorkDependency, linked: Bool) {
+        if linked { read.dependencies.insert(dependency) } else { read.dependencies.remove(dependency) }
+        dependencies?.told(read.dependencies)
+        guard store.mode == .live, let engine else { return }
+        Task { await engine.changed(dependency, linked: linked) }
+    }
+
+    /// Reads the sprint's links again, as after a change to a dependency that Azure DevOps may have made though it didn't
+    /// say (`LinkEngine.rereadSprint`); nothing in the demo.
+    func rereadDependencies() {
+        guard store.mode == .live, let engine else { return }
+        Task { await engine.rereadSprint() }
+    }
+
     /// What the engine was told to read last, while it reads.
     var engineInputs: LinkEngine.Inputs? {
         engine == nil ? nil : lastInputs
@@ -239,7 +283,7 @@ final class WorkLinksStore {
             pullRequests[record.id] = LinkEngine.Place(projectId: record.pullRequest.projectId, repositoryId: record.pullRequest.repositoryId)
         }
         let listed = Set(store.items.map(\.key.linkRef)).union(sprintItems.map(\.linkRef))
-        let lookups = Self.lookups(links.linked([.workItem, .pullRequest]), listed: listed)
+        let lookups = Self.lookups(links.linked([.workItem, .pullRequest]).union(mapNames(listed: listed)), listed: listed)
         let wantsStories = order?.isOn == true
         return LinkEngine.Inputs(
             pullRequests: pullRequests,
@@ -251,6 +295,30 @@ final class WorkLinksStore {
             parentLookups: wantsStories ? storyFinder.parents(ofTasksIn: linkedToPullRequests) : []
         )
     }
+
+    /// The work items My Work's Map can show that aren't `listed`, while a window shows it on screen (`mapLookups`); none
+    /// otherwise.
+    private func mapNames(listed: Set<ItemRef>) -> Set<ItemRef> {
+        guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map else { return [] }
+        let state = order.mapState
+        let said = state.lines.keys.flatMap { [$0.before.ref, $0.after.ref] }.compactMap { $0 }.filter { $0.kind == .workItem }
+        let linked = read.dependencies.flatMap { [$0.before.linkRef, $0.after.linkRef] }
+        return Self.mapLookups(added: Array(state.items.keys), said: said, linked: linked, listed: listed)
+    }
+
+    /// The work items My Work's Map names that your lists and the sprint don't have, the first `most` of them: those you
+    /// added, then those the lines you and sessions said name, then those the dependencies Azure DevOps links do, each in
+    /// order of their IDs.
+    static func mapLookups(
+        added: [ItemRef], said: [ItemRef], linked: [ItemRef], listed: Set<ItemRef>, most: Int = mostMapLookups
+    ) -> Set<ItemRef> {
+        var seen = listed
+        let named = added.sorted() + said.sorted() + linked.sorted()
+        return Set(named.filter { seen.insert($0).inserted }.prefix(most))
+    }
+
+    /// At most how many work items the Map has read for it.
+    static let mostMapLookups = 200
 
     /// The work items linked to your pull requests, as read.
     private var linkedToPullRequests: Set<WorkItemKey> {
@@ -333,6 +401,7 @@ final class WorkLinksStore {
     // MARK: Telling Show Links
 
     private func publish() {
+        dependencies?.told(read.dependencies)
         updateStories()
         guard links.isOn else {
             links.withdraw(.azureDevOps)

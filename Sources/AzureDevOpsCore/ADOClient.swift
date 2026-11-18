@@ -165,7 +165,8 @@ public struct ADOClient: Sendable {
             case .reply, .editComment: return .comment(try ADOJSON.decoder().decode(ADOComment.self, from: data))
             case .setStatus: return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: data))
             case .addTag: return .tag(try ADOJSON.decoder().decode(ADOTag.self, from: data))
-            case .setIteration, .setState: return .workItem(try ADOJSON.decoder().decode(ADOWorkItem.self, from: data))
+            case .setIteration, .setState, .addDependency, .removeDependency:
+                return .workItem(try ADOJSON.decoder().decode(ADOWorkItem.self, from: data))
             case .deleteComment, .removeTag: return .done
             }
         } catch {

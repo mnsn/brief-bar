@@ -21,7 +21,7 @@ enum WorkMapPrompt {
         }
         func name(_ node: MapNodeID) -> String {
             switch node {
-            case .card(let ref): describe(ref)?.label ?? ref.shortOrderLabel
+            case .card(let ref): describe(ref)?.label ?? (ref.kind == .workItem ? "work item \(ref.id)" : ref.shortOrderLabel)
             case .step(let id): step(id)
             }
         }
@@ -32,6 +32,12 @@ enum WorkMapPrompt {
                 let words = [described?.label ?? card.ref.shortOrderLabel, described?.title].compactMap { $0 }.joined(separator: " ")
                 let link = described?.link.map { " — \($0.absoluteString)" } ?? ""
                 return "- \(words)\(link)\(item.isDone ? " (done)" : "")"
+            case .workItem(let work):
+                let described = describe(work.ref)
+                let words = [described?.label ?? "Work item \(work.ref.id)", described?.title].compactMap { $0 }.joined(separator: " ")
+                let link = described?.link.map { " — \($0.absoluteString)" } ?? ""
+                let whose = work.isYours ? "" : " (someone else's)"
+                return "- \(words)\(link)\(whose)\(item.isDone ? " (done)" : "")"
             case .step(let found):
                 return "- \(step(found.id)) — a step, \(found.isDone ? "done" : "to do")"
             }

@@ -18,6 +18,7 @@ import Testing
         switch item {
         case .card(let card): card.ref.shortOrderLabel
         case .step(let step): step.name
+        case .workItem(let item): item.ref.shortOrderLabel
         }
     }
 
@@ -373,6 +374,111 @@ import Testing
         #expect(WorkMap.done(on: whole) == [Steps.task(5102)])
     }
 
+    /// Azure DevOps' dependencies are lines too, solid, of a work item a pull request's card names as of that card; taken away
+    /// on the Map, one goes from the Map only.
+    @Test func azureDevOpsDependenciesDrawLinesOntoTheirCards() throws {
+        let board = Steps.board(Self.open([4091]))
+            .withWork([Steps.work(5112, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5150, .toDo)], missions: [], stories: [])
+        let linked: Set<MapEdits.Line> = [.init(Self.work(5112), Self.work(5150))]
+        let map = WorkMap(board, missions: [], azureDevOps: linked)
+        let group = try #require(map.groups.first)
+        #expect(Self.lines(group.graph, in: map) == ["!4091 > 5150"])
+        #expect(group.graph?.lines.first?.style == .azureDevOps)
+        #expect(map.waitsFor(Self.work(5150)).map { $0.link } == [.azureDevOps])
+
+        let off = MapEdits.merged([Self.edits(off: [(Self.node(4091), Self.work(5150))], by: .you)], now: Self.day)
+        let taken = WorkMap(board, missions: [], state: off, azureDevOps: linked)
+        #expect(taken.groups.isEmpty && taken.loose.count == 2)
+    }
+
+    /// A line stands, in Azure DevOps, for dependencies between the work items its ends stand for: a work item's card, itself;
+    /// a pull request's card, the work items of yours it names, each of them, but where the line was said of one of them,
+    /// that one only; never a step, a dotted line, or work items of two organizations. Link All takes the lines drawn that
+    /// Azure DevOps doesn't link yet.
+    @Test func aLineLinksTheWorkItemsItsEndsStandFor() throws {
+        let work = [
+            Steps.work(5110, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5112, .inProgress, linked: [Steps.linked(4091)]),
+            Steps.work(5160, .inProgress, linked: [Steps.linked(4102)]), Steps.work(5150, .toDo), Steps.work(5151, .toDo),
+        ]
+        let board = Steps.board(Self.open([4091, 4102])).withWork(work, missions: [], stories: [])
+        let said: [(MapNodeID, MapNodeID)] = [
+            (Self.node(4091), Self.node(4102)), (Self.work(5112), Self.work(5150)), (Self.work(5150), .step(Self.id(1))),
+            (Self.work(5150), Self.work(5151)),
+        ]
+        let state = MapEdits.merged([Self.edits(steps: [(1, "API tests")], lines: said, by: .you)], now: Self.day)
+        let map = WorkMap(board, missions: [], state: state, azureDevOps: [.init(Self.work(5150), Self.work(5151))])
+        func line(_ before: MapNodeID, _ after: MapNodeID) -> WorkMapLine {
+            WorkMapLine(before: before, after: after, style: .said(.you))
+        }
+        #expect(map.workItems(of: Self.node(4091)) == [Steps.task(5110), Steps.task(5112)])
+        #expect(map.links(of: line(Self.node(4091), Self.node(4102)))?.missing == [
+            .init(Self.work(5110), Self.work(5160)), .init(Self.work(5112), Self.work(5160)),
+        ])
+        #expect(map.links(of: line(Self.node(4091), Self.work(5150)))?.pairs == [.init(Self.work(5112), Self.work(5150))])
+        let linked = try #require(map.links(of: line(Self.work(5150), Self.work(5151))))
+        #expect(linked.isLinked && linked.missing.isEmpty)
+        #expect(map.links(of: line(Self.work(5150), .step(Self.id(1)))) == nil)
+        #expect(map.links(of: WorkMapLine(before: Self.node(4091), after: Self.node(4102), style: .through([Self.work(5150)]))) == nil)
+        let elsewhere = MapNodeID.card(.workItem(organization: "fabrikam", id: 7))
+        #expect(map.links(of: line(elsewhere, Self.work(5150))) == nil)
+        let all = map.unlinked.map { Self.label($0.line.before, in: map) + " > " + Self.label($0.line.after, in: map) }
+        #expect(all.sorted() == ["!4091 > !4102", "!4091 > 5150"])
+        let words = OrderText.dependencies([.init(Self.work(5112), Self.work(5160)), .init(Self.work(5110), Self.work(5160))]) {
+            "Task " + ($0.ref?.id ?? "")
+        }
+        #expect(words == ["Task 5160 waits for Task 5110 and Task 5112"])
+    }
+
+    /// Others' work, once you show it: the open work items the Board doesn't have that yours wait for, and what those wait
+    /// for, and those that wait right after yours, in the band of what they're joined to; not one that's done, one that
+    /// waits on those, or one joined to nothing of yours. Without it, yours waits a wave on for the open one it doesn't show.
+    @Test func othersWorkShowsWhatYoursWaitsForAndWhatWaitsRightAfterIt() throws {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .toDo)], missions: [], stories: [])
+        func line(_ before: Int, _ after: Int) -> MapEdits.Line { .init(Self.work(before), Self.work(after)) }
+        let linked: Set<MapEdits.Line> = [
+            line(5201, 5150), line(5202, 5201), line(5203, 5150), line(5150, 5204), line(5204, 5205), line(5206, 5207),
+        ]
+        let done: [Int: Bool] = [5201: false, 5202: false, 5203: true, 5204: false, 5205: false, 5206: false, 5207: false]
+        let work = { (ref: ItemRef) -> MapWorkItem? in
+            ref.number.flatMap { done[$0] }.map { MapWorkItem(ref: ref, isDone: $0) }
+        }
+        let mine = WorkMap(board, missions: [], azureDevOps: linked, work: work)
+        #expect(mine.everything.map(Self.name) == ["5150"])
+        #expect(mine.bands.first?.graph?.columns == [.wave(1)])
+
+        let map = WorkMap(board, missions: [], azureDevOps: linked, work: work, showsOthers: true)
+        let band = try #require(map.bands.first)
+        #expect(map.bands.count == 1)
+        #expect(Self.places(band.graph) == ["5202 0,0", "5201 1,0", "5150 2,0", "5204 3,0"])
+        #expect(Self.lines(band.graph, in: map) == ["5202 > 5201", "5201 > 5150", "5150 > 5204"])
+        #expect(map.item(Self.work(5201))?.workItem == MapWorkItem(ref: Steps.task(5201)))
+        #expect(map.band(of: Self.work(5202)) == .notInAMission)
+    }
+
+    /// A work item you added shows whatever Others' work says, in the band you added it in; one the page doesn't know yet by
+    /// its reference alone; and one the Board has, or a pull request's card stands for, not again.
+    @Test func aWorkItemYouAddedShowsInTheBandYouAddedItIn() {
+        var checkout = Steps.mission([Steps.step(4101, .next, place: 1)])
+        checkout.story = MissionStory(ref: Steps.task(5001))
+        let work = [Steps.work(5103, .inProgress, story: 5001, linked: [Steps.linked(4101)]), Steps.work(5150, .toDo)]
+        let board = Steps.board(Self.open([4101]), missions: [checkout])
+            .withWork(work, missions: [checkout], stories: [Steps.task(5001)])
+        var yours = MapEdits()
+        yours.addItem(Steps.task(5210), home: LaneOrderKey(.mission(checkout.key), missions: [checkout]), by: .you, at: Self.day)
+        yours.addItem(Steps.task(5299), home: nil, by: .you, at: Self.day + 1)
+        yours.addItem(Steps.task(5150), home: nil, by: .you, at: Self.day + 2)
+        yours.addItem(Steps.task(5103), home: nil, by: .you, at: Self.day + 3)
+        let known = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5210) ? MapWorkItem(ref: ref) : nil }
+        let map = WorkMap(board, missions: [checkout], state: MapEdits.merged([yours], now: Self.day), work: known)
+        #expect(map.band(of: Self.work(5210)) == .mission(checkout.key))
+        #expect(map.item(Self.work(5210))?.workItem == MapWorkItem(ref: Steps.task(5210), isAdded: true))
+        #expect(map.item(Self.work(5299))?.workItem == MapWorkItem(ref: Steps.task(5299), isAdded: true, isKnown: false))
+        #expect(map.band(of: Self.work(5299)) == .notInAMission)
+        #expect(map.everything.filter { $0.workItem != nil }.map(Self.name) == ["5210", "5299"])
+        // + Task offers none the Map has, on its own or as its pull requests' cards: not 5103, whose card is !4101's.
+        #expect(map.workItemsOnMap == [Steps.task(5103), Steps.task(5150), Steps.task(5210), Steps.task(5299)])
+    }
+
     /// All: each set of cards lines join is a group, the one with the Board's first card first; the cards no line joins are
     /// loose, and those you hid are listed apart, in the Board's order.
     @Test func allGroupsWhatLinesJoinAndListsTheRest() {
@@ -678,6 +784,39 @@ import Testing
         #expect(forgotWork && forgotten.isEmpty && !forgotAgain)
         MapEdits().save(to: defaults, key: MapEdits.yoursKey)
         #expect(defaults.data(forKey: MapEdits.yoursKey) == nil)
+    }
+
+    /// The work items you add to the Map are kept by reference, with where and when, the latest `mostItems` of them: taken off
+    /// with the lines you drew to them, and forgotten as Azure DevOps goes. Others' work stays off until you turn it on.
+    @Test func workItemsYouAddAreKeptByReference() {
+        var edits = MapEdits()
+        let story = LaneOrderKey.story(Steps.task(5101))
+        edits.addItem(Steps.task(5210), home: story, by: .you, at: Map.day)
+        edits.addItem(Steps.task(5210), home: nil, by: .you, at: Map.day + 5)
+        edits.addItem(Map.pr(4101), home: nil, by: .you, at: Map.day)
+        edits.set(.init(Map.work(5210), Map.work(5150)), on: true, by: .you, at: Map.day + 1)
+        let defaults = MemorySettings()
+        edits.save(to: defaults, key: MapEdits.yoursKey)
+        let loaded = MapEdits.load(from: defaults, key: MapEdits.yoursKey)
+        #expect(loaded == edits)
+        #expect(loaded.items == [Steps.task(5210): MapEdits.ItemChange(at: Map.day, by: .you, home: story)])
+        #expect(MapEdits.merged([MapEdits(), loaded], now: Map.day).items.keys.sorted() == [Steps.task(5210)])
+        edits.removeItem(Steps.task(5210))
+        #expect(edits.isEmpty)
+
+        var many = MapEdits()
+        for number in 0...MapEdits.mostItems {
+            many.addItem(Steps.task(6000 + number), home: nil, by: .you, at: Map.day + Double(number))
+        }
+        #expect(many.items.count == MapEdits.mostItems && many.items[Steps.task(6000)] == nil)
+        let forgot = many.forget([.pullRequest])
+        #expect(forgot && many.isEmpty)
+
+        #expect(!MapOthersWork.load(from: defaults))
+        MapOthersWork.save(true, to: defaults)
+        #expect(MapOthersWork.load(from: defaults))
+        MapOthersWork.save(false, to: defaults)
+        #expect(defaults.object(forKey: MapOthersWork.defaultsKey) == nil)
     }
 
     private typealias Steps = NextStepsTests
