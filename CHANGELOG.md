@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.1 - 2026-11-18
+
+- **A step you deleted on My Work's Map stays deleted.** Once you've added more than 300 steps, the oldest of yours go,
+  as before, but never what you said of a step a session added: one you deleted, or marked done, no longer comes back.
+- **My Work's Map fits the page.** Where a graph's columns don't all fit across, as with a card's details beside the Map
+  or in a narrow window, the graph folds: the columns that don't fit go on below, as text wraps, and a line from one row
+  of columns to the next wraps round, down and back to its start, so the whole graph shows without scrolling sideways.
+  The grid of what no line joins fits the page too.
+
 ## 0.25.0 - 2026-11-17
 
 - **My Work's Map.** **Board | Map**, in My Work's header, draws your pull requests, your work items with no pull
