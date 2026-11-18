@@ -118,6 +118,21 @@ import Testing
         #expect(wrapped.minX < narrow.nodes[0].frame.minX && wrapped.maxX > narrow.nodes[0].frame.maxX)
     }
 
+    /// A selected line's card stays on the canvas, as wide as it is where that's narrower than the card, as one column is;
+    /// on a wider canvas it's 340 points wide, at the line's middle, as it was.
+    @Test func aSelectedLinesCardStaysOnACanvasOfOneColumn() throws {
+        let m = Self.metrics
+        let graph = try #require(Self.map(chain: 2).bands.first?.graph)
+        let narrow = Self.geometry(graph, width: m.nodeWidth + m.margin(for: 1))
+        let card = narrow.card(for: try #require(narrow.lines.first), metrics: m)
+        #expect(card.minX == 0 && card.maxX == narrow.size.width)
+
+        let wide = Self.geometry(try #require(Self.map(chain: 4).bands.first?.graph), width: nil)
+        let middle = try #require(wide.lines.first { $0.line.before == Self.step(2) })
+        let centered = wide.card(for: middle, metrics: m)
+        #expect(centered.width == 340 && centered.midX == middle.middle.x && centered.midY == middle.middle.y)
+    }
+
     /// The middle of a path's longest straight piece: for a line that wraps round, its track under its tier.
     static func track(of path: Path) -> CGPoint {
         var current = CGPoint.zero

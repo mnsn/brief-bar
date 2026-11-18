@@ -844,7 +844,7 @@ struct WorkMapCanvas: View {
             if let id = selectedLine, let drawn = geometry.lines.first(where: { $0.id == id }) {
                 selectedLineCard(drawn)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .at(CGRect(x: drawn.middle.x - 170 * m.scale, y: drawn.middle.y - 16 * m.scale, width: 340 * m.scale, height: 32 * m.scale))
+                    .at(geometry.card(for: drawn, metrics: m))
             }
         }
         .coordinateSpace(.named(Self.space))
@@ -938,7 +938,8 @@ struct WorkMapCanvas: View {
         }
     }
 
-    /// A selected line's card, at its middle: what it says, and Take Away.
+    /// A selected line's card, at its middle: what it says, and Take Away. What it says shortens in the middle where the card
+    /// is as wide as a narrow canvas lets it be; its buttons never do.
     private func selectedLineCard(_ drawn: Geometry.Drawn) -> some View {
         HStack(spacing: 8) {
             Text(editor.words(drawn.line))
@@ -953,6 +954,7 @@ struct WorkMapCanvas: View {
                         selectedLine = nil
                     }
                     .buttonStyle(.borderless)
+                    .fixedSize()
                 }
             } else {
                 Button("Take Away") {
@@ -960,6 +962,7 @@ struct WorkMapCanvas: View {
                     selectedLine = nil
                 }
                 .buttonStyle(.borderless)
+                .fixedSize()
                 .help("Only on the Map: \(editor.label(drawn.line.after)) no longer waits for \(editor.label(drawn.line.before)) there")
             }
             Button {
@@ -968,13 +971,14 @@ struct WorkMapCanvas: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
+            .fixedSize()
             .help("Close")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.5)))
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     static func arrowhead(at end: CGPoint, size: CGFloat) -> Path {
@@ -1279,6 +1283,14 @@ extension WorkMapCanvas.Geometry {
     /// How many columns fit across a width: at least one.
     static func across(_ width: CGFloat, metrics m: WorkMapMetrics) -> Int {
         max(Int((width + m.columnGap) / (m.nodeWidth + m.columnGap)), 1)
+    }
+
+    /// Where a selected line's card goes: at the line's middle, 340 points wide, but no wider than the canvas and within it,
+    /// as a canvas folded to one column is narrower than that.
+    func card(for drawn: Drawn, metrics m: WorkMapMetrics) -> CGRect {
+        let width = min(340 * m.scale, size.width)
+        let x = min(max(drawn.middle.x - width / 2, 0), size.width - width)
+        return CGRect(x: x, y: drawn.middle.y - 16 * m.scale, width: width, height: 32 * m.scale)
     }
 
     /// The line the pointer is on, or a click: the nearest within `tolerance` of the point, as the lines that wrap round a

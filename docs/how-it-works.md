@@ -2288,7 +2288,8 @@ take one away, then what it could wait for, its band's first, then Elsewhere, bu
 already, which would close a loop (`WorkMap.wouldLoop`). A drag says what it would draw as it goes, and draws nothing
 onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, the
 nearest within a few points of the click, as lines that wrap round together run closer than that
-(`WorkMapCanvas.Geometry.line(at:within:)`), saying what it is, with Take Away, or, for a dotted one, Show what you hid
+(`WorkMapCanvas.Geometry.line(at:within:)`), saying what it is in a card at its middle, no wider than the canvas
+(`card(for:metrics:)`), with Take Away, or, for a dotted one, Show what you hid
 that it goes through; Escape lets it go. Hovering a node lights up what comes before it and after it, directly or
 through others (`WorkMapLines.related`), dimming the rest.
 A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items
