@@ -166,3 +166,19 @@ import Testing
         #expect(Set(unknown.nodes.map(\.frame.minX)).count == 4)
     }
 }
+
+/// + Task's search, as Return goes.
+@MainActor
+@Suite struct WorkMapTaskSearchTests {
+    /// Return picks the first work item the search found, else asks Azure DevOps for an ID the Map doesn't have; but for an
+    /// ID the Map leaves out as done, while Done is off, nothing, as the search says Done would show it: not another whose
+    /// ID has its digits, as 15102 has 5102's.
+    @Test func returnNeverPicksAnotherForAnIDLeftOutAsDone() {
+        let other = ItemRef.workItem(organization: "contoso", id: 15102)
+        #expect(WorkMapTaskSearch.submit(found: [other], id: 5102, isOnMap: false, isLeftOut: true) == .nothing)
+        #expect(WorkMapTaskSearch.submit(found: [], id: 5102, isOnMap: false, isLeftOut: true) == .nothing)
+        #expect(WorkMapTaskSearch.submit(found: [other], id: nil, isOnMap: false, isLeftOut: false) == .pick(other))
+        #expect(WorkMapTaskSearch.submit(found: [], id: 5102, isOnMap: false, isLeftOut: false) == .lookUp(5102))
+        #expect(WorkMapTaskSearch.submit(found: [], id: 5102, isOnMap: true, isLeftOut: false) == .nothing)
+    }
+}

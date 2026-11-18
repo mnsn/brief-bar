@@ -2492,6 +2492,25 @@ struct WorkMapTaskSearch: View {
     /// At most how many it lists.
     static let mostFound = 8
 
+    /// What Return does in it.
+    enum Submit: Equatable {
+        /// Picks the work item, as a click on it does.
+        case pick(ItemRef)
+        /// Asks Azure DevOps for the work item with this ID.
+        case lookUp(Int)
+        case nothing
+    }
+
+    /// What Return does: picks the first work item it found, else asks Azure DevOps for an ID that the Map doesn't have; but
+    /// for an ID the Map leaves out as done, while Done is off, nothing, as it says Done would show that one, rather than pick
+    /// another whose ID has its digits, as 15102 has 5102's.
+    static func submit(found: [ItemRef], id: Int?, isOnMap: Bool, isLeftOut: Bool) -> Submit {
+        if isLeftOut { return .nothing }
+        if let first = found.first { return .pick(first) }
+        if let id, !isOnMap { return .lookUp(id) }
+        return .nothing
+    }
+
     @LocalState private var text = ""
     /// The ID it's asking Azure DevOps for.
     @LocalState private var looking: Int?
@@ -2515,7 +2534,11 @@ struct WorkMapTaskSearch: View {
                 .font(size: 12.5)
                 .focused($isTyping)
                 .onSubmit {
-                    if let first = found.first { choose(first.ref) } else if let id, !isOnMap, !isLeftOut { lookUp(id) }
+                    switch Self.submit(found: found.map(\.ref), id: id, isOnMap: isOnMap, isLeftOut: isLeftOut) {
+                    case .pick(let ref): choose(ref)
+                    case .lookUp(let id): lookUp(id)
+                    case .nothing: break
+                    }
                 }
                 .onChange(of: text) { _, _ in note = nil }
             if found.isEmpty, text.trimmingCharacters(in: .whitespaces).isEmpty {
