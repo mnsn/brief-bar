@@ -116,9 +116,15 @@ extension PullRequestBoard {
     /// Its first card that matches My Work's search, lanes from the top, columns from the left, each in its order, past those
     /// related to one (`related`): where Return in the search takes the keyboard. Nil with none.
     public var firstCard: ItemRef? {
+        firstCard(skipping: { _ in false })
+    }
+
+    /// Its first card that matches My Work's search, as `firstCard`, past those `skips` leaves out too, such as what's done
+    /// while the Map leaves that out (`WorkMapGraph.isDone`).
+    public func firstCard(skipping skips: (BoardItem) -> Bool) -> ItemRef? {
         for lane in lanes {
             for column in columns {
-                if let first = lane.items(in: column).first(where: { !related.contains($0.ref) }) { return first.ref }
+                if let first = lane.items(in: column).first(where: { !related.contains($0.ref) && !skips($0) }) { return first.ref }
             }
         }
         return nil

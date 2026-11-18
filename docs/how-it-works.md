@@ -2296,11 +2296,14 @@ nearest within a few points of the click, as lines that wrap round together run 
 (`card(for:metrics:)`), with Take Away, or, for a dotted one, Show what you hid
 that it goes through; Escape lets it go. Hovering a node lights up what comes before it and after it, directly or
 through others (`WorkMapLines.related`), dimming the rest.
-A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items
-of yours it's for, "Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's
-gray, outlined dashed, In progress's, Merged's once resolved, and green once done; a step's is gray and dashed until it's
-done, then green, with ✨ where a session added it. Each of your changes is kept at once, with an Undo line at the top of
-the Map (`MapUndo`), which puts back the Map as it was.
+A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work
+items of yours it's for, "Task 5112"; a work item's starts with its state's symbol, as a task's line on the Sprint page
+does, which, on your work's own card, is that line's (`StateSymbol`, `WorkMapContent.state`): with Make Changes in Azure
+DevOps on, a menu of the states it can be put in, as its card's menu's State is; then its type's symbol, but a task's,
+and its ID, state and title, in the color of its column: To start's gray, outlined dashed, In progress's, Merged's once
+resolved, and green once done; a step's is gray and dashed until it's done, then green, with ✨ where a session added it.
+Each of your changes is kept at once, with an Undo line at the top of the Map (`MapUndo`), which puts back the Map as it
+was.
 
 **✨ Ask Copilot**, in a band's header or over a graph of All, asks one of its missions' sessions, or a fork of it, while
 Send Work to Copilot can send it a prompt, or copies the prompt for a new session (`WorkMapAskMenu`): what's there, each
@@ -2323,6 +2326,15 @@ deleted one, stays until that side forgets the step, so that it doesn't come bac
 mission in its details, and Show Them, scroll the Map to its band, the graph that has the card or All's grid, and a
 search's Return gives its card's node the keyboard's focus. Nothing is read for the Map but what the next sections say,
 and nothing goes to Azure DevOps but the dependencies you link or take away there.
+
+**Done** (`MapDoneWork`, `order.map.hidesDone`, on until you uncheck it, at the top of the Map: `WorkMapDoneToggle`) shows
+what's done in the Done column; off, the Map leaves it out (`WorkMap(showsDone:)`), cards, work items and steps alike
+(`WorkMapItem.isDone`), as it does what you hid, but listed nowhere, and a band with nothing else goes; as what's done
+holds nothing back, no line goes through it, dotted or not. It shows while the Map has something done, but what you
+hid, or while it's off, which says how many it leaves out (`WorkMap.doneCount`). Off, a search's Return goes to the
+first card the Map shows, past what's done (`PullRequestBoard.firstCard(skipping:)`), and + Task offers nothing that's
+done, saying, for one by its ID, that Done would show it, where its Return adds nothing, not another whose ID has those
+digits (`WorkMapTaskSearch.submit`).
 
 **Others' work** (`MapOthersWork`, `order.map.others`, off until you check it, at the top of the Map:
 `WorkMapOthersToggle`), with + Sprint Tasks or + All My Tasks, makes nodes of the work items the Board doesn't have
@@ -3436,8 +3448,9 @@ window shows that page: then it opens in Azure DevOps.
 **What a work item opens.** ↗ at the top of its details opens it in Azure DevOps, as **Open in Azure DevOps** under its
 title does, and as a pull request's ↗ opens it from its own details; on a pull request's page over them, ↗ is that pull
 request's. Its Copilot session and its pull request are a click away too (`WorkItemShortcuts`, `WorkItemOpenItems`,
-`WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**, and beside **Open in
-Azure DevOps** in its details, from what BriefBar knows already, reading nothing more for them. Its
+`WorkItemOpenButtons`): in its right-click and **⋯** menus on the board and in its details' **⋯**, in its card's menu on
+My Work's Board and its node's on the Map, and beside **Open in Azure DevOps** in its details, from what BriefBar knows
+already, reading nothing more for them. Its
 sessions are the tasks you sent it to Copilot, the newest first, while Send Work to Copilot is on, then the sessions Show
 Links links to it, directly or through one of its pull requests, the one that needs you most first, each once; BriefBar's
 tasks only while their worktrees are still there, as a pull request's are. Each opens as a pull request's session does
@@ -3494,8 +3507,9 @@ resolved, then done, two of the same category as the default processes order the
 by name; never a removed one, which takes it off the board: remove one in Azure DevOps. A type the configuration
 doesn't map offers none. A task's state, the symbol at the start of its line, a story's or bug's on its card, and the
 state in a work item's details are then menus of them, its own checked (`StateSymbol`, `StateChip`), and its menus
-have **State** (`StateMenuItems`); with the setting off, the state's tooltip says how to turn it on. Nothing asks
-first: choosing a state is the change, as in Azure DevOps.
+have **State** (`StateMenuItems`); with the setting off, the state's tooltip says how to turn it on. On My Work, a work
+item's card's menu has State too, and its node on the Map starts with the same symbol and menu (`WorkMapContent.state`).
+Nothing asks first: choosing a state is the change, as in Azure DevOps.
 
 The change is a `PATCH` of the work item (`ADOWrite.setState`), a JSON Patch (`application/json-patch+json`) of two
 operations: a `test` that its state is the one BriefBar read it in, then an `add` of the one you chose, so that Azure

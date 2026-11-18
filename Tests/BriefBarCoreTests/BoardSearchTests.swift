@@ -173,6 +173,12 @@ import Testing
         #expect(cartSearch.count(of: .stage(.inProgress)) == 1)
         #expect(cartSearch.cardCount == 3)
         #expect(cartSearch.firstCard == Steps.pr(4101))
+        #expect(cartSearch.firstCard(skipping: { $0.ref == Steps.pr(4101) }) == Steps.pr(4102))
+
+        // On the Map with Done off, Return goes past what's done: “badge” finds only !4103, which is out.
+        let badge = try matching("badge")
+        #expect(badge.firstCard == Steps.pr(4103))
+        #expect(badge.firstCard(skipping: WorkMapGraph.isDone) == nil)
 
         // A work item's own card, in any case and accent; and a lane of what's in no mission.
         let tests = try matching("TOTALS TESTS")

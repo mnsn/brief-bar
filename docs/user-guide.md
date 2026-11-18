@@ -539,19 +539,22 @@ the pull requests linked to them.
 request, and with + Sprint Tasks or + All My Tasks each work item of yours with no pull request on the Board, is a node,
 and so is each **step**, work with no pull request or work item yet, such as API tests, monitoring, enabling it in
 staging or in production, or announcing it. They go in columns from left to right: **Done**, what merged, closed,
-resolved, completed or was marked done; **Now**, what nothing still open holds; then **Then**, **Later** and on, a wave at
-a time. Where the page is too narrow for all of a graph's columns, as with a card's details beside the Map, the graph
-folds to fit it: the columns that don't fit go on below, as text wraps, and a line from one row of columns to the next
-wraps round, down and back to its start. A line goes from what comes first to what waits for it: solid where a pull
-request is stacked on its branch, or where you or a session said so, and dashed where an order says so, as on the Pull
-Requests page's Map. Lines run only from the nearest of what holds each, so a step that waits for everything before it
-doesn't draw a line from each; hover a node to light up all it waits for and all that waits for it. A pull request's node
-names the work items of yours it's for, such as **Task 5112**, a work item's its state, dashed and gray until it starts,
-and a step's has a circle that marks it done, and ✨ where a session added it. **By Mission**, beside it, draws a graph
-for each of the Board's lanes, under its header: a mission's, with its next steps, a story's, and what's in no mission,
-with what its cards are joined to in other lanes, dimmed, naming where they are. **All** draws every graph together,
-their columns lined up, each named by the lanes its cards are in, then a grid of what no line joins, under **Not
-connected**, as wide as the page.
+resolved, completed or was marked done; **Now**, what nothing still open holds; then **Then**, **Later** and on, a wave
+at a time. Uncheck **Done**, at the top of the Map, to leave out what's done, with a band that has nothing else: it says
+how many it leaves out, such as **4 left out**, and the Board still shows them. Where the page is too narrow for all of
+a graph's columns, as with a card's details beside the Map, the graph folds to fit it: the columns that don't fit go on
+below, as text wraps, and a line from one row of columns to the next wraps round, down and back to its start. A line
+goes from what comes first to what waits for it: solid where a pull request is stacked on its branch, or where you or a
+session said so, and dashed where an order says so, as on the Pull Requests page's Map. Lines run only from the nearest
+of what holds each, so a step that waits for everything before it doesn't draw a line from each; hover a node to light
+up all it waits for and all that waits for it. A pull request's node names the work items of yours it's for, such as
+**Task 5112**; a work item's starts with its state, as a task's line on the Sprint page does, a menu of the states it
+can be put in with **Make Changes in Azure DevOps** on (**Set your work's state**, below), and is dashed and gray until
+it starts; and a step's has a circle that marks it done, and ✨ where a session added it. **By Mission**, beside it,
+draws a graph for each of the Board's lanes, under its header: a mission's, with its next steps, a story's, and what's
+in no mission, with what its cards are joined to in other lanes, dimmed, naming where they are. **All** draws every
+graph together, their columns lined up, each named by the lanes its cards are in, then a grid of what no line joins,
+under **Not connected**, as wide as the page.
 
 Edit it as you go, as an order doesn't always say it right: drag from a node onto what waits for it to draw a line,
 across graphs too, which joins them; click a line, then **Take Away**, for one that's wrong; right-click a node for its
@@ -593,10 +596,10 @@ same whenever you ask them what waits for what, with agents on.
 
 A graph of more than 60 cards and steps shows as a line that offers the Board instead, with its steps, which the
 Board doesn't show, in a grid below it. Search shows only the cards that
-match on the Map too, and **2 more ›** goes to the Board. BriefBar remembers Board or Map, By Mission or All, and Others'
-work, and keeps the cards and steps you hid, the steps and lines you and sessions added or took away, and the work items
-you added, in its preferences, by reference and the names you give steps, never a title, until you change them, choose
-**Forget All Orders…** or turn Azure DevOps off; a step done two weeks ago goes on its own.
+match on the Map too, and **2 more ›** goes to the Board. BriefBar remembers Board or Map, By Mission or All, Done and
+Others' work, and keeps the cards and steps you hid, the steps and lines you and sessions added or took away, and the work
+items you added, in its preferences, by reference and the names you give steps, never a title, until you change them,
+choose **Forget All Orders…** or turn Azure DevOps off; a step done two weeks ago goes on its own.
 
 **Search.** On My Work, type in **Search by ID or name**, at the end of **Show**'s row, or press **⌘F** to get there,
 and the Board shows only the cards that match, in the lanes that hold one: each word you type has to be in a card's
@@ -657,9 +660,10 @@ next column, past Merged for a type with no resolved state. Once Azure DevOps ha
 shows where its new state, its pull requests and Copilot's work put it, keeping the keyboard after ⌘→ or ⌘←, which show
 the column it goes to for the moment if you hid it; the line under **Show** says what changed, with **Undo**, as
 on the Sprint page, or why it didn't, with **Try Again** where it may help. Its right-click menu has **State** too, with
-every state its type has, which VoiceOver offers as actions while no change is on its way. A key that finishes the last
-work in a story's lane, or a finished mission's, keeps that lane open, with the card and the keyboard on it, until you
-fold it. As you drag it, a column that wouldn't change it says why:
+every state its type has, which VoiceOver offers as actions while no change is on its way; on the Map, so does the state
+its node starts with, as a task's circle does on the Sprint page: click it to close the task, or set it active. A key
+that finishes the last work in a story's lane, or a finished mission's, keeps that lane open, with the card and the
+keyboard on it, until you fold it. As you drag it, a column that wouldn't change it says why:
 another lane; one whose kind of state it's in already, such as To start for one still New while Copilot works on it;
 Merged for a type with no resolved state; anything while another change is on its way, or with the setting off, which
 says how to turn it on. Your work outside the sprint, with + All My Tasks, says to move it there first: only the sprint's
@@ -1188,7 +1192,8 @@ until **✕** or Esc closes them. Clicking one of your work items in the Sprint 
 details here, in BriefBar's window.
 
 **Open its session or its pull request.** A work item's Copilot session and its pull request are a click away: in its
-right-click and **⋯** menus on the board, and beside **Open in Azure DevOps** in its details. **Open in Copilot** opens
+right-click and **⋯** menus on the board, in its card's and its node's menus on My Work, and beside **Open in Azure
+DevOps** in its details. **Open in Copilot** opens
 its session in the Copilot app: a task you sent it, or a session [Show Links](#links) links to it, directly or through
 its pull request; for a task BriefBar runs with the Copilot CLI, it's **Continue in Terminal**, once Copilot is done in
 it. **Show Pull Request** shows its pull request over its details, as Where It Stands does, with **Open in Azure DevOps**
@@ -1203,8 +1208,8 @@ already; **Removed** isn't offered, since it takes a work item off the board: re
 only from the state BriefBar read it in: when someone changed it meanwhile, Azure DevOps refuses it, as it does a
 change its process doesn't allow, and the line under the Sprint page's header says why, with **Try Again** where it
 may help. Once it changed, the line says so, with **Undo**, which sets it back while it's still in that state. On My
-Work, moving its card to another column on the Board sets its state too ([My Work](#azure-devops), **Set your work's
-state**).
+Work, moving its card to another column on the Board sets its state too, and its node on the Map starts with the same
+menu ([My Work](#azure-devops), **Set your work's state**).
 
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
@@ -1722,7 +1727,7 @@ DevOps' gear menu has **Watch a Pull Request…** too: it's the same setting.
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration, a sprint work item's card moved to another column on the Board, which sets that column's state, and **Link in Azure DevOps** and **Unlink in Azure DevOps** on a line of the Map, and **Link 3 Lines in Azure DevOps…** over it, which link or take away the dependencies between work items it stands for; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move, the last state you changed and the dependencies you linked last, and stops a change that hasn't gone yet |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration, a sprint work item's card moved to another column on the Board, which sets that column's state, or the state you choose in its card's menu or its node's on the Map, and **Link in Azure DevOps** and **Unlink in Azure DevOps** on a line of the Map, and **Link 3 Lines in Azure DevOps…** over it, which link or take away the dependencies between work items it stands for; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move, the last state you changed and the dependencies you linked last, and stops a change that hasn't gone yet |
 
 **Settings › Send to Copilot** has Send Work to Copilot, which sends Azure DevOps' work items and pull requests' fixes:
 while Azure DevOps is off, or paused, it shows all the same, disabled, saying so, with **Turn On…** or **Review…**.

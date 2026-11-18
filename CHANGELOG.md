@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.26.0 - 2026-11-18
+
+- **Link My Work's Map with Azure DevOps.** The Map draws the dependencies Azure DevOps links between work items,
+  predecessors and successors, on the cards of their pull requests where they have one, and marks a line Azure DevOps
+  links with a blue link. With **Make Changes in Azure DevOps** on, click a line for **Link in Azure DevOps**, which links
+  the work items it stands for, the later one a successor of the earlier, or **Unlink in Azure DevOps**; **Link 3 Lines in
+  Azure DevOps…**, at the top of the Map, links every line it doesn't have yet, once you've seen them listed. Each has
+  **Undo**. **Take Away** still changes only the Map.
+- **See whose work holds yours.** Check **Others' work**, at the top of the Map, to see, faded, with whose they are, the
+  work items of others that your work waits for, what those wait for in turn, and those that wait right after yours.
+  **+ Task** adds any of the sprint's to the Map, by its ID or words of its title, or any other work item by its ID, and
+  **Waits for a Task…**, in a card's menu, adds one that the card waits for, with its line.
+- **Close a task, or set it active, from My Work's Map.** A work item's card on the Map starts with its state, as a
+  task's line on the Sprint page does: with **Make Changes in Azure DevOps** on, click it for the states its type has,
+  such as **New**, **Active** and **Closed**, and BriefBar sets the one you choose, with **Undo**. Its right-click menu,
+  on the Map and on the Board, also has **Open in Copilot**, for its session, and **Show Pull Request**, which shows its
+  pull request over its details, as on the Sprint page.
+- **Leave what's done off My Work's Map.** Uncheck **Done**, at the top of the Map, to leave out the pull requests that
+  merged or closed, the work that's resolved or done and the steps done, with the Done column and any band that has
+  nothing else; it says how many it leaves out. BriefBar remembers it, and the Board still shows them.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** Azure DevOps
+  reads the dependencies between your sprint's work items for My Work's Map, and who has the work items it links to,
+  and, with Make Changes in Azure DevOps on, links or unlinks them there when you click. With Make Changes in Azure
+  DevOps on, Azure DevOps sets the state you choose for your sprint work on My Work too, when you click it.
+
 ## 0.25.1 - 2026-11-18
 
 - **A step you deleted on My Work's Map stays deleted.** Once you've added more than 300 steps, the oldest of yours go,
