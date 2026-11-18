@@ -114,8 +114,8 @@ public struct MapStep: Equatable, Sendable, Identifiable {
 // MARK: - The changes
 
 /// The changes one side made to the Map, you or the sessions: each line added or taken away, last, and each step's name,
-/// whether it's done, and whether it's deleted, each with when. At most `mostLines` lines and `mostSteps` steps: past them,
-/// those changed longest ago go.
+/// whether it's done, and whether it's deleted, each with when. At most `mostLines` lines and `mostSteps` steps it added:
+/// past them, those changed longest ago go; what it said of the other side's steps goes only as that side forgets them.
 public struct MapEdits: Equatable, Sendable {
     /// Where the app keeps yours.
     public static let yoursKey = "order.map.edits"
@@ -261,16 +261,19 @@ public struct MapEdits: Equatable, Sendable {
         }
     }
 
-    /// Past `mostLines` lines or `mostSteps` steps, those changed longest ago go.
+    /// Past `mostLines` lines, or `mostSteps` steps this side added, those changed longest ago go. What it said of the other
+    /// side's steps, such as that you deleted one a session added, or marked it done, stays until that side forgets the
+    /// step (`prune`), lest the step come back: there are no more of those than that side has steps.
     private mutating func trim() {
         if lines.count > Self.mostLines {
             let kept = lines.sorted { ($0.value.at, $0.key) > ($1.value.at, $1.key) }.prefix(Self.mostLines)
             lines = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
         }
-        if steps.count > Self.mostSteps {
-            let kept = steps.sorted { ($0.value.latest, $0.key.uuidString) > ($1.value.latest, $1.key.uuidString) }.prefix(Self.mostSteps)
+        let added = steps.filter { $0.value.addedAt != nil }
+        if added.count > Self.mostSteps {
+            let kept = added.sorted { ($0.value.latest, $0.key.uuidString) > ($1.value.latest, $1.key.uuidString) }.prefix(Self.mostSteps)
             let ids = Set(kept.map(\.key))
-            forget(steps: Set(steps.keys).subtracting(ids))
+            forget(steps: Set(added.keys).subtracting(ids))
         }
     }
 

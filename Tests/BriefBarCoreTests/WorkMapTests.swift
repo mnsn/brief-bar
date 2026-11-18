@@ -607,6 +607,23 @@ import Testing
         #expect(prunedTold && told.steps.isEmpty)
     }
 
+    /// Past the most steps a side keeps, those it added that changed longest ago go, but never what it said of the other
+    /// side's: a step a session added that you deleted doesn't come back.
+    @Test func aStepYouDeletedStaysDeletedPastTheMostStepsYouKeep() {
+        let step = Map.id(1)
+        var told = MapEdits()
+        told.addStep(step, name: "Load test", home: nil, by: .session(Map.session), at: Map.day)
+        var yours = MapEdits()
+        yours.delete(step, by: .you, at: Map.day + 1)
+        for number in 0...MapEdits.mostSteps {
+            yours.addStep(Map.id(1_000 + number), name: "Step \(number)", home: nil, by: .you, at: Map.day + 2 + Double(number))
+        }
+        #expect(yours.steps[step]?.deletedAt != nil)
+        #expect(yours.steps[Map.id(1_000)] == nil && yours.steps.count == MapEdits.mostSteps + 1)
+        let state = MapEdits.merged([yours, told], now: Map.day + 1_000)
+        #expect(!state.steps.contains { $0.id == step } && state.steps.count == MapEdits.mostSteps)
+    }
+
     /// Kept as references, dates and the names typed, without what this build can't read; and forgotten with the source of
     /// what they're about.
     @Test func editsAreKeptByReferenceAndForgottenWithTheirSource() {
