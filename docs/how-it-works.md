@@ -2331,7 +2331,9 @@ and nothing goes to Azure DevOps but the dependencies you link or take away ther
 what's done in the Done column; off, the Map leaves it out (`WorkMap(showsDone:)`), cards, work items and steps alike
 (`WorkMapItem.isDone`), as it does what you hid, but listed nowhere, and a band with nothing else goes; as what's done
 holds nothing back, no line goes through it, dotted or not. It shows while the Map has something done, but what you
-hid, or while it's off, which says how many it leaves out (`WorkMap.doneCount`).
+hid, or while it's off, which says how many it leaves out (`WorkMap.doneCount`). Off, a search's Return goes to the
+first card the Map shows, past what's done (`PullRequestBoard.firstCard(skipping:)`), and + Task offers nothing that's
+done, saying, for one by its ID, that Done would show it.
 
 **Others' work** (`MapOthersWork`, `order.map.others`, off until you check it, at the top of the Map:
 `WorkMapOthersToggle`), with + Sprint Tasks or + All My Tasks, makes nodes of the work items the Board doesn't have

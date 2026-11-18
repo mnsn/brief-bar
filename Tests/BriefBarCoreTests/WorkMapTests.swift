@@ -381,20 +381,22 @@ import Testing
         let finished = Steps.mission([Steps.step(4201, .merged, status: .merged, place: 1)])
         let missions = [Self.chain, finished]
         let stages = Self.chainStages.merging([4201: Steps.reading(.merged, .merged, at: 5)]) { first, _ in first }
-        let board = Steps.board(stages, missions: missions)
-            .withWork([Steps.work(5106, .completed), Steps.work(5150, .toDo)], missions: missions, stories: [])
+        let work = [Steps.work(5106, .completed), Steps.work(5107, .inProgress, linked: [Steps.linked(4100)]), Steps.work(5150, .toDo)]
+        let board = Steps.board(stages, missions: missions).withWork(work, missions: missions, stories: [])
         var yours = Self.edits(steps: [(1, "API tests")], lines: [(Self.node(4103), .step(Self.id(1)))], by: .you)
         yours.setDone(Self.id(1), true, by: .you, at: Self.day + 10)
         let state = MapEdits.merged([yours], now: Self.day + 20)
         let hidden = MapHidden([Self.work(5150), Self.node(4100)])
 
         let shown = WorkMap(board, missions: missions, state: state, hidden: hidden)
-        #expect(shown.showsDone && shown.doneCount == 3)
+        #expect(shown.showsDone && shown.doneCount == 3 && shown.workItemsLeftOut.isEmpty)
         #expect(shown.bands.count == 3)
         #expect(shown.hidden.map(Self.name) == ["!4100", "5150"])
 
         let map = WorkMap(board, missions: missions, state: state, hidden: hidden, showsDone: false)
         #expect(!map.showsDone && map.doneCount == 3)
+        // Task 5106, done, and Task 5107, whose merged !4100 stands for it: + Task says Done would show them.
+        #expect(map.workItemsLeftOut == [Steps.task(5106), Steps.task(5107)])
         #expect(map.bands.map(\.lane.kind) == [.mission(Self.chain.key), .notInAMission])
         let chain = try #require(map.bands.first?.graph)
         #expect(chain.columns == [.wave(0), .wave(1), .wave(2)])

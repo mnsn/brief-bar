@@ -120,10 +120,13 @@ package struct WorkMapFace {
 package struct WorkMapFound: Identifiable {
     package var ref: ItemRef
     package var face: WorkMapFace
+    /// Resolved, done or removed: what the Map leaves out while Done is off.
+    package var isDone: Bool
 
-    package init(ref: ItemRef, face: WorkMapFace) {
+    package init(ref: ItemRef, face: WorkMapFace, isDone: Bool = false) {
         self.ref = ref
         self.face = face
+        self.isDone = isDone
     }
 
     package var id: ItemRef { ref }
@@ -2473,8 +2476,10 @@ struct WorkMapAddTaskButton: View {
 }
 
 /// + Task's search: a field for an ID or words of a title, and the work items that match, those the Map has already left
-/// out, as its own or as its pull requests' cards (`WorkMap.workItemsOnMap`), a click or Return adding the first; for an
-/// ID that matches none the page knows, Find, which asks Azure DevOps; for one the Map has, that it has it.
+/// out, as its own or as its pull requests' cards (`WorkMap.workItemsOnMap`), and, while Done is off, those that are
+/// done, a click or Return adding the first; for an ID that matches none the page knows, Find, which asks Azure DevOps; for
+/// one the Map has, that it has it; for one that's done while Done is off, that Done would show it, rather than adding what
+/// the Map leaves out.
 struct WorkMapTaskSearch: View {
     let map: WorkMap
     let finder: WorkMapFinder
@@ -2495,9 +2500,13 @@ struct WorkMapTaskSearch: View {
     @FocusState private var isTyping: Bool
 
     var body: some View {
-        let found = Array(finder.search(text).filter { !map.workItemsOnMap.contains($0.ref) }.prefix(Self.mostFound))
+        let known = finder.search(text).filter { !map.workItemsOnMap.contains($0.ref) }
+        let found = Array(known.filter { map.showsDone || !$0.isDone }.prefix(Self.mostFound))
         let id = Self.id(in: text)
         let isOnMap = id.map(hasOnMap) ?? false
+        // While Done is off, one that's done would only be left out.
+        let isLeftOut = id.map { id in isDoneLeftOut(id) || !map.showsDone && known.contains { $0.ref.number == id && $0.isDone } }
+            ?? false
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(size: 13, weight: .semibold)
@@ -2506,7 +2515,7 @@ struct WorkMapTaskSearch: View {
                 .font(size: 12.5)
                 .focused($isTyping)
                 .onSubmit {
-                    if let first = found.first { choose(first.ref) } else if let id, !isOnMap { lookUp(id) }
+                    if let first = found.first { choose(first.ref) } else if let id, !isOnMap, !isLeftOut { lookUp(id) }
                 }
                 .onChange(of: text) { _, _ in note = nil }
             if found.isEmpty, text.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -2523,7 +2532,12 @@ struct WorkMapTaskSearch: View {
                 }
                 .buttonStyle(.plain)
             }
-            if let id, isOnMap {
+            if let id, isLeftOut {
+                Text(WorkMapText.leftOutAsDone(id))
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let id, isOnMap {
                 Text(WorkMapText.onMapAlready(id))
                     .font(size: 11.5)
                     .foregroundStyle(.secondary)
@@ -2590,7 +2604,13 @@ struct WorkMapTaskSearch: View {
         map.workItemsOnMap.contains { $0.number == id }
     }
 
-    /// Asks Azure DevOps for a work item by its ID: adds it once it's there, else says it isn't.
+    /// Whether the Map has the work item with this ID already but leaves it out, as it's done and Done is off.
+    private func isDoneLeftOut(_ id: Int) -> Bool {
+        map.workItemsLeftOut.contains { $0.number == id }
+    }
+
+    /// Asks Azure DevOps for a work item by its ID: adds it once it's there, but for one that's done while Done is off, which
+    /// it says Done would show; else says it isn't there.
     private func lookUp(_ id: Int) {
         guard let lookUp = finder.lookUp, looking != id else { return }
         looking = id
@@ -2599,7 +2619,9 @@ struct WorkMapTaskSearch: View {
             let found = await lookUp(id)
             guard looking == id else { return }
             looking = nil
-            if let found {
+            if let found, found.isDone, !map.showsDone {
+                note = WorkMapText.leftOutAsDone(id)
+            } else if let found {
                 choose(found.ref)
             } else {
                 note = WorkMapText.noWorkItem(id)
@@ -2732,6 +2754,12 @@ package enum WorkMapText {
     /// "Work item 5120 is on the Map already."
     static func onMapAlready(_ id: Int) -> String {
         "Work item \(id) is on the Map already."
+    }
+
+    /// What + Task says of a work item that's done, while Done is off: "Work item 5102 is done: check Done to see it on the
+    /// Map."
+    static func leftOutAsDone(_ id: Int) -> String {
+        "Work item \(id) is done: check Done to see it on the Map."
     }
 
     // MARK: In Azure DevOps

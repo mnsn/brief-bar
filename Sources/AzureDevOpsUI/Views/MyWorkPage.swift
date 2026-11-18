@@ -672,7 +672,9 @@ private struct MyWorkContent: View {
                 .textFieldStyle(.plain)
                 .focused($isSearching)
                 .onSubmit {
-                    guard let first = board?.firstCard else { return }
+                    // On the Map with Done off, the first that it shows: not one that's done.
+                    let skipsDone = shownView == .map && !(showsDone ?? ordering.mapShowsDone)
+                    guard let first = skipsDone ? board?.firstCard(skipping: WorkMapGraph.isDone) : board?.firstCard else { return }
                     // The field lets go of the keyboard, for the card to take it.
                     isSearching = false
                     ordering.revealedCard = first
@@ -907,9 +909,12 @@ private struct MyWorkContent: View {
     /// What the Map knows of a work item its Board doesn't have: whether it holds nothing back, resolved, done or removed,
     /// and whether it's yours.
     private func mapWork(_ ref: ItemRef) -> MapWorkItem? {
-        anyWorkItem(ref).map { item in
-            MapWorkItem(ref: ref, isDone: ![.proposed, .inProgress].contains(item.category), isYours: isYours(item))
-        }
+        anyWorkItem(ref).map { item in MapWorkItem(ref: ref, isDone: Self.isDone(item), isYours: isYours(item)) }
+    }
+
+    /// Whether a work item holds nothing back on the Map: resolved, done or removed.
+    static func isDone(_ item: WorkItem) -> Bool {
+        ![.proposed, .inProgress].contains(item.category)
     }
 
     /// How a work item's node looks: its state, its type, ID, state and title, and whose it is where it isn't yours.
@@ -936,7 +941,7 @@ private struct MyWorkContent: View {
                         let names = ["\(item.type) \(item.id)", item.title, item.assignedTo?.name].compactMap { $0 }
                         return search.matches(BoardSearch.Card(refs: [item.linkRef], names: names))
                     }
-                    .map { WorkMapFound(ref: $0.linkRef, face: mapFace($0)) }
+                    .map { WorkMapFound(ref: $0.linkRef, face: mapFace($0), isDone: Self.isDone($0)) }
             },
             lookUp: store.mode == .live ? { id in await lookUpWork(id) } : nil
         )
@@ -950,7 +955,7 @@ private struct MyWorkContent: View {
             return nil
         }
         let item = WorkItem(organization: organization, project: dto.fields.teamProject ?? "", dto)
-        return WorkMapFound(ref: item.linkRef, face: mapFace(item))
+        return WorkMapFound(ref: item.linkRef, face: mapFace(item), isDone: Self.isDone(item))
     }
 
     /// What links on the Map do in Azure DevOps, with your sprint work on it: link or take away what a line stands for, one

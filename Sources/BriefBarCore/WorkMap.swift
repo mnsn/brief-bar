@@ -778,6 +778,9 @@ public struct WorkMap: Equatable, Sendable {
     /// The work items it has, hidden or not: those with a node of their own, and those with none whose pull requests'
     /// cards stand for them, as what's said of them is said of those cards. + Task offers none of them.
     public private(set) var workItemsOnMap: Set<ItemRef>
+    /// Of those, the ones Done leaves out while it's off: those that are done, on their own, or as their pull requests'
+    /// cards, all of them done. None while it shows what's done.
+    public private(set) var workItemsLeftOut: Set<ItemRef>
     /// Whether it shows what's done, in its Done column (`MapDoneWork`).
     public let showsDone: Bool
     /// How many of its cards, work items and steps are done, but those you hid: what Done shows, or leaves out.
@@ -986,6 +989,9 @@ public struct WorkMap: Equatable, Sendable {
         workOfPullRequests = board.workOfPullRequests
         let nodes = byID.keys.compactMap(\.ref).filter { $0.kind == .workItem }
         workItemsOnMap = Set(nodes).union(aliases.keys)
+        let isDoneCard = { (ref: ItemRef) in byID[.card(ref)]?.isDone == true }
+        workItemsLeftOut = showsDone ? [] : Set(nodes.filter(isDoneCard))
+            .union(aliases.filter { !$0.value.isEmpty && $0.value.allSatisfy(isDoneCard) }.keys)
     }
 
     /// At most how many of others' work the Map shows (`init(showsOthers:)`).
