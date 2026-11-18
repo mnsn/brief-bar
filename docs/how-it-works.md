@@ -2243,8 +2243,8 @@ the Board has no such lane, else in the band of most of the nearest cards it's j
 near, else in Not in a mission (`WorkMap.Edges.nearest`). All, on one canvas (`WorkMapCanvas`, laid out by a `Layout` of
 its own, in one sideways scroll): a graph for each set of cards and steps that lines join, whatever their lanes, the set
 with the Board's first card first, under the names of the lanes they're in (`WorkMap.Group`), their columns lined up
-(`WorkMap.columns`); then those no line joins, under Not connected, in a grid as wide as the page, at least four across,
-what's still to do first. A drag from any node onto another draws a line, across graphs too.
+(`WorkMap.columns`); then those no line joins, under Not connected, in a grid of as many across as fit the page, at least
+one, what's still to do first. A drag from any node onto another draws a line, across graphs too.
 
 The lines come from the missions' orders, every mission's, and from what you and sessions said on the Map
 (`WorkMap.Edges`): yours, `order.map.edits`, which only the app writes, and sessions', `order.map.told`, which only
@@ -2268,18 +2268,30 @@ after the loop comes after that. A line that skips columns keeps a row of each t
 edges do, so that no node sits on it; in each column, the nodes lines join come first, ordered by where their neighbours
 are, a few sweeps each way, each placed level with the middle of what comes into it where the nodes above let it, so that
 a chain runs straight, then neighbours swapped while that crosses fewer lines, each swap weighing only the lines into and
-out of the two (`WorkMapGraph.Layout`); those no line joins go after them. A graph of more than 60 of a band's own
-(`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board doesn't show, in a grid of
-their own, to change there.
+out of the two (`WorkMapGraph.Layout`); those no line joins go after them. Where a canvas's columns don't all fit across
+the page, as with a card's details beside the Map or in a narrow window, its graphs fold (`WorkMapFold`): into as few
+tiers as that takes, one under the other, as text wraps, each with as many columns as fit beside the room the lines that
+wrap round need, folded where the fewest lines cross, and of those with the first tiers fullest; All's graphs fold alike,
+so that their columns still line up. A tier takes only the rows its nodes and the lines through it take
+(`WorkMapGraph.rows(in:)`), with the titles of its columns that have one over it; a line from a tier to the next goes on
+past the tier's end, down under it, back along the gap and into the next tier's first column, each in a lane of its own,
+the one that leaves from highest outermost past the end, lowest under the tier and innermost at the next's start, so
+that they don't cross (`WorkMapCanvas.Geometry`); where one column fits but not the room beside it, the lanes squeeze
+closer to it, sideways. Only where not even one column fits does a canvas scroll sideways. A graph of more than 60 of a
+band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board doesn't show,
+in a grid of their own, to change there.
 
 A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
 on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
 Return renames it, and its menu has Rename…, Mark Done and Delete Step. Waits For lists what it waits for, checked, to
 take one away, then what it could wait for, its band's first, then Elsewhere, but what's done, hidden, or waits for it
 already, which would close a loop (`WorkMap.wouldLoop`). A drag says what it would draw as it goes, and draws nothing
-onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, saying
-what it is, with Take Away, or, for a dotted one, Show what you hid that it goes through; Escape lets it go. Hovering a
-node lights up what comes before it and after it, directly or through others (`WorkMapLines.related`), dimming the rest.
+onto itself, onto what's done, or where it would close a loop or the line is there. A click on a line selects it, the
+nearest within a few points of the click, as lines that wrap round together run closer than that
+(`WorkMapCanvas.Geometry.line(at:within:)`), saying what it is in a card at its middle, no wider than the canvas
+(`card(for:metrics:)`), with Take Away, or, for a dotted one, Show what you hid
+that it goes through; Escape lets it go. Hovering a node lights up what comes before it and after it, directly or
+through others (`WorkMapLines.related`), dimming the rest.
 A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work items
 of yours it's for, "Task 5112"; a work item's has its type, ID, state and title, in the color of its column: To start's
 gray, outlined dashed, In progress's, Merged's once resolved, and green once done; a step's is gray and dashed until it's

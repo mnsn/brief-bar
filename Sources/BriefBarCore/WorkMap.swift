@@ -8,7 +8,8 @@ import Foundation
 // card first, their columns lined up, then those no line joins, in a grid. Its columns are what's done, then what can go now,
 // then what comes after, wave by wave. A line goes from what comes first to what waits for it: from a pull request to one that
 // comes after it in an order, or as you or a session said on the Map; through what the Map doesn't show there, such as what
-// you hid, it's dotted. Only where things go, never how they're drawn: the views draw them.
+// you hid, it's dotted. Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as
+// text wraps (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -260,6 +261,29 @@ public struct WorkMapGraph: Equatable, Sendable {
         case .pullRequest(let card): card.step?.status.hasEnded ?? (card.stage == .merged)
         case .work(let task): !task.work.progress.isOpen
         }
+    }
+
+    /// The columns each line goes from and to, in their order.
+    public var spans: [ClosedRange<Int>] {
+        let column = Dictionary(nodes.map { ($0.id, $0.column) }, uniquingKeysWith: { first, _ in first })
+        return lines.map { line in
+            let from = column[line.before] ?? 0
+            return from...max(from, column[line.after] ?? from)
+        }
+    }
+
+    /// The rows its cards, steps and lines take in these columns, from the top: all a tier of a fold has (`WorkMapFold`), so
+    /// that it's no taller than they are.
+    public func rows(in columns: Range<Int>) -> [Int] {
+        let column = Dictionary(nodes.map { ($0.id, $0.column) }, uniquingKeysWith: { first, _ in first })
+        var taken = Set(nodes.filter { columns.contains($0.column) }.map(\.row))
+        for line in lines {
+            guard let from = column[line.before] else { continue }
+            for (offset, row) in line.rows.enumerated() where columns.contains(from + 1 + offset) {
+                taken.insert(row)
+            }
+        }
+        return taken.sorted()
     }
 
     /// Lays out cards and steps, in the order they come, and the lines between them, which come into one that's still to do.
@@ -529,6 +553,92 @@ public struct WorkMapGraph: Equatable, Sendable {
             }
             return count
         }
+    }
+}
+
+// MARK: - Folding
+
+/// How a canvas of the Map folds its columns where they don't all fit across the page, as with a card's details beside it:
+/// into tiers, one under the other, as text wraps, each with as many columns as fit, from the left. A line from a tier to a
+/// later one wraps round, down and back to the start of the next. It folds where the fewest lines cross, so that as few as
+/// it can wrap, and, of those, the first tiers as full as they can be.
+public struct WorkMapFold: Equatable, Sendable {
+    /// How many columns it folds.
+    public let columns: Int
+    /// The column each tier starts at, from the top: [0] for one tier, as when they all fit.
+    public let starts: [Int]
+
+    /// Columns that all fit across: one tier.
+    public init(columns: Int) {
+        self.columns = columns
+        starts = [0]
+    }
+
+    /// - Parameters:
+    ///   - columns: how many columns there are.
+    ///   - across: how many fit across, at least one: it folds into as few tiers as that takes.
+    ///   - spans: the columns each line goes from and to, of every graph on the canvas, as they share its columns.
+    public init(columns: Int, across: Int, spans: [ClosedRange<Int>]) {
+        let across = max(across, 1)
+        self.columns = columns
+        guard columns > across else {
+            starts = [0]
+            return
+        }
+        // How many lines a fold before each column cuts: those from a column before it to it or one after it.
+        var cut = Array(repeating: 0, count: columns + 1)
+        for span in spans where span.lowerBound < span.upperBound && span.lowerBound < columns {
+            for column in (span.lowerBound + 1)...min(span.upperBound, columns) {
+                cut[column] += 1
+            }
+        }
+        // fewest[t][c]: the fewest lines that folding the columns from c on into t tiers cuts; next[t][c]: where the first of
+        // its folds goes, the furthest along of those that cut as few.
+        let tiers = (columns + across - 1) / across
+        let none = Int.max / 2
+        var fewest = Array(repeating: Array(repeating: none, count: columns + 1), count: tiers + 1)
+        var next = Array(repeating: Array(repeating: columns, count: columns + 1), count: tiers + 1)
+        for column in 0..<columns where columns - column <= across {
+            fewest[1][column] = 0
+        }
+        if tiers > 1 {
+            for tier in 2...tiers {
+                for column in 0..<columns {
+                    let furthest = min(column + across, columns - 1)
+                    for fold in stride(from: furthest, through: column + 1, by: -1) where fewest[tier - 1][fold] < none {
+                        let cuts = cut[fold] + fewest[tier - 1][fold]
+                        if cuts < fewest[tier][column] {
+                            fewest[tier][column] = cuts
+                            next[tier][column] = fold
+                        }
+                    }
+                }
+            }
+        }
+        var starts = [0]
+        for tier in stride(from: tiers, to: 1, by: -1) {
+            starts.append(next[tier][starts[starts.count - 1]])
+        }
+        self.starts = starts
+    }
+
+    public var tiers: Int {
+        starts.count
+    }
+
+    /// The tier a column is in.
+    public func tier(of column: Int) -> Int {
+        starts.lastIndex { $0 <= column } ?? 0
+    }
+
+    /// A tier's columns.
+    public func columns(ofTier tier: Int) -> Range<Int> {
+        starts[tier]..<(tier + 1 < starts.count ? starts[tier + 1] : columns)
+    }
+
+    /// Whether a line wraps round into a tier: it goes from a tier before it to that one or one after it.
+    public func wraps(_ span: ClosedRange<Int>, into tier: Int) -> Bool {
+        tier > 0 && tier < starts.count && span.lowerBound < starts[tier] && starts[tier] <= span.upperBound
     }
 }
 

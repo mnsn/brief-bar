@@ -325,7 +325,8 @@ extension MyWorkPage {
     /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
     /// and in a narrow window, for “!4115”, whose task's other pull request shows as related, and for a session's name,
     /// “migrate stored”; what + Sprint Tasks says while Show Links is off; and the Map, with + Sprint Tasks, By Mission, All,
-    /// in a narrow window, with text at 150%, and with !4102 hidden.
+    /// All as wide as the page beside a card's details, By Mission in a narrow window, with text at 150%, and with !4102
+    /// hidden.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -346,6 +347,7 @@ extension MyWorkPage {
         let mapped: [(name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?)] = [
             ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil),
             ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil),
+            ("my-work-map-all-beside-details", .all, CGSize(width: 900, height: 1_500), nil, nil),
             ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil),
             ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil),
             ("my-work-map-hidden", .byMission, CGSize(width: 2_000, height: 1_300), nil,

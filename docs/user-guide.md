@@ -540,15 +540,18 @@ request, and with + Sprint Tasks or + All My Tasks each work item of yours with 
 and so is each **step**, work with no pull request or work item yet, such as API tests, monitoring, enabling it in
 staging or in production, or announcing it. They go in columns from left to right: **Done**, what merged, closed,
 resolved, completed or was marked done; **Now**, what nothing still open holds; then **Then**, **Later** and on, a wave at
-a time. A line goes from what comes first to what waits for it: solid where a pull request is stacked on its branch, or
-where you or a session said so, and dashed where an order says so, as on the Pull Requests page's Map. Lines run only from
-the nearest of what holds each, so a step that waits for everything before it doesn't draw a line from each; hover a
-node to light up all it waits for and all that waits for it. A pull request's node names the work items of yours it's
-for, such as **Task 5112**, a work item's its state, dashed and gray until it starts, and a step's has a circle that marks
-it done, and ✨ where a session added it. **By Mission**, beside it, draws a graph for each of the Board's lanes, under its
-header: a mission's, with its next steps, a story's, and what's in no mission, with what its cards are joined to in other
-lanes, dimmed, naming where they are. **All** draws every graph together, their columns lined up, each named by the lanes
-its cards are in, then a grid of what no line joins, under **Not connected**.
+a time. Where the page is too narrow for all of a graph's columns, as with a card's details beside the Map, the graph
+folds to fit it: the columns that don't fit go on below, as text wraps, and a line from one row of columns to the next
+wraps round, down and back to its start. A line goes from what comes first to what waits for it: solid where a pull
+request is stacked on its branch, or where you or a session said so, and dashed where an order says so, as on the Pull
+Requests page's Map. Lines run only from the nearest of what holds each, so a step that waits for everything before it
+doesn't draw a line from each; hover a node to light up all it waits for and all that waits for it. A pull request's node
+names the work items of yours it's for, such as **Task 5112**, a work item's its state, dashed and gray until it starts,
+and a step's has a circle that marks it done, and ✨ where a session added it. **By Mission**, beside it, draws a graph
+for each of the Board's lanes, under its header: a mission's, with its next steps, a story's, and what's in no mission,
+with what its cards are joined to in other lanes, dimmed, naming where they are. **All** draws every graph together,
+their columns lined up, each named by the lanes its cards are in, then a grid of what no line joins, under **Not
+connected**, as wide as the page.
 
 Edit it as you go, as an order doesn't always say it right: drag from a node onto what waits for it to draw a line,
 across graphs too, which joins them; click a line, then **Take Away**, for one that's wrong; right-click a node for its
