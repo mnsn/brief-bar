@@ -309,13 +309,15 @@ struct MyWorkPage: View {
     var grouping: WorkMapGrouping? = nil
     /// The cards hidden on the Map, for pictures; nil for those you hid.
     var hidden: MapHidden? = nil
+    /// Whether the Map shows others' work, for pictures; nil for what you chose.
+    var others: Bool? = nil
 
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
         MyWorkContent(
             links: services.links, linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes,
-            search: search, view: view, grouping: grouping, hidden: hidden
+            search: search, view: view, grouping: grouping, hidden: hidden, others: others
         )
     }
 }
@@ -325,8 +327,8 @@ extension MyWorkPage {
     /// window, and with Lanes: None; with + All My Tasks; with Pull Requests; with + All My Tasks searched for “checkout”, wide
     /// and in a narrow window, for “!4115”, whose task's other pull request shows as related, and for a session's name,
     /// “migrate stored”; what + Sprint Tasks says while Show Links is off; and the Map, with + Sprint Tasks, By Mission, All,
-    /// All as wide as the page beside a card's details, By Mission in a narrow window, with text at 150%, and with !4102
-    /// hidden.
+    /// All as wide as the page beside a card's details, By Mission in a narrow window, with text at 150%, with !4102
+    /// hidden, and with others' work, By Mission and All.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -344,14 +346,16 @@ extension MyWorkPage {
             ("my-work-search-session", .allTasks, .missions, CGSize(width: 1_600, height: 650), "migrate stored"),
         ]
         let demo = DemoData.organization
-        let mapped: [(name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?)] = [
-            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil),
-            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil),
-            ("my-work-map-all-beside-details", .all, CGSize(width: 900, height: 1_500), nil, nil),
-            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil),
-            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil),
+        let mapped: [(name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?, others: Bool)] = [
+            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil, false),
+            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil, false),
+            ("my-work-map-all-beside-details", .all, CGSize(width: 900, height: 1_500), nil, nil, false),
+            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil, false),
+            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil, false),
             ("my-work-map-hidden", .byMission, CGSize(width: 2_000, height: 1_300), nil,
-             MapHidden([.card(.pullRequest(organization: demo, number: 4102))])),
+             MapHidden([.card(.pullRequest(organization: demo, number: 4102))]), false),
+            ("my-work-map-others", .byMission, CGSize(width: 2_000, height: 2_900), nil, nil, true),
+            ("my-work-map-all-others", .all, CGSize(width: 2_200, height: 1_500), nil, nil, true),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
@@ -359,10 +363,10 @@ extension MyWorkPage {
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
         let foot = (name: "my-work-show-links-off", view: environment(AnyView(showLinksOff)))
-        let maps = mapped.map { name, grouping, size, scale, hidden in
+        let maps = mapped.map { name, grouping, size, scale, hidden, others in
             let page = MyWorkPage(
                 linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: .sprintTasks, view: .map,
-                grouping: grouping, hidden: hidden
+                grouping: grouping, hidden: hidden, others: others
             )
                 .environment(\.panelStyle, .page)
             let scaled: AnyView = if let scale {
@@ -467,6 +471,7 @@ private struct MyWorkContent: View {
     let view: MyWorkView?
     let grouping: WorkMapGrouping?
     let hidden: MapHidden?
+    let others: Bool?
 
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var store: PRStore
@@ -478,6 +483,7 @@ private struct MyWorkContent: View {
     @EnvironmentObject private var ordering: PullRequestOrder
     @EnvironmentObject private var moves: SprintMoves
     @EnvironmentObject private var states: StateChanges
+    @EnvironmentObject private var dependencies: MapDependencies
     @Environment(\.textScale) private var textScale
 
     /// The work item's details show rather than a pull request's: you clicked a work item's card last.
@@ -492,7 +498,8 @@ private struct MyWorkContent: View {
     /// - Parameter search: what the Board's search starts with, for pictures.
     init(
         links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?,
-        shows: MyWorkShows?, lanes: BoardLanes?, search: String?, view: MyWorkView?, grouping: WorkMapGrouping?, hidden: MapHidden?
+        shows: MyWorkShows?, lanes: BoardLanes?, search: String?, view: MyWorkView?, grouping: WorkMapGrouping?, hidden: MapHidden?,
+        others: Bool?
     ) {
         self.links = links
         self.linkedPullRequest = linkedPullRequest
@@ -502,6 +509,7 @@ private struct MyWorkContent: View {
         self.view = view
         self.grouping = grouping
         self.hidden = hidden
+        self.others = others
         _searchText = LocalState(wrappedValue: search ?? "")
     }
 
@@ -839,10 +847,11 @@ private struct MyWorkContent: View {
                         WorkMapView(
                             map: WorkMap(
                                 board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
-                                linked: linkedWork(on: board)
+                                linked: linkedWork(on: board), azureDevOps: Self.lines(of: dependencies.known), work: mapWork,
+                                showsOthers: showsWork && (others ?? ordering.mapShowsOthers)
                             ),
                             grouping: grouping ?? ordering.mapGrouping,
-                            missions: missions, order: ordering, content: mapContent(board)
+                            missions: missions, order: ordering, content: mapContent(board), shownOthers: others
                         )
                     }
                 }
@@ -860,20 +869,99 @@ private struct MyWorkContent: View {
         return linked
     }
 
+    /// The dependencies Azure DevOps links, as lines of the Map between work items.
+    static func lines(of dependencies: Set<WorkDependency>) -> Set<MapEdits.Line> {
+        Set(dependencies.map { MapEdits.Line(.card($0.before.linkRef), .card($0.after.linkRef)) })
+    }
+
+    /// The dependencies lines of the Map between work items are, in Azure DevOps.
+    static func dependencies(of lines: [MapEdits.Line]) -> [WorkDependency] {
+        lines.compactMap { line in
+            guard let before = line.before.ref, let after = line.after.ref, before.kind == .workItem, after.kind == .workItem,
+                  let earlier = before.number, let later = after.number
+            else { return nil }
+            return WorkDependency(WorkItemKey(before.scope, earlier), WorkItemKey(after.scope, later))
+        }
+    }
+
+    /// A work item as BriefBar read it: the sprint's, anyone's, yours outside it, or one Show Links read.
+    private func anyWorkItem(_ ref: ItemRef) -> WorkItem? {
+        guard ref.kind == .workItem, let id = ref.number else { return nil }
+        return workItem(ref) ?? linkedWorkItem(WorkItemKey(ref.scope, id))
+    }
+
+    /// Whether a work item is yours: assigned to you, as one in the sprint is, or one of yours outside it.
+    private func isYours(_ item: WorkItem) -> Bool {
+        item.isAssigned(to: sprint.board?.me ?? "") || outside?.items.contains { $0.key == item.key } == true
+    }
+
+    /// What the Map knows of a work item its Board doesn't have: whether it holds nothing back, resolved, done or removed,
+    /// and whether it's yours.
+    private func mapWork(_ ref: ItemRef) -> MapWorkItem? {
+        anyWorkItem(ref).map { item in
+            MapWorkItem(ref: ref, isDone: ![.proposed, .inProgress].contains(item.category), isYours: isYours(item))
+        }
+    }
+
+    /// How a work item's node looks: its type, ID, state and title, and whose it is where it isn't yours.
+    private func mapFace(_ item: WorkItem) -> WorkMapFace {
+        let owner = isYours(item) ? nil : item.assignedTo?.firstName ?? WorkMapText.unassigned
+        return WorkMapFace(
+            label: "\(item.type) \(item.id)", title: item.title, state: item.state, symbol: item.typeSymbol, color: item.typeColor,
+            owner: owner
+        )
+    }
+
+    /// + Task's search: the sprint's work items, anyone's, then yours outside it, whose ID, title or assignee has each word
+    /// you type, or that a link you paste points to; and any by its ID, from Azure DevOps.
+    private var mapFinder: WorkMapFinder {
+        WorkMapFinder(
+            search: { text in
+                guard let search = BoardSearch(text) else { return [] }
+                let sprintItems = sprint.board?.rows.flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks } ?? []
+                var seen: Set<WorkItemKey> = []
+                return (sprintItems + (outside?.items ?? []))
+                    .filter { $0.category != .removed && seen.insert($0.key).inserted }
+                    .filter { item in
+                        let names = ["\(item.type) \(item.id)", item.title, item.assignedTo?.name].compactMap { $0 }
+                        return search.matches(BoardSearch.Card(refs: [item.linkRef], names: names))
+                    }
+                    .map { WorkMapFound(ref: $0.linkRef, face: mapFace($0)) }
+            },
+            lookUp: store.mode == .live ? { id in await lookUpWork(id) } : nil
+        )
+    }
+
+    /// A work item by its ID, in the sprint's organization, as Azure DevOps has it: one GET. Nil for none, or one you can't see.
+    private func lookUpWork(_ id: Int) async -> WorkMapFound? {
+        guard let organization = sprint.board?.team.organization ?? outside?.items.first?.organization else { return nil }
+        let address = ADOEndpoint.workItems(organization: organization, ids: [id], fields: WorkLinks.workItemFields)
+        guard let dto = try? await store.client.get(address, as: ADOList<ADOWorkItem>.self).value.first(where: { $0.id == id }) else {
+            return nil
+        }
+        let item = WorkItem(organization: organization, project: dto.fields.teamProject ?? "", dto)
+        return WorkMapFound(ref: item.linkRef, face: mapFace(item))
+    }
+
+    /// What links on the Map do in Azure DevOps, with your sprint work on it: link or take away what a line stands for, one
+    /// change at a time, saying how it went at the top of the Map.
+    private var mapLinking: WorkMapAzureDevOps {
+        WorkMapAzureDevOps(
+            held: dependencies.held,
+            link: { lines, words in Task { await dependencies.link(Self.dependencies(of: lines), words: words) } },
+            unlink: { lines, words in Task { await dependencies.unlink(Self.dependencies(of: lines), words: words) } },
+            line: dependencies.line == nil ? nil : AnyView(MapDependencyLine(changes: dependencies))
+        )
+    }
+
     /// What the Map draws of the Board's cards: a pull request's node has its card's menu and words, and names the work items
-    /// of yours it's for; a work item's, its type, ID, state and title.
+    /// of yours it's for; a work item's, its type, ID, state and title, and whose it is where it isn't yours.
     private func mapContent(_ board: PullRequestBoard) -> WorkMapContent {
         let byRef = Dictionary(store.items.map { ($0.key.linkRef, $0) }, uniquingKeysWith: { first, _ in first })
         return WorkMapContent(
             card: { card in byRef[card.ref].map { boardCard($0, card, board: board, namesRepository: false) } },
             work: showsWork ? workContent : nil,
-            face: { task in
-                workItem(task.ref).map { item in
-                    WorkMapFace(
-                        label: "\(item.type) \(item.id)", title: item.title, state: item.state, symbol: item.typeSymbol, color: item.typeColor
-                    )
-                }
-            },
+            face: { ref in anyWorkItem(ref).map(mapFace) },
             workOf: { ref in
                 let names = (board.workOfPullRequests[ref] ?? []).map { ref in
                     workItem(ref).map { "\($0.type) \($0.id)" } ?? ref.shortOrderLabel
@@ -894,7 +982,7 @@ private struct MyWorkContent: View {
             },
             select: { ref in
                 if ref.kind == .workItem {
-                    if let item = workItem(ref) { showDetails(of: item) }
+                    if let item = anyWorkItem(ref) { showDetails(of: item) }
                 } else {
                     showDetails(of: ref)
                 }
@@ -902,7 +990,9 @@ private struct MyWorkContent: View {
             related: board.related,
             showBoard: { ordering.setMyWorkView(.board) },
             ask: { question, target in await askAboutMap(question, target, byRef: byRef) },
-            asksSessions: copilot.canSend && copilot.isOn
+            asksSessions: copilot.canSend && copilot.isOn,
+            find: showsWork ? mapFinder : nil,
+            azureDevOps: showsWork ? mapLinking : nil
         )
     }
 
@@ -911,7 +1001,7 @@ private struct MyWorkContent: View {
     private func askAboutMap(_ question: WorkMapQuestion, _ target: WorkMapAsk, byRef: [ItemRef: PRSnapshot]) async -> String {
         let prompt = WorkMapPrompt.prompt(question) { ref in
             if let item = byRef[ref] { return WorkMapPrompt.Described(label: ref.shortOrderLabel, title: item.title, link: item.url) }
-            if let item = workItem(ref) {
+            if let item = anyWorkItem(ref) {
                 return WorkMapPrompt.Described(label: "\(item.type) \(item.id)", title: item.title, link: item.webURL)
             }
             return nil

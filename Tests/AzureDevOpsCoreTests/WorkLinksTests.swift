@@ -37,6 +37,62 @@ import Testing
         #expect(try Fixture.decode(ADOWorkItemRelations.self, ["id": 5102]).pullRequests(in: "contoso").isEmpty)
     }
 
+    /// The dependencies a work item is in, among its links: its own on its predecessors, and its successors' on it, with work
+    /// items of its organization, by their addresses with a project or without; not its other links, nor those to another
+    /// organization's work item, which its ID means another work item here.
+    @Test func findsAWorkItemsDependenciesAmongItsRelations() throws {
+        let item = try Fixture.decode(ADOWorkItemRelations.self, [
+            "id": 5104,
+            "relations": [
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/Shop/_apis/wit/workItems/5103"],
+                ["rel": "System.LinkTypes.Dependency-Forward", "url": "https://contoso.visualstudio.com/_apis/wit/workItems/5106"],
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/fabrikam/_apis/wit/workItems/5102"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5107"],
+                ["rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5100"],
+                ["rel": "ArtifactLink", "url": "vstfs:///Git/PullRequestId/p1%2Fr1%2F4120"],
+            ] as [Any],
+        ])
+        #expect(item.dependencies(in: "Contoso") == [
+            WorkDependency(WorkItemKey("contoso", 5103), WorkItemKey("contoso", 5104)),
+            WorkDependency(WorkItemKey("contoso", 5104), WorkItemKey("contoso", 5106)),
+        ])
+    }
+
+    /// The sprint's read brings the dependencies its work items are in; one BriefBar links or takes away shows so at once, and
+    /// the sprint is read again, after which Azure DevOps says it, and so it stays.
+    @Test func readsTheSprintsDependenciesAndShowsThoseBriefBarChangesUntilReadAgain() async {
+        let server = StubServer()
+        let linked = Locked(false)
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations"]) { _ in
+            let relations: [Any] = linked.value
+                ? [["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5101"]]
+                : []
+            return .json(Fixture.list([["id": 5102, "relations": relations], ["id": 5101]]))
+        }
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let sprint: Set<WorkItemKey> = [WorkItemKey("contoso", 5101), WorkItemKey("contoso", 5102)]
+        await engine.update(.init(sprintItems: sprint, sprintShows: true))
+        #expect(await engine.currentLinks().dependencies.isEmpty)
+
+        let dependency = WorkDependency(WorkItemKey("contoso", 5101), WorkItemKey("contoso", 5102))
+        clock.advance(1)
+        linked.set(true)
+        await engine.changed(dependency, linked: true)
+        #expect(await engine.currentLinks().dependencies == [dependency])
+        #expect(count(server, "/_apis/wit/workitems") == 2)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(await engine.currentLinks().dependencies == [dependency])
+
+        // Taken away, it goes at once, and the read after it says so.
+        clock.advance(1)
+        linked.set(false)
+        await engine.changed(dependency, linked: false)
+        #expect(await engine.currentLinks().dependencies.isEmpty)
+        #expect(count(server, "/_apis/wit/workitems") == 4)
+    }
+
     @Test func readsOnlyPullRequestLinksThatAreWhole() {
         #expect(ArtifactLink.pullRequest("vstfs:///Git/PullRequestId/p1%2Fr1%2F4120")?.id == 4120)
         #expect(ArtifactLink.pullRequest("VSTFS:///git/pullrequestid/p1/r1/4120")?.repositoryId == "r1")

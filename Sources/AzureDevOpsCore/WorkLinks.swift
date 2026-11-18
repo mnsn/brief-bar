@@ -20,7 +20,8 @@ public struct WorkItemKey: Hashable, Comparable, Sendable, Codable, CustomString
 
 /// What Azure DevOps links, as BriefBar reads it for Show Links: your pull requests' work items, the sprint's work items'
 /// pull requests, and what those linked work items and pull requests are, when no list shows them; and, while Pull Request
-/// Order wants stories, the parents of linked work items that nothing else has.
+/// Order wants stories, the parents of linked work items that nothing else has. And the dependencies Azure DevOps links the
+/// sprint's work items with, which My Work's Map draws.
 public struct WorkLinks: Sendable, Equatable {
     /// Each pull request's work items, by ID, in its organization.
     public var workItemsOfPullRequests: [PRKey: [Int]]
@@ -46,11 +47,16 @@ public struct WorkLinks: Sendable, Equatable {
     /// read of them doesn't say whether a task has a parent, so a task among them is for no story, rather than a story of its
     /// own (`WorkItemStories`), until a read gets it.
     public var partlyRead: Set<WorkItemKey>
+    /// The dependencies Azure DevOps links the sprint's work items with, in their organization, each a work item's on its
+    /// predecessor: from their links, which the read of their pull requests brings, and those BriefBar linked or took away
+    /// since, until the sprint is read again.
+    public var dependencies: Set<WorkDependency>
 
     public init(
         workItemsOfPullRequests: [PRKey: [Int]] = [:], pullRequestsOfWorkItems: [WorkItemKey: [PRKey]] = [:],
         workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:],
-        pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = [], partlyRead: Set<WorkItemKey> = []
+        pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = [], partlyRead: Set<WorkItemKey> = [],
+        dependencies: Set<WorkDependency> = []
     ) {
         self.workItemsOfPullRequests = workItemsOfPullRequests
         self.pullRequestsOfWorkItems = pullRequestsOfWorkItems
@@ -60,6 +66,7 @@ public struct WorkLinks: Sendable, Equatable {
         self.pendingWorkItems = pendingWorkItems
         self.unreadablePullRequests = unreadablePullRequests
         self.partlyRead = partlyRead
+        self.dependencies = dependencies
     }
 
     /// Every link it read, between pull requests and work items.
@@ -84,8 +91,10 @@ public struct WorkLinks: Sendable, Equatable {
         return links
     }
 
-    /// What a linked work item shows: what it is, where it stands, and its project, for its page.
-    public static let workItemFields = ["System.Title", "System.WorkItemType", "System.State", "System.TeamProject", "System.ChangedDate"]
+    /// What a linked work item shows: what it is, where it stands, who has it, and its project, for its page.
+    public static let workItemFields = [
+        "System.Title", "System.WorkItemType", "System.State", "System.AssignedTo", "System.TeamProject", "System.ChangedDate",
+    ]
 
     /// With stories wanted, a linked work item's parent and its place in the backlog too, as the sprint reads them.
     public static let storyFields = ["System.Parent", "Microsoft.VSTS.Common.StackRank", "Microsoft.VSTS.Common.BacklogPriority"]
@@ -145,6 +154,81 @@ public struct ADOWorkItemRelations: Decodable, Sendable {
         }
         return Set(numbers).sorted().map { PRKey(organization.lowercased(), $0) }
     }
+
+    /// The dependencies it's in with work items of its organization: its own on its predecessors, and its successors' on it.
+    public func dependencies(in organization: String) -> Set<WorkDependency> {
+        let itself = WorkItemKey(organization, id)
+        var found: Set<WorkDependency> = []
+        for relation in relations {
+            guard let url = relation.url, let target = ADOWorkItemDetails.Relation.workItem(at: url),
+                  target.organization.caseInsensitiveCompare(organization) == .orderedSame, target.id != id
+            else { continue }
+            let other = WorkItemKey(organization, target.id)
+            switch relation.rel {
+            case WorkDependency.predecessor: found.insert(WorkDependency(other, itself))
+            case WorkDependency.successor: found.insert(WorkDependency(itself, other))
+            default: break
+            }
+        }
+        return found
+    }
+}
+
+/// A dependency Azure DevOps links between two work items of an organization: `after` waits for `before`, its predecessor,
+/// as `before` has `after` for its successor.
+public struct WorkDependency: Hashable, Comparable, Sendable, CustomStringConvertible {
+    public var before: WorkItemKey
+    public var after: WorkItemKey
+
+    public init(_ before: WorkItemKey, _ after: WorkItemKey) {
+        self.before = before
+        self.after = after
+    }
+
+    /// The link a work item has to its predecessor, as Azure DevOps names it.
+    public static let predecessor = "System.LinkTypes.Dependency-Reverse"
+    /// The link a work item has to its successor.
+    public static let successor = "System.LinkTypes.Dependency-Forward"
+
+    /// A work item's address, as a link to it names it: `https://dev.azure.com/{organization}/_apis/wit/workItems/{id}`.
+    public static func address(of key: WorkItemKey) -> URL {
+        ADOEndpoint.url("https://dev.azure.com", [key.organization, "_apis", "wit", "workItems", String(key.id)], [])
+    }
+
+    public var description: String { "\(before) > \(after)" }
+
+    public static func < (lhs: WorkDependency, rhs: WorkDependency) -> Bool {
+        (lhs.after, lhs.before) < (rhs.after, rhs.before)
+    }
+}
+
+/// A work item's links as they are now, with its revision, from `_apis/wit/workitems/{id}?$expand=relations`: what linking a
+/// dependency, or taking one away, reads right before (`ADOWrite.addDependency`, `removeDependency`).
+public struct ADOWorkItemLinks: Decodable, Sendable {
+    public var id: Int
+    public var revision: Int
+    /// Its links, in Azure DevOps' order, which a link's index counts in.
+    public var relations: [ADOWorkItemRelations.Relation]
+
+    private enum CodingKeys: String, CodingKey { case id, rev, relations }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        revision = try container.decode(Int.self, forKey: .rev)
+        // Every link, readable or not, as each one's index counts.
+        relations = try container.decodeIfPresent([ADOWorkItemRelations.Relation].self, forKey: .relations) ?? []
+    }
+
+    /// The index of its link to its predecessor `earlier`, among all its links; nil while it has none.
+    public func predecessorIndex(_ earlier: Int, in organization: String) -> Int? {
+        relations.firstIndex { relation in
+            guard relation.rel == WorkDependency.predecessor, let url = relation.url,
+                  let target = ADOWorkItemDetails.Relation.workItem(at: url)
+            else { return false }
+            return target.id == earlier && target.organization.caseInsensitiveCompare(organization) == .orderedSame
+        }
+    }
 }
 
 /// Azure DevOps' names for what a work item links to outside work items.
@@ -183,8 +267,9 @@ extension ADOEndpoint {
 
 /// Reads what Show Links needs from Azure DevOps, with the pull requests' client, after each of their refreshes: each of
 /// your pull requests' work items (one GET each, then every quarter of an hour), the sprint's work items' pull requests
-/// while the sprint shows (one GET for up to 200, then every quarter of an hour), and what the linked work items and pull
-/// requests that no list shows are (a GET for up to 200 work items; one for each pull request, ten a refresh). While Pull
+/// while the sprint shows (one GET for up to 200, then every quarter of an hour), with the dependencies Azure DevOps links
+/// them with, which come with them, and what the linked work items and pull requests that no list shows are, who has each
+/// work item too (a GET for up to 200 work items; one for each pull request, ten a refresh). While Pull
 /// Request Order wants stories, the linked work items' parent and place in the backlog come with what they are, three more
 /// fields, and the parents nothing else has are read as they are, with what they are only (a GET for up to 200). Every
 /// request is a GET. What can't be read is tried again an hour later.
@@ -267,6 +352,11 @@ public actor LinkEngine {
     private var again = false
     private var isStopped = false
     private var lastPublished: WorkLinks?
+    /// The dependencies the sprint's last read found.
+    private var readDependencies: Set<WorkDependency> = []
+    /// The dependencies BriefBar linked or took away since, with when (`changed`): each shows so until a read of the sprint
+    /// that started after it.
+    private var dependencyChanges: [WorkDependency: (linked: Bool, at: Date)] = [:]
 
     public init(client: ADOClient, now: @escaping @Sendable () -> Date = { Date() }, onChange: @escaping ChangeHandler) {
         self.client = client
@@ -322,6 +412,16 @@ public actor LinkEngine {
 
     public func currentLinks() -> WorkLinks {
         links
+    }
+
+    /// A dependency BriefBar just linked in Azure DevOps, or took away: it shows so at once, and the sprint is read again,
+    /// which says so too once Azure DevOps does.
+    public func changed(_ dependency: WorkDependency, linked: Bool) async {
+        let date = now()
+        dependencyChanges[dependency] = (linked, date)
+        asked["sprint"] = date
+        publish()
+        await refresh()
     }
 
     /// The most pull requests, and work items, a re-read reads again at once.
@@ -433,6 +533,7 @@ public actor LinkEngine {
         if let failed = failures["sprint"], date.timeIntervalSince(failed) < Self.relinkAfter { return }
         let items = inputs.sprintItems
         var found: [WorkItemKey: [PRKey]] = [:]
+        var dependencies: Set<WorkDependency> = []
         for (organization, keys) in Dictionary(grouping: items, by: \.organization) {
             let ids = keys.map(\.id).sorted()
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
@@ -443,6 +544,7 @@ public actor LinkEngine {
                     )
                     for item in list.value {
                         found[WorkItemKey(organization, item.id)] = item.pullRequests(in: organization)
+                        dependencies.formUnion(item.dependencies(in: organization))
                     }
                 } catch {
                     try Self.rethrowThrottling(error)
@@ -452,6 +554,9 @@ public actor LinkEngine {
             }
         }
         links.pullRequestsOfWorkItems = found.filter { inputs.sprintItems.contains($0.key) && !$0.value.isEmpty }
+        readDependencies = dependencies
+        // What BriefBar changed before this read started, Azure DevOps says now.
+        dependencyChanges = dependencyChanges.filter { $0.value.at > date }
         sprintRead = (items, date)
         failures["sprint"] = nil
         settle("sprint", readAt: date)
@@ -621,6 +726,8 @@ public actor LinkEngine {
         links.workItemsOfPullRequests = links.workItemsOfPullRequests.filter { listed.contains($0.key) }
         pullRequestsRead = pullRequestsRead.filter { listed.contains($0.key) }
         links.pullRequestsOfWorkItems = links.pullRequestsOfWorkItems.filter { inputs.sprintItems.contains($0.key) }
+        let sprint = inputs.sprintItems
+        readDependencies = readDependencies.filter { sprint.contains($0.before) || sprint.contains($0.after) }
         let parents = wantedParents()
         links.parents = links.parents.filter { parents.contains($0.key) }
         parentsRead = parentsRead.filter { parents.contains($0.key) }
@@ -643,6 +750,11 @@ public actor LinkEngine {
         links.pendingWorkItems = pending
         links.unreadablePullRequests = unreadable
         links.partlyRead = partlyRead
+        var dependencies = readDependencies
+        for (dependency, change) in dependencyChanges {
+            if change.linked { dependencies.insert(dependency) } else { dependencies.remove(dependency) }
+        }
+        links.dependencies = dependencies
         guard links != lastPublished else { return }
         lastPublished = links
         onChange(links)

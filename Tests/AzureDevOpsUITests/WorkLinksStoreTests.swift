@@ -131,6 +131,53 @@ import Testing
         #expect(inputs.parentLookups == Set([5110, 5140, 5180].map { WorkItemKey(organization, $0) }))
     }
 
+    /// The dependencies Azure DevOps links go to My Work's Map as Show Links reads them; and, only while My Work shows its
+    /// Map, Show Links reads what the work items it can show that no list or sprint has are: those you added, and those the
+    /// lines you said name.
+    @Test func theMapGetsItsDependenciesAndHasWhatItNamesReadOnlyWhileItShows() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        let dependencies = MapDependencies(sprint: sprint, settings: settings, client: store.client)
+        workLinks.dependencies = dependencies
+        await workLinks.loadOnce()
+        let demo = DemoData.workLinks(now: Date()).dependencies
+        #expect(!demo.isEmpty && dependencies.known == demo)
+
+        let added = WorkItemKey(organization, 9001), named = WorkItemKey(organization, 9002)
+        order.addMapItem(added.linkRef, home: nil, undo: "")
+        order.setMapLine(from: .card(named.linkRef), to: .card(.workItem(organization: organization, id: 5150)), on: true, undo: "")
+        #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
+        order.setMyWorkPage(true)
+        order.setMyWorkView(.map)
+        let lookups = workLinks.inputs().workItemLookups
+        #expect(lookups.isSuperset(of: [added, named]))
+        // Those the sprint has it reads already.
+        #expect(lookups.isDisjoint(with: demo.map(\.before)))
+        order.setMyWorkView(.board)
+        #expect(workLinks.inputs().workItemLookups.isDisjoint(with: [added, named]))
+    }
+
+    /// The Map's places to look up go first to what you added, then to what the lines you said name, then to what the
+    /// dependencies Azure DevOps links do; and none to what the sprint or your lists have, which needs no lookup.
+    @Test func theMapLooksUpWhatYouAddedFirstAndNothingTheSprintHas() {
+        func ref(_ id: Int) -> ItemRef { .workItem(organization: organization, id: id) }
+        let lookups = WorkLinksStore.mapLookups(
+            added: [ref(9004), ref(9003)], said: [ref(9002), ref(5104)], linked: [ref(5101), ref(5102), ref(9001)],
+            listed: [ref(5101), ref(5102), ref(5104)], most: 3
+        )
+        #expect(lookups == [ref(9003), ref(9004), ref(9002)])
+    }
+
     /// Your work outside the sprint is the sprint's to Show Links, whose pull requests it reads and which it doesn't look up,
     /// only while My Work shows its cards, with + All My Tasks: not for + Sprint Tasks' line alone.
     @Test func yourWorkOutsideTheSprintIsReadAsTheSprintsWhileMyWorkShowsItsCards() async throws {

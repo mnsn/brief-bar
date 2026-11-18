@@ -3,17 +3,21 @@ import Testing
 @testable import AzureDevOpsCore
 
 /// What BriefBar changes in Azure DevOps, with Make Changes in Azure DevOps on: a reply in a thread, a thread's status, a
-/// comment of yours edited or deleted, a pull request's tags, the sprint a work item of yours is in, and a work item's state
-/// (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and nothing else, which every other request, a GET, can't.
+/// comment of yours edited or deleted, a pull request's tags, the sprint a work item of yours is in, a work item's state, and
+/// a dependency between two work items (`ADOWrite`), which only `ADOClient.send(_:as:)` sends; and nothing else, which every
+/// other request, a GET, can't.
 @Suite struct WriteTests {
     let pullRequest = makePR(7)
     var address: ThreadAddress { ThreadAddress(pullRequest, thread: 12) }
 
     // MARK: What it can send
 
-    /// Eight changes, and only those: a new one comes with its kind, which fails this until it's tested here.
+    /// Ten changes, and only those: a new one comes with its kind, which fails this until it's tested here.
     @Test func makesOnlyTheChangesItLists() {
-        #expect(ADOWrite.Kind.allCases == [.reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag, .setIteration, .setState])
+        #expect(ADOWrite.Kind.allCases == [
+            .reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag, .setIteration, .setState, .addDependency,
+            .removeDependency,
+        ])
         for kind in ADOWrite.Kind.allCases {
             let write = sample(kind)
             #expect(write.kind == kind)
@@ -84,13 +88,33 @@ import Testing
                 // The state it's in first, so that Azure DevOps changes nothing that someone changed meanwhile; then its new one.
                 #expect(String(decoding: write.body, as: UTF8.self) == #"[{"op":"test","path":"/fields/System.State","value":"New"},"#
                     + #"{"op":"add","path":"/fields/System.State","value":"Active"}]"#)
+            case .addDependency:
+                #expect(write.thread == nil)
+                #expect(write.kind.isDependency)
+                #expect(write.method == "PATCH")
+                #expect(write.url.absoluteString == "https://dev.azure.com/contoso/_apis/wit/workitems/5052?api-version=7.1")
+                #expect(write.contentType == "application/json-patch+json")
+                // The revision it was read at first, so that Azure DevOps links nothing on what someone changed meanwhile;
+                // then its link to its predecessor.
+                #expect(String(decoding: write.body, as: UTF8.self) == #"[{"op":"test","path":"/rev","value":7},"#
+                    + #"{"op":"add","path":"/relations/-","value":{"rel":"System.LinkTypes.Dependency-Reverse","#
+                    + #""url":"https://dev.azure.com/contoso/_apis/wit/workItems/5051"}}]"#)
+            case .removeDependency:
+                #expect(write.thread == nil)
+                #expect(write.kind.isDependency)
+                #expect(write.method == "PATCH")
+                #expect(write.url.absoluteString == "https://dev.azure.com/contoso/_apis/wit/workitems/5052?api-version=7.1")
+                #expect(write.contentType == "application/json-patch+json")
+                #expect(String(decoding: write.body, as: UTF8.self) == #"[{"op":"test","path":"/rev","value":7},"#
+                    + #"{"op":"remove","path":"/relations/2"}]"#)
             }
         }
         #expect(!ADOWrite.Kind.reply.isTags)
         #expect(!ADOWrite.Kind.setStatus.isTags)
         #expect(ADOWrite.Kind.allCases.filter(\.isComment) == [.editComment, .deleteComment])
         #expect(ADOWrite.Kind.allCases.filter(\.isTags) == [.addTag, .removeTag])
-        #expect(ADOWrite.Kind.allCases.filter(\.isWorkItem) == [.setIteration, .setState])
+        #expect(ADOWrite.Kind.allCases.filter(\.isWorkItem) == [.setIteration, .setState, .addDependency, .removeDependency])
+        #expect(ADOWrite.Kind.allCases.filter(\.isDependency) == [.addDependency, .removeDependency])
     }
 
     /// A move says where the work item is and where it goes, as their paths are, quotes and all, which JSON encodes, and
@@ -712,6 +736,67 @@ import Testing
         #expect(refused.requests.count == 1)
     }
 
+    /// Linking a dependency sends its JSON Patch as one, and answers with the work item as Azure DevOps has it now; one someone
+    /// changed meanwhile fails its test of the revision, as Azure DevOps says, sent once.
+    @Test func linksADependencyWithAPatchThatTestsTheRevision() async throws {
+        let server = StubServer()
+        server.on("/contoso/_apis/wit/workitems/5052") { _ in
+            .json(WorkFixture.workItem(5052, "Task", "Remove the old cart cookie"))
+        }
+        let answer = try await server.client().send(sample(.addDependency), as: nil)
+        guard case .workItem(let item) = answer else {
+            Issue.record("Expected a work item, got \(answer)")
+            return
+        }
+        #expect(item.id == 5052)
+        let request = try #require(server.requests.first)
+        #expect(server.requests.count == 1)
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.url == sample(.addDependency).url)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json-patch+json")
+        #expect(body(of: request) == sample(.addDependency).body)
+
+        let refused = StubServer()
+        refused.on("/_apis/wit/workitems/5052") { _ in
+            .json(["message": "TF401331: The revision of the work item has changed."], status: 400)
+        }
+        await #expect(throws: ADOError.refused(nil, message: "TF401331: The revision of the work item has changed.")) {
+            try await refused.client().send(sample(.removeDependency), as: nil)
+        }
+        #expect(refused.requests.count == 1)
+    }
+
+    /// A work item's links as linking a dependency reads them right before: its revision, and where its link to a predecessor
+    /// is among all its links, others' too, which its index counts in; none to one of another organization, of the same ID.
+    @Test func findsWhereALinkToAPredecessorIs() throws {
+        let read = try Fixture.decode(ADOWorkItemLinks.self, [
+            "id": 5052, "rev": 7,
+            "relations": [
+                ["rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5000"],
+                ["rel": "ArtifactLink", "url": "vstfs:///Git/PullRequestId/p1%2Fr1%2F7"],
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/fabrikam/_apis/wit/workItems/5051"],
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/Shop/_apis/wit/workItems/5051"],
+            ],
+        ] as [String: Any])
+        #expect(read.revision == 7)
+        #expect(read.predecessorIndex(5051, in: "Contoso") == 3)
+        #expect(read.predecessorIndex(5000, in: "contoso") == nil)
+        #expect(WorkDependency.address(of: WorkItemKey("Contoso", 5051)).absoluteString
+            == "https://dev.azure.com/contoso/_apis/wit/workItems/5051")
+    }
+
+    @Test func saysWhatHappenedToADependencyInASentence() {
+        #expect(ADOWriteProblem.notAllowed.sentence(.addDependency) == "Azure DevOps says you may not change this work item.")
+        #expect(ADOWriteProblem.unanswered.sentence(.addDependency).contains("it may have linked it"))
+        #expect(ADOWriteProblem.unanswered.sentence(.removeDependency).contains("it may have taken it away"))
+        #expect(ADOWriteProblem.refused("TF401331: The revision changed.").sentence(.removeDependency)
+            == "Azure DevOps refused it: TF401331: The revision changed.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.addDependency) == "Couldn't link it: HTTP 500.")
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.removeDependency) == "Couldn't take it away: HTTP 500.")
+        // A state's as they were.
+        #expect(ADOWriteProblem.failed("HTTP 500.").sentence(.setState) == "Couldn't change its state: HTTP 500.")
+    }
+
     @Test func saysWhatHappenedToAStateChangeInASentence() {
         #expect(ADOWriteProblem.notAllowed.sentence(.setState) == "Azure DevOps says you may not change this work item.")
         #expect(ADOWriteProblem.offline.sentence(.setState) == "You're offline: try again once you're back.")
@@ -1020,6 +1105,8 @@ import Testing
         case .removeTag: .removeTag(PullRequestAddress(pullRequest), tag: "0f5d2c1e-tag")
         case .setIteration: .setIteration(WorkItemKey("Contoso", 5052), from: "Storefront\\Sprint 41", to: "Storefront\\Sprint 42")
         case .setState: .setState(WorkItemKey("Contoso", 5052), from: "New", to: "Active")
+        case .addDependency: .addDependency(WorkItemKey("Contoso", 5052), waitsFor: 5051, revision: 7)
+        case .removeDependency: .removeDependency(WorkItemKey("Contoso", 5052), waitsFor: 5051, index: 2, revision: 7)
         }
     }
 

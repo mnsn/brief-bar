@@ -1,15 +1,16 @@
 import Foundation
 
 // What you and Copilot sessions changed of My Work's Map: the lines they added between its cards and steps, or took away,
-// and its steps, work with no pull request or work item yet, such as API tests or enabling it in production. Only the Map
-// changes for them: no order, stage, Up Next slot, count or agent's other answer does. Yours are kept by the app
+// its steps, work with no pull request or work item yet, such as API tests or enabling it in production, and the work items
+// you added to it that the Board doesn't have, such as a teammate's task yours waits for. Only the Map changes for them: no
+// order, stage, Up Next slot, count or agent's other answer does, and nothing in Azure DevOps. Yours are kept by the app
 // (`order.map.edits`), what sessions tell by `--mcp` (`order.map.told`), each change with when it was made, so that where
 // both changed the same line, or the same step's name or whether it's done, the latest shows. Kept by reference, a step's
 // ID and dates; a step's name is what you typed, or what a session told, never a title BriefBar read.
 
 // MARK: - Nodes
 
-/// A node of My Work's Map: a card of the Board, or a step.
+/// A node of My Work's Map: a card of the Board, or a work item the Board doesn't have, by its reference; or a step.
 public enum MapNodeID: Hashable, Comparable, Sendable, CustomStringConvertible {
     case card(ItemRef)
     case step(UUID)
@@ -114,8 +115,9 @@ public struct MapStep: Equatable, Sendable, Identifiable {
 // MARK: - The changes
 
 /// The changes one side made to the Map, you or the sessions: each line added or taken away, last, and each step's name,
-/// whether it's done, and whether it's deleted, each with when. At most `mostLines` lines and `mostSteps` steps it added:
-/// past them, those changed longest ago go; what it said of the other side's steps goes only as that side forgets them.
+/// whether it's done, and whether it's deleted, each with when; and the work items it added. At most `mostLines` lines,
+/// `mostSteps` steps and `mostItems` work items it added: past them, those changed longest ago go; what it said of the other
+/// side's steps goes only as that side forgets them.
 public struct MapEdits: Equatable, Sendable {
     /// Where the app keeps yours.
     public static let yoursKey = "order.map.edits"
@@ -123,6 +125,7 @@ public struct MapEdits: Equatable, Sendable {
     public static let toldKey = "order.map.told"
     public static let mostLines = 1_000
     public static let mostSteps = 300
+    public static let mostItems = 100
     /// A step's name is cut to this many characters.
     public static let mostCharacters = 80
     /// How long a step stays once it's done, as an order whose pull requests all merged does.
@@ -179,16 +182,35 @@ public struct MapEdits: Equatable, Sendable {
         }
     }
 
+    /// A work item added to the Map that the Board doesn't have, such as a teammate's task yours waits for: when, by whom,
+    /// and where.
+    public struct ItemChange: Equatable, Sendable {
+        public var at: Date
+        public var by: MapAuthor
+        /// The lane it was added in, By Mission, as your order of a lane keys it (`LaneOrderKey`); nil for none, as with All,
+        /// where it shows where what it's joined to is.
+        public var home: LaneOrderKey?
+
+        public init(at: Date, by: MapAuthor, home: LaneOrderKey? = nil) {
+            self.at = at
+            self.by = by
+            self.home = home
+        }
+    }
+
     public private(set) var lines: [Line: LineChange]
     public private(set) var steps: [UUID: StepChange]
+    /// The work items it added, by reference.
+    public private(set) var items: [ItemRef: ItemChange]
 
-    public init(lines: [Line: LineChange] = [:], steps: [UUID: StepChange] = [:]) {
+    public init(lines: [Line: LineChange] = [:], steps: [UUID: StepChange] = [:], items: [ItemRef: ItemChange] = [:]) {
         self.lines = lines
         self.steps = steps
+        self.items = items
     }
 
     public var isEmpty: Bool {
-        lines.isEmpty && steps.isEmpty
+        lines.isEmpty && steps.isEmpty && items.isEmpty
     }
 
     /// What you typed, as a step's name: on one line, without spaces around it, at most `mostCharacters` long; nil for
@@ -252,6 +274,23 @@ public struct MapEdits: Equatable, Sendable {
         }
     }
 
+    /// Adds a work item to the Map, in the band it was added in: one it has already stays where and as it was added.
+    /// Nothing for anything but a work item.
+    public mutating func addItem(_ ref: ItemRef, home: LaneOrderKey?, by author: MapAuthor, at date: Date) {
+        guard ref.kind == .workItem, items[ref] == nil else { return }
+        items[ref] = ItemChange(at: date, by: author, home: home)
+        trim()
+    }
+
+    /// Takes a work item it added off the Map, with the lines it drew to it and from it, or took away: what Azure DevOps
+    /// and the orders say of it shows again.
+    public mutating func removeItem(_ ref: ItemRef) {
+        guard items.removeValue(forKey: ref) != nil else { return }
+        for line in lines.keys where line.before == .card(ref) || line.after == .card(ref) {
+            lines[line] = nil
+        }
+    }
+
     /// Forgets steps altogether, with their lines: as they're done, or deleted, long enough ago (`pruned`).
     mutating func forget(steps ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
@@ -261,9 +300,9 @@ public struct MapEdits: Equatable, Sendable {
         }
     }
 
-    /// Past `mostLines` lines, or `mostSteps` steps this side added, those changed longest ago go. What it said of the other
-    /// side's steps, such as that you deleted one a session added, or marked it done, stays until that side forgets the
-    /// step (`prune`), lest the step come back: there are no more of those than that side has steps.
+    /// Past `mostLines` lines, `mostSteps` steps or `mostItems` work items this side added, those changed longest ago go. What
+    /// it said of the other side's steps, such as that you deleted one a session added, or marked it done, stays until that
+    /// side forgets the step (`prune`), lest the step come back: there are no more of those than that side has steps.
     private mutating func trim() {
         if lines.count > Self.mostLines {
             let kept = lines.sorted { ($0.value.at, $0.key) > ($1.value.at, $1.key) }.prefix(Self.mostLines)
@@ -275,11 +314,15 @@ public struct MapEdits: Equatable, Sendable {
             let ids = Set(kept.map(\.key))
             forget(steps: Set(added.keys).subtracting(ids))
         }
+        if items.count > Self.mostItems {
+            let kept = items.sorted { ($0.value.at, $0.key) > ($1.value.at, $1.key) }.prefix(Self.mostItems)
+            items = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+        }
     }
 
     /// Forgets what's about things of these kinds, as their source goes: everything, as Azure DevOps goes, since the Map is
-    /// its My Work's, steps and lines alike; and, as Copilot goes, which session said what, as the orders forget which
-    /// session told each. Whether anything went.
+    /// its My Work's, steps, lines and work items alike; and, as Copilot goes, which session said what, as the orders forget
+    /// which session told each. Whether anything went.
     @discardableResult
     public mutating func forget(_ kinds: Set<ItemRef.Kind>) -> Bool {
         let before = self
@@ -300,6 +343,11 @@ public struct MapEdits: Equatable, Sendable {
             var change = change
             change.by = unnamed(change.by)
             change.addedBy = change.addedBy.map(unnamed)
+            return change
+        }
+        items = items.mapValues { change in
+            var change = change
+            change.by = unnamed(change.by)
             return change
         }
         return self != before
@@ -338,7 +386,7 @@ public struct MapEdits: Equatable, Sendable {
 
     /// What both sides' changes make of the Map, the latest change winning: each line's last change, and each step's
     /// latest name and whether it's done, but those deleted, with no name, or done more than `doneStepsStay` before
-    /// `now`, whose lines go too. Steps in the order they were added.
+    /// `now`, whose lines go too; and the work items either added, as first added. Steps in the order they were added.
     public static func merged(_ sides: [MapEdits], now: Date = Date()) -> MapState {
         var lines: [Line: LineChange] = [:]
         for side in sides {
@@ -396,7 +444,13 @@ public struct MapEdits: Equatable, Sendable {
         .sorted { (folded[$0.id]?.addedAt ?? .distantPast, $0.id.uuidString) < (folded[$1.id]?.addedAt ?? .distantPast, $1.id.uuidString) }
         let kept = Set(steps.map(\.id))
         let isKept = { (node: MapNodeID) in node.stepID.map(kept.contains) ?? true }
-        return MapState(lines: lines.filter { isKept($0.key.before) && isKept($0.key.after) }, steps: steps)
+        var items: [ItemRef: ItemChange] = [:]
+        for side in sides {
+            for (ref, change) in side.items where items[ref].map({ change.at < $0.at }) ?? true {
+                items[ref] = change
+            }
+        }
+        return MapState(lines: lines.filter { isKept($0.key.before) && isKept($0.key.after) }, steps: steps, items: items)
     }
 
     // MARK: Kept
@@ -404,6 +458,14 @@ public struct MapEdits: Equatable, Sendable {
     private struct Stored: Codable {
         var lines: [StoredLine]?
         var steps: [StoredStep]?
+        var items: [StoredItem]?
+    }
+
+    private struct StoredItem: Codable {
+        var ref: String
+        var at: Double
+        var by: String
+        var home: String?
     }
 
     private struct StoredLine: Codable {
@@ -452,6 +514,11 @@ public struct MapEdits: Equatable, Sendable {
             change.addedBy = step.addedBy.flatMap(MapAuthor.init)
             edits.steps[id] = change
         }
+        for item in stored.items ?? [] {
+            guard let ref = ItemRef(item.ref), ref.kind == .workItem, let author = MapAuthor(item.by), let at = date(item.at)
+            else { continue }
+            edits.items[ref] = ItemChange(at: at, by: author, home: item.home.flatMap(LaneOrderKey.init))
+        }
         edits.trim()
         return edits
     }
@@ -475,6 +542,9 @@ public struct MapEdits: Equatable, Sendable {
                     doneAt: seconds(change.doneAt), deletedAt: seconds(change.deletedAt), home: change.home?.description,
                     addedAt: seconds(change.addedAt), addedBy: change.addedBy?.description, by: change.by.description
                 )
+            },
+            items: items.isEmpty ? nil : items.sorted { $0.key < $1.key }.map { ref, change in
+                StoredItem(ref: ref.description, at: change.at.timeIntervalSince1970, by: change.by.description, home: change.home?.description)
             }
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
@@ -482,15 +552,21 @@ public struct MapEdits: Equatable, Sendable {
     }
 }
 
-/// What both sides' changes make of the Map (`MapEdits.merged`): each line's last change, and the steps.
+/// What both sides' changes make of the Map (`MapEdits.merged`): each line's last change, the steps, and the work items
+/// added to it.
 public struct MapState: Equatable, Sendable {
     public var lines: [MapEdits.Line: MapEdits.LineChange]
     /// In the order they were added.
     public var steps: [MapStep]
+    /// The work items added to the Map that the Board doesn't have, by reference: each where and as it was first added.
+    public var items: [ItemRef: MapEdits.ItemChange]
 
-    public init(lines: [MapEdits.Line: MapEdits.LineChange] = [:], steps: [MapStep] = []) {
+    public init(
+        lines: [MapEdits.Line: MapEdits.LineChange] = [:], steps: [MapStep] = [], items: [ItemRef: MapEdits.ItemChange] = [:]
+    ) {
         self.lines = lines
         self.steps = steps
+        self.items = items
     }
 
     public func step(_ id: UUID) -> MapStep? {

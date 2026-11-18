@@ -440,9 +440,14 @@ public struct ADOWorkItemDetails: Decodable, Sendable {
         /// The work item it links to, for a link to one, as its address says: `{organization}[/{project}]/_apis/wit/
         /// workItems/{id}` on dev.azure.com, or on `{organization}.visualstudio.com`.
         var target: (organization: String, project: String?, id: Int)? {
-            guard let rel, !["ArtifactLink", "Hyperlink", "AttachedFile"].contains(rel), let url,
-                  let components = URLComponents(string: url), let host = components.host?.lowercased()
-            else { return nil }
+            guard let rel, !["ArtifactLink", "Hyperlink", "AttachedFile"].contains(rel), let url else { return nil }
+            return Self.workItem(at: url)
+        }
+
+        /// The work item an address is, as a link to one names it: `{organization}[/{project}]/_apis/wit/workItems/{id}` on
+        /// dev.azure.com, or on `{organization}.visualstudio.com`; nil for any other.
+        public static func workItem(at url: String) -> (organization: String, project: String?, id: Int)? {
+            guard let components = URLComponents(string: url), let host = components.host?.lowercased() else { return nil }
             var parts = components.percentEncodedPath.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }
             let organization: String
             if host == "dev.azure.com" {

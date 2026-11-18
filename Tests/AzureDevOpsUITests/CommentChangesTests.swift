@@ -41,7 +41,7 @@ import Testing
                 return .thread(try ADOJSON.decoder().decode(ADOThread.self, from: JSONSerialization.data(withJSONObject: [
                     "id": address.id, "status": status.rawValue,
                 ] as [String: Any])))
-            case .addTag, .removeTag, .setIteration, .setState:
+            case .addTag, .removeTag, .setIteration, .setState, .addDependency, .removeDependency:
                 // Comments' changes never send one (TagChangesTests, SprintMovesTests, StateChangesTests).
                 throw ADOError.http(400)
             }

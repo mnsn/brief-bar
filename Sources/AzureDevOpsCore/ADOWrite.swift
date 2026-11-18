@@ -2,12 +2,12 @@ import Foundation
 
 /// The only changes BriefBar makes in Azure DevOps, each when you click it, with **Make Changes in Azure DevOps** on: your
 /// reply in a pull request's comment thread, a thread's status, a comment of yours edited or deleted, a tag you add to a
-/// pull request or take off it, on My Work, a task or bug of yours moved to another sprint, and, on the Sprint page, a work
-/// item's state. Every other request BriefBar sends Azure DevOps is a GET (`ADOClient.get`); these go only through
-/// `ADOClient.send(_:as:)`, which sends nothing else, with the same sign-in, to the same host, following no redirect. Each is
-/// on a pull request (`pullRequest`), and a thread's on one of its threads (`thread`), but a move and a state, which are on a
-/// work item (`workItem`). A change BriefBar comes to make later is another case here, and a kind of its own (`Kind`), which
-/// the tests go through.
+/// pull request or take off it, on My Work, a task or bug of yours moved to another sprint, on the Sprint page, a work
+/// item's state, and, on My Work's Map, a dependency between two work items linked or taken away. Every other request
+/// BriefBar sends Azure DevOps is a GET (`ADOClient.get`); these go only through `ADOClient.send(_:as:)`, which sends nothing
+/// else, with the same sign-in, to the same host, following no redirect. Each is on a pull request (`pullRequest`), and a
+/// thread's on one of its threads (`thread`), but a move, a state and a dependency, which are on a work item (`workItem`). A
+/// change BriefBar comes to make later is another case here, and a kind of its own (`Kind`), which the tests go through.
 public enum ADOWrite: Sendable, Equatable {
     /// Your comment in a thread, in reply to its first, in Markdown: `POST …/pullRequests/{id}/threads/{thread}/comments`.
     case reply(ThreadAddress, markdown: String, parentCommentId: Int)
@@ -36,11 +36,25 @@ public enum ADOWrite: Sendable, Equatable {
     /// someone changed it meanwhile, Azure DevOps refuses it, rather than BriefBar changing it again over theirs. Azure DevOps
     /// gives it the reason its process gives that change, and answers with the work item as it keeps it now.
     case setState(WorkItemKey, from: String, to: String)
+    /// A dependency of a work item on another of its organization, which Azure DevOps calls its predecessor, and nothing else
+    /// of it: `PATCH {organization}/_apis/wit/workitems/{id}`, a JSON Patch that adds a link to the later one,
+    /// `System.LinkTypes.Dependency-Reverse` to the earlier one's address, `waitsFor`, but only while it's still at
+    /// `revision`, as BriefBar read it right before, without that link: when someone changed it meanwhile, Azure DevOps
+    /// refuses it, rather than BriefBar linking it twice. Azure DevOps links the earlier one back, as its successor, and
+    /// answers with the work item as it keeps it now.
+    case addDependency(WorkItemKey, waitsFor: Int, revision: Int)
+    /// A dependency of a work item on another taken away, and nothing else of it: `PATCH {organization}/_apis/wit/workitems/
+    /// {id}`, a JSON Patch that takes away the later one's link at `index`, which BriefBar read as its link to the earlier
+    /// one, `waitsFor`, at `revision`, right before, but only while it's still at that revision: when someone changed it
+    /// meanwhile, Azure DevOps refuses it, rather than BriefBar taking another link away. Azure DevOps takes the earlier
+    /// one's link back away too, and answers with the work item as it keeps it now.
+    case removeDependency(WorkItemKey, waitsFor: Int, index: Int, revision: Int)
 
     /// Each change BriefBar can make, apart from what it says: tests go through all of them, so a new one comes with its
     /// own.
     public enum Kind: String, Sendable, CaseIterable {
-        case reply, setStatus, editComment, deleteComment, addTag, removeTag, setIteration, setState
+        case reply, setStatus, editComment, deleteComment, addTag, removeTag, setIteration, setState, addDependency
+        case removeDependency
 
         /// A change to a pull request's tags, rather than to one of its threads.
         public var isTags: Bool { self == .addTag || self == .removeTag }
@@ -49,7 +63,10 @@ public enum ADOWrite: Sendable, Equatable {
         public var isComment: Bool { self == .editComment || self == .deleteComment }
 
         /// A change to a work item, rather than to a pull request.
-        public var isWorkItem: Bool { self == .setIteration || self == .setState }
+        public var isWorkItem: Bool { self == .setIteration || self == .setState || isDependency }
+
+        /// A dependency between two work items linked or taken away.
+        public var isDependency: Bool { self == .addDependency || self == .removeDependency }
     }
 
     public var kind: Kind {
@@ -62,6 +79,8 @@ public enum ADOWrite: Sendable, Equatable {
         case .removeTag: .removeTag
         case .setIteration: .setIteration
         case .setState: .setState
+        case .addDependency: .addDependency
+        case .removeDependency: .removeDependency
         }
     }
 
@@ -71,7 +90,7 @@ public enum ADOWrite: Sendable, Equatable {
         case .reply(let thread, _, _), .setStatus(let thread, _), .editComment(let thread, _, _), .deleteComment(let thread, _):
             thread.pullRequest
         case .addTag(let pullRequest, _), .removeTag(let pullRequest, _): pullRequest
-        case .setIteration, .setState: nil
+        case .setIteration, .setState, .addDependency, .removeDependency: nil
         }
     }
 
@@ -79,21 +98,23 @@ public enum ADOWrite: Sendable, Equatable {
     public var thread: ThreadAddress? {
         switch self {
         case .reply(let thread, _, _), .setStatus(let thread, _), .editComment(let thread, _, _), .deleteComment(let thread, _): thread
-        case .addTag, .removeTag, .setIteration, .setState: nil
+        case .addTag, .removeTag, .setIteration, .setState, .addDependency, .removeDependency: nil
         }
     }
 
     /// The work item it changes; nil for a change to a pull request.
     public var workItem: WorkItemKey? {
         switch self {
-        case .setIteration(let key, _, _), .setState(let key, _, _): key
+        case .setIteration(let key, _, _), .setState(let key, _, _), .addDependency(let key, _, _), .removeDependency(let key, _, _, _):
+            key
         case .reply, .setStatus, .editComment, .deleteComment, .addTag, .removeTag: nil
         }
     }
 
     /// POST for a reply, which adds a comment; PATCH for a status, which changes only that of the thread, and for a comment
     /// edited, only what it says; DELETE for a comment deleted; POST for a tag added, and DELETE for one taken off; PATCH
-    /// for a work item moved, which changes only its iteration, and for a work item's state, which changes only that.
+    /// for a work item moved, which changes only its iteration, for a work item's state, which changes only that, and for a
+    /// dependency linked or taken away, which changes only that link.
     public var method: String {
         switch kind {
         case .reply: "POST"
@@ -104,6 +125,8 @@ public enum ADOWrite: Sendable, Equatable {
         case .removeTag: "DELETE"
         case .setIteration: "PATCH"
         case .setState: "PATCH"
+        case .addDependency: "PATCH"
+        case .removeDependency: "PATCH"
         }
     }
 
@@ -116,7 +139,8 @@ public enum ADOWrite: Sendable, Equatable {
             path = thread.pullRequest.path + ["threads", String(thread.id), "comments", String(comment)]
         case .addTag(let pullRequest, _): path = pullRequest.path + ["labels"]
         case .removeTag(let pullRequest, let tag): path = pullRequest.path + ["labels", tag]
-        case .setIteration(let key, _, _), .setState(let key, _, _): path = [key.organization, "_apis", "wit", "workitems", String(key.id)]
+        case .setIteration(let key, _, _), .setState(let key, _, _), .addDependency(let key, _, _), .removeDependency(let key, _, _, _):
+            path = [key.organization, "_apis", "wit", "workitems", String(key.id)]
         }
         return ADOEndpoint.url("https://dev.azure.com", path, [("api-version", ADOEndpoint.apiVersion)])
     }
@@ -131,7 +155,8 @@ public enum ADOWrite: Sendable, Equatable {
     /// a comment edited says now; or a tag's name. Deleting a comment, or taking a tag off, says nothing more than its
     /// address: it's empty, and sent as no body. A move is a JSON Patch: a test that the work item is still in the iteration
     /// it was read in, then its new one; and so is a state: a test that it's still in the state it was read in, then its new
-    /// one.
+    /// one; and a dependency: a test that the later work item is still at the revision it was read at, then its link to the
+    /// earlier one added, or the link at its index taken away.
     public var body: Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -159,6 +184,11 @@ public enum ADOWrite: Sendable, Equatable {
                 PatchOperation(op: "test", path: Self.stateField, value: from),
                 PatchOperation(op: "add", path: Self.stateField, value: to),
             ])
+        case .addDependency(let key, let earlier, let revision):
+            let url = WorkDependency.address(of: WorkItemKey(key.organization, earlier)).absoluteString
+            encoded = try? encoder.encode([LinkOperation.test(revision), .add(rel: WorkDependency.predecessor, url: url)])
+        case .removeDependency(_, _, let index, let revision):
+            encoded = try? encoder.encode([LinkOperation.test(revision), .remove(index)])
         }
         // Strings and numbers always encode.
         return encoded ?? Data()
@@ -173,6 +203,38 @@ public enum ADOWrite: Sendable, Equatable {
         var op: String
         var path: String
         var value: String
+    }
+
+    /// What a JSON Patch of a work item's links says: that it's still at a revision, a link added, or the one at an index
+    /// taken away.
+    private enum LinkOperation: Encodable {
+        case test(Int)
+        case add(rel: String, url: String)
+        case remove(Int)
+
+        private enum CodingKeys: String, CodingKey { case op, path, value }
+
+        private struct Link: Encodable {
+            var rel: String
+            var url: String
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .test(let revision):
+                try container.encode("test", forKey: .op)
+                try container.encode("/rev", forKey: .path)
+                try container.encode(revision, forKey: .value)
+            case .add(let rel, let url):
+                try container.encode("add", forKey: .op)
+                try container.encode("/relations/-", forKey: .path)
+                try container.encode(Link(rel: rel, url: url), forKey: .value)
+            case .remove(let index):
+                try container.encode("remove", forKey: .op)
+                try container.encode("/relations/\(index)", forKey: .path)
+            }
+        }
     }
 
     private struct ReplyBody: Encodable {
@@ -469,6 +531,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
 
     /// What happened, in a sentence for the thread: "Azure DevOps says you may not reply here."
     public func sentence(_ kind: ADOWrite.Kind) -> String {
+        if kind.isDependency { return dependencySentence(kind) }
         if kind == .setState { return stateSentence() }
         if kind.isWorkItem { return moveSentence() }
         if kind.isTags { return tagSentence(kind) }
@@ -650,6 +713,43 @@ public enum ADOWriteProblem: Sendable, Equatable {
                 + "its state didn't change."
         case .failed(let why):
             "Couldn't change its state: " + why
+        }
+    }
+
+    /// What happened to a dependency you linked or took away in Azure DevOps, in a sentence for My Work's Map: "Azure DevOps
+    /// says you may not change this work item." Refused, as when someone changed the work item meanwhile, it says what Azure
+    /// DevOps said.
+    private func dependencySentence(_ kind: ADOWrite.Kind) -> String {
+        let adds = kind == .addDependency
+        switch self {
+        case .notAllowed:
+            return "Azure DevOps says you may not change this work item."
+        case .closed:
+            return "Azure DevOps takes no change to this work item anymore."
+        case .gone:
+            return "Azure DevOps doesn't have this work item anymore, or you can't see it now."
+        case .offline:
+            return "You're offline: try again once you're back."
+        case .signedOut:
+            return "The Azure CLI isn't signed in, or Azure DevOps didn't take its sign-in: sign in, then try again."
+        case .slowedDown(let until):
+            return "Azure DevOps asked BriefBar to slow down, until \(Self.time(until)): try again then."
+        case .unanswered:
+            return adds
+                ? "Azure DevOps didn't answer in time, so it may have linked it: BriefBar reads the sprint again, to show it."
+                : "Azure DevOps didn't answer in time, so it may have taken it away: BriefBar reads the sprint again, to show it."
+        case .unconfirmed:
+            return "BriefBar couldn't read the work item to tell how it's linked now: try again in a moment."
+        case .refused(let said?):
+            return "Azure DevOps refused it: \(said)"
+        case .refused(nil):
+            return "Azure DevOps refused it."
+        case .otherAccount:
+            return "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
+        case .notListed:
+            return "Its work items aren't both in one organization, so Azure DevOps can't link them."
+        case .failed(let why):
+            return (adds ? "Couldn't link it: " : "Couldn't take it away: ") + why
         }
     }
 }

@@ -107,6 +107,8 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var mapTold: MapEdits
     /// Your last change of the Map, which its Undo line takes back, until you make another. In memory only.
     @Published package private(set) var mapUndo: MapUndo?
+    /// Others' work on My Work's Map (`MapOthersWork`): off until you turn it on, remembered.
+    @Published package private(set) var mapShowsOthers: Bool
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -253,6 +255,7 @@ package final class PullRequestOrder: ObservableObject {
         mapHidden = MapHidden.load(from: defaults)
         mapEdits = MapEdits.load(from: defaults, key: MapEdits.yoursKey)
         mapTold = MapEdits.load(from: defaults, key: MapEdits.toldKey)
+        mapShowsOthers = MapOthersWork.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -814,6 +817,28 @@ package final class PullRequestOrder: ObservableObject {
         guard grouping != mapGrouping else { return }
         mapGrouping = grouping
         grouping.save(to: defaults)
+    }
+
+    /// Others' work on My Work's Map, remembered.
+    package func setMapShowsOthers(_ shows: Bool) {
+        guard shows != mapShowsOthers else { return }
+        mapShowsOthers = shows
+        MapOthersWork.save(shows, to: defaults)
+    }
+
+    /// Adds a work item the Board doesn't have to My Work's Map, as you found it, in the band you added it in, with what waits
+    /// for it, `later`: only the Map changes. Its Undo takes it away.
+    package func addMapItem(_ ref: ItemRef, home: LaneOrderKey?, before later: MapNodeID? = nil, undo text: String) {
+        let date = now()
+        editMap(text) { edits in
+            edits.addItem(ref, home: home, by: .you, at: date)
+            if let later { edits.set(MapEdits.Line(.card(ref), later), on: true, by: .you, at: date) }
+        }
+    }
+
+    /// Takes a work item you added off My Work's Map, with the lines you drew to it.
+    package func removeMapItem(_ ref: ItemRef, undo text: String) {
+        editMap(text) { $0.removeItem(ref) }
     }
 
     /// Hides a card or step on My Work's Map, remembered: only there, as it's not your focus now. Its Undo shows it again.

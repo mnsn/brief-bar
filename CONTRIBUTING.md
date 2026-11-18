@@ -199,8 +199,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   request a GET, and to GitHub one fixed GraphQL query, never a mutation. Neither writes, but for the
   changes `ADOWrite` lists, your reply in a pull request's thread, a thread's status, your own comment
   edited or deleted, a tag added to or taken off a pull request, the sprint a task or bug of yours is
-  in, its iteration, moved on My Work, and a work item's state, chosen on the Sprint page or by moving
-  its card on My Work's Board, which only `ADOClient.send(_:as:)`
+  in, its iteration, moved on My Work, a work item's state, chosen on the Sprint page or by moving
+  its card on My Work's Board, and a dependency between two work items, linked or taken away from a line
+  of My Work's Map, which only `ADOClient.send(_:as:)`
   sends, only with **Make Changes in Azure DevOps** on, off by default, and only when you click one, or
   move a card: never by itself, from agents, the command line or the demo. A new kind of change is a case there,
   behind the same setting, with its tests, and its description says it.

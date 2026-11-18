@@ -341,7 +341,11 @@ extension DemoData {
     /// the demo sprint's work items, among them two of teammates' that the lists don't show, and linked work items that
     /// aren't in the sprint: among them the tasks of User Story 5180, "Checkout redesign", which isn't in the sprint
     /// either, whose three pull requests are its mission with Pull Request Order on (`parents`). And Task 5152, of no story,
-    /// with a pull request in each of two repositories, which are its own mission.
+    /// with a pull request in each of two repositories, which are its own mission. And the dependencies Azure DevOps links
+    /// some of the sprint's work items with, for My Work's Map: showing saved items (Task 5103) after their table (Task
+    /// 5102), as you said on the Map too; Sam's test of them (Task 5105) after showing them; your sprint review demo (Task
+    /// 5150) after Alex's check of gift card codes (Task 5122), which waits for the checkout analytics events, which no one
+    /// has (Task 5124); and the rounding fix (Task 5112) after Priya reproduced the bug (Task 5111), done.
     public static func workLinks(now: Date = Date()) -> WorkLinks {
         let project = "Storefront"
         let projectId = "7a0c4e1d-0000-4000-8000-000000000001"
@@ -399,6 +403,11 @@ extension DemoData {
             ],
             parents: [
                 workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50),
+            ],
+            dependencies: [
+                WorkDependency(workItem(5102), workItem(5103)), WorkDependency(workItem(5103), workItem(5105)),
+                WorkDependency(workItem(5122), workItem(5150)), WorkDependency(workItem(5124), workItem(5122)),
+                WorkDependency(workItem(5111), workItem(5112)),
             ]
         )
     }

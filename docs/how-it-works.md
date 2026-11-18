@@ -1301,10 +1301,11 @@ authentication library (MSAL) can be added once there's an app registration to s
 
 ### Where the data comes from
 
-All requests are GETs to the Azure DevOps REST API (version 7.1), but for the eight changes **Make Changes in Azure
+All requests are GETs to the Azure DevOps REST API (version 7.1), but for the ten changes **Make Changes in Azure
 DevOps** makes, last in the table, each when you click it ([below](#replying-and-setting-a-threads-status),
 [your comments](#editing-and-deleting-your-comments), [a pull request's tags](#a-pull-requests-tags),
-[moving a task to a sprint](#moving-a-task-to-a-sprint) and [a work item's state](#changing-a-work-items-state)):
+[moving a task to a sprint](#moving-a-task-to-a-sprint), [a work item's state](#changing-a-work-items-state) and
+[dependencies on the Map](#dependencies-in-azure-devops)):
 
 | Request | When | Provides |
 |---|---|---|
@@ -1333,8 +1334,8 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
-| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it |
-| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
+| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it; and the dependencies between work items each is in, predecessors and successors, for My Work's Map |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, and, while My Work shows its Map, the work items it can show that no list or sprint has (those the dependencies and its lines name, and those you added), every quarter of an hour; 200 a request | their title, type, state, who has each, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
@@ -1346,6 +1347,9 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels` | only with Make Changes in Azure DevOps on, when you add a tag to an open pull request: once | the tag's name; Azure DevOps answers with the tag as the project has it, which it makes when the project has none of that name |
 | `DELETE {project}/_apis/git/repositories/{repo}/pullRequests/{id}/labels/{tag}` | the same, when you click a tag's ✕: once | nothing but the tag, by the project's tag's ID; the project keeps the tag |
 | `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on My Work, when you confirm moving a task or bug of yours to your team's current sprint or its next, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its iteration alone: a test of the path it's in, then the path it goes to, so Azure DevOps refuses it if someone moved it meanwhile; Azure DevOps answers with the work item as it keeps it |
+| `_apis/wit/workitems/{id}?$expand=relations` | only with Make Changes in Azure DevOps on, on My Work's Map, right before each dependency you link or take away, of the work item that waits: once | its revision and its links, in order, to tell whether, and where, it has that link |
+| `PATCH _apis/wit/workitems/{id}` | the same, right after: once, unless it has, or hasn't, that link already | a JSON Patch (`application/json-patch+json`) of its links alone: a test of the revision just read, then its link to the earlier one, `System.LinkTypes.Dependency-Reverse`, added, or the one at its index taken away, so Azure DevOps refuses it if someone changed the work item meanwhile; Azure DevOps keeps the earlier one's link back itself, and answers with the work item as it keeps it |
+| `_apis/wit/workitems?ids={id}&fields=…` | only on My Work's Map, when + Task looks up a work item by its ID that BriefBar hasn't read: once | its title, type, state, who has it and its project |
 | `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on the Sprint page, when you choose a state for a story, bug or task of the sprint's, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its state alone: a test of the state it's in, then the state it goes to, so Azure DevOps refuses it if someone changed it meanwhile; Azure DevOps answers with the work item as it keeps it |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
@@ -2317,8 +2321,61 @@ that added it keeps it, so that it never comes back from the other's (`MapEdits.
 added and 1,000 lines each, those changed longest ago going first; what a side said of the other's steps, such as that you
 deleted one, stays until that side forgets the step, so that it doesn't come back either. **2 more ›** goes to the Board, at its column; a pull request's
 mission in its details, and Show Them, scroll the Map to its band, the graph that has the card or All's grid, and a
-search's Return gives its card's node the keyboard's focus. Nothing is read for the Map, and nothing goes to Azure
-DevOps.
+search's Return gives its card's node the keyboard's focus. Nothing is read for the Map but what the next sections say,
+and nothing goes to Azure DevOps but the dependencies you link or take away there.
+
+**Others' work** (`MapOthersWork`, `order.map.others`, off until you check it, at the top of the Map:
+`WorkMapOthersToggle`), with + Sprint Tasks or + All My Tasks, makes nodes of the work items the Board doesn't have
+(`MapWorkItem`, `WorkMapItem.workItem`), faded and outlined dashed, each saying whose it is, "Task 5122 · Alex · Active",
+as the page knows them (`WorkMap(work:)`): what the Map's own, still open, wait for, as the orders, Azure DevOps and what
+you and sessions said have it, back through those that are open, the nearest first, then those that wait right after
+the Map's own, open too, at most 30 (`WorkMap.others(waitingWith:edges:work:)`, `mostOthers`): a work item that's
+resolved, done or removed holds nothing back, so it shows none, nor anything past it. Each goes in the band it's joined
+to most nearly, as a step added nowhere does. Without it, a line through one is dotted, and what waits for one still
+open goes a wave on, as for anything the graph doesn't show; one the page knows is done holds nothing back, whether it
+shows or not. **+ Task**, in a band's header or above All (`WorkMapAddTaskButton`), and **Waits for a Task…**, in a
+node's menu, which draws the line from what it adds too, add a work item to the Map whatever Others' work says
+(`MapEdits.addItem`, `PullRequestOrder.addMapItem`), kept with your steps and lines (`order.map.edits`), by reference,
+with the band it was added in, up to 100, those added longest ago going first (`MapEdits.mostItems`), with Undo, until
+**Remove from Map** takes it off, with the lines you drew to it (`removeItem`). Its search (`WorkMapTaskSearch`) finds,
+in what BriefBar has read, the sprint's work items, anyone's, then yours outside it, each word in its type and ID, its
+title or whom it's for, as My Work's search matches (`BoardSearch`), eight at most; Return adds the first. An ID that
+matches none offers Find, which asks Azure DevOps for that one work item, in the sprint's organization; one the Map has
+already, it says so; and Waits for a Task… doesn't add one that would close a loop. While My Work shows the Map, Show
+Links reads what the work items its dependencies and lines name, and those you added, are, with who has each, as it
+reads what's linked that no list shows: up to 200 that the sprint and your lists don't have, those you added first
+(`WorkLinksStore.mapLookups`); one it hasn't read yet shows by its ID, "Not read yet".
+
+#### Dependencies in Azure DevOps
+
+Azure DevOps links work items as predecessors and successors (`System.LinkTypes.Dependency-Reverse` and `-Forward`).
+Show Links reads them with the pull requests each of the sprint's work items links to, from the same response, with
+nothing more asked (`ADOWorkItemRelations.dependencies(in:)`, `WorkLinks.dependencies`): each work item's on its
+predecessors and its successors' on it, with work items of its organization. My Work's Map draws them (`MapDependencies`,
+`WorkMap(azureDevOps:)`) as lines between work items (`WorkMapLink.azureDevOps`), solid, of one with no card of its own
+as of its pull requests' cards, as what you and sessions said is; after the orders, so that one an order draws keeps its
+look, and before what you and sessions said, so that Take Away hides one on the Map only. A line stands, in Azure DevOps,
+for the dependencies between the work items its ends stand for (`WorkMap.links(of:)`, `MapLineLinks`): a work item's node
+for that work item, a pull request's card for the work items of yours it names (`PullRequestBoard.workOfPullRequests`),
+which it names only with your sprint work on the Board, and a step for none; each later one on each earlier one, in the
+same organization, never one on itself; but where Azure DevOps links it, or you or a session said it, between what each
+was said of only (`WorkMap.Edges.facts`), as a card can name several work items. A dotted line stands for none. One whose
+dependencies Azure DevOps links all of is marked at its middle with a blue link, and says "· In Azure DevOps".
+
+With **Make Changes in Azure DevOps** on, a selected line's card, and its right-click menu, offer **Link in Azure DevOps**,
+for the dependencies it stands for that Azure DevOps doesn't link yet, or, once it links all of them, **Unlink in Azure
+DevOps**; **Link 3 Lines in Azure DevOps…**, at the top of the Map, lists every line the Map draws that it doesn't link
+yet, between what shows (`WorkMap.unlinked`), and links them all once you confirm. One change at a time
+(`MapDependencies`), a dependency after another: for each, BriefBar reads the later work item's links, with its revision
+(`ADOWorkItemLinks`), and sends nothing where it has that link already, or hasn't, as when someone changed it meanwhile;
+else a JSON Patch of that work item's links (`ADOWrite.addDependency`, `removeDependency`), testing that revision, which
+adds a link to the earlier one or takes away the one at its index. Azure DevOps keeps the earlier one's link back itself.
+Each one done shows at once, as Show Links reads the sprint's links again (`LinkEngine.changed`), until a read that
+started after it says so. A line at the top of the Map (`MapDependencyLine`) says what it's doing, then what it did, with
+Undo, which takes back what BriefBar changed, with its Try Agains, and nothing that was there before, or why it stopped
+and how many went, with Try Again for the rest, but where Azure DevOps refused it. It goes as whom BriefBar read the sprint
+as; turning the setting off calls off one that hasn't gone, and forgets Undo; once someone else signs in, nothing more
+goes, and what went shows only as Show Links reads it.
 
 #### Moving a task to a sprint
 
