@@ -218,6 +218,32 @@ import Testing
         #expect(skipped.crossings == 0)
     }
 
+    /// Where a graph's columns don't all fit across the page, they fold into as few tiers as that takes, as text wraps: where
+    /// the fewest lines cross, and, of those, with the first tiers fullest. A tier takes only the rows its cards and the lines
+    /// through it take.
+    @Test func columnsFoldWhereTheFewestLinesCrossAndATierTakesOnlyItsRows() throws {
+        let chain = (0..<6).map { $0...($0 + 1) }
+        #expect(WorkMapFold(columns: 7, across: 7, spans: chain).starts == [0])
+        let folded = WorkMapFold(columns: 7, across: 4, spans: chain)
+        #expect(folded.starts == [0, 4])
+        #expect(folded.columns(ofTier: 0) == 0..<4 && folded.columns(ofTier: 1) == 4..<7)
+        #expect([3, 4, 6].map(folded.tier(of:)) == [0, 1, 1])
+        #expect(folded.wraps(3...4, into: 1) && folded.wraps(1...6, into: 1))
+        #expect(!folded.wraps(0...3, into: 1) && !folded.wraps(4...6, into: 1) && !folded.wraps(3...4, into: 0))
+        // Three lines leave the fourth column, and only one the third: it folds before the fourth.
+        #expect(WorkMapFold(columns: 7, across: 4, spans: Array(chain.prefix(4)) + [3...5, 3...6, 4...5]).starts == [0, 3])
+        #expect(WorkMapFold(columns: 9, across: 4, spans: (0..<8).map { $0...($0 + 1) }).starts == [0, 4, 8])
+        #expect(WorkMapFold(columns: 3, across: 1, spans: [0...2]).starts == [0, 1, 2])
+
+        let skipping = Steps.mission([
+            Steps.step(4100, .merged, status: .merged, place: 1), Steps.step(4101, .next, place: 2),
+            Steps.step(4102, Self.waits(on: [4101]), place: 3, after: [4100, 4101]),
+        ])
+        let skipped = try #require(WorkMap(Steps.board(Self.chainStages, missions: [skipping]), missions: [skipping]).bands.first?.graph)
+        #expect(Set(skipped.spans) == [0...2, 1...2])
+        #expect([0..<1, 1..<2, 2..<3, 0..<3].map(skipped.rows(in:)) == [[0], [0, 1], [0], [0, 1]])
+    }
+
     /// A pull request that merged before one it should have waited for doesn't stand in for it: what comes after both still
     /// waits for the one that's open, with a line from it.
     @Test func aCardDoneOutOfOrderDoesntHideWhatsStillOpenBeforeIt() throws {

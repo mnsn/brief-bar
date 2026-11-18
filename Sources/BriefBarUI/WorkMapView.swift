@@ -10,7 +10,9 @@ import SwiftUI
 // line: the other waits for it. A click on a line selects it, to take it away. Hovering a node lights up what it waits for
 // and what waits for it. ✨ Ask Copilot, on a band or a graph, asks its session, a fork of it or a new one to work out what
 // waits for what there and tell BriefBar, which draws what it tells as it hears it. Only the Map changes for any of it.
-// Everything scales with the text size of windows' pages.
+// Where the page is too narrow for a graph's columns, as with a card's details beside it, they fold into tiers, one under
+// the other, and the lines from one tier to the next wrap round, down and back. Everything scales with the text size of
+// windows' pages.
 
 /// What a page draws of its cards on My Work's Map.
 package struct WorkMapContent {
@@ -139,7 +141,7 @@ package struct WorkMapView: View {
     @LocalState private var naming: StepNaming?
     /// What ✨ Ask Copilot did last, for each band and graph.
     @LocalState private var asked: [String: String] = [:]
-    /// How wide the page is, for All's grid to fill it.
+    /// How wide the page is, for the graphs to fold to it and the grids to fill it.
     @LocalState private var width: CGFloat = 0
     /// The node that has the keyboard's focus, in any band or graph: one a search found takes it.
     @FocusState private var focused: MapNodeID?
@@ -207,6 +209,12 @@ package struct WorkMapView: View {
 
     private var metrics: WorkMapMetrics {
         WorkMapMetrics(scale: textScale)
+    }
+
+    /// How wide a canvas can be, inside its card's padding, for its graphs to fold and its grid to fit; nil until the page
+    /// knows its width.
+    private var canvasWidth: CGFloat? {
+        width > 0 ? max(width - 24, 0) : nil
     }
 
     /// What you changed last, of the Map and of missions no band shows; why BriefBar didn't make a change; and, until you or
@@ -286,7 +294,7 @@ package struct WorkMapView: View {
             }
             if let graph = band.graph {
                 WorkMapCanvas(
-                    blocks: [WorkMapCanvas.Block(id: id, graph: graph)], columns: graph.columns, grid: [], gridColumns: 0,
+                    blocks: [WorkMapCanvas.Block(id: id, graph: graph)], columns: graph.columns, grid: [], width: canvasWidth,
                     editor: editor(home: band.key), order: order, focus: $focused
                 )
                 .padding(12)
@@ -406,16 +414,13 @@ package struct WorkMapView: View {
     /// All's graphs and grid, on one canvas, with where each is in the page's flow, for a mission or a card to scroll to, and
     /// for what's in sight.
     private func allCanvas(_ drawn: [WorkMap.Group]) -> some View {
-        let m = metrics
-        let available: CGFloat = max(width - 24, 0)
-        let fit = Int((available + m.columnGap) / (m.nodeWidth + m.columnGap))
         let blocks: [WorkMapCanvas.Block] = drawn.compactMap(block(of:))
         let said: (String, String) -> Void = { id, words in asked[id] = words }
         let canvas = WorkMapCanvas(
-            blocks: blocks, columns: map.columns, grid: map.loose, gridColumns: max(fit, 4), editor: editor(home: nil), order: order,
-            focus: $focused, ask: content.ask.map { ($0, said) }
+            blocks: blocks, columns: map.columns, grid: map.loose, width: canvasWidth, gridColumns: 4, editor: editor(home: nil),
+            order: order, focus: $focused, ask: content.ask.map { ($0, said) }
         )
-        let geometry = canvas.geometry(metrics: m)
+        let geometry = canvas.geometry(metrics: metrics)
         return canvas
             .padding(12)
             .scrollingSideways()
@@ -462,11 +467,8 @@ package struct WorkMapView: View {
     @ViewBuilder
     private func stepsGrid(_ steps: [WorkMapItem], home: LaneOrderKey?) -> some View {
         if !steps.isEmpty {
-            let m = metrics
-            let available: CGFloat = max(width - 24, 0)
-            let fit = Int((available + m.columnGap) / (m.nodeWidth + m.columnGap))
             WorkMapCanvas(
-                blocks: [], columns: [], grid: steps, gridColumns: max(fit, 2), gridTitle: WorkMapText.stepsTitle,
+                blocks: [], columns: [], grid: steps, width: canvasWidth, gridColumns: 2, gridTitle: WorkMapText.stepsTitle,
                 editor: editor(home: home), order: order, focus: $focused
             )
             .padding(12)
@@ -680,9 +682,28 @@ struct WorkMapMetrics {
     var rowGap: CGFloat { 12 * scale }
     var blockTitle: CGFloat { 26 * scale }
     var blockGap: CGFloat { 26 * scale }
+    /// Between two tiers of a fold: over and under the lines that wrap round through it.
+    var foldGap: CGFloat { 14 * scale }
+    /// How far past a tier's end, or before the next's start, a line that wraps round turns: its first lane.
+    var wrapReach: CGFloat { 10 * scale }
+    /// Between the lanes of lines that wrap round together, as far apart as `lanesAcross` lets them be.
+    var laneGap: CGFloat { 3 * scale }
+    var lanesAcross: CGFloat { 24 * scale }
+    /// How round a wrapping line's corners are.
+    var corner: CGFloat { 6 * scale }
 
     func x(_ column: Int) -> CGFloat { CGFloat(column) * (nodeWidth + columnGap) }
     func y(_ row: Int) -> CGFloat { CGFloat(row) * (nodeHeight + rowGap) }
+
+    /// Between the lanes of so many lines that wrap round together.
+    func laneGap(of lanes: Int) -> CGFloat {
+        lanes > 1 ? min(laneGap, lanesAcross / CGFloat(lanes - 1)) : 0
+    }
+
+    /// The room a fold leaves on each side for so many lines wrapping round together: none for none.
+    func margin(for lanes: Int) -> CGFloat {
+        lanes > 0 ? wrapReach + laneGap(of: lanes) * CGFloat(lanes - 1) + 4 * scale : 0
+    }
 }
 
 /// A line of a canvas, by its ends.
@@ -693,7 +714,7 @@ struct WorkMapLineID: Hashable {
 
 /// Graphs of the Map, one under the other, their columns lined up, and a grid of what no line joins, on one surface, so that
 /// a drag from any node can reach any other: a band's graph, By Mission, or All's graphs and grid. Its nodes, lines and titles
-/// go where it works them out (`Geometry`).
+/// go where it works them out (`Geometry`), its graphs' columns folding into tiers where they don't all fit across the page.
 struct WorkMapCanvas: View {
     struct Block: Identifiable {
         var id: String
@@ -732,20 +753,34 @@ struct WorkMapCanvas: View {
             var height: CGFloat
         }
 
+        /// A column's title: over the first tier, and over each later tier of a fold that has a column with one.
+        struct Title {
+            var text: String
+            var frame: CGRect
+        }
+
         var nodes: [Placed] = []
         var lines: [Drawn] = []
         var blocks: [Placement] = []
+        var titles: [Title] = []
         /// Where the grid's title is, with one.
         var gridTop: CGFloat?
         var size: CGSize = .zero
         var frames: [MapNodeID: CGRect] = [:]
+        /// How the graphs' columns fold to the page's width.
+        var fold = WorkMapFold(columns: 0)
+        /// Where the columns and the grid start, past the room a fold leaves for the lines that wrap round it.
+        var inset: CGFloat = 0
     }
 
     let blocks: [Block]
     let columns: [WorkMapColumn]
     let grid: [WorkMapItem]
-    /// How many columns the grid has at least: as many as fit the page.
-    let gridColumns: Int
+    /// How wide the page lets it be, inside its card: its graphs fold to fit, and its grid has as many columns as fit. Nil
+    /// until the page knows.
+    let width: CGFloat?
+    /// How many columns the grid has until the page knows its width.
+    var gridColumns = 4
     /// The grid's title: Not connected, with All.
     var gridTitle: String = WorkMapText.notConnected
     let editor: WorkMapEditor
@@ -764,68 +799,7 @@ struct WorkMapCanvas: View {
     private static let space = "WorkMapCanvas"
 
     func geometry(metrics m: WorkMapMetrics) -> Geometry {
-        var geometry = Geometry()
-        let columnCount = max(columns.count, grid.isEmpty ? 0 : gridColumns, 1)
-        var y: CGFloat = columns.contains { $0.title != nil } ? m.titleRow : 0
-        for block in blocks {
-            var titleTop: CGFloat?
-            if block.title != nil {
-                titleTop = y
-                y += m.blockTitle
-            }
-            let top = y
-            var columnOf: [MapNodeID: Int] = [:]
-            for node in block.graph.nodes {
-                let frame = CGRect(x: m.x(node.column), y: top + m.y(node.row), width: m.nodeWidth, height: m.nodeHeight)
-                geometry.nodes.append(Geometry.Placed(item: node.item, frame: frame, elsewhere: node.elsewhere))
-                geometry.frames[node.id] = frame
-                columnOf[node.id] = node.column
-            }
-            for line in block.graph.lines {
-                guard let from = geometry.frames[line.before], let to = geometry.frames[line.after], let column = columnOf[line.before]
-                else { continue }
-                var path = Path()
-                var point = CGPoint(x: from.maxX, y: from.midY)
-                path.move(to: point)
-                func curve(to end: CGPoint) {
-                    let reach = max(12 * m.scale, (end.x - point.x) / 2)
-                    path.addCurve(to: end, control1: CGPoint(x: point.x + reach, y: point.y), control2: CGPoint(x: end.x - reach, y: end.y))
-                    point = end
-                }
-                // Through each column it skips, along the row it keeps there.
-                for (offset, row) in line.rows.enumerated() {
-                    let x = m.x(column + 1 + offset)
-                    curve(to: CGPoint(x: x, y: top + m.y(row) + m.nodeHeight / 2))
-                    point = CGPoint(x: x + m.nodeWidth, y: top + m.y(row) + m.nodeHeight / 2)
-                    path.addLine(to: point)
-                }
-                let start = CGPoint(x: from.maxX, y: from.midY)
-                let end = CGPoint(x: to.minX, y: to.midY)
-                curve(to: end)
-                let middle = line.rows.isEmpty
-                    ? CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-                    : CGPoint(x: m.x(column + 1) + m.nodeWidth / 2, y: top + m.y(line.rows[0]) + m.nodeHeight / 2)
-                geometry.lines.append(Geometry.Drawn(line: line, path: path, end: end, middle: middle))
-            }
-            let height = block.graph.rows > 0 ? m.y(block.graph.rows) - m.rowGap : 0
-            geometry.blocks.append(Geometry.Placement(id: block.id, titleTop: titleTop, top: top, height: height))
-            y = top + height + m.blockGap
-        }
-        if !grid.isEmpty {
-            geometry.gridTop = y
-            y += m.blockTitle
-            let across = max(gridColumns, 1)
-            for (index, item) in grid.enumerated() {
-                let frame = CGRect(x: m.x(index % across), y: y + m.y(index / across), width: m.nodeWidth, height: m.nodeHeight)
-                geometry.nodes.append(Geometry.Placed(item: item, frame: frame, elsewhere: nil))
-                geometry.frames[item.id] = frame
-            }
-            y += m.y((grid.count + across - 1) / across) - m.rowGap
-        } else if !blocks.isEmpty {
-            y -= m.blockGap
-        }
-        geometry.size = CGSize(width: m.x(columnCount) - m.columnGap, height: max(y, 0))
-        return geometry
+        Geometry(blocks: blocks, columns: columns, grid: grid, width: width, gridColumns: gridColumns, metrics: m)
     }
 
     var body: some View {
@@ -835,23 +809,22 @@ struct WorkMapCanvas: View {
         let lit = (drawing?.from ?? hovered ?? focus.wrappedValue).map { WorkMapLines.related(to: $0, by: lines) }
         let into = Dictionary(grouping: lines, by: \.after)
         let target = drawing.flatMap { drawing in node(at: drawing.to, in: geometry).flatMap { $0 == drawing.from ? nil : $0 } }
+        let across = geometry.size.width - geometry.inset
         CanvasLayout(size: geometry.size) {
-            ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
-                if let title = column.title {
-                    Text(title)
-                        .font(size: 11, weight: .semibold)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .at(CGRect(x: m.x(index), y: 0, width: m.nodeWidth, height: m.titleRow))
-                        .accessibilityHidden(true)
-                }
+            ForEach(Array(geometry.titles.enumerated()), id: \.offset) { _, title in
+                Text(title.text)
+                    .font(size: 11, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .at(title.frame)
+                    .accessibilityHidden(true)
             }
             linesLayer(geometry, lit: lit, metrics: m)
                 .at(CGRect(origin: .zero, size: geometry.size))
             ForEach(geometry.blocks, id: \.id) { placed in
                 if let block = blocks.first(where: { $0.id == placed.id }), let title = block.title, let top = placed.titleTop {
                     blockTitle(block, title: title)
-                        .at(CGRect(x: 0, y: top, width: geometry.size.width, height: m.blockTitle))
+                        .at(CGRect(x: geometry.inset, y: top, width: across, height: m.blockTitle))
                 }
             }
             if let top = geometry.gridTop {
@@ -860,7 +833,7 @@ struct WorkMapCanvas: View {
                     .help(gridTitle == WorkMapText.notConnected ? WorkMapText.notConnectedHelp : WorkMapText.stepsHelp)
                     .accessibilityAddTraits(.isHeader)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .at(CGRect(x: 0, y: top, width: geometry.size.width, height: m.blockTitle))
+                    .at(CGRect(x: geometry.inset, y: top, width: across, height: m.blockTitle))
             }
             ForEach(geometry.nodes) { placed in
                 nodeView(placed, through: (into[placed.id] ?? []).compactMap(through), lit: lit, target: target, geometry: geometry)
@@ -1104,6 +1077,231 @@ struct WorkMapCanvas: View {
                     }
                 }
         )
+    }
+}
+
+extension WorkMapCanvas.Geometry {
+    /// Where everything goes on a canvas: its graphs one under the other, then its grid. Where the graphs' columns don't all
+    /// fit across `width`, they fold into tiers (`WorkMapFold`), as many across as fit beside the room the lines that wrap
+    /// round need, and only the rows each tier's cards, steps and lines take. A line from one tier to the next goes on past the
+    /// tier's end, down under it, back along the gap to the next's start and into it, each in a lane of its own: the one that
+    /// leaves from highest outermost and lowest, so that they don't cross. The grid has as many columns as fit, or
+    /// `gridColumns` until the page knows its width.
+    init(
+        blocks: [WorkMapCanvas.Block], columns: [WorkMapColumn], grid: [WorkMapItem], width: CGFloat?, gridColumns: Int,
+        metrics m: WorkMapMetrics
+    ) {
+        let spans: [[ClosedRange<Int>]] = blocks.map(\.graph.spans)
+        let fold: WorkMapFold
+        var inset: CGFloat = 0
+        if let width, columns.count > Self.across(width, metrics: m) {
+            var across = Self.across(width, metrics: m)
+            var folded = WorkMapFold(columns: columns.count, across: across, spans: spans.flatMap { $0 })
+            var room = m.margin(for: Self.mostWrapping(folded, spans: spans))
+            while across > 1, m.x(across) - m.columnGap + 2 * room > width {
+                across -= 1
+                folded = WorkMapFold(columns: columns.count, across: across, spans: spans.flatMap { $0 })
+                room = m.margin(for: Self.mostWrapping(folded, spans: spans))
+            }
+            fold = folded
+            inset = room
+        } else {
+            fold = WorkMapFold(columns: columns.count)
+        }
+        func x(_ column: Int) -> CGFloat {
+            inset + m.x(column - fold.starts[fold.tier(of: column)])
+        }
+        var titles: [Title] = []
+        /// Puts the titles of a tier's columns at a height: whether it has any.
+        func title(_ tier: Int, at top: CGFloat) -> Bool {
+            let count = titles.count
+            for column in fold.columns(ofTier: tier) {
+                guard let text = columns[column].title else { continue }
+                titles.append(Title(text: text, frame: CGRect(x: x(column), y: top, width: m.nodeWidth, height: m.titleRow)))
+            }
+            return titles.count > count
+        }
+
+        var y: CGFloat = title(0, at: 0) ? m.titleRow : 0
+        var nodes: [Placed] = []
+        var lines: [Drawn] = []
+        var placements: [Placement] = []
+        var frames: [MapNodeID: CGRect] = [:]
+        for (index, block) in blocks.enumerated() {
+            var titleTop: CGFloat?
+            if block.title != nil {
+                titleTop = y
+                y += m.blockTitle
+            }
+            let top = y
+            let graph = block.graph
+            let ends = spans[index]
+            // Each tier the graph has anything in, with where it starts and ends, and its rows, from the top.
+            var tierTop: [Int: CGFloat] = [:]
+            var tierBottom: [Int: CGFloat] = [:]
+            var tierRow: [Int: [Int: Int]] = [:]
+            for tier in 0..<fold.tiers {
+                let rows = graph.rows(in: fold.columns(ofTier: tier))
+                guard !rows.isEmpty else { continue }
+                if !tierTop.isEmpty {
+                    let wrapping = ends.filter { fold.wraps($0, into: tier) }.count
+                    y += 2 * m.foldGap + m.laneGap(of: wrapping) * CGFloat(max(wrapping - 1, 0))
+                }
+                if tier > 0, title(tier, at: y) {
+                    y += m.titleRow
+                }
+                tierTop[tier] = y
+                tierRow[tier] = Dictionary(rows.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+                y += m.y(rows.count) - m.rowGap
+                tierBottom[tier] = y
+            }
+            /// The top of a row in a column, in its tier.
+            func rowTop(_ column: Int, _ row: Int) -> CGFloat {
+                let tier = fold.tier(of: column)
+                let at: Int = tierRow[tier]?[row] ?? 0
+                return (tierTop[tier] ?? top) + m.y(at)
+            }
+            for node in graph.nodes {
+                let frame = CGRect(x: x(node.column), y: rowTop(node.column, node.row), width: m.nodeWidth, height: m.nodeHeight)
+                nodes.append(Placed(item: node.item, frame: frame, elsewhere: node.elsewhere))
+                frames[node.id] = frame
+            }
+            let rowOf = Dictionary(graph.nodes.map { ($0.id, $0.row) }, uniquingKeysWith: { first, _ in first })
+            /// The row a line is at in a column it goes through or ends in.
+            func row(_ number: Int, at column: Int) -> Int {
+                let line = graph.lines[number]
+                let span = ends[number]
+                if column <= span.lowerBound { return rowOf[line.before] ?? 0 }
+                if column >= span.upperBound { return rowOf[line.after] ?? 0 }
+                let offset = column - span.lowerBound - 1
+                return line.rows.indices.contains(offset) ? line.rows[offset] : 0
+            }
+            // The lanes of the lines that wrap round into each tier: in the order they leave the tier above, from the top,
+            // then come into it.
+            var lane: [Int: [Int: Int]] = [:]
+            var lanes: [Int: Int] = [:]
+            for tier in fold.starts.indices.dropFirst() {
+                let start = fold.starts[tier]
+                /// Where a line leaves the tier above, then where it comes into this one.
+                func key(_ number: Int) -> (CGFloat, CGFloat, Int) {
+                    (rowTop(start - 1, row(number, at: start - 1)), rowTop(start, row(number, at: start)), number)
+                }
+                let ordered = ends.indices.filter { fold.wraps(ends[$0], into: tier) }.sorted { key($0) < key($1) }
+                lane[tier] = Dictionary(ordered.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+                lanes[tier] = ordered.count
+            }
+            for (number, line) in graph.lines.enumerated() {
+                guard let from = frames[line.before], let to = frames[line.after], ends[number].lowerBound < ends[number].upperBound
+                else { continue }
+                let span = ends[number]
+                let start = CGPoint(x: from.maxX, y: from.midY)
+                var path = Path()
+                path.move(to: start)
+                var point = start
+                var turned: CGPoint?
+                // Through each column it skips, along the row it keeps there, wrapping round into each tier it goes on to.
+                for column in (span.lowerBound + 1)...span.upperBound {
+                    let entry = CGPoint(x: x(column), y: rowTop(column, row(number, at: column)) + m.nodeHeight / 2)
+                    let tier = fold.tier(of: column)
+                    if tier == fold.tier(of: column - 1) {
+                        Self.curve(&path, from: point, to: entry, metrics: m)
+                    } else {
+                        let at = lane[tier]?[number] ?? 0
+                        let count = lanes[tier] ?? 1
+                        let gap = m.laneGap(of: count)
+                        let outer = gap * CGFloat(count - 1 - at)
+                        let right = point.x + m.wrapReach + outer
+                        let under = (tierBottom[fold.tier(of: column - 1)] ?? point.y) + m.foldGap + outer
+                        let left = entry.x - m.wrapReach - gap * CGFloat(at)
+                        let corners: [CGPoint] = [
+                            CGPoint(x: right, y: point.y), CGPoint(x: right, y: under),
+                            CGPoint(x: left, y: under), CGPoint(x: left, y: entry.y),
+                        ]
+                        Self.turn(&path, through: corners, to: entry, radius: m.corner)
+                        if turned == nil { turned = CGPoint(x: (right + left) / 2, y: under) }
+                    }
+                    point = entry
+                    if column < span.upperBound {
+                        point.x += m.nodeWidth
+                        path.addLine(to: point)
+                    }
+                }
+                let end = CGPoint(x: to.minX, y: to.midY)
+                let middle: CGPoint
+                if let first = line.rows.first {
+                    let column = span.lowerBound + 1
+                    middle = CGPoint(x: x(column) + m.nodeWidth / 2, y: rowTop(column, first) + m.nodeHeight / 2)
+                } else if let turned {
+                    middle = turned
+                } else {
+                    middle = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+                }
+                lines.append(Drawn(line: line, path: path, end: end, middle: middle))
+            }
+            placements.append(Placement(id: block.id, titleTop: titleTop, top: top, height: y - top))
+            y += m.blockGap
+        }
+        var gridAcross = 0
+        if !grid.isEmpty {
+            gridTop = y
+            y += m.blockTitle
+            gridAcross = width.map { Self.across($0 - inset, metrics: m) } ?? max(gridColumns, 1)
+            for (index, item) in grid.enumerated() {
+                let frame = CGRect(
+                    x: inset + m.x(index % gridAcross), y: y + m.y(index / gridAcross), width: m.nodeWidth, height: m.nodeHeight
+                )
+                nodes.append(Placed(item: item, frame: frame, elsewhere: nil))
+                frames[item.id] = frame
+            }
+            y += m.y((grid.count + gridAcross - 1) / gridAcross) - m.rowGap
+        } else if !blocks.isEmpty {
+            y -= m.blockGap
+        }
+        let widest = fold.starts.indices.map { fold.columns(ofTier: $0).count }.max() ?? 0
+        let graphs: CGFloat = widest > 0 ? 2 * inset + m.x(widest) - m.columnGap : 0
+        let gridWidth: CGFloat = gridAcross > 0 ? inset + m.x(gridAcross) - m.columnGap : 0
+        self.nodes = nodes
+        self.lines = lines
+        self.blocks = placements
+        self.titles = titles
+        self.frames = frames
+        self.fold = fold
+        self.inset = inset
+        size = CGSize(width: max(graphs, gridWidth, m.nodeWidth), height: max(y, 0))
+    }
+
+    /// How many columns fit across a width: at least one.
+    static func across(_ width: CGFloat, metrics m: WorkMapMetrics) -> Int {
+        max(Int((width + m.columnGap) / (m.nodeWidth + m.columnGap)), 1)
+    }
+
+    /// The most lines of one graph that wrap round into one tier of a fold together.
+    static func mostWrapping(_ fold: WorkMapFold, spans: [[ClosedRange<Int>]]) -> Int {
+        var most = 0
+        for tier in fold.starts.indices.dropFirst() {
+            for ends in spans {
+                most = max(most, ends.filter { fold.wraps($0, into: tier) }.count)
+            }
+        }
+        return most
+    }
+
+    /// A curve from one point to another further right, level at each end, as a line goes from a column to the next.
+    static func curve(_ path: inout Path, from start: CGPoint, to end: CGPoint, metrics m: WorkMapMetrics) {
+        let reach = max(12 * m.scale, (end.x - start.x) / 2)
+        path.addCurve(to: end, control1: CGPoint(x: start.x + reach, y: start.y), control2: CGPoint(x: end.x - reach, y: end.y))
+    }
+
+    /// Straight through these corners, each rounded, to the end, as a line wraps round a fold.
+    static func turn(_ path: inout Path, through corners: [CGPoint], to end: CGPoint, radius: CGFloat) {
+        var current = path.currentPoint ?? end
+        for (index, corner) in corners.enumerated() {
+            let next = index + 1 < corners.count ? corners[index + 1] : end
+            let room = min(hypot(corner.x - current.x, corner.y - current.y), hypot(next.x - corner.x, next.y - corner.y)) / 2
+            path.addArc(tangent1End: corner, tangent2End: next, radius: min(radius, room))
+            current = corner
+        }
+        path.addLine(to: end)
     }
 }
 
