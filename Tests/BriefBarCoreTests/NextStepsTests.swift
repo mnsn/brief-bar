@@ -1215,6 +1215,96 @@ import Testing
         #expect(board.lanes.first.map { board.undoRefs(of: $0, missions: [], changed: Self.gh(212)) } == [Self.pr(4101)])
     }
 
+    // MARK: Lanes it shows
+
+    /// A lane shows while it has a card in a column you show: a finished mission's, all merged, leaves the Board once you
+    /// hide Merged, and one with none of its pull requests on your board, such as a teammate's you finished reviewing,
+    /// doesn't show, as List and the Map still show every mission; nor do those in no mission. The lanes the Board keeps
+    /// show however few cards they have, and Lanes: None's one lane always shows.
+    @Test func aLaneShowsOnlyWhileItHasACardInAColumnYouShow() {
+        let finished = Self.mission([Self.step(4101, .merged, status: .merged), Self.step(4102, .merged, status: .merged)])
+        let reviewed = Self.mission([Self.step(4201)])
+        let payments = Self.mission([Self.step(4301, .next)])
+        let missions = [finished, reviewed, payments]
+        let stages: [Int: StageReading] = [
+            4101: Self.reading(.merged, .merged), 4102: Self.reading(.merged, .merged),
+            4201: Self.reading(.teammateReview, .finishedReview, isOnBoard: false),
+            4301: Self.reading(.inProgress, .draft),
+            4400: Self.reading(.merged, .merged),
+        ]
+        let board = Self.board(stages, missions: missions)
+        #expect(board.lanes.map(\.kind) == [.mission(finished.key), .mission(reviewed.key), .mission(payments.key), .notInAMission])
+        let shown = { (hidden: Set<BoardColumn>, kept: Set<BoardLane.Kind>) in
+            board.shownLanes(hiding: hidden, keeping: kept, undoOf: nil, missions: missions).map(\.kind)
+        }
+        #expect(shown([], []) == [.mission(finished.key), .mission(payments.key), .notInAMission])
+        #expect(shown([.stage(.merged)], []) == [.mission(payments.key)])
+        #expect(shown([.stage(.merged)], [.mission(reviewed.key), .notInAMission])
+            == [.mission(reviewed.key), .mission(payments.key), .notInAMission])
+
+        let one = Self.board([4101: Self.reading(.merged, .merged)], lanes: .none)
+        #expect(one.shownLanes(hiding: [.stage(.merged)], undoOf: nil, missions: []).map(\.kind) == [.all])
+    }
+
+    /// So does a story's lane, on My Work with + Sprint Tasks: one whose work is all done leaves the Board once you hide
+    /// Completed, as the Sprint page still shows every story.
+    @Test func aStorysLaneShowsOnlyWhileItHasACardInAColumnYouShow() {
+        let work = [
+            Self.work(5101, .completed, story: 5001),
+            Self.work(5201, .completed, story: 5002),
+            Self.work(5202, .toDo, story: 5002),
+        ]
+        let stories = [5001, 5002].map(Self.task)
+        let board = Self.board([:]).withWork(work, missions: [], stories: stories)
+        #expect(board.lanes.map(\.kind) == stories.map(BoardLane.Kind.story))
+        #expect(board.shownLanes(hiding: [], undoOf: nil, missions: []) == board.lanes)
+        #expect(board.shownLanes(hiding: [.completed], undoOf: nil, missions: []).map(\.kind) == [.story(Self.task(5002))])
+    }
+
+    /// Where your last change was to a pull request whose lane doesn't show, as one you finished reviewing in a mission with
+    /// nothing else on your board, the first lane with its Undo line shows too, while no lane that shows has it.
+    @Test func aLaneThatDoesntShowStaysForTheUndoOfYourLastChangeWhileNoLaneThatShowsHasIt() {
+        let reviewed = Self.mission([Self.step(4201)])
+        let payments = Self.mission([Self.step(4301, .next)])
+        let missions = [reviewed, payments]
+        let finishedReview = Self.reading(.teammateReview, .finishedReview, isOnBoard: false)
+        let stages: [Int: StageReading] = [4201: finishedReview, 4301: Self.reading(.inProgress, .draft), 4088: finishedReview]
+        let board = Self.board(stages, missions: missions)
+        let shown = { (changed: Int?) in
+            board.shownLanes(hiding: [], undoOf: changed.map(Self.pr), missions: missions).map(\.kind)
+        }
+        #expect(shown(nil) == [.mission(payments.key)])
+        #expect(shown(4201) == [.mission(reviewed.key), .mission(payments.key)])
+        // One in no mission keeps the lane of those in no mission, though it has no card.
+        #expect(shown(4088) == [.mission(payments.key), .notInAMission])
+        #expect(shown(4301) == [.mission(payments.key)])
+
+        // Where a lane that shows has it too, its Undo line is enough.
+        let both = Self.mission([Self.step(4302, .next), Self.step(4201)])
+        let more = Self.board([4201: finishedReview, 4302: Self.reading(.inProgress, .draft)], missions: [reviewed, both])
+        #expect(more.shownLanes(hiding: [], undoOf: Self.pr(4201), missions: [reviewed, both]).map(\.kind) == [.mission(both.key)])
+    }
+
+    /// The line under the Board counts the missions and stories whose lanes it doesn't show after the pull requests that
+    /// aren't on it, and its tooltip says why, a line for each.
+    @Test func theLineUnderTheBoardCountsTheLanesItDoesntShowAndSaysWhy() {
+        #expect(BoardText.notOnBoard(0, missions: 1) == "1 mission with no cards to show isn't on the board")
+        #expect(BoardText.notOnBoard(0, stories: 2) == "2 stories with no cards to show aren't on the board")
+        #expect(BoardText.notOnBoard(0, missions: 2, stories: 1) == "2 missions and 1 story with no cards to show aren't on the board")
+        #expect(BoardText.notOnBoard(1, missions: 1) == "1 more in your lists, and 1 mission with no cards to show, aren't on the board")
+        #expect(BoardText.notOnBoard(0, missions: 0, stories: 0) == nil)
+
+        let pullRequests = BoardText.notOnBoardHelp(pullRequests: 2)
+        #expect(pullRequests.hasSuffix("By Status lists them."))
+        #expect(BoardText.notOnBoardHelp(pullRequests: 0, missions: 1)
+            == "A mission's lane shows while it has a card in a column you haven't hidden. List and the Map show every mission.")
+        #expect(BoardText.notOnBoardHelp(pullRequests: 0, stories: 1)
+            == "A story's lane shows while it has a card in a column you haven't hidden. The Sprint page shows every story.")
+        #expect(BoardText.notOnBoardHelp(pullRequests: 1, missions: 1, stories: 1) == pullRequests + "\n"
+            + "A mission's or story's lane shows while it has a card in a column you haven't hidden. List and the Map show every "
+            + "mission, and the Sprint page every story.")
+    }
+
     // MARK: Dragging
 
     /// A drop takes only what this drag carries: never text that names a pull request, such as from another app, nor
