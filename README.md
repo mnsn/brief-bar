@@ -110,9 +110,9 @@ stage to change it, or **Finished My Review**, as you point at its row, to pass 
 - **My Work's Map**, with My Work Page on, draws your pull requests, tasks and the steps left, such as tests or
   enabling it in production, as a graph of what holds what, by mission or all together, with the dependencies Azure
   DevOps links between work items. Drag to connect, click a line to take it away or link it in Azure DevOps, click a
-  task's state to close it or set it active, as on the Sprint page, and **✨ Ask Copilot** has a session work out what
-  waits for what. Uncheck **Done** to leave out what's done, check **Others' work** to see, faded, a teammate's task
-  that yours waits for, and add any of the sprint's with **+ Task**.
+  task's state, yours or a teammate's, in the sprint or not, to close it or set it active, as on the Sprint page, and
+  **✨ Ask Copilot** has a session work out what waits for what. Uncheck **Done** to leave out what's done, check
+  **Others' work** to see, faded, a teammate's task that yours waits for, and add any of the sprint's with **+ Task**.
 
 Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps but what you link there.
 [Pull Request Order, Up Next and the Board →](docs/user-guide.md#azure-devops)
@@ -208,8 +208,8 @@ work or a new one, and the model.
 - **Or do it yourself.** With **Make Changes in Azure DevOps** on, reply to comments, resolve threads, edit or delete
   your own comments and change tags, as you, without opening Azure DevOps; on the Sprint page, set a story, bug or
   task to **New**, **Active**, **Closed** or another of its states from its state's menu, and on My Work, drag your
-  sprint work's card to another column, such as **In progress** or **Completed**, to set its state there, and link the
-  Map's lines as predecessors and successors.
+  work's card, in the sprint or out of it, to another column, such as **In progress** or **Completed**, to set its state
+  there, and link the Map's lines as predecessors and successors.
 
 Fixes don't push unless you ask, and Pre-review changes and posts nothing. Turn on **Send Prompts to Copilot
 Sessions** in **Settings › Agents**, and BriefBar sends a prompt to one of the Copilot app's sessions itself, or to a

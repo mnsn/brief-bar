@@ -2,8 +2,8 @@ import Foundation
 
 /// The only changes BriefBar makes in Azure DevOps, each when you click it, with **Make Changes in Azure DevOps** on: your
 /// reply in a pull request's comment thread, a thread's status, a comment of yours edited or deleted, a tag you add to a
-/// pull request or take off it, on My Work, a task or bug of yours moved to another sprint, on the Sprint page, a work
-/// item's state, and, on My Work's Map, a dependency between two work items linked or taken away. Every other request
+/// pull request or take off it, on My Work, a task or bug of yours moved to another sprint, on the Sprint page and My Work, a
+/// work item's state, and, on My Work's Map, a dependency between two work items linked or taken away. Every other request
 /// BriefBar sends Azure DevOps is a GET (`ADOClient.get`); these go only through `ADOClient.send(_:as:)`, which sends nothing
 /// else, with the same sign-in, to the same host, following no redirect. Each is on a pull request (`pullRequest`), and a
 /// thread's on one of its threads (`thread`), but a move, a state and a dependency, which are on a work item (`workItem`). A
@@ -494,7 +494,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
     /// Someone else signed in to the Azure CLI since you asked for it: nothing went as them.
     case otherAccount
     /// The pull request isn't in your lists anymore, though its details still show it; or the work item isn't among yours
-    /// that BriefBar reads anymore, or, for its state, on the sprint's board as it was: nothing went.
+    /// that BriefBar reads anymore, or, for its state, among what BriefBar reads as it was: nothing went.
     case notListed
     /// Anything else, as BriefBar says it.
     case failed(String)
@@ -681,9 +681,9 @@ public enum ADOWriteProblem: Sendable, Equatable {
         }
     }
 
-    /// What happened to a work item whose state you changed, in a sentence for the Sprint page: "Azure DevOps says you may
-    /// not change this work item." Refused, as when someone changed its state meanwhile, or its process doesn't let it go
-    /// from that state to this one, it says what Azure DevOps said.
+    /// What happened to a work item whose state you changed, in a sentence for the Sprint page and My Work: "Azure DevOps says
+    /// you may not change this work item." Refused, as when someone changed its state meanwhile, or its process doesn't let it
+    /// go from that state to this one, it says what Azure DevOps said.
     private func stateSentence() -> String {
         switch self {
         case .notAllowed:
@@ -699,7 +699,7 @@ public enum ADOWriteProblem: Sendable, Equatable {
         case .slowedDown(let until):
             "Azure DevOps asked BriefBar to slow down, until \(Self.time(until)): try again then."
         case .unanswered:
-            "Azure DevOps didn't answer in time, so its state may have changed: BriefBar reads the sprint again, to show it."
+            "Azure DevOps didn't answer in time, so its state may have changed: BriefBar reads it again, to show it."
         case .unconfirmed:
             "BriefBar couldn't read the sprint again to tell its state: try again in a moment."
         case .refused(let said?):
@@ -709,8 +709,8 @@ public enum ADOWriteProblem: Sendable, Equatable {
         case .otherAccount:
             "Someone else is signed in to the Azure CLI now, so BriefBar sent nothing as them: sign in as yourself, then try again."
         case .notListed:
-            "As BriefBar reads the sprint now, it isn't in the state it was in when you chose another, or isn't on its board, so "
-                + "its state didn't change."
+            "As BriefBar reads it now, it isn't in the state it was in when you chose another, or BriefBar doesn't read it "
+                + "anymore, so its state didn't change."
         case .failed(let why):
             "Couldn't change its state: " + why
         }

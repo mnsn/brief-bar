@@ -451,6 +451,14 @@ final class WorkItemDetailsStore: ObservableObject {
         }
     }
 
+    /// A work item whose state BriefBar changed that the sprint's board doesn't have, as Azure DevOps answered
+    /// (`StateChanges`), such as one My Work's Map shows: what shows of it follows at once, and its details are read again
+    /// while they show, as for the sprint's (`keepUp`).
+    func changed(_ item: WorkItem) {
+        guard selected?.key == item.key else { return }
+        keepUp(with: item)
+    }
+
     /// A work item as the sprint, or your work outside it, has it now.
     private func known(_ key: WorkItemKey) -> WorkItem? {
         board?.item(key) ?? outside[key]

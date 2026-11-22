@@ -102,8 +102,9 @@ import Testing
         #expect(StateChangeText.help(task, canChange: true, needsSetting: false) == "State: New. Click to change it")
     }
 
-    /// Each work item on the sprint's board, task, story or bug, offers its type's states; one the board doesn't have, or
-    /// whose type's states the team's configuration doesn't say, none, and nothing says how to turn anything on for it.
+    /// Each work item on the sprint's board, task, story or bug, offers its type's states; one BriefBar doesn't read, as your
+    /// work outside the sprint before it's read, or whose type's states the team's configuration doesn't say, none, and
+    /// nothing says how to turn anything on for it.
     @Test func offersTheStatesOfItsTypeForWhatsOnTheBoard() throws {
         let (sprint, states, _) = live()
         #expect(states.choices(for: try item(sprint, 5101)).map(\.name) == ["New", "Active", "Resolved", "Closed"])
@@ -134,7 +135,7 @@ import Testing
 
     /// On My Work's Board, a work item on the sprint's board changes state as its card moves, whatever the setting: from the
     /// state it's in to the first of each kind its type has, held, saying why, while the setting's off or a change is on its
-    /// way. One outside the sprint, or whose type's states the team's configuration doesn't say, doesn't. Moving a card
+    /// way. One BriefBar doesn't read, or whose type's states the team's configuration doesn't say, doesn't. Moving a card
     /// sends the change as choosing it does.
     @Test func myWorksBoardMovesTheSprintsWorkToTheStatesItsTypeHas() async throws {
         let (sprint, states, azure) = live(makesChanges: false)
@@ -261,8 +262,8 @@ import Testing
             key: key, name: "Task 5104", title: task.title, from: "New", to: "Active", account: "robin@contoso.example"
         )
         #expect(states.line == .failed(change, .notListed))
-        #expect(ADOWriteProblem.notListed.sentence(.setState) == "As BriefBar reads the sprint now, it isn't in the state it was in "
-            + "when you chose another, or isn't on its board, so its state didn't change.")
+        #expect(ADOWriteProblem.notListed.sentence(.setState) == "As BriefBar reads it now, it isn't in the state it was in when "
+            + "you chose another, or BriefBar doesn't read it anymore, so its state didn't change.")
         #expect(try item(sprint).state == "Closed")
 
         // From Closed, it goes, as whom it was read as, and once only.
@@ -379,6 +380,103 @@ import Testing
         #expect(azure.sent.isEmpty)
         #expect(try item(sprint).isDone)
         #expect(states.undoable?.to == "Closed")
+    }
+
+    // MARK: Off the sprint's board
+
+    /// The sprint read again with your work outside it, as My Work reads it.
+    private func readOutside(_ sprint: SprintStore, _ outside: OutsideWork = DemoData.outsideWork(now: referenceNow)) {
+        sprint.receive(SprintSnapshot(board: sprint.board, hasLoaded: true, outside: outside, account: sprint.account))
+    }
+
+    /// Someone else's task, in the team's project, as Show Links read it for My Work's Map.
+    private func samsTask(_ sprint: SprintStore) throws -> WorkItem {
+        WorkItem(
+            id: 9_001, organization: DemoData.organization, project: try #require(sprint.board).team.projectName, type: "Task",
+            title: "Check the coupon totals", state: "Active", category: .inProgress
+        )
+    }
+
+    /// A work item off the sprint's board offers its type's states too, as the team's configuration maps them, once BriefBar
+    /// reads it in the team's project: one of yours outside the sprint, which My Work's Board moves as it does the sprint's,
+    /// and one Show Links read, as someone else's that My Work's Map shows; not before, nor one in another project, whose
+    /// process may give its type other states.
+    @Test func offersTheStatesOfWorkOffTheBoardInTheTeamsProject() throws {
+        let (sprint, states, _) = live(makesChanges: false)
+        let outside = try #require(DemoData.outsideWork(now: Self.referenceNow).items.first { $0.id == 5052 })
+        #expect(!states.needsSetting(outside))
+        readOutside(sprint)
+        #expect(states.needsSetting(outside))
+        states.settings.makesChanges = true
+        #expect(states.choices(for: outside).map(\.name) == ["New", "Active", "Closed"])
+        #expect(states.boardStates(for: outside) == .changes(
+            current: "New", first: [.toDo: "New", .inProgress: "Active", .completed: "Closed"], held: nil
+        ))
+
+        let task = try samsTask(sprint)
+        #expect(states.choices(for: task).isEmpty)
+        var read = task
+        states.linked = { $0 == read.key ? read : nil }
+        #expect(states.choices(for: task).map(\.name) == ["New", "Active", "Closed"])
+        #expect(states.actionChoices(for: task).map(\.name) == ["New", "Closed"])
+        read.project = "Payments"
+        #expect(states.choices(for: task).isEmpty)
+    }
+
+    /// A change of one of your work items outside the sprint goes as one of the sprint's does, from the state BriefBar reads
+    /// it in, shows at once among them, as Azure DevOps answered, and tells what else shows it. Once a read leaves it out, as
+    /// one that's done, Undo still puts it back, from the state it went to.
+    @Test func aChangeOfYourWorkOutsideTheSprintShowsAmongItAndUndoPutsItBack() async throws {
+        let (sprint, states, azure) = live()
+        readOutside(sprint)
+        var told: [(key: WorkItemKey, item: WorkItem?)] = []
+        states.elsewhere = { key, item in told.append((key, item)) }
+        let key = WorkItemKey(DemoData.organization, 5052)
+        let task = try #require(sprint.outside?.items.first { $0.key == key })
+        #expect(await states.change(task, to: "Closed"))
+        #expect(azure.sent == [.setState(key, from: "New", to: "Closed")])
+        let shown = try #require(sprint.outside?.items.first { $0.key == key })
+        #expect(shown.state == "Closed" && shown.isDone)
+        #expect(told.map(\.key) == [key] && told.first?.item?.state == "Closed")
+        let change = StateChanges.Change(key: key, name: "Task 5052", title: task.title, from: "New", to: "Closed")
+        #expect(states.line == .changed(change))
+        #expect(states.undoable == change)
+
+        var read = try #require(sprint.outside)
+        read.items.removeAll { $0.key == key }
+        readOutside(sprint, read)
+        #expect(states.undoable == change)
+        await states.undo()
+        #expect(azure.sent == [.setState(key, from: "New", to: "Closed"), .setState(key, from: "Closed", to: "New")])
+        #expect(states.line == .changed(change.back))
+        #expect(told.map(\.key) == [key, key] && told.last?.item?.state == "New")
+    }
+
+    /// A change of a work item only Show Links reads, as someone else's on My Work's Map, goes from the state Show Links read
+    /// it in, and tells what else shows it, as Azure DevOps answered; one that didn't happen tells it too, for Show Links to
+    /// read it again.
+    @Test func aChangeOfAWorkItemShowLinksReadsTellsWhatElseShowsIt() async throws {
+        let (sprint, states, azure) = live()
+        var read = try samsTask(sprint)
+        let key = read.key
+        states.linked = { $0 == key ? read : nil }
+        var told: [(key: WorkItemKey, item: WorkItem?)] = []
+        states.elsewhere = { key, item in
+            told.append((key, item))
+            // Show Links shows it so at once.
+            if let item { read = item }
+        }
+        #expect(await states.change(read, to: "Closed"))
+        #expect(azure.sent == [.setState(key, from: "Active", to: "Closed")])
+        #expect(told.map(\.key) == [key] && told.first?.item?.state == "Closed")
+        #expect(states.undoable?.name == "Task 9001")
+
+        azure.fails = .offline
+        #expect(await !states.change(read, to: "Active"))
+        #expect(states.line == .failed(
+            StateChanges.Change(key: key, name: "Task 9001", title: read.title, from: "Closed", to: "Active"), .offline
+        ))
+        #expect(told.map(\.key) == [key, key] && told.last?.item == nil)
     }
 
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine

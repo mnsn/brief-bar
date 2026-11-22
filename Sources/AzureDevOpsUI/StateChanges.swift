@@ -4,15 +4,17 @@ import BriefBarUI
 import Combine
 import Foundation
 
-/// A work item's state on the Sprint page, with **Make Changes in Azure DevOps** on: a task, story or bug on the sprint's
-/// board put in another of the states of its type, as the team's backlog configuration maps them (`SprintBoard.states(of:)`),
-/// from its state's menu, its own menus or its details, or, on My Work's Board, by moving its card to another column
-/// (`boardStates(for:)`), each when you choose one (`ADOWrite.setState`), one at a time. Its new state shows at once, and
-/// the sprint is read again (`SprintStore.changedState`); Undo puts it back, while the line under the Sprint page's header,
-/// and My Work's, says it changed. A change goes as whom BriefBar read the sprint as, and only while the
-/// work item is in the state it was in when you chose another, as BriefBar reads it as the change goes. One that didn't
-/// happen says why there, and the sprint is read again, to show its state. The demo changes only its made-up sprint, and
-/// reads nothing.
+/// A work item's state on the Sprint page and My Work, with **Make Changes in Azure DevOps** on: a task, story or bug on the
+/// sprint's board, or any other in the team's project that BriefBar reads, such as one of yours outside the sprint, or one My
+/// Work's Map shows, put in another of the states of its type, as the team's backlog configuration maps them
+/// (`SprintBoard.states(of:)`), from its state's menu, its own menus or its details, or, on My Work's Board, by moving its
+/// card to another column (`boardStates(for:)`), each when you choose one (`ADOWrite.setState`), one at a time. Its new
+/// state shows at once: on the sprint's board, or among your work outside it, and the sprint is read again
+/// (`SprintStore.changedState`); elsewhere, as Show Links and its details have it, and Show Links reads it again
+/// (`elsewhere`). Undo puts it back, while the line under the Sprint page's header, and My Work's, says it changed. A change
+/// goes as whom BriefBar read the sprint as, and only while the work item is in the state it was in when you chose another,
+/// as BriefBar reads it as the change goes. One that didn't happen says why there, and it's read again, to show its state.
+/// The demo changes only its made-up work items, and reads nothing.
 @MainActor
 final class StateChanges: ObservableObject {
     /// A change of a work item's state.
@@ -52,6 +54,14 @@ final class StateChanges: ObservableObject {
     /// Sends a change to Azure DevOps, as whom it was asked for as, when that's known, if it's still wanted as it goes, once
     /// its token came (`ADOClient.send(_:as:while:)`): the client's; a test's stand-in. Never in the demo.
     var send: (ADOWrite, String?, @escaping @Sendable () async -> Bool) async throws -> ADOWrite.Answer
+    /// A work item that neither the sprint's board nor your work outside it has, as Show Links read it, such as someone
+    /// else's that My Work's Map shows, or one you added there: the source's (`WorkLinksStore.linkedWorkItem`); none by
+    /// default.
+    var linked: (WorkItemKey) -> WorkItem? = { _ in nil }
+    /// Tells what else shows a work item that isn't on the sprint's board that its state changed, as Azure DevOps answered,
+    /// or may have, nil: Show Links, which shows it so at once and reads it again, and its details. The source's; nothing
+    /// by default.
+    var elsewhere: (WorkItemKey, WorkItem?) -> Void = { _, _ in }
     var now: () -> Date = Date.init
     /// The change on its way, which turning the setting off, Azure DevOps stopping or someone else signing in calls off
     /// (`forgetAll`): one that hasn't gone never does.
@@ -66,6 +76,10 @@ final class StateChanges: ObservableObject {
     private var isStopped = false
     /// Whom the sprint was last read as (`SprintStore.account`).
     private var account: String?
+    /// The last work item off the sprint's board whose state BriefBar changed, as Azure DevOps answered: what BriefBar knows
+    /// of it until something reads it again since (`item(_:)`), as one of yours outside the sprint leaves it once it's done,
+    /// for Undo to go from. In memory only.
+    private var changedElsewhere: WorkItem?
     private var cancellables: Set<AnyCancellable> = []
 
     init(sprint: SprintStore, settings: AppSettings, client: ADOClient) {
@@ -94,10 +108,11 @@ final class StateChanges: ObservableObject {
 
     // MARK: What you can do
 
-    /// The states a work item on the sprint's board can be put in from its menus, in its process's order: those of its type,
-    /// as the team's backlog configuration maps them, with one to go to that it isn't in. None while Make Changes in Azure
-    /// DevOps is off, for a work item the board doesn't have, or when its type's states aren't known. In the demo too, which
-    /// changes only its made-up sprint.
+    /// The states a work item can be put in from its menus, in its process's order: those of its type, as the team's backlog
+    /// configuration maps them, with one to go to that it isn't in, for one on the sprint's board, and any other in the
+    /// team's project that BriefBar reads (`item(_:)`). None while Make Changes in Azure DevOps is off, for a work item
+    /// BriefBar doesn't read, or one in another project, or when its type's states aren't known, as with no sprint going on.
+    /// In the demo too, which changes only its made-up work items.
     func choices(for item: WorkItem) -> [WorkItemState] {
         guard settings.makesChanges, !isStopped else { return [] }
         return states(for: item)
@@ -123,12 +138,12 @@ final class StateChanges: ObservableObject {
     }
 
     /// What My Work's Board knows of a work item's states, for what moving its card to another column does
-    /// (`BoardTask.move(to:sameLane:states:)`): for one on the sprint's board that its menus could put in another state,
-    /// whatever the setting, the state BriefBar reads it in and the first of each kind its type has, in its process's
-    /// order, held while Make Changes in Azure DevOps is off, saying how to turn it on, or while a change is on its way.
-    /// Nil for any other.
+    /// (`BoardTask.move(to:sameLane:states:)`): for one its menus could put in another state, in the sprint or out of it,
+    /// whatever the setting, the state BriefBar reads it in and the first of each kind its type has, in its process's order,
+    /// held while Make Changes in Azure DevOps is off, saying how to turn it on, or while a change is on its way. Nil for any
+    /// other.
     func boardStates(for item: WorkItem) -> BoardTaskStates? {
-        guard !isStopped, let current = sprint?.board?.item(item.key) else { return nil }
+        guard !isStopped, let current = self.item(item.key) else { return nil }
         let states = states(for: current)
         guard !states.isEmpty else { return nil }
         let first = Dictionary(states.map { (MyWorkFacts.progress(of: $0.category), $0.name) }) { first, _ in first }
@@ -142,12 +157,23 @@ final class StateChanges: ObservableObject {
         return .changes(current: current.state, first: first, held: held)
     }
 
-    /// The states of a work item on the sprint's board, as `choices(for:)` offers them, whatever the setting.
+    /// The states of a work item that BriefBar reads in the team's project, as `choices(for:)` offers them, whatever the
+    /// setting.
     private func states(for item: WorkItem) -> [WorkItemState] {
-        guard let board = sprint?.board, let current = board.item(item.key) else { return [] }
+        guard let board = sprint?.board, let current = self.item(item.key), board.isInTeamsProject(current) else { return [] }
         let states = board.states(of: current.type)
         guard states.contains(where: { !Self.isSame($0.name, current.state) }) else { return [] }
         return states
+    }
+
+    /// A work item as BriefBar reads it now, for its state's menus and what a change of it goes from: the sprint's board's;
+    /// else whichever changed last (`WorkItemDetailsStore.newest`) of yours outside the sprint, Show Links' (`linked`) and
+    /// the last one off the board whose state BriefBar changed, as Azure DevOps answered. Nil for one BriefBar doesn't read.
+    func item(_ key: WorkItemKey) -> WorkItem? {
+        if let item = sprint?.board?.item(key) { return item }
+        let outside = sprint?.outside?.items.first { $0.key == key }
+        let changed = changedElsewhere?.key == key ? changedElsewhere : nil
+        return [linked(key), changed].reduce(outside) { WorkItemDetailsStore.newest($0, $1) }
     }
 
     /// A change is on its way: no other starts meanwhile.
@@ -162,7 +188,7 @@ final class StateChanges: ObservableObject {
     /// Board waits to know (`send`): so for the one it's in already too.
     @discardableResult
     func change(_ item: WorkItem, to name: String) async -> Bool {
-        guard let sprint, let current = sprint.board?.item(item.key) else { return false }
+        guard let sprint, let current = self.item(item.key) else { return false }
         guard !Self.isSame(current.state, name) else { return true }
         guard !isBusy, choices(for: current).contains(where: { $0.name == name }) else { return false }
         return await send(Change(
@@ -175,7 +201,7 @@ final class StateChanges: ObservableObject {
     /// quit.
     var undoable: Change? {
         guard case .changed(let change)? = line, !change.isUndo, settings.makesChanges, !isStopped,
-              let item = sprint?.board?.item(change.key), Self.isSame(item.state, change.to)
+              let item = item(change.key), Self.isSame(item.state, change.to)
         else { return nil }
         return change
     }
@@ -274,8 +300,10 @@ final class StateChanges: ObservableObject {
             // Someone else signed in, or Azure DevOps stopped, as it went: it was the last one's, and does nothing more.
             guard lifetime == self.lifetime else { return }
             let problem = ADOWriteProblem(error, now: now())
-            // Read again, to show its state: Azure DevOps may have changed it, or someone else may have.
+            // Read again, to show its state: Azure DevOps may have changed it, or someone else may have; one off the sprint's
+            // board, as Show Links has it too.
             sprint.refresh()
+            if sprint.board?.item(change.key) == nil { elsewhere(change.key, nil) }
             // Called off as it went, as the setting was turned off: the line says nothing more.
             guard generation == self.generation else {
                 if case .sending(change)? = line { line = nil }
@@ -285,8 +313,19 @@ final class StateChanges: ObservableObject {
             return
         }
         guard lifetime == self.lifetime else { return }
-        if let board = sprint.board, let item = board.item(change.key) {
-            sprint.changedState(item.changing(state: change.to, answer: answer, at: now(), categories: board.categories(of: item.type)))
+        if let item = item(change.key) {
+            let changed = item.changing(
+                state: change.to, answer: answer, at: now(), categories: sprint.board?.categories(of: item.type)
+            )
+            // On the sprint's board, or among your work outside it, it's there at once, and the engine keeps it so over a
+            // read that started before, and reads the sprint again; one it doesn't have, the sprint is read again for all the
+            // same, as one of yours reopened comes back among your work outside it. Elsewhere, Show Links and its details
+            // have it so, and it's what Undo goes from.
+            if sprint.item(change.key) != nil { sprint.changedState(changed) } else { sprint.refresh() }
+            if sprint.board?.item(change.key) == nil {
+                changedElsewhere = changed
+                elsewhere(change.key, changed)
+            }
         } else {
             sprint.refresh()
         }
@@ -305,10 +344,10 @@ final class StateChanges: ObservableObject {
         SpokenText.announce(StateChangeText.failed(change) + " " + problem.sentence(.setState))
     }
 
-    /// Why a change doesn't go now, as BriefBar reads the sprint.
+    /// Why a change doesn't go now, as BriefBar reads the work item.
     private enum Hold {
-        /// BriefBar no longer reads its work item on the sprint's board, or reads it in another state than the one it was in
-        /// when you chose this one.
+        /// BriefBar no longer reads its work item, on the sprint's board or elsewhere, or reads it in another state than the
+        /// one it was in when you chose this one.
         case notListed
         /// BriefBar reads it in the state it goes to already.
         case there
@@ -316,7 +355,7 @@ final class StateChanges: ObservableObject {
 
     /// Why a change doesn't go now; nil when it can.
     private func hold(_ change: Change) -> Hold? {
-        guard let item = sprint?.board?.item(change.key) else { return .notListed }
+        guard let item = item(change.key) else { return .notListed }
         if Self.isSame(item.state, change.to) { return .there }
         return Self.isSame(item.state, change.from) ? nil : .notListed
     }
@@ -352,6 +391,7 @@ final class StateChanges: ObservableObject {
     func forgetAll(turnedOff: Bool = false) {
         if !turnedOff { lifetime += 1 }
         generation += 1
+        changedElsewhere = nil
         let wasSent = inFlight != nil
         inFlight?.cancel()
         inFlight = nil

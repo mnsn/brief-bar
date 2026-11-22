@@ -622,6 +622,52 @@ import Testing
         try await until("what's read as Sam") { workLinks.tell(ref) != nil }
     }
 
+    /// A linked work item whose state BriefBar changed from My Work shows so at once, and stays so over what the engine read
+    /// before, until it reads it again since, as Azure DevOps has it then; one Show Links doesn't read changes nothing.
+    @Test func aLinkedWorkItemWhoseStateChangedShowsSoUntilItsReadAgain() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        // An engine that reads nothing, and whose own reads don't reach the store: the test tells what it read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        let key = WorkItemKey(organization, 9001), other = WorkItemKey(organization, 9002)
+        func task(_ id: Int, _ state: String, changed seconds: TimeInterval) -> WorkItem {
+            WorkItem(
+                id: id, organization: organization, project: "Storefront", type: "Task", title: "Check the coupon totals",
+                state: state, category: WorkItem.Category(category: nil, state: state), changedAt: Date(timeIntervalSince1970: seconds)
+            )
+        }
+        let before = task(9001, "Active", changed: 1_000)
+        engines.told[0](WorkLinks(workItems: [key: before]))
+        try await until("it's read") { workLinks.linkedWorkItem(key) == before }
+
+        workLinks.changedState(key, to: task(9001, "Closed", changed: 2_000))
+        #expect(workLinks.linkedWorkItem(key)?.state == "Closed")
+        workLinks.changedState(other, to: task(9002, "Closed", changed: 2_000))
+        #expect(workLinks.linkedWorkItem(other) == nil)
+        // A read from before the change, as one under way while it went.
+        engines.told[0](WorkLinks(workItems: [key: before, other: task(9002, "New", changed: 1_000)]))
+        try await until("that read") { workLinks.linkedWorkItem(other) != nil }
+        #expect(workLinks.linkedWorkItem(key)?.state == "Closed")
+        // Read again since: as Azure DevOps has it, here Active again, as someone set it back.
+        engines.told[0](WorkLinks(workItems: [key: task(9001, "Active", changed: 3_000)]))
+        try await until("the read since") { workLinks.linkedWorkItem(other) == nil }
+        #expect(workLinks.linkedWorkItem(key)?.state == "Active")
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

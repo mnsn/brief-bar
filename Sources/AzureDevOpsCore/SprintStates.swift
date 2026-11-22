@@ -1,9 +1,10 @@
 import Foundation
 
-// A work item's state on the Sprint page, with Make Changes in Azure DevOps on: one of the states its type has, as the
-// team's backlog configuration maps them to their categories, which the sprint engine reads already
-// (`SprintBoard.stateCategories`). The change itself is `ADOWrite.setState`. What it changed shows in its new state at once
-// (`SprintBoard.changingState`), until the sprint is read again.
+// A work item's state on the Sprint page and My Work, with Make Changes in Azure DevOps on: one of the states its type has,
+// as the team's backlog configuration maps them to their categories, which the sprint engine reads already
+// (`SprintBoard.stateCategories`), for the sprint's work and any other work item in the team's project. The change itself
+// is `ADOWrite.setState`. What it changed shows in its new state at once (`SprintBoard.changingState`,
+// `OutsideWork.changingState`), until the sprint is read again.
 
 /// A state a work item can be put in: its name in its process, such as Active, and the category Azure DevOps puts it in.
 public struct WorkItemState: Sendable, Hashable {
@@ -51,6 +52,15 @@ extension SprintBoard {
             .map { name, category in WorkItemState(name: name, category: WorkItem.Category(category: category, state: name)) }
             .filter { $0.category != .removed }
             .sorted(by: WorkItemState.ordered)
+    }
+
+    /// Whether a work item's type has the states the team's backlog configuration maps (`states(of:)`): one on the board, and
+    /// any other in the team's project, whose process gives every work item of a type the same states; not one in another
+    /// project, or whose project isn't known. Its organization's and project's names whatever the case of their letters.
+    public func isInTeamsProject(_ item: WorkItem) -> Bool {
+        if self.item(item.key) != nil { return true }
+        return item.organization.caseInsensitiveCompare(team.organization) == .orderedSame
+            && item.project.caseInsensitiveCompare(team.projectName) == .orderedSame
     }
 
     /// As it is once BriefBar changed the state of one of its work items, as Azure DevOps answered: that work item in its new

@@ -601,6 +601,36 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(gate.asked.count == 2)
     }
 
+    /// A work item off the sprint's board whose state BriefBar changed, as someone else's on My Work's Map that only Show
+    /// Links reads, shows in its new state at once, and its details are read again; another's change shows nothing new.
+    @Test func showsAWorkItemOffTheBoardInTheStateBriefBarChangedItTo() throws {
+        let store = makeStore()
+        let first = clock.now
+        let task = WorkItem(
+            id: 9_001, organization: DemoData.organization, project: board.team.projectName, type: "Task",
+            title: "Check the coupon totals", state: "Active", category: .inProgress, changedAt: first - 60
+        )
+        store.show(task)
+        #expect(store.details?.readAt == first)
+
+        clock.now += 10
+        var other = task
+        other.id = 9_002
+        other.state = "Closed"
+        other.changedAt = clock.now
+        store.changed(other)
+        #expect(store.selected?.state == "Active")
+        #expect(store.details?.readAt == first)
+
+        var closed = task
+        closed.state = "Closed"
+        closed.category = .completed
+        closed.changedAt = clock.now
+        store.changed(closed)
+        #expect(store.selected?.state == "Closed")
+        #expect(store.details?.readAt == clock.now)
+    }
+
     @Test func anotherTeamsSprintClosesTheDetails() throws {
         let store = makeStore()
         store.show(try item(5103))
