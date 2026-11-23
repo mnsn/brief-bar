@@ -479,6 +479,37 @@ import Testing
         #expect(told.map(\.key) == [key, key] && told.last?.item == nil)
     }
 
+    /// A work item off the sprint's board is read as whichever of what BriefBar reads of it changed last, as My Work's Map
+    /// shows it too: one of yours outside the sprint that Show Links read since in another state, in that one. One changed
+    /// to a state the team's process counts as done, though its name doesn't say so, stays done as Show Links reads it in
+    /// that state, guessing its category from its name.
+    @Test func aWorkItemOffTheBoardIsReadAsItChangedLastInTheTeamsCategory() async throws {
+        let (sprint, states, _) = live()
+        var board = try #require(sprint.board)
+        board.stateCategories["Task"]?["Ready to ship"] = "Completed"
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        readOutside(sprint)
+        let key = WorkItemKey(DemoData.organization, 5052)
+        let mine = try #require(sprint.outside?.items.first { $0.key == key })
+        var closed = mine
+        closed.state = "Closed"
+        closed.category = .completed
+        closed.changedAt = mine.changedAt?.addingTimeInterval(60)
+        states.linked = { $0 == key ? closed : nil }
+        #expect(states.item(key) == closed)
+
+        var sams = try samsTask(sprint)
+        states.linked = { $0 == sams.key ? sams : nil }
+        #expect(await states.change(sams, to: "Ready to ship"))
+        let changed = try #require(states.item(sams.key))
+        #expect(changed.state == "Ready to ship" && changed.isDone)
+        sams.state = "Ready to ship"
+        sams.category = WorkItem.Category(category: nil, state: "Ready to ship")
+        sams.changedAt = changed.changedAt
+        #expect(!sams.isDone)
+        #expect(states.item(sams.key) == changed)
+    }
+
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine
     /// could need (`waitLimit`), failing the test if it doesn't happen.
     private func waitUntil(_ condition: @MainActor () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {

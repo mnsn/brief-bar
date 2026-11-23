@@ -623,7 +623,9 @@ import Testing
     }
 
     /// A linked work item whose state BriefBar changed from My Work shows so at once, and stays so over what the engine read
-    /// before, until it reads it again since, as Azure DevOps has it then; one Show Links doesn't read changes nothing.
+    /// before, until it reads it again since, as Azure DevOps has it then; one Show Links doesn't read changes nothing. Set
+    /// to a state the team's process counts as done though its name doesn't say so, it stays done while the engine reads it
+    /// in that state, guessing its category from its name.
     @Test func aLinkedWorkItemWhoseStateChangedShowsSoUntilItsReadAgain() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
@@ -666,6 +668,22 @@ import Testing
         engines.told[0](WorkLinks(workItems: [key: task(9001, "Active", changed: 3_000)]))
         try await until("the read since") { workLinks.linkedWorkItem(other) == nil }
         #expect(workLinks.linkedWorkItem(key)?.state == "Active")
+
+        // Set to a state the team's process counts as done, which its name doesn't say: it stays done as the engine reads it
+        // in that state, at the change.
+        var shipped = task(9001, "Ready to ship", changed: 4_000)
+        shipped.category = .completed
+        workLinks.changedState(key, to: shipped)
+        #expect(workLinks.linkedWorkItem(key)?.category == .completed)
+        let guessed = task(9001, "Ready to ship", changed: 4_000)
+        #expect(guessed.category != .completed)
+        engines.told[0](WorkLinks(workItems: [key: guessed, other: task(9002, "New", changed: 1_000)]))
+        try await until("its read") { workLinks.linkedWorkItem(other) != nil }
+        #expect(workLinks.linkedWorkItem(key)?.category == .completed)
+        // Read in another state since: as the engine read it.
+        engines.told[0](WorkLinks(workItems: [key: task(9001, "Active", changed: 5_000)]))
+        try await until("the read in another state") { workLinks.linkedWorkItem(other) == nil }
+        #expect(workLinks.linkedWorkItem(key) == task(9001, "Active", changed: 5_000))
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

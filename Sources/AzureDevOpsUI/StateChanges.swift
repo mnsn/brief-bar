@@ -167,13 +167,15 @@ final class StateChanges: ObservableObject {
     }
 
     /// A work item as BriefBar reads it now, for its state's menus and what a change of it goes from: the sprint's board's;
-    /// else whichever changed last (`WorkItemDetailsStore.newest`) of yours outside the sprint, Show Links' (`linked`) and
-    /// the last one off the board whose state BriefBar changed, as Azure DevOps answered. Nil for one BriefBar doesn't read.
+    /// else whichever changed last (`WorkItemDetailsStore.newest`) of yours outside the sprint, the last one off the board
+    /// whose state BriefBar changed, as Azure DevOps answered, and Show Links' (`linked`), which reads it last, as it guesses
+    /// the category of its state from its name: the others' category, the team's, stays while it's in the same state, as a
+    /// custom state's that the team counts as done. Nil for one BriefBar doesn't read.
     func item(_ key: WorkItemKey) -> WorkItem? {
         if let item = sprint?.board?.item(key) { return item }
         let outside = sprint?.outside?.items.first { $0.key == key }
         let changed = changedElsewhere?.key == key ? changedElsewhere : nil
-        return [linked(key), changed].reduce(outside) { WorkItemDetailsStore.newest($0, $1) }
+        return [changed, linked(key)].reduce(outside) { WorkItemDetailsStore.newest($0, $1) }
     }
 
     /// A change is on its way: no other starts meanwhile.

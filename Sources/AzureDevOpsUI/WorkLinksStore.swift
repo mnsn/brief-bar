@@ -48,7 +48,8 @@ final class WorkLinksStore {
     var makeEngine: (_ onChange: @escaping LinkEngine.ChangeHandler) -> LinkEngine
     private var read = WorkLinks()
     /// The linked work items whose state BriefBar changed, from My Work (`changedState`), as Azure DevOps answered: each shows
-    /// so over what the engine read, until it reads it again since, or no longer reads it.
+    /// so over what the engine read, with the team's category, while the engine reads it in the state it went to, or until
+    /// it no longer reads it.
     private var stateChanges: [WorkItemKey: WorkItem] = [:]
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
@@ -216,13 +217,14 @@ final class WorkLinksStore {
         updateEngine()
     }
 
-    /// What the engine read, with the linked work items whose state BriefBar changed since in their new state; those it read
-    /// again since, as Azure DevOps had them then, or no longer reads, as it read them.
+    /// What the engine read, with the linked work items whose state BriefBar changed since in their new state, and, while one
+    /// is in the state it went to, in the category the team's process puts that state in (`WorkItemDetailsStore.newest`),
+    /// which the engine guesses from its name; those it read in another state since, or no longer reads, as it read them.
     private func keepingStateChanges(_ read: WorkLinks) -> WorkLinks {
         guard !stateChanges.isEmpty else { return read }
         var read = read
         for (key, changed) in stateChanges {
-            if let item = read.workItems[key], let newest = WorkItemDetailsStore.newest(item, changed), newest != item {
+            if let item = read.workItems[key], let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
                 read.workItems[key] = newest
             } else {
                 stateChanges[key] = nil
@@ -267,12 +269,13 @@ final class WorkLinksStore {
     }
 
     /// A work item BriefBar changed the state of from My Work, or may have, as it didn't hear back (`StateChanges`): one Show
-    /// Links read shows in its new state at once, as Azure DevOps answered, over what the engine read before, until it reads
-    /// it again since, which it does now, as it does what a Copilot session said it changed (`reread`); in the demo, its
-    /// made-up links change. Nothing for one Show Links doesn't read.
+    /// Links read shows in its new state at once, as Azure DevOps answered, with the category the team's process puts it in,
+    /// over what the engine read before, until it reads it in another state, and it reads it again now, as it does what a
+    /// Copilot session said it changed (`reread`); in the demo, its made-up links change. Nothing for one Show Links doesn't
+    /// read.
     func changedState(_ key: WorkItemKey, to changed: WorkItem?) {
         guard let item = read.workItems[key] else { return }
-        if let changed, let newest = WorkItemDetailsStore.newest(item, changed), newest != item {
+        if let changed, let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
             stateChanges[key] = newest
             read.workItems[key] = newest
             publish()

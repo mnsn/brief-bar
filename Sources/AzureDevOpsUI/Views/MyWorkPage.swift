@@ -895,13 +895,13 @@ private struct MyWorkContent: View {
         }
     }
 
-    /// A work item as BriefBar read it: the sprint's, anyone's, yours outside it, or one Show Links read; else the last one
-    /// whose state you changed off the sprint's board, as Azure DevOps answered, once nothing else has it, as a task of yours
-    /// outside the sprint once it's done (`StateChanges.item`).
+    /// A work item as BriefBar reads it now, as its state's menus and a change of it have it (`StateChanges.item`): the
+    /// sprint's, anyone's; else whichever changed last of yours outside it, one Show Links read and the last one whose state
+    /// you changed off the sprint's board, as Azure DevOps answered, as a task of yours outside the sprint once it's done. So
+    /// what the Map shows of it, and whether Done leaves it out, is what its state's menu changes it from.
     private func anyWorkItem(_ ref: ItemRef) -> WorkItem? {
         guard ref.kind == .workItem, let id = ref.number else { return nil }
-        let key = WorkItemKey(ref.scope, id)
-        return workItem(ref) ?? linkedWorkItem(key) ?? states.item(key)
+        return states.item(WorkItemKey(ref.scope, id))
     }
 
     /// Whether a work item is yours: assigned to you, as one in the sprint is, or one of yours outside it.
