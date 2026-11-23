@@ -24,6 +24,7 @@ SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-copilo
 WINDOW_SHOTS := window-overview-light window-overview-dark \
 	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark \
 	azureDevOps-pull-requests-board-window-light azureDevOps-pull-requests-board-window-dark \
+	azureDevOps-my-work-map-window-light azureDevOps-my-work-map-window-dark \
 	rows-summary-pull-requests-light rows-summary-pull-requests-dark \
 	azureDevOps-copilot-composer-light azureDevOps-copilot-composer-dark
 

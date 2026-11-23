@@ -302,6 +302,17 @@ enum Renderer {
                         .frame(width: 1_180, height: 760)
                     write(Snapshot.render(view, appearance: appearance), "window-my-work-page-\(page.rawValue)-\(suffix)")
                 }
+                // And at Pull Requests, at the size of the window's other pictures, for the README's tour, which goes on from
+                // there to My Work in the sidebar.
+                if content.pages.contains(.azureDevOpsPullRequests) {
+                    content.select(.azureDevOpsPullRequests, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "window-my-work-page-tour-\(suffix)")
+                }
                 order.setMyWorkPage(wasOn)
             }
             // A pull request's and a session's summary under its row, on their pages, with Up Next folded so that the rows
