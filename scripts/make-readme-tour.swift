@@ -3,8 +3,8 @@
 //   swift scripts/make-readme-tour.swift build/screenshots docs/images
 // Both play like a short visit to BriefBar on a Mac's desktop, under its menu bar, and each click opens what clicking
 // there opens in the app. The tour opens Copilot's sessions, then your pull requests, from their items in the menu bar,
-// then the window's Pull Requests page at Up Next, and the Board. The trail follows a story's bug to its pull request
-// and the Copilot session that opened it.
+// then their page in the window, as it is with My Work Page on, and My Work, from the sidebar: Up Next and the Board, with
+// your tasks, then its Map. The trail follows a story's bug to its pull request and the Copilot session that opened it.
 import AppKit
 
 let arguments = CommandLine.arguments
@@ -81,8 +81,10 @@ let itemsLoupe = Loupe(
     labels: [("Azure DevOps pull requests", pullRequestsItem.x), ("Copilot sessions", copilotItem.x)]
 )
 
-// On the window's Pull Requests page: 2 more › under Up Next's Fix next, which shows the rest on the Board.
-let fixNextMore = CGPoint(x: 585, y: 627)
+// In the window, at Pull Requests: My Work, in the sidebar, which shows its page. On My Work: Map, in its header, which
+// shows the Map instead of the Board.
+let myWorkItem = CGPoint(x: 175, y: 442)
+let mapButton = CGPoint(x: 2_004, y: 84)
 
 // A story's pull request's page: the line under its heading, which names the Copilot session that opened it, shows the
 // session's page.
@@ -138,8 +140,9 @@ struct Visit {
     }
 }
 
-/// From BriefBar's items in the menu bar, to Copilot's sessions, your pull requests, and their page in the window: Up
-/// Next, then the Board. It starts and ends on the desktop with no list open, the pointer where it was, so it loops.
+/// From BriefBar's items in the menu bar, to Copilot's sessions, your pull requests, and their page in the window; then My
+/// Work, from the sidebar, with Up Next and the Board, and its Map. It starts and ends on the desktop with no list open, the
+/// pointer where it was, so it loops.
 func tour(_ scenes: [Scene]) -> [Frame] {
     let rest = scenes[0].point(desktopRest.x, desktopRest.y)
     var visit = Visit(from: rest)
@@ -154,16 +157,21 @@ func tour(_ scenes: [Scene]) -> [Frame] {
     visit.click(1, opening: 2)
     visit.move(2, to: scenes[2].point(1_100, 670), 0.6)
     visit.hold(2, 1.8)
-    // Their page in the window, from the list's title: Up Next.
+    // Their page in the window, from the list's title, with My Work above it in the sidebar.
     visit.move(2, to: scenes[2].point(pullRequestsTitle.x, pullRequestsTitle.y), 0.6)
     visit.click(2, opening: 3)
     visit.move(3, to: scenes[3].point(1_250, 770), 0.7)
-    visit.hold(3, 1.6)
-    // Fix next's 2 more ›: the Board, where its pull request leads In progress.
-    visit.move(3, to: scenes[3].point(fixNextMore.x, fixNextMore.y), 0.6)
+    visit.hold(3, 1.2)
+    // My Work: Up Next, then the Board, your tasks in To start and In progress beside your pull requests.
+    visit.move(3, to: scenes[3].point(myWorkItem.x, myWorkItem.y), 0.7)
     visit.click(3, opening: 4)
-    visit.move(4, to: scenes[4].point(345, 1_000), 0.7)
-    visit.hold(4, 2.6)
+    visit.move(4, to: scenes[4].point(330, 900), 0.7)
+    visit.hold(4, 2.4)
+    // Its Map, from Map in the header: what waits for what, and the steps left.
+    visit.move(4, to: scenes[4].point(mapButton.x, mapButton.y), 0.8)
+    visit.click(4, opening: 5)
+    visit.move(5, to: scenes[5].point(2_100, 1_020), 0.7)
+    visit.hold(5, 3.0)
     // Back on the desktop, where it started.
     visit.hold(0, 0.3)
     visit.move(0, to: rest, 0.6)
@@ -415,8 +423,9 @@ for appearance in ["light", "dark"] {
               isDesktop: true),
         Scene(image: shot("desktop-azureDevOps.pullRequests"), caption: "Pull requests that need your review, a reply or a fix",
               isDesktop: true),
-        Scene(image: shot("window-azureDevOps.pullRequests"), caption: "Up Next: what to fix, review and follow up next"),
-        Scene(image: shot("azureDevOps-pull-requests-board-window"), caption: "Every pull request's stage, on a Board"),
+        Scene(image: shot("window-my-work-page-tour"), caption: "The window, with a page for each source and My Work"),
+        Scene(image: shot("azureDevOps-my-work-board-window"), caption: "My Work: what's next, and your tasks and pull requests by stage"),
+        Scene(image: shot("azureDevOps-my-work-map-window"), caption: "Its Map: what waits for what, down to the steps left"),
     ]
     try encode(tour(tourScenes), scenes: tourScenes, desktop: desktop, dark: dark, name: "readme-tour-\(appearance)")
 

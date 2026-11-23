@@ -330,7 +330,9 @@ extension MyWorkPage {
     /// and in a narrow window, for “!4115”, whose task's other pull request shows as related, and for a session's name,
     /// “migrate stored”; what + Sprint Tasks says while Show Links is off; and the Map, with + Sprint Tasks, By Mission, All,
     /// All as wide as the page beside a card's details, By Mission in a narrow window, with text at 150%, with !4102
-    /// hidden, with others' work, By Mission and All, and with Done off.
+    /// hidden, with others' work, By Mission and All, and with Done off. And, at about a window's size, for the README and
+    /// its tour: the Board with + Sprint Tasks and Lanes: None, your tasks in To start and In progress beside your pull
+    /// requests, and the Map By Mission, wide enough for the first mission's graph.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -346,6 +348,7 @@ extension MyWorkPage {
             ("my-work-search-narrow", .allTasks, .missions, CGSize(width: 560, height: 1_500), "checkout"),
             ("my-work-search-related", .allTasks, .missions, CGSize(width: 1_600, height: 650), "!4115"),
             ("my-work-search-session", .allTasks, .missions, CGSize(width: 1_600, height: 650), "migrate stored"),
+            ("my-work-board-window", .sprintTasks, BoardLanes.none, CGSize(width: 1_260, height: 875), nil),
         ]
         let demo = DemoData.organization
         typealias Mapped = (
@@ -362,6 +365,7 @@ extension MyWorkPage {
             ("my-work-map-others", .byMission, CGSize(width: 2_000, height: 2_900), nil, nil, true, true),
             ("my-work-map-all-others", .all, CGSize(width: 2_200, height: 1_500), nil, nil, true, true),
             ("my-work-map-done-off", .byMission, CGSize(width: 2_000, height: 1_900), nil, nil, false, false),
+            ("my-work-map-window", .byMission, CGSize(width: 1_260, height: 875), nil, nil, false, true),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)

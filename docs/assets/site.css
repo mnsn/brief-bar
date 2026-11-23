@@ -468,6 +468,15 @@ h1 {
 .section-head { max-width: 780px; }
 .section-head--center { margin-inline: auto; text-align: center; }
 .section-head--center .lead { margin-inline: auto; }
+/* A part of a section with a heading of its own, such as My Work under Pull Request Order. */
+.section-head--part { margin-top: clamp(80px, 10vw, 136px); }
+.section-head--part h3 {
+    font-size: clamp(1.7rem, 1.1rem + 2vw, 2.5rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -.03em;
+    text-wrap: balance;
+}
 
 .kicker {
     display: inline-flex;

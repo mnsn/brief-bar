@@ -28,7 +28,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-tour-dark.gif">
-    <img src="docs/images/readme-tour-light.gif" width="900" alt="BriefBar's items in the menu bar, each with its counts. Copilot's list opens from its item, with the sessions waiting for you and those running, then Azure DevOps' list of the pull requests that need you; then the window's Pull Requests page with Up Next, and the Board, with each pull request in its stage's column">
+    <img src="docs/images/readme-tour-light.gif" width="900" alt="BriefBar's items in the menu bar, each with its counts. Copilot's list opens from its item, with the sessions waiting for you and those running, then Azure DevOps' list of the pull requests that need you; then their page in the window, and My Work, from the sidebar: Up Next, and the Board, with your tasks and pull requests in their stages' columns; then its Map, a graph of what waits for what, down to the steps left">
   </picture>
 </p>
 
@@ -37,6 +37,8 @@
   the full window.
 - **Know what's next.** Every pull request's stage, Up Next's pick of what to fix, review and follow up next, and a
   Board to move them along.
+- **See what waits for what.** My Work puts your sprint's tasks on the Board beside your pull requests, and its Map
+  draws what holds what, down to the steps left, such as tests or enabling it in production.
 - **Follow the work, not the notifications.** Open a story to see its tasks, pull requests, builds and the Copilot
   sessions working on them, and who it's waiting on.
 - **Get the short version.** AI summaries of a work item, pull request or session: where it stands, what's left and
@@ -107,15 +109,40 @@ stage to change it, or **Finished My Review**, as you point at its row, to pass 
   repositories, in the order they merge where BriefBar can tell: from stacked branches, and what Copilot sessions tell it. **Map** draws each mission in
   merge waves. Apple Intelligence names each mission on your Mac, and suggests a split when one has become two pieces
   of work.
-- **My Work's Map**, with My Work Page on, draws your pull requests, tasks and the steps left, such as tests or
-  enabling it in production, as a graph of what holds what, by mission or all together, with the dependencies Azure
-  DevOps links between work items. Drag to connect, click a line to take it away or link it in Azure DevOps, click a
-  task's state, yours or a teammate's, in the sprint or not, to close it or set it active, as on the Sprint page, and
-  **✨ Ask Copilot** has a session work out what waits for what. Uncheck **Done** to leave out what's done, check
-  **Others' work** to see, faded, a teammate's task that yours waits for, and add any of the sprint's with **+ Task**.
 
-Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps but what you link there.
+Stages, missions and what you choose are BriefBar's own: nothing changes in Azure DevOps.
 [Pull Request Order, Up Next and the Board →](docs/user-guide.md#azure-devops)
+
+## See what waits for what
+
+With Pull Request Order on, turn on **My Work Page** too, a preview, in **Settings › Pull Requests**, and Up Next and the
+Board move to a page of their own in the window, **My Work**, right before Pull Requests. **+ Sprint Tasks** puts your
+sprint work on the Board beside your pull requests, from **To start** to **Completed**, and Up Next picks the one to
+**Start next**; **+ All My Tasks** adds your open tasks and bugs outside the sprint. **Map**, in its header, draws the
+same work as a graph of what holds what.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-my-work-map-window-dark.jpg">
+    <img src="docs/images/azureDevOps-my-work-map-window-light.jpg" width="900" alt="My Work's Map, under Up Next: a graph for each mission of its pull requests, tasks and steps, in waves, Now, Then and Later, each line going from what comes first to what waits for it, down to the steps left, such as load testing the retries and enabling them in production">
+  </picture>
+</p>
+
+- **Waves of work.** Your pull requests, tasks and the steps left, such as tests or enabling it in production, go in
+  columns from **Done** and **Now** to **Then** and **Later**, by mission or all together. Uncheck **Done** to leave out
+  what's done.
+- **Edit it as you go.** Drag from a card onto what waits for it to draw a line, click a line to take it away, and add
+  the steps left with **+ Step**. Every change has **Undo**.
+- **Linked with Azure DevOps.** The Map draws the dependencies Azure DevOps links between work items. With **Make
+  Changes in Azure DevOps** on, click a line to link it there, click a task's state, yours or a teammate's, to close it
+  or set it active, as on the Sprint page, and drag your work's card on the Board to another column to set its state.
+- **Others' work.** Check **Others' work** to see, faded, a teammate's task that yours waits for, and add any of the
+  sprint's with **+ Task**.
+- **✨ Ask Copilot** has a session read the code and the work, and tell BriefBar what waits for what, the steps left
+  too.
+
+The Map's steps and lines are BriefBar's own: nothing changes in Azure DevOps unless you change it there, with **Make
+Changes in Azure DevOps** on. [My Work and its Map →](docs/user-guide.md#azure-devops)
 
 ## Follow the work, not the notifications
 
