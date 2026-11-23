@@ -124,9 +124,9 @@ public actor SprintEngine {
     /// started before then may have them where they were, so they're put where they went again after it, until a refresh
     /// that started after then has read them, on the sprint's board and, while My Work wants it, among your work outside it.
     private var moves: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
-    /// The work items in the sprint whose state BriefBar changed, on the Sprint page, as Azure DevOps answered, with when it
-    /// did (`changedState`): a read of the board that started before then may have them as they were, so they're put in
-    /// their new state again after it, until a refresh that started after then has read the board.
+    /// The work items in the sprint, and yours outside it, whose state BriefBar changed, on the Sprint page or My Work, as
+    /// Azure DevOps answered, with when it did (`changedState`): a read that started before then may have them as they were,
+    /// so they're put in their new state again after it, until a refresh that started after then has read the board.
     private var stateChanges: [WorkItemKey: (item: WorkItem, at: Date)] = [:]
 
     public init(
@@ -193,8 +193,9 @@ public actor SprintEngine {
         }
     }
 
-    /// A work item in the sprint whose state BriefBar changed, on the Sprint page, as Azure DevOps answered
-    /// (`ADOWrite.setState`): it shows in its new state at once, and the sprint is read again as soon as possible.
+    /// A work item in the sprint, or one of yours outside it, whose state BriefBar changed, on the Sprint page or My Work, as
+    /// Azure DevOps answered (`ADOWrite.setState`): it shows in its new state at once, and the sprint, with your work outside
+    /// it while My Work wants it, is read again as soon as possible.
     public func changedState(_ item: WorkItem) {
         stateChanges[item.key] = (item, now())
         applyStateChanges()
@@ -202,15 +203,18 @@ public actor SprintEngine {
         refresh()
     }
 
-    /// Puts the work items whose state BriefBar changed in their new states, over what was read before.
+    /// Puts the work items whose state BriefBar changed in their new states, over what was read before, on the sprint's board
+    /// or among your work outside it.
     private func applyStateChanges() {
         for (item, _) in stateChanges.values {
             board = board?.changingState(item)
+            outside = outside?.changingState(item)
         }
     }
 
-    /// A refresh that started at `date` read the sprint's board: what BriefBar changed the state of before then is in the
-    /// state Azure DevOps has it in, in what it read, and what it changed since is put in its new state again, over it.
+    /// A refresh that started at `date` read the sprint's board, and then, if at all, your work outside it: what BriefBar
+    /// changed the state of before then is in the state Azure DevOps has it in, in what it read, or in the one it went to, in
+    /// what was read before and stays; and what it changed since is put in its new state again, over it.
     private func settleStateChanges(readAt date: Date) {
         guard !stateChanges.isEmpty else { return }
         stateChanges = stateChanges.filter { $0.value.at > date }

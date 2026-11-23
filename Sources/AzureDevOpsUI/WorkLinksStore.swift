@@ -47,6 +47,10 @@ final class WorkLinksStore {
     /// Makes an engine that tells `onChange` what it reads, with the pull requests' client: tests read without it.
     var makeEngine: (_ onChange: @escaping LinkEngine.ChangeHandler) -> LinkEngine
     private var read = WorkLinks()
+    /// The linked work items whose state BriefBar changed, from My Work (`changedState`), as Azure DevOps answered: each shows
+    /// so over what the engine read, with the team's category, while the engine reads it in the state it went to, or until
+    /// it no longer reads it.
+    private var stateChanges: [WorkItemKey: WorkItem] = [:]
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
     /// The details on screen, for what's known of the work item they show: whenever they're read, its story is told
@@ -141,6 +145,7 @@ final class WorkLinksStore {
         stopEngine()
         lastInputs = nil
         read = WorkLinks()
+        stateChanges = [:]
         dependencies?.told([])
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
@@ -168,6 +173,7 @@ final class WorkLinksStore {
 
     private func showLinks(_ on: Bool) {
         lastInputs = nil
+        stateChanges = [:]
         if on {
             switch store.mode {
             case .demo:
@@ -202,11 +208,29 @@ final class WorkLinksStore {
     }
 
     private func receive(_ read: WorkLinks, from number: Int) {
-        guard engine != nil, number == engines, read != self.read else { return }
+        guard engine != nil, number == engines else { return }
+        let read = keepingStateChanges(read)
+        guard read != self.read else { return }
         self.read = read
         publish()
         // What it read can change what's to read: the parents of tasks, once their parents are read with them.
         updateEngine()
+    }
+
+    /// What the engine read, with the linked work items whose state BriefBar changed since in their new state, and, while one
+    /// is in the state it went to, in the category the team's process puts that state in (`WorkItemDetailsStore.newest`),
+    /// which the engine guesses from its name; those it read in another state since, or no longer reads, as it read them.
+    private func keepingStateChanges(_ read: WorkLinks) -> WorkLinks {
+        guard !stateChanges.isEmpty else { return read }
+        var read = read
+        for (key, changed) in stateChanges {
+            if let item = read.workItems[key], let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
+                read.workItems[key] = newest
+            } else {
+                stateChanges[key] = nil
+            }
+        }
+        return read
     }
 
     private func update() {
@@ -242,6 +266,21 @@ final class WorkLinksStore {
     func rereadDependencies() {
         guard store.mode == .live, let engine else { return }
         Task { await engine.rereadSprint() }
+    }
+
+    /// A work item BriefBar changed the state of from My Work, or may have, as it didn't hear back (`StateChanges`): one Show
+    /// Links read shows in its new state at once, as Azure DevOps answered, with the category the team's process puts it in,
+    /// over what the engine read before, until it reads it in another state, and it reads it again now, as it does what a
+    /// Copilot session said it changed (`reread`); in the demo, its made-up links change. Nothing for one Show Links doesn't
+    /// read.
+    func changedState(_ key: WorkItemKey, to changed: WorkItem?) {
+        guard let item = read.workItems[key] else { return }
+        if let changed, let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
+            stateChanges[key] = newest
+            read.workItems[key] = newest
+            publish()
+        }
+        reread(pullRequests: [], workItems: [key])
     }
 
     /// What the engine was told to read last, while it reads.
@@ -490,6 +529,7 @@ final class WorkLinksStore {
         guard let known = self.account, known != account else { return }
         if store.mode == .live {
             read = WorkLinks()
+            stateChanges = [:]
             if engine != nil { startEngine() }
             update()
         }

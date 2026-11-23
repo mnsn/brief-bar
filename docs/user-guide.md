@@ -592,7 +592,9 @@ and doesn't show. Without it, your work that waits for one still goes a wave on,
 **+ Task**, in a band's header or above All, adds a work item to the Map: one of the sprint's, anyone's, or of yours
 outside it, found by its ID or by words of its title or whom it's for, or any other by its ID, which BriefBar asks Azure
 DevOps for. It shows whatever Others' work says, until **Remove from Map** in its menu. **Waits for a Task…**, in a
-node's menu, adds one with its line: the node waits for it. A click on one shows its details.
+node's menu, adds one with its line: the node waits for it. A click on one shows its details; with **Make Changes in
+Azure DevOps** on, its state, at the start of its node, in its right-click menu and in its details, is a menu of the
+states it can be put in, as your own work's is, for one in your team's project (**Set your work's state**, below).
 
 **✨ Ask Copilot**, in a band's header or over a graph of All, has a Copilot session work out what waits for what there:
 **Ask** one of the mission's sessions, or **a Fork** of it, so that its own work goes on as it was, with Send Work to
@@ -656,26 +658,31 @@ slot back to that order. Click the slot for the work item's details, or right-cl
 shows the next on the Board, with the keyboard on it, its column opened for the moment if it's folded.
 
 **Set your work's state.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
-default), move a task, story or bug of yours in the sprint to another column of its lane on My Work's Board: drag it
-there, or click it, or Tab to it, and press **⌘→** or **⌘←**. BriefBar sets its state in Azure DevOps, as you, so that
-your team sees your work there too: **To start** sets it to **New**; **In progress**, or any column after it up to
-**Waits**, to **Active**, though its card shows in In progress, as started work with no pull request on your board does;
-**Merged** to **Resolved**, where its type has a resolved state, as bugs and stories have in the Agile process; and
-**Completed** to **Closed**. Each is the first state of that kind its type has in your team's process, as your team's
-backlog configuration maps them, so that it may be **To Do**, **In Progress** or **Done** instead. ⌘→ and ⌘← go to the
-next column, past Merged for a type with no resolved state. Once Azure DevOps has it, however long that takes, its card
-shows where its new state, its pull requests and Copilot's work put it, keeping the keyboard after ⌘→ or ⌘←, which show
-the column it goes to for the moment if you hid it; the line under **Show** says what changed, with **Undo**, as
-on the Sprint page, or why it didn't, with **Try Again** where it may help. Its right-click menu has **State** too, with
-every state its type has, which VoiceOver offers as actions while no change is on its way; on the Map, so does the state
-its node starts with, as a task's circle does on the Sprint page: click it to close the task, or set it active. A key
-that finishes the last work in a story's lane, or a finished mission's, keeps that lane open, with the card and the
-keyboard on it, until you fold it. As you drag it, a column that wouldn't change it says why:
-another lane; one whose kind of state it's in already, such as To start for one still New while Copilot works on it;
-Merged for a type with no resolved state; anything while another change is on its way, or with the setting off, which
-says how to turn it on. Your work outside the sprint, with + All My Tasks, says to move it there first: only the sprint's
-work changes state here. BriefBar sets a state only as you move a card or choose one: not when you send a task to Copilot,
-nor when a pull request is linked to it.
+default), move a task, story or bug of yours, in the sprint or, with + All My Tasks, outside it, to another column of
+its lane on My Work's Board: drag it there, or click it, or Tab to it, and press **⌘→** or **⌘←**. BriefBar sets its
+state in Azure DevOps, as you, so that your team sees your work there too: **To start** sets it to **New**; **In
+progress**, or any column after it up to **Waits**, to **Active**, though its card shows in In progress, as started work
+with no pull request on your board does; **Merged** to **Resolved**, where its type has a resolved state, as bugs and
+stories have in the Agile process; and **Completed** to **Closed**. Each is the first state of that kind its type has in
+your team's process, as your team's backlog configuration maps them, so that it may be **To Do**, **In Progress** or
+**Done** instead. ⌘→ and ⌘← go to the next column, past Merged for a type with no resolved state. Once Azure DevOps has
+it, however long that takes, its card shows where its new state, its pull requests and Copilot's work put it, keeping
+the keyboard after ⌘→ or ⌘←, which show the column it goes to for the moment if you hid it; the line under **Show** says
+what changed, with **Undo**, as on the Sprint page, or why it didn't, with **Try Again** where it may help. Its
+right-click menu has **State** too, with every state its type has, which VoiceOver offers as actions while no change is
+on its way; on the Map, so does the state its node starts with, as a task's circle does on the Sprint page: click it to
+close the task, or set it active. So does any other work item in your team's project that the Map shows, wherever you
+open it: someone else's, or one you added with **+ Task**, from the state its node starts with, its right-click menu,
+which has **Show Details** and **Open in Azure DevOps** too, and its details, as on the Sprint page, though it's in an
+earlier sprint, or none; not one in another project, whose process may give it other states. A key that finishes the
+last work in a story's lane, or a finished mission's, keeps that lane open, with the card and the keyboard on it, until
+you fold it. As you drag it, a column that wouldn't change it says why: another lane; one whose kind of state it's in
+already, such as To start for one still New while Copilot works on it; Merged for a type with no resolved state;
+anything while another change is on its way, or with the setting off, which says how to turn it on; and, with no sprint
+going on, whose team's process says what states a type has, your work outside it, which says to change its state in
+Azure DevOps. A task of yours outside the sprint that you close leaves **+ All My Tasks** once BriefBar reads your work
+again, as it lists only what's open. BriefBar sets a state only as you move a card or choose one: not when you send a
+task to Copilot, nor when a pull request is linked to it.
 
 **Move a task to a sprint.** With **Make Changes in Azure DevOps** on, in [Settings › Pull Requests](#settings) (off by
 default), a task or bug of yours outside the sprint, on My Work with + All My Tasks, moves to your team's current sprint
@@ -1734,7 +1741,7 @@ DevOps' gear menu has **Watch a Pull Request…** too: it's the same setting.
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
-| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration, a sprint work item's card moved to another column on the Board, which sets that column's state, or the state you choose in its card's menu or its node's on the Map, and **Link in Azure DevOps** and **Unlink in Azure DevOps** on a line of the Map, and **Link 3 Lines in Azure DevOps…** over it, which link or take away the dependencies between work items it stands for; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move, the last state you changed and the dependencies you linked last, and stops a change that hasn't gone yet |
+| | Make Changes in Azure DevOps | off by default: **Reply** and the status menu on each comment thread in a pull request's details, which write your reply, or the thread's status, to Azure DevOps, as you, when you click them; **Edit** and **Delete…** on your own comments, which save one as you edited it, or delete it; **Add Tag** and **✕** on its tags, which add a tag or remove one; on My Work, **Move to Sprint 42…** and **Move to Next Sprint…** for a task or bug of yours outside the sprint, which, once you confirm, set its iteration, a work item's card moved to another column on the Board, in the sprint or, with + All My Tasks, of yours outside it, which sets that column's state, or the state you choose in its card's menu, its node's on the Map or its details, for any work item in your team's project that My Work shows, someone else's too, and **Link in Azure DevOps** and **Unlink in Azure DevOps** on a line of the Map, and **Link 3 Lines in Azure DevOps…** over it, which link or take away the dependencies between work items it stands for; on the Sprint page, a menu of states on each story, bug and task, which sets the one you choose; and **Fix Grammar** in a reply or an edit, with Apple Intelligence or the Copilot model you choose in its **▾** (see [Azure DevOps](#azure-devops)). Turning it off forgets the replies and edits you haven't sent and the tags you added, which adding one suggests, and Undo for the last move, the last state you changed and the dependencies you linked last, and stops a change that hasn't gone yet |
 
 **Settings › Send to Copilot** has Send Work to Copilot, which sends Azure DevOps' work items and pull requests' fixes:
 while Azure DevOps is off, or paused, it shows all the same, disabled, saying so, with **Turn On…** or **Review…**.
@@ -1782,8 +1789,10 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
   remove; on My Work, the sprint a task or bug of yours is in, its iteration, moved to your team's
   current sprint or its next once you confirm it, after which BriefBar reads the sprint and your work
   outside it again; on the Sprint page, the state you choose for one of its stories, bugs or
-  tasks, or, on My Work, that of the column you move its card to on the Board, for one of yours, after
-  which BriefBar reads the sprint again; and, on My Work's Map, the dependencies between work items a
+  tasks, or, on My Work, for any work item in your team's project that it shows, yours outside the
+  sprint or someone else's on its Map too, or that of the column you move a card of yours to on the
+  Board, after which BriefBar reads the sprint again, and, for one off its board that Show Links
+  reads, that work item; and, on My Work's Map, the dependencies between work items a
   line stands for, linked or taken away, each after BriefBar reads the later work item's links, after which it
   reads the sprint's links again. They go as you, with your Azure CLI sign-in, and nothing else
   does, never by itself, and not from agents or the command line. What you write in a reply, or in place of your comment, stays in memory only, until you send or

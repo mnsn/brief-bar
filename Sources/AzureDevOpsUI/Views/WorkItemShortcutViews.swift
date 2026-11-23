@@ -7,7 +7,7 @@ import SwiftUI
 // What a work item on the Sprint page offers a click away: its Copilot sessions and its pull requests, to open
 // (`WorkItemShortcuts`), and, with Make Changes in Azure DevOps on, the states it can be put in (`StateChanges`): in its
 // menus, from its state, and in its details; and on its card on My Work's Board, in its menu and VoiceOver's actions, and
-// from its state on its node on the Map.
+// on its node on the Map, from its state, and in its menu and VoiceOver's actions where the Board has no card for it.
 
 /// A work item's menus' items for what it opens: Open in Copilot, for its Copilot session, or Continue in Terminal, for a
 /// task BriefBar runs with the Copilot CLI (`SessionOpening`), or, with two or more, a menu of them; and Show Pull Request,

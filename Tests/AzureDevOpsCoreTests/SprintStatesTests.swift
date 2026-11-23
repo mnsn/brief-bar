@@ -97,6 +97,46 @@ import Testing
         #expect(board.changingState(elsewhere.changing(state: "Closed", answer: nil, at: t(60), categories: nil)) == board)
     }
 
+    /// Changed, one of your work items outside the sprint is in its new state where it is among them, with nothing else of
+    /// it changed, though it's done, until they're read again; one they don't have changes nothing.
+    @Test func yourWorkOutsideTheSprintWhoseStateChangedStaysWhereItIs() throws {
+        let board = DemoData.sprintBoard(now: t(0))
+        let outside = DemoData.outsideWork(now: t(0))
+        let task = try #require(outside.items.first { $0.id == 5052 })
+        var stale = task
+        stale.title = "As it was when its state changed"
+        let closed = outside.changingState(stale.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "Task")))
+        #expect(closed.items.map(\.id) == outside.items.map(\.id))
+        let shown = try #require(closed.items.first { $0.id == 5052 })
+        #expect(shown.state == "Closed" && shown.isDone && shown.changedAt == t(60))
+        #expect(shown.title == task.title && shown.iteration == task.iteration)
+
+        var elsewhere = task
+        elsewhere.id = 9_999
+        #expect(outside.changingState(elsewhere.changing(state: "Closed", answer: nil, at: t(60), categories: nil)) == outside)
+    }
+
+    /// The team's states are those of any work item in its project, whose process gives every work item of a type the same
+    /// ones: the board's, and any other there, whatever the case of its organization's and project's names; not one in
+    /// another project or organization, or whose project isn't known.
+    @Test func theTeamsStatesAreThoseOfAnyWorkItemInItsProject() throws {
+        let board = DemoData.sprintBoard(now: t(0))
+        let task = try #require(board.item(WorkItemKey(DemoData.organization, 5104)))
+        #expect(board.isInTeamsProject(task))
+        var other = task
+        other.id = 9_001
+        other.organization = board.team.organization.uppercased()
+        other.project = board.team.projectName.lowercased()
+        #expect(board.isInTeamsProject(other))
+        for project in ["Payments", ""] {
+            other.project = project
+            #expect(!board.isInTeamsProject(other))
+        }
+        other.project = board.team.projectName
+        other.organization = "fabrikam"
+        #expect(!board.isInTeamsProject(other))
+    }
+
     // MARK: Until a read after it
 
     /// What BriefBar changed the state of shows in it at once, and stays so over a read that started before the change,
@@ -133,6 +173,44 @@ import Testing
         clock.set(t(20 * minute))
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().board?.item(task.key)?.state == "New")
+    }
+
+    /// So does one of your work items outside the sprint, while My Work wants them: over a read of them that started before
+    /// the change, until one that started after it, which finds it as Azure DevOps has it.
+    @Test func aStateChangeOfYourWorkOutsideTheSprintStaysOverAReadThatStartedBeforeIt() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [
+            WorkFixture.workItem(1, assignee: People.me, iteration: "Shop\\Sprint 7"),
+            WorkFixture.workItem(10, state: "Active", assignee: People.me, iteration: "Shop\\Sprint 5"),
+        ])
+        server.on("/_apis/work/predefinedqueries/AssignedToMe", json: ["results": [["id": 1], ["id": 10]], "hasMore": false])
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(), configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.setReadsOutside(true)
+        await engine.refreshNow()
+        let board = try #require(await engine.currentSnapshot().board)
+        let task = try #require(await engine.currentSnapshot().outside?.items.first { $0.id == 10 })
+        #expect(task.state == "Active")
+
+        // Closed at 10:10: still among them, until they're read again.
+        clock.set(t(10 * minute))
+        await engine.changedState(task.changing(state: "Closed", answer: nil, at: clock.value, categories: board.categories(of: task.type)))
+        let closed = try #require(await engine.currentSnapshot().outside?.items.first { $0.id == 10 })
+        #expect(closed.state == "Closed" && closed.isDone)
+        #expect(await engine.currentSnapshot().board == board)
+
+        // A read that started at 10:05 still found it Active.
+        clock.set(t(5 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.first { $0.id == 10 }?.state == "Closed")
+
+        // One that started at 10:20 finds it as Azure DevOps has it, here Active again, as someone set it back.
+        clock.set(t(20 * minute))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().outside?.items.first { $0.id == 10 }?.state == "Active")
     }
 
     /// Another team chosen, what BriefBar changed of the last one's sprint goes with its board.

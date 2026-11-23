@@ -8,8 +8,9 @@ import SwiftUI
 /// A work item's details, beside the sprint: what it is and where it stands, with the pull requests, pipelines and Copilot
 /// sessions that go with it, what it's about, its tasks and the work items it links to, its attachments and its
 /// discussion, read from Azure DevOps when you open it. Open in Azure DevOps opens it there, to change it; with Make Changes
-/// in Azure DevOps on, its state is a menu that changes it here, for one on the sprint's board; and its Copilot session and
-/// its pull request open a click away.
+/// in Azure DevOps on, its state is a menu that changes it here, for one on the sprint's board, and for any other in the
+/// team's project that BriefBar reads, as one My Work's Map shows (`StateChanges.choices(for:)`); and its Copilot session
+/// and its pull request open a click away.
 struct WorkItemDetailsPanel: View {
     @EnvironmentObject private var details: WorkItemDetailsStore
     @EnvironmentObject private var sprint: SprintStore

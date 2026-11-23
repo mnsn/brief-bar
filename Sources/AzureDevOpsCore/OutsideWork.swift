@@ -93,6 +93,16 @@ public struct OutsideWork: Sendable, Equatable {
         return String(last)
     }
 
+    /// As it is once BriefBar changed the state of one of them, as Azure DevOps answered (`WorkItem.changing(state:answer:at:
+    /// categories:)`): that work item in its new state, where it is, until they're read again, which leaves it out once it's
+    /// resolved, done or removed (`yours`). Unchanged when it doesn't have it.
+    public func changingState(_ item: WorkItem) -> OutsideWork {
+        guard items.contains(where: { $0.key == item.key }) else { return self }
+        var work = self
+        work.items = items.map { $0.key == item.key ? $0.takingState(of: item) : $0 }
+        return work
+    }
+
     /// Without what the sprint's board has now: one moved into the sprint since a read that failed after, which the board
     /// shows.
     public func without(_ board: SprintBoard?) -> OutsideWork {

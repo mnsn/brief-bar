@@ -1350,7 +1350,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/wit/workitems/{id}?$expand=relations` | only with Make Changes in Azure DevOps on, on My Work's Map, right before each dependency you link or take away, of the work item that waits: once | its revision and its links, in order, to tell whether, and where, it has that link |
 | `PATCH _apis/wit/workitems/{id}` | the same, right after: once, unless it has, or hasn't, that link already | a JSON Patch (`application/json-patch+json`) of its links alone: a test of the revision just read, then its link to the earlier one, `System.LinkTypes.Dependency-Reverse`, added, or the one at its index taken away, so Azure DevOps refuses it if someone changed the work item meanwhile; Azure DevOps keeps the earlier one's link back itself, and answers with the work item as it keeps it |
 | `_apis/wit/workitems?ids={id}&fields=…` | only on My Work's Map, when + Task looks up a work item by its ID that BriefBar hasn't read: once | its title, type, state, who has it and its project |
-| `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on the Sprint page, when you choose a state for a story, bug or task of the sprint's, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its state alone: a test of the state it's in, then the state it goes to, so Azure DevOps refuses it if someone changed it meanwhile; Azure DevOps answers with the work item as it keeps it |
+| `PATCH _apis/wit/workitems/{id}` | only with Make Changes in Azure DevOps on, on the Sprint page, when you choose a state for a story, bug or task of the sprint's, and on My Work for one of yours, in the sprint or out of it, or any other in your team's project that BriefBar reads, such as someone else's on the Map, or click Undo: once | a JSON Patch (`application/json-patch+json`) of its state alone: a test of the state it's in, then the state it goes to, so Azure DevOps refuses it if someone changed it meanwhile; Azure DevOps answers with the work item as it keeps it |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -2309,8 +2309,10 @@ that it goes through; Escape lets it go. Hovering a node lights up what comes be
 through others (`WorkMapLines.related`), dimming the rest.
 A pull request's node has its order's mark and its stage's color, as on the Pull Requests page's Map, with the work
 items of yours it's for, "Task 5112"; a work item's starts with its state's symbol, as a task's line on the Sprint page
-does, which, on your work's own card, is that line's (`StateSymbol`, `WorkMapContent.state`): with Make Changes in Azure
-DevOps on, a menu of the states it can be put in, as its card's menu's State is; then its type's symbol, but a task's,
+does, which, on your work's own card and on a work item's the Board has no card for alike, is that line's (`StateSymbol`,
+`WorkMapContent.state`): with Make Changes in Azure DevOps on, a menu of the states it can be put in, as its card's menu's
+State is, and, for one the Board has no card for, its right-click menu's, with Show Details and Open in Azure DevOps, and
+VoiceOver's actions (`WorkMapContent.workItem`); then its type's symbol, but a task's,
 and its ID, state and title, in the color of its column: To start's gray, outlined dashed, In progress's, Merged's once
 resolved, and green once done; a step's is gray and dashed until it's done, then green, with ✨ where a session added it.
 Each of your changes is kept at once, with an Undo line at the top of the Map (`MapUndo`), which puts back the Map as it
@@ -3511,16 +3513,23 @@ work items its details on the Sprint page, and the sprint's footer its task boar
 
 #### Changing a work item's state
 
-With **Make Changes in Azure DevOps** on, a story, bug or task on the sprint's board can be put in another of its
-type's states (`StateChanges`): those the team's backlog configuration maps to a category, which the board reads
-already (`SprintBoard.stateCategories`, `states(of:)`), in the order work goes through them, to start, in progress,
-resolved, then done, two of the same category as the default processes order them, such as New before Approved, then
-by name; never a removed one, which takes it off the board: remove one in Azure DevOps. A type the configuration
-doesn't map offers none. A task's state, the symbol at the start of its line, a story's or bug's on its card, and the
-state in a work item's details are then menus of them, its own checked (`StateSymbol`, `StateChip`), and its menus
-have **State** (`StateMenuItems`); with the setting off, the state's tooltip says how to turn it on. On My Work, a work
-item's card's menu has State too, and its node on the Map starts with the same symbol and menu (`WorkMapContent.state`).
-Nothing asks first: choosing a state is the change, as in Azure DevOps.
+With **Make Changes in Azure DevOps** on, a story, bug or task on the sprint's board can be put in another of its type's
+states (`StateChanges`): those the team's backlog configuration maps to a category, which the board reads already
+(`SprintBoard.stateCategories`, `states(of:)`), in the order work goes through them, to start, in progress, resolved,
+then done, two of the same category as the default processes order them, such as New before Approved, then by name;
+never a removed one, which takes it off the board: remove one in Azure DevOps. A type the configuration doesn't map
+offers none. So can any other work item in the team's project that BriefBar reads, whose process gives every work item
+of a type the same states (`SprintBoard.isInTeamsProject`): one of yours outside the sprint, as My Work reads them
+(`SprintStore.outside`), and one Show Links read (`WorkLinksStore.linkedWorkItem`), such as someone else's that My
+Work's Map shows, or one you added there; BriefBar reads each as whichever of those changed last, for its menus, a
+change and what My Work's Map shows of it alike, keeping the category the team's process puts its state in while it's in
+it, which Show Links guesses from the state's name (`StateChanges.item(_:)`). Not one in another project, whose process
+may give it other states, nor with no sprint going on, whose board brings the team's states. A task's state, the symbol
+at the start of its line, a story's or bug's on its card, and the state in a work item's details are then menus of them,
+its own checked (`StateSymbol`, `StateChip`), and its menus have **State** (`StateMenuItems`); with the setting off, the
+state's tooltip says how to turn it on. On My Work, a work item's card's menu has State too, and its node on the Map
+starts with the same symbol and menu (`WorkMapContent.state`), as does one the Board has no card for, whose right-click
+menu has State too (`WorkMapContent.workItem`). Nothing asks first: choosing a state is the change, as in Azure DevOps.
 
 The change is a `PATCH` of the work item (`ADOWrite.setState`), a JSON Patch (`application/json-patch+json`) of two
 operations: a `test` that its state is the one BriefBar read it in, then an `add` of the one you chose, so that Azure
@@ -3528,20 +3537,27 @@ DevOps refuses it if someone changed it meanwhile, as it does a change its proce
 DevOps gives it the reason its process gives that change, and nothing else of it changes. Its new state shows at once,
 as Azure DevOps answered, with when it changed, so that its details follow, and are read again while they show
 (`WorkItem.changing(state:answer:at:categories:)`, `SprintStore.changedState`), in its place on the board
-(`SprintBoard.changingState`), a task going where its card orders that state's tasks; the engine keeps it so over any
-read of the board that started before the change, until one that started after it has read the board
-(`SprintEngine.changedState`, `settleStateChanges`), and refreshes at once. The line under the Sprint page's header
-(`StateChangeLine`), which stays in sight as the page scrolls, says "Changed Task 5104 from New to Active.", with
-**Undo**, which sends the same change back, testing the state it went to, without asking, while the setting's on and
-the work item is in that state, as BriefBar last read it (`StateChanges.undoable`); the work item's menus have Undo
-too meanwhile. A change that didn't happen, or may not have, says why (`ADOWriteProblem.sentence`, for `.setState`),
-with **Try Again** where it may help, not when Azure DevOps refused it, nor for a work item that left the board or is
-in another state (`StateChanges.retries`), and the sprint is read again. One change goes at a time, as whom the sprint
-was read as when you chose it, and only while BriefBar reads the work item in the state it was in then, as you choose
-it and again before each try, once its token came (`StateChanges.send`, `isStillWanted`); turning the setting off,
-Azure DevOps stopping or someone else signing in calls off one that hasn't gone (`StateChanges.forgetAll`). Only the
-board's work items change: a linked one followed in the details shows its state as it was read. The demo changes only
-its made-up sprint, and sends nothing.
+(`SprintBoard.changingState`), a task going where its card orders that state's tasks, or among your work outside the
+sprint (`OutsideWork.changingState`), until a read leaves it out, as one that's done; the engine keeps it so over any
+read of the board, and of your work outside it, that started before the change, until one that started after it has read
+the board (`SprintEngine.changedState`, `settleStateChanges`), and refreshes at once. One only Show Links reads shows so
+there at once, with the team's category for its state, over what its engine read before, until it reads it in another
+state, and it reads it again at once (`WorkLinksStore.changedState`), and in its details
+(`WorkItemDetailsStore.changed`), and the sprint is read again all the same, as one of yours reopened comes back among
+your work outside it; and the last one off the board that changed is known as Azure DevOps answered, for what shows of
+it and for Undo, until something reads it again since, as one of yours that leaves your work outside the sprint once
+it's done (`StateChanges.item(_:)`). The line under the Sprint page's header (`StateChangeLine`), which stays in sight
+as the page scrolls, says "Changed Task 5104 from New to Active.", with **Undo**, which sends the same change back,
+testing the state it went to, without asking, while the setting's on and the work item is in that state, as BriefBar
+last read it (`StateChanges.undoable`); the work item's menus have Undo too meanwhile. A change that didn't happen, or
+may not have, says why (`ADOWriteProblem.sentence`, for `.setState`), with **Try Again** where it may help, not when
+Azure DevOps refused it, nor for a work item BriefBar no longer reads or reads in another state
+(`StateChanges.retries`), and the sprint is read again, and Show Links reads one off the board again. One change goes at
+a time, as whom the sprint was read as when you chose it, and only while BriefBar reads the work item in the state it
+was in then, as you choose it and again before each try, once its token came (`StateChanges.send`, `isStillWanted`);
+turning the setting off, Azure DevOps stopping or someone else signing in calls off one that hasn't gone
+(`StateChanges.forgetAll`). A linked one followed in the details that BriefBar doesn't read otherwise shows its state as
+it was read. The demo changes only its made-up work items, and sends nothing.
 
 On My Work's Board, a card of your sprint work changes its work item's state as you move it to another column of its
 lane, by a drag, ⌘→ or ⌘← (`BoardTask.move(to:sameLane:states:)`): to the state that column's work is in
@@ -3581,9 +3597,11 @@ joined column whose columns would each set the same state, as In review's, it go
 choose. A key that leaves the work in a story's lane, or a finished mission's, all resolved or done keeps that lane
 open, as if you'd opened it, rather than fold it under the card, which keeps the keyboard there
 (`BoardLane.finishesWork(moving:to:)`); a drop leaves it to fold, as a finished story's or mission's lane does. Your
-work outside the sprint, with + All My Tasks, which isn't on the sprint's board, says to move it there first
-(`MyWorkText.stateStays`); a type whose states the team's configuration doesn't map moves only by itself
-(`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull request linked to it.
+work outside the sprint, with + All My Tasks, moves the same way, as its type's states are the team's
+(`StateChanges.boardStates(for:)`), but with no sprint going on, whose board brings them, when it says to change its
+state in Azure DevOps (`MyWorkText.noSprintState`); a type whose states the team's configuration doesn't map moves only
+by itself (`BoardText.workStays`). Nothing sets a state by itself: not sending a task to Copilot, nor a pull request
+linked to it.
 
 ### Send work to Copilot
 

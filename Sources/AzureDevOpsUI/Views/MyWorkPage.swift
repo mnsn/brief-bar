@@ -895,10 +895,13 @@ private struct MyWorkContent: View {
         }
     }
 
-    /// A work item as BriefBar read it: the sprint's, anyone's, yours outside it, or one Show Links read.
+    /// A work item as BriefBar reads it now, as its state's menus and a change of it have it (`StateChanges.item`): the
+    /// sprint's, anyone's; else whichever changed last of yours outside it, one Show Links read and the last one whose state
+    /// you changed off the sprint's board, as Azure DevOps answered, as a task of yours outside the sprint once it's done. So
+    /// what the Map shows of it, and whether Done leaves it out, is what its state's menu changes it from.
     private func anyWorkItem(_ ref: ItemRef) -> WorkItem? {
         guard ref.kind == .workItem, let id = ref.number else { return nil }
-        return workItem(ref) ?? linkedWorkItem(WorkItemKey(ref.scope, id))
+        return states.item(WorkItemKey(ref.scope, id))
     }
 
     /// Whether a work item is yours: assigned to you, as one in the sprint is, or one of yours outside it.
@@ -971,7 +974,8 @@ private struct MyWorkContent: View {
 
     /// What the Map draws of the Board's cards: a pull request's node has its card's menu and words, and names the work items
     /// of yours it's for; a work item's, its state, which, as on the Sprint page, is a menu of the states it can be put in
-    /// with Make Changes in Azure DevOps on, its type, ID, state and title, and whose it is where it isn't yours.
+    /// with Make Changes in Azure DevOps on, its type, ID, state and title, and whose it is where it isn't yours. One the Board
+    /// has no card for, someone else's or one you added, has Show Details, Open in Azure DevOps and State in its menu too.
     private func mapContent(_ board: PullRequestBoard) -> WorkMapContent {
         let byRef = Dictionary(store.items.map { ($0.key.linkRef, $0) }, uniquingKeysWith: { first, _ in first })
         return WorkMapContent(
@@ -1009,8 +1013,20 @@ private struct MyWorkContent: View {
             asksSessions: copilot.canSend && copilot.isOn,
             find: showsWork ? mapFinder : nil,
             azureDevOps: showsWork ? mapLinking : nil,
-            state: { task in
-                workItem(task.ref).map { item in AnyView(StateSymbol(item: item, size: 12) { showDetails(of: item) }) }
+            state: { ref in
+                anyWorkItem(ref).map { item in AnyView(StateSymbol(item: item, size: 12) { showDetails(of: item) }) }
+            },
+            workItem: { ref in
+                anyWorkItem(ref).map { item in
+                    WorkMapWorkItemMenu(
+                        menu: AnyView(Group {
+                            Button("Show Details") { showDetails(of: item) }
+                            Button("Open in Azure DevOps") { sprint.open(item) }
+                            StateMenuItems(item: item)
+                        }),
+                        actions: AnyView(StateActions(item: item))
+                    )
+                }
             }
         )
     }
@@ -1073,19 +1089,20 @@ private struct MyWorkContent: View {
             select: { ref in if let item = workItem(ref) { showDetails(of: item) } },
             states: boardStates(of:),
             setState: { task, state, done in
-                guard let item = sprintItem(task.ref) else { return done(false) }
+                guard let item = workItem(task.ref) else { return done(false) }
                 Task { done(await states.change(item, to: state)) }
             }
         )
     }
 
-    /// What moving a work item's card does to its state: one on the sprint's board goes in the state of the column you move
-    /// it to, with Make Changes in Azure DevOps on (`StateChanges.boardStates(for:)`); one outside it, or whose type's states
-    /// BriefBar doesn't know, stays, saying why.
+    /// What moving a work item's card does to its state: it goes in the state of the column you move it to, with Make Changes
+    /// in Azure DevOps on, whether it's in the sprint or one of yours outside it (`StateChanges.boardStates(for:)`); one whose
+    /// type's states BriefBar doesn't know stays, saying why, as one of yours outside the sprint with no sprint going on,
+    /// whose team's process says them.
     private func boardStates(of task: BoardTask) -> BoardTaskStates {
-        if let item = sprintItem(task.ref), let known = states.boardStates(for: item) { return known }
-        guard task.work.isOutside, let item = workItem(task.ref) else { return .fixed(BoardText.workStays) }
-        return .fixed(MyWorkText.stateStays(place: outside?.place(of: item), sprint: sprint.board?.sprint.name))
+        if let item = workItem(task.ref), let known = states.boardStates(for: item) { return known }
+        guard task.work.isOutside, sprint.board == nil else { return .fixed(BoardText.workStays) }
+        return .fixed(MyWorkText.noSprintState)
     }
 
     /// A work item in the sprint.
@@ -1099,9 +1116,9 @@ private struct MyWorkContent: View {
     }
 
     /// A work item's card: its menu as on the Sprint page, with Make Next in To start, and State, with Make Changes in Azure
-    /// DevOps on, for one on the sprint's board; a pull request in it shows over the work item's details, as there. One
-    /// outside the sprint says where it is, which, with that setting on, is a menu that moves it to the sprint going on or the
-    /// next, as its own menu does.
+    /// DevOps on, for one in the sprint or of yours outside it; a pull request in it shows over the work item's details, as
+    /// there. One outside the sprint says where it is, which, with that setting on, is a menu that moves it to the sprint
+    /// going on or the next, as its own menu does.
     private func taskCard(_ task: BoardTask, item: WorkItem) -> BoardCardContent {
         let place = outside?.place(of: item)
         let movable = moves.canMove(item) || moves.undoable?.key == item.key
@@ -1551,16 +1568,9 @@ enum MyWorkText {
     static let searchHint = "Shows only the Board's cards that match, by ID or name, repository, branch or session, and the "
         + "pull requests related to them. Return goes to the first that matches, and Escape clears it"
 
-    /// Why moving a card of your work outside the sprint doesn't change its state, which only the sprint's board's work does
-    /// here: "Move it to Sprint 42 first: only the sprint's work changes state here"; for one in the sprint's iteration that
-    /// its board doesn't have, as under another team's area, "It's not on Sprint 42's board: change its state in Azure
-    /// DevOps"; and with no sprint going on (nil), "With no sprint going on, change its state in Azure DevOps".
-    /// - Parameter place: where it is, as its card says it (`OutsideWork.place`): nil in the sprint's own iteration.
-    static func stateStays(place: String?, sprint: String?) -> String {
-        guard let sprint else { return "With no sprint going on, change its state in Azure DevOps" }
-        guard place != nil else { return "It's not on \(sprint)'s board: change its state in Azure DevOps" }
-        return "Move it to \(sprint) first: only the sprint's work changes state here"
-    }
+    /// Why moving a card of your work outside the sprint doesn't change its state with no sprint going on: its type's states
+    /// come with the sprint, from the team's process.
+    static let noSprintState = "With no sprint going on, change its state in Azure DevOps"
 
     /// How many of your open tasks and bugs aren't in the sprint, by their types: "5 tasks and 1 bug of yours aren't in Sprint
     /// 42.", "1 task of yours isn't in Sprint 42.", "All your open tasks and bugs are in Sprint 42."; with no sprint going on

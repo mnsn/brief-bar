@@ -6,17 +6,18 @@ import SwiftUI
 // the steps added there, and, dimmed, what they're joined to in other bands; All, one canvas: a graph for each set of cards and
 // steps lines join, their columns lined up, then those no line joins, in a grid. Each is a node: a card's click shows its
 // details, as the Board's card does, a work item's state, with Make Changes in Azure DevOps on, is a menu of the states it can
-// be put in, as on the Sprint page, and a step's circle marks it done; a right-click has the card's menu with Waits For, Add
-// Step After… and Hide on Map, and a step's Rename…, Mark Done and Delete Step. A drag from one node onto another draws a
-// line: the other waits for it. A click on a line selects it, to take it away, or to link in Azure DevOps the dependencies it
-// stands for, or unlink them, each marked on the line once Azure DevOps links them. Done, at the top, shows or leaves out
-// what's done; Others' work shows faded the work items of others that yours wait for or that wait for yours; + Task adds any
-// of the sprint's, found by ID or title.
+// be put in, as on the Sprint page, whether the Board has a card for it or not, and a step's circle marks it done; a
+// right-click has the card's menu, or, for a work item the Board has no card for, Show Details, Open in Azure DevOps and its
+// state, with Waits For, Add Step After… and Hide on Map, and a step's Rename…, Mark Done and Delete Step. A drag from one
+// node onto another draws a line: the other waits for it. A click on a line selects it, to take it away, or to link in Azure
+// DevOps the dependencies it stands for, or unlink them, each marked on the line once Azure DevOps links them. Done, at the
+// top, shows or leaves out what's done; Others' work shows faded the work items of others that yours wait for or that wait for
+// yours; + Task adds any of the sprint's, found by ID or title.
 // Hovering a node lights up what it waits for and what waits for it. ✨ Ask Copilot, on a band or a graph, asks its session,
 // a fork of it or a new one to work out what waits for what there and tell BriefBar, which draws what it tells as it hears
-// it. Only the Map changes for any of it, but what you link or unlink in Azure DevOps. Where the page is too narrow for a
-// graph's columns, as with a card's details beside it, they fold into tiers, one under the other, and the lines from one tier
-// to the next wrap round, down and back. Everything scales with the text size of windows' pages.
+// it. Only the Map changes for any of it, but what you link or unlink in Azure DevOps, and the states you choose. Where the
+// page is too narrow for a graph's columns, as with a card's details beside it, they fold into tiers, one under the other, and
+// the lines from one tier to the next wrap round, down and back. Everything scales with the text size of windows' pages.
 
 /// What a page draws of its cards on My Work's Map.
 package struct WorkMapContent {
@@ -52,9 +53,13 @@ package struct WorkMapContent {
     /// What links a line's dependencies in Azure DevOps, or takes them away; nil while the Board shows none of your sprint
     /// work.
     package var azureDevOps: WorkMapAzureDevOps?
-    /// A work item's own card's state, which its node starts with, as the Sprint page's task line does: with Make Changes in
-    /// Azure DevOps on, a menu of the states it can be put in, else its symbol; nil for its state's symbol alone.
-    package var state: (BoardTask) -> AnyView?
+    /// A work item's state, which its node starts with, its own card's or one the Board doesn't have, as the Sprint page's
+    /// task line does: with Make Changes in Azure DevOps on, a menu of the states it can be put in, else its symbol; nil for
+    /// its state's symbol alone.
+    package var state: (ItemRef) -> AnyView?
+    /// The menu's items and VoiceOver's actions of a work item's node the Board has no card for, as someone else's or one you
+    /// added, before the Map's, as a card's are; nil for one the page doesn't know.
+    package var workItem: (ItemRef) -> WorkMapWorkItemMenu?
 
     package init(
         card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (ItemRef) -> WorkMapFace?,
@@ -62,7 +67,8 @@ package struct WorkMapContent {
         laneTitle: @escaping (BoardLane.Kind) -> String, isSelected: @escaping (ItemRef) -> Bool,
         select: @escaping (ItemRef) -> Void, related: Set<ItemRef> = [], showBoard: @escaping () -> Void,
         ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false, find: WorkMapFinder? = nil,
-        azureDevOps: WorkMapAzureDevOps? = nil, state: @escaping (BoardTask) -> AnyView? = { _ in nil }
+        azureDevOps: WorkMapAzureDevOps? = nil, state: @escaping (ItemRef) -> AnyView? = { _ in nil },
+        workItem: @escaping (ItemRef) -> WorkMapWorkItemMenu? = { _ in nil }
     ) {
         self.card = card
         self.work = work
@@ -79,6 +85,20 @@ package struct WorkMapContent {
         self.find = find
         self.azureDevOps = azureDevOps
         self.state = state
+        self.workItem = workItem
+    }
+}
+
+/// What a work item's node offers that the Board has no card for: its menu's items, which its card's would have, such as
+/// Show Details and its state, and VoiceOver's actions of them.
+package struct WorkMapWorkItemMenu {
+    package var menu: AnyView
+    /// What VoiceOver offers as its actions, before Show Details: its states. Nil for none.
+    package var actions: AnyView?
+
+    package init(menu: AnyView, actions: AnyView? = nil) {
+        self.menu = menu
+        self.actions = actions
     }
 }
 
@@ -1931,7 +1951,7 @@ struct WorkMapNodeView: View {
         case .card(.work(let task)):
             let face = editor.content.face(task.ref)
             HStack(spacing: 7) {
-                if let state = editor.content.state(task) {
+                if let state = editor.content.state(task.ref) {
                     state
                 } else {
                     stateSymbol(face)
@@ -1960,7 +1980,11 @@ struct WorkMapNodeView: View {
         case .workItem(let work):
             let face = editor.content.face(work.ref)
             HStack(spacing: 7) {
-                stateSymbol(face)
+                if let state = editor.content.state(work.ref) {
+                    state
+                } else {
+                    stateSymbol(face)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     // What doesn't fit gives way: its state first, then its owner's name; never its ID.
                     ViewThatFits(in: .horizontal) {
@@ -2105,6 +2129,9 @@ struct WorkMapNodeView: View {
         if let card {
             card.menu
             Divider()
+        } else if let work = item.workItem, let offered = editor.content.workItem(work.ref) {
+            offered.menu
+            Divider()
         }
         if let step = item.step {
             Button("Rename…") { editor.rename(step) }
@@ -2132,6 +2159,9 @@ struct WorkMapNodeView: View {
     @ViewBuilder
     private func actions(_ card: BoardCardContent?) -> some View {
         card?.actions
+        if let work = item.workItem {
+            editor.content.workItem(work.ref)?.actions
+        }
         if let step = item.step {
             Button("Rename") { editor.rename(step) }
             Button(step.isDone ? "Mark Not Done" : "Mark Done") { editor.toggle(step) }
