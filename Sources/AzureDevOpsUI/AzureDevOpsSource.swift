@@ -137,7 +137,12 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// again. With Make Changes in Azure DevOps, on My Work, the state you choose for a story, bug or task of yours in
     /// the sprint, in its card's menu or from the state its card starts with on the Map, a PATCH of its state, when you
     /// click it, after which BriefBar reads the sprint again.
-    nonisolated package static let descriptionVersion = 36
+    /// 37: with Make Changes in Azure DevOps, on My Work, the state you choose for a work item of yours outside the
+    /// sprint too, or that of the column you move its card to, and for any other in your team's project that BriefBar
+    /// reads, such as someone else's on its Map, from its state, its menu or its details, a PATCH of its state, when
+    /// you click it, after which BriefBar reads the sprint again, and, for one off its board that Show Links reads,
+    /// that work item, with one request.
+    nonisolated package static let descriptionVersion = 37
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
