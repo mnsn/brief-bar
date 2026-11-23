@@ -1955,8 +1955,9 @@ doesn't, the Board says it still waits. Its Mission menu's Set as Next to Merge
 still moves it. None is set as next while
 stacked on a pull request BriefBar hasn't seen merge, or still targeting the branch of one that merged
 (`OrderMission.whyNotNext`, which Set as Next to Merge uses too). Undo stays on the Board when a change takes a card
-off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, or in a lane of those in
-no mission, kept for it (`PullRequestBoard.lanes(keepingUndoOf:missions:)`), and with Lanes: None in the one lane,
+off it: in its mission's lane, which has Undo for all its pull requests, as List's card does, and shows while that says
+what you changed though none of its cards is left to show, or in a lane of those in no mission, kept for it
+(`PullRequestBoard.lanes(keepingUndoOf:missions:)`, `shownLanes`), and with Lanes: None in the one lane,
 kept for it once no card is left in it. A row's order capsule, clicked in another sort, shows its mission's lane on
 the Board, as it shows the mission in List and on the Map; with Lanes: None, which has no lane for it, the Board shows
 a lane for each mission again, remembered (`PullRequestOrder.reveal(_:kinds:)`). The page scrolls the lane, the first
@@ -2009,7 +2010,16 @@ is fixed: a column joins only the one beside it, kept as the gap between them (`
 `yourReview+teammateReview`), and joins side by side make one column, which never spans a hidden one. Only Merged and
 Completed hide (`order.boardHidden`): what's merged but not out yet, as a pull request whose task is still open, and
 what's done, none of which needs you (`BoardCard.needsYou`), so nothing that needs you leaves the Board; hidden while
-joined, they come back as Done. A joined column is named for what it holds (`ShownColumn.title`): In review, Ready,
+joined, they come back as Done. A mission's or a story's lane shows only while it has a card in a column the Board
+shows, folded or not (`PullRequestBoard.shownLanes`): a finished one, all merged or completed, leaves it once you hide
+those, and one with none of its pull requests on your board, such as teammates' you declined or those abandoned,
+whatever you hide, as List and the Map still show every mission, and the Sprint page every story. Those it keeps show
+whatever they hold: the one a row's capsule asks for, where your move or the card you're on is (`keptInSight`), and the
+one that says why a card couldn't move. The line under the Board counts the lanes it leaves out after the pull requests,
+"3 more in your lists, and 1 mission with no cards to show, aren't on the board" (`BoardText.notOnBoard`), its tooltip
+saying why, and offers Show By Status only for those pull requests; where every card is in the columns you hid, it says
+so in the lanes' place (`BoardText.allInHiddenColumns`), as their tab still shows them. A joined column is named for
+what it holds (`ShownColumn.title`): In review, Ready,
 Done, Teammate's review for it with Approved, whose cards wear Approved's seal there, or else the names of what you
 joined, the longest that has a name first, from the left: "Approved + Can merge", "In progress + In review". It folds as
 one column: one open column's room in `BoardWidths`, so joining saves a column's; first whatever it holds only where
@@ -2144,7 +2154,8 @@ BriefBar finds no team for you to read them in.
 **Search** (`BoardSearch`), at the end of Show's row, shows only the Board's cards that match what you type
 (`PullRequestBoard.matching`), with the pull requests' cards related to them, in the lanes that hold one, each column,
 Completed and the hidden columns' tab counting what shows, and a pull request's card in two missions' lanes in each it
-matches in; Up Next, Start next and the line of what isn't on the board stay as they are, and nothing is read for it.
+matches in; Up Next, Start next and the line of what isn't on the board stay as they are, though that line counts no
+lanes then, and nothing is read for it.
 Each word has to be, in any case and with any accents, in one of a card's names (`MyWorkFacts.searched`): a pull
 request's number with its kind, "PR !4102", its title, its repository and its source branch, as your lists or Show Links
 read it, the work items of yours its card names and any other Show Links links it to, even with Show: Pull Requests, by

@@ -1134,6 +1134,33 @@ public struct PullRequestBoard: Equatable, Sendable {
         Set(listed).subtracting(refs).count
     }
 
+    // MARK: Lanes it shows
+
+    /// The lanes the Board shows: each with a card in a column it shows, folded or not, so that a mission or story with none
+    /// there, finished, its cards in the columns you hid, or none of its pull requests on your board, leaves it, as List
+    /// and the Map still show every mission; with Lanes: None, the lane of every card, which has no header. Those it keeps
+    /// show whatever they hold, and where no lane it shows has the Undo line of your last change, the first that has it
+    /// shows too (`lanes(keepingUndoOf:missions:)`).
+    /// - Parameters:
+    ///   - hidden: the columns you hid.
+    ///   - kept: the lanes that show however few cards they have, such as the one a row's capsule asks for.
+    ///   - changed: the pull request your last change was to, for its Undo line.
+    ///   - missions: the missions the page shows, as the lanes' headers have them.
+    public func shownLanes(
+        hiding hidden: Set<BoardColumn>, keeping kept: Set<BoardLane.Kind> = [], undoOf changed: ItemRef?, missions: [OrderMission]
+    ) -> [BoardLane] {
+        let lanes = lanes(keepingUndoOf: changed, missions: missions)
+        let shownColumns = columns.filter { !hidden.contains($0) }
+        let shows = { (lane: BoardLane) in
+            lane.kind == .all || kept.contains(lane.kind) || shownColumns.contains { lane.count(of: $0) > 0 }
+        }
+        let hosts = { (lane: BoardLane) in changed.map { undoRefs(of: lane, missions: missions, changed: $0).contains($0) } == true }
+        guard !lanes.contains(where: { shows($0) && hosts($0) }), let host = lanes.first(where: hosts) else {
+            return lanes.filter(shows)
+        }
+        return lanes.filter { shows($0) || $0.kind == host.kind }
+    }
+
     /// Each of a mission's pull requests as By Mission lists them, its order's, those stacked with them, then those for its
     /// story that its order doesn't name, with its place in that list and its place in the merge order among what's left to
     /// merge: only for an open one its order numbers, as a family's list or an any-time one's place says nothing of what
@@ -1323,18 +1350,48 @@ public enum BoardText {
         return reading.replaced != nil ? words + ", after you" : words
     }
 
-    /// The line under the Board: "3 more in your lists aren't on the board"; nil for none.
-    public static func notOnBoard(_ count: Int) -> String? {
-        switch count {
-        case 0: nil
-        case 1: "1 more in your lists isn't on the board"
-        default: "\(count) more in your lists aren't on the board"
+    /// The line under the Board: "3 more in your lists aren't on the board"; with the missions' and stories' lanes it doesn't
+    /// show, as none of their cards is in a column it shows (`PullRequestBoard.shownLanes`), "2 missions with no cards to show
+    /// aren't on the board", or "3 more in your lists, and 1 mission with no cards to show, aren't on the board"; nil for
+    /// none.
+    public static func notOnBoard(_ count: Int, missions: Int = 0, stories: Int = 0) -> String? {
+        var lanes: [String] = []
+        if missions > 0 { lanes.append(missions == 1 ? "1 mission" : "\(missions) missions") }
+        if stories > 0 { lanes.append(stories == 1 ? "1 story" : "\(stories) stories") }
+        let noCards = OrderText.join(lanes) + " with no cards to show"
+        return switch (count, lanes.isEmpty) {
+        case (0, true): nil
+        case (1, true): "1 more in your lists isn't on the board"
+        case (_, true): "\(count) more in your lists aren't on the board"
+        case (0, false): noCards + (missions + stories == 1 ? " isn't on the board" : " aren't on the board")
+        default: "\(count) more in your lists, and \(noCards), aren't on the board"
         }
     }
 
-    /// Why some pull requests in your lists aren't on the board, for that line's tooltip.
-    public static let notOnBoardHelp =
-        "Others' pull requests you approved or declined, others' drafts, and those closed without merging. By Status lists them."
+    /// That line's tooltip: why what it counts isn't on the board, a line for each.
+    public static func notOnBoardHelp(pullRequests: Int, missions: Int = 0, stories: Int = 0) -> String {
+        var lines: [String] = []
+        if pullRequests > 0 {
+            lines.append(
+                "Others' pull requests you approved or declined, others' drafts, and those closed without merging. By Status lists them."
+            )
+        }
+        if missions > 0 || stories > 0 {
+            let (lane, elsewhere) = switch (missions > 0, stories > 0) {
+            case (true, true): ("A mission's or story's", "List and the Map show every mission, and the Sprint page every story.")
+            case (true, false): ("A mission's", "List and the Map show every mission.")
+            default: ("A story's", "The Sprint page shows every story.")
+            }
+            lines.append("\(lane) lane shows while it has a card in a column you haven't hidden. \(elsewhere)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// What the Board says where every card it has, or that matches My Work's search, is in the columns you hid, whose tab
+    /// shows them.
+    public static func allInHiddenColumns(_ search: BoardSearch?) -> String {
+        search == nil ? "Every card on your board is in the columns you hid." : "Every card that matches is in the columns you hid."
+    }
 
     public static let hasMerged = "It merged: nothing changes its stage now"
     static let azureDevOpsDecides = "Azure DevOps decides when it can merge: once it says it's ready to complete"

@@ -1402,7 +1402,8 @@ fileprivate final class Viewer {}
 
     /// By Mission says only the missions in its scroll view's sight are on screen: one out of sight isn't named until it
     /// comes into it.
-    /// Three stacks of two pull requests, each a mission, as Azure DevOps tells them.
+    /// Three stacks of two drafts of yours, each a mission, as Azure DevOps tells them: In Progress has their cards, so the
+    /// Board shows each mission's lane.
     static func threeStacks(_ order: PullRequestOrder) -> [OrderPullRequest] {
         var pullRequests: [OrderPullRequest] = []
         for stack in 0..<3 {
@@ -1414,12 +1415,16 @@ fileprivate final class Viewer {}
                 ))
             }
         }
-        order.publish(.azureDevOps, pullRequests: pullRequests)
+        order.publish(
+            .azureDevOps, pullRequests: pullRequests,
+            stages: Dictionary(uniqueKeysWithValues: pullRequests.map { ($0.ref, StageFacts(role: .author, state: .draft)) }),
+            account: "robin@contoso.com"
+        )
         return pullRequests
     }
 
     /// By Mission on the tests' window's page, in a scroll view this high: in List, each of its pull requests' rows a third
-    /// of it at least; on the Board, with these lanes, and no cards, as no pull request has a stage.
+    /// of it at least; on the Board, with these lanes, each card drawn as nothing.
     static func byMission(
         _ order: PullRequestOrder, listing pullRequests: [OrderPullRequest], view: OrderView = .list, lanes: BoardLanes? = nil,
         height: CGFloat, services: AppServices

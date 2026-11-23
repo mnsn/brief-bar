@@ -421,9 +421,11 @@ to fold it, and BriefBar remembers. It changes no group or count.
 
 By Mission, **List | Map | Board** offers the **Board**: a column for each stage, **In progress**, **Your review**,
 **Teammate's review**, **Approved**, marked with a seal, **Can merge**, **Waits** and **Merged**; and a lane for each
-mission, its header naming your next steps in it, such as **Review !4093** or **Find a reviewer: !4079**, then a lane
-for the pull requests in no mission. **Lanes: None** puts every card in one. A card shows its marks under why it's
-there, such as **✕ Build failed** or **✋ Sam wants changes**, and, with [Show Links](#links) on, its links' capsules
+mission with a card in a column you haven't hidden, its header naming your next steps in it, such as **Review !4093** or
+**Find a reviewer: !4079**, then a lane for the pull requests in no mission. A mission with no card to show leaves the
+Board, though List and the Map still show it, such as one whose pull requests are teammates' you declined, or were
+abandoned, or, once you hide Merged, all merged. **Lanes: None** puts every card in one. A card shows its marks under
+why it's there, such as **✕ Build failed** or **✋ Sam wants changes**, and, with [Show Links](#links) on, its links' capsules
 beside its stage, as its row has them, such as the one for the Copilot sessions on it. A mission's header names the
 repository its pull requests are in, or each of them, such as **payments-api and shop-web**, and in a lane with pull
 requests of more than one repository, each card names its own after why it's there. Each column's first card wears **Next**, **✎ Next** where
@@ -447,8 +449,10 @@ merged, its
 order what it waits for, and someone else's pull request asks its own reviewers, so **Finished My Review** takes it off
 your board instead, there and in its menus. A row's order capsule, such as **Next to merge**, clicked in another sort
 shows its mission's lane, and a lane for each mission again if they were None. A line under the Board counts the pull
-requests in your lists that aren't on it, such as others' you approved, and **Show By Status** lists them. GitHub's
-page, whose pull requests have no stages, offers List and Map, and shows List where you chose the Board.
+requests in your lists that aren't on it, such as others' you approved, and **Show By Status** lists them, then the
+missions and stories whose lanes it doesn't show: **3 more in your lists, and 1 mission with no cards to show, aren't on
+the board**. GitHub's page, whose pull requests have no stages, offers List and Map, and shows List where you chose the
+Board.
 
 Click a column's title to fold it to a narrow strip, and click the strip to open it again: BriefBar remembers which you
 folded or opened, and folding changes no stage. A strip shows its column's mark and count, and in each lane its name and
@@ -479,8 +483,9 @@ requests wearing Approved's seal. Others are named for what you joined: **Approv
 review** for In progress joined to In review. A joined column holds each
 stage's cards in turn, in their own colors, and folds and opens as one column, which stays open while it holds your move.
 Its **←|→**, over its title's marks, or **Split** in the title's menu, splits it again. Right-click **Merged** or
-**Completed**, which hold only history, to **Hide** it: a tab at the end of the titles, an eye over how many cards they
-hold, shows them again. **Tab** goes to it as it goes to a strip, and **Return** or **Space** there shows them all.
+**Completed**, which hold only history, to **Hide** it, and the lanes with no card elsewhere, such as finished missions':
+a tab at the end of the titles, an eye over how many cards they hold, shows them again. **Tab** goes to it as it goes to
+a strip, and **Return** or **Space** there shows them all.
 The title's menu also has **Simple Columns**, five in one click: **To start**, **In progress**, **In review**, with
 Approved, **Ready** and **Done**, or four on Pull Requests; and **Reset Columns**, each column back as it came. Both
 let BriefBar decide which fold again. While you drag a card, a joined column springs open into its stages as
@@ -520,10 +525,12 @@ to turn it on until it is; and it doesn't read Azure DevOps' links from a work i
 work stays in To start. A work item's card goes in its story's mission's lane; for a story in the sprint whose pull
 requests aren't on your board, in a lane of the story's own, which folds to its header once that work is all resolved
 or done, as a finished mission's lane does, saying what it holds, such as **1 merged · 2 completed**: click that, or
-press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. With + All My
-Tasks, those outside the sprint come after the sprint's, each card saying where it is: its sprint, such as **Sprint
-38**, or **No sprint**. Stories, features and epics assigned to you outside the sprint aren't shown; a story of yours in
-the sprint whose tasks of yours are outside it has no card of its own then: those tasks are its work. Click a card, or
+press **Return** or **Space** on it, to show the lane; otherwise with the pull requests in no mission. A story's lane
+whose work is all in columns you hid leaves the Board, as a finished mission's does; the Sprint page still shows it.
+With + All My Tasks, those outside the sprint come after the sprint's, each card saying where it is: its sprint, such as
+**Sprint 38**, or **No sprint**. Stories, features and epics assigned to you outside the sprint aren't shown; a story of
+yours in the sprint whose tasks of yours are outside it has no card of its own then: those tasks are its work. Click a
+card, or
 press **Return** or **Space** on it, for its details, beside the Board as on the Sprint page, or right-click it for its
 menu. It moves by itself, as the work does in Azure DevOps or a pull request is linked to it, and, with **Make Changes
 in Azure DevOps** on, as you move it, which sets its state (**Set your work's state**, below); otherwise

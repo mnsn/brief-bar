@@ -535,9 +535,10 @@ private struct FollowsScroll<Content: View>: View {
 
 /// By Mission's Board: each column's first card wears Next where its order says what's next there, Your review's with ✎
 /// where you chose it for Up Next (`UpNextPicks`), and Fix next's wears Fix next, wherever it is; each mission's lane has its
-/// header, its next steps and the Undo line of your last change to one of its pull requests, on the board or not. With
-/// Lanes: None, every card is in one lane. A change that takes a pull request in no mission off the board keeps a lane for
-/// its Undo line.
+/// header, its next steps and the Undo line of your last change to one of its pull requests, on the board or not. A lane
+/// shows while it has a card in a column the board shows, or the board keeps it (`keptLanes`), so that a finished mission
+/// leaves it (`PullRequestBoard.shownLanes`). With Lanes: None, every card is in one lane. A change that takes a pull
+/// request in no mission off the board keeps a lane for its Undo line.
 package struct OrderBoardView: View {
     let board: PullRequestBoard
     /// The missions the page shows, as By Mission lists them, for the lanes' headers.
@@ -606,6 +607,9 @@ package struct OrderBoardView: View {
     /// The folded columns Up Next's "2 more ›", or My Work's Show Them, opened, for the moment: until you fold them, or the
     /// board goes.
     @LocalState private var revealedOpen: Set<BoardColumn> = []
+    /// The missions' lanes a row's capsule asked By Mission to show, which show however few cards they have: until the board
+    /// goes.
+    @LocalState private var revealedLanes: Set<BoardLane.Kind> = []
     /// The hidden columns Show Them showed, for the card it shows in one, or a key moved a card to, for the moment: until you
     /// hide one again, or the board goes.
     @LocalState private var unhiddenForNow: Set<BoardColumn> = []
@@ -693,25 +697,31 @@ package struct OrderBoardView: View {
 
     package var body: some View {
         let metrics = currentMetrics()
-        let lanes = board.lanes(keepingUndoOf: order.lastStageChange?.ref, missions: missions)
+        let lanes = board.shownLanes(
+            hiding: Set(metrics.hidden.flatMap(\.parts)), keeping: keptLanes, undoOf: order.lastStageChange?.ref, missions: missions
+        )
+        let shownKinds = Set(lanes.map(\.kind))
+        // The missions' and stories' lanes it doesn't show, which the line under it counts; while My Work's search shows only
+        // what matches, it says what doesn't, not what's left.
+        let left = board.search == nil ? board.lanes.filter { !shownKinds.contains($0.kind) } : []
         let moves = BoardMoves(board: board, missions: missions, order: order, missionChanges: setAsNext != nil)
         VStack(alignment: .leading, spacing: 12) {
-            if lanes.isEmpty {
-                Text(board.search.map(BoardText.noMatch) ?? (board.showsWork
+            if lanes.isEmpty, !metrics.hidden.contains(where: { board.count(of: $0) > 0 }) {
+                emptyLine(board.search.map(BoardText.noMatch) ?? (board.showsWork
                     ? "Nothing's on your board yet. Your pull requests, those you're asked to review, and your sprint work show here by stage."
                     : "Nothing's on your board yet. Your pull requests, and those you're asked to review, show here by stage."))
-                    .font(size: 12.5)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
             } else {
+                // Where every card is in the columns you hid, their tab at the titles' end still shows them.
                 lanesSection(lanes, metrics: metrics, moves: moves)
+                if lanes.isEmpty { emptyLine(BoardText.allInHiddenColumns(board.search)) }
             }
-            notOnBoardLine
+            notOnBoardLine(missions: left.filter { $0.mission != nil }.count, stories: left.filter { $0.story != nil }.count)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .background(alignment: .topLeading) { coveredKeys(lanes, moves: moves) }
+        // Every lane, as a pull request whose details show can be in one the board doesn't show, its cards in the columns you
+        // hid: a key on it says why it can't move there, which shows that lane.
+        .background(alignment: .topLeading) { coveredKeys(board.lanes, moves: moves) }
         .onChange(of: focused) { old, spot in
             if let moving = movingFocus {
                 movingFocus = moving.focusChanged(from: old, to: spot, last: lastFocus) ?? rearmed(moving, focusedOn: spot)
@@ -886,6 +896,18 @@ package struct OrderBoardView: View {
             if spot.lane == held.lane { kept.lanes.insert(held.lane) }
         }
         if let yours = yourSight, isSameColumn(column, as: yours) { kept.open.insert(yours) }
+        return kept
+    }
+
+    /// The lanes that show however few cards they have in the columns it shows (`PullRequestBoard.shownLanes`): one a row's
+    /// capsule asks for, or asked for; one that stays in sight (`keptInSight`); a mission's whose Undo line says what you
+    /// changed last in it, or why BriefBar didn't make that change, which the page's top doesn't say then
+    /// (`MissionsBody.showingTheirChanges`); and the one that says why a card couldn't move.
+    private var keptLanes: Set<BoardLane.Kind> {
+        var kept = keptInSight.lanes.union(revealedLanes)
+        if let key = order.revealed { kept.insert(.mission(key)) }
+        kept.formUnion(order.said.compactMap(\.mission).map(BoardLane.Kind.mission))
+        if let notice { kept.insert(notice.lane) }
         return kept
     }
 
@@ -1108,10 +1130,10 @@ package struct OrderBoardView: View {
             .overlay(alignment: .topLeading) { followAnchor }
             .onAppear {
                 takeReveal(order.revealed, with: proxy)
-                takeCardReveal(order.revealedCard, lanes: lanes, with: proxy)
+                takeCardReveal(order.revealedCard, with: proxy)
             }
             .onChange(of: order.revealed) { _, key in takeReveal(key, with: proxy) }
-            .onChange(of: order.revealedCard) { _, ref in takeCardReveal(ref, lanes: lanes, with: proxy) }
+            .onChange(of: order.revealedCard) { _, ref in takeCardReveal(ref, with: proxy) }
             // A card a key moved out of sight: once it's laid out where it moved, the page scrolls only as far as it takes to
             // show it, once.
             .onChange(of: followedFrame) { _, frame in
@@ -1556,9 +1578,11 @@ package struct OrderBoardView: View {
     }
 
     /// Takes the mission a row's capsule asks By Mission to show, and shows it: within a few seconds, for a lane that isn't
-    /// laid out yet, as when the Board just showed a lane for each mission for it.
+    /// laid out yet, as when the Board just showed a lane for each mission for it. Its lane shows then however few cards it
+    /// has in the columns the board shows, until the board goes.
     private func takeReveal(_ key: MissionKey?, with proxy: ScrollViewProxy) {
         guard let key else { return }
+        revealedLanes.insert(.mission(key))
         showLane(.mission(key), with: proxy)
         DispatchQueue.main.async {
             if order.revealed == key { order.revealed = nil }
@@ -1569,13 +1593,14 @@ package struct OrderBoardView: View {
     /// that names it, and shows it: its column opens for the moment where it would be folded, and its title flashes; the
     /// page scrolls to its lane, as to a mission's, which doesn't fold while it holds that work, still to do
     /// (`BoardLane.hasWorkToDo`); and the keyboard's focus goes to it, owed until it's drawn, for VoiceOver to read it too.
-    private func takeCardReveal(_ ref: ItemRef?, lanes: [BoardLane], with proxy: ScrollViewProxy) {
+    /// Its lane shows once its column does, where you hid that.
+    private func takeCardReveal(_ ref: ItemRef?, with proxy: ScrollViewProxy) {
         guard let ref else { return }
         DispatchQueue.main.async {
             if order.revealedCard == ref { order.revealedCard = nil }
         }
         let isIn = { (lane: BoardLane) in lane.tasks.contains { $0.ref == ref } || lane.columns.values.contains { $0.contains { $0.ref == ref } } }
-        guard let lane = lanes.first(where: isIn) else { return }
+        guard let lane = board.lanes.first(where: isIn) else { return }
         let spot = CardSpot(lane: lane.kind, ref: ref)
         if let column = column(of: spot) {
             openForTheMoment(column)
@@ -1652,6 +1677,10 @@ package struct OrderBoardView: View {
         .accessibilityElement(children: .contain)
         .onSightChange { isInSight in
             if let key = lane.mission { see(key, isInSight) }
+        }
+        // A lane that leaves the board, as its last card goes to a column you hid, leaves the page's sight too.
+        .onDisappear {
+            if let key = lane.mission { see(key, false) }
         }
     }
 
@@ -2667,14 +2696,25 @@ package struct OrderBoardView: View {
 
     // MARK: Under the board
 
+    /// What shows in the lanes' place, where it has none to show, in the board's words.
+    private func emptyLine(_ text: String) -> some View {
+        Text(text)
+            .font(size: 12.5)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+    }
+
+    /// What it doesn't show: pull requests in your lists it leaves out, which By Status lists; and the lanes of missions and
+    /// stories with no card in a column it shows, which List and the Map show, and the Sprint page.
     @ViewBuilder
-    private var notOnBoardLine: some View {
-        if let text = BoardText.notOnBoard(notOnBoard) {
+    private func notOnBoardLine(missions missionCount: Int, stories storyCount: Int) -> some View {
+        if let text = BoardText.notOnBoard(notOnBoard, missions: missionCount, stories: storyCount) {
             HStack(spacing: 6) {
                 Text(text)
                     .foregroundStyle(.secondary)
-                    .help(BoardText.notOnBoardHelp)
-                if let showByStatus {
+                    .help(BoardText.notOnBoardHelp(pullRequests: notOnBoard, missions: missionCount, stories: storyCount))
+                if notOnBoard > 0, let showByStatus {
                     Button("Show By Status", action: showByStatus)
                         .buttonStyle(.borderless)
                 }
