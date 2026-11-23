@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.27.0 - 2026-11-23
+
+- **Finished missions leave the Board.** The Board shows a mission's lane, or a story's, only while it has a card in a
+  column you haven't hidden. So a mission whose pull requests are teammates' you declined, or were abandoned, leaves it,
+  and so does one whose pull requests all merged, or a story whose work is all done, once you hide the columns that hold
+  them, **Merged** and **Completed**; showing those again brings the lanes back. The line under the Board counts them,
+  such as **1 mission with no cards to show isn't on the board**, and List and the Map still show every mission. A lane
+  stays while it says what you changed last, with **Undo**, or a row's capsule asks for it.
+- **Close any task you open on My Work's Map, not only the sprint's.** With **Make Changes in Azure DevOps** on, a work
+  item in your team's project has its states wherever My Work shows it, as on the Sprint page: a task of yours still in
+  last sprint, someone else's that the Map shows, or one you added with **+ Task**. Click the state its details or its
+  node start with, or right-click its node or card and choose **State**, then **Closed**, **Active** or another, with
+  **Undo**. On the Board, with **+ All My Tasks**, moving a card of your work outside the sprint to another column sets
+  its state too, rather than say to move it to the sprint first. A node the Board has no card for has **Show Details**
+  and **Open in Azure DevOps** in its menu too.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Make
+  Changes in Azure DevOps on, Azure DevOps sets the state you choose for work items on My Work outside your sprint too,
+  when you click it.
+
 ## 0.26.0 - 2026-11-18
 
 - **Link My Work's Map with Azure DevOps.** The Map draws the dependencies Azure DevOps links between work items,
