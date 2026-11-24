@@ -713,6 +713,27 @@ import Testing
         WorkMapGrouping.all.save(to: defaults)
         #expect(WorkMapGrouping.load(from: defaults) == .all)
     }
+
+    /// At a Glance shows every kind until you hide one, and keeps only the kinds you hid, by name, so that a kind a later
+    /// version adds shows; a node says those of the kinds that show, in their order.
+    @Test func atAGlanceShowsEveryKindUntilYouHideOne() {
+        let defaults = MemorySettings()
+        let all = MapGlances.load(from: defaults)
+        #expect(MapGlance.Kind.allCases.allSatisfy(all.shows))
+        let node = [MapGlance(.conflicts, "Merge conflicts"), MapGlance(.comments, "2 to resolve", count: 2), MapGlance(.draft, "Draft")]
+        #expect(all.shown(node) == node)
+
+        let hidden = all.setting(.draft, shown: false).setting(.comments, shown: false).setting(.sprint, shown: false)
+        #expect(hidden.shown(node).map(\.kind) == [.conflicts])
+        hidden.save(to: defaults)
+        #expect(defaults.object(forKey: "order.map.hiddenGlances") as? [String] == ["comments", "draft", "sprint"])
+        #expect(MapGlances.load(from: defaults) == hidden)
+
+        defaults.set(["draft", "a later kind"], forKey: MapGlances.defaultsKey)
+        #expect(MapGlances.load(from: defaults) == MapGlances(hidden: [.draft]))
+        MapGlances.load(from: defaults).setting(.draft, shown: true).save(to: defaults)
+        #expect(defaults.object(forKey: MapGlances.defaultsKey) == nil)
+    }
 }
 
 /// What you and sessions change of My Work's Map: lines and steps, the latest change of each winning, kept by reference with

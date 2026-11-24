@@ -104,6 +104,127 @@ public enum MapDoneWork {
     }
 }
 
+/// One thing a node of My Work's Map says at a glance, under its title, in a compartment of its own: a symbol and a few words.
+/// Of a pull request, what stands in its way, merge conflicts, comments to resolve, who wants changes or else who approved it,
+/// and builds that failed, then whether it's a draft; of a work item, its state, the hours left on it, and the sprint it's in,
+/// when that isn't the one going on. A node says only those that apply, in that order (`Kind`), but the kinds you hid
+/// (`MapGlances`). Its source works them out; the Map only draws them.
+public struct MapGlance: Equatable, Sendable {
+    /// What it tells, in the order a node says them.
+    public enum Kind: String, CaseIterable, Codable, Sendable {
+        /// A pull request's merge conflicts with its target branch.
+        case conflicts
+        /// How many of its comment threads are still active.
+        case comments
+        /// Who wants changes, or else who approved it.
+        case votes
+        /// Its builds and checks that failed or expired.
+        case builds
+        /// That it's a draft.
+        case draft
+        /// A work item's state.
+        case state
+        /// The hours left on it.
+        case hours
+        /// The sprint it's in, when that isn't the one going on.
+        case sprint
+
+        /// Its name in At a Glance's menu: "Merge Conflicts".
+        public var title: String {
+            switch self {
+            case .conflicts: "Merge Conflicts"
+            case .comments: "Comments to Resolve"
+            case .votes: "Approvals and Changes Requested"
+            case .builds: "Build Failures"
+            case .draft: "Draft"
+            case .state: "State"
+            case .hours: "Hours Left"
+            case .sprint: "Sprint, When Not the Current One"
+            }
+        }
+
+        /// Whether a pull request's node says it, rather than a work item's.
+        public var isAboutPullRequests: Bool {
+            switch self {
+            case .conflicts, .comments, .votes, .builds, .draft: true
+            case .state, .hours, .sprint: false
+            }
+        }
+    }
+
+    public var kind: Kind
+    /// What its node says, in a few words: "Merge conflicts", "2 to resolve", "Priya approved", "Build failed", "3 h left".
+    public var words: String
+    /// What its node says after its symbol where its words don't fit, how many: 2 comments to resolve, 3 approvals; nil for
+    /// its symbol alone.
+    public var count: Int?
+    /// What it means for you, for its color: something's wrong, it waits on you, or it's done; nil for none of those.
+    public var state: ItemState?
+    /// Its SF Symbol, before its words; nil for its words alone, as a work item's state, whose node starts with its symbol.
+    public var symbol: String?
+    /// All it says, for its tooltip and VoiceOver: "2 comments to resolve", "Build failed: shop-web CI · Run unit tests".
+    public var sentence: String
+
+    public init(
+        _ kind: Kind, _ words: String, count: Int? = nil, state: ItemState? = nil, symbol: String? = nil, sentence: String? = nil
+    ) {
+        self.kind = kind
+        self.words = words
+        self.count = count
+        self.state = state
+        self.symbol = symbol
+        self.sentence = sentence ?? words
+    }
+}
+
+/// At a Glance, over My Work's Map: which of what nodes can say at a glance (`MapGlance`) they say, every kind until you hide
+/// it, remembered by the kinds you hid (`order.map.hiddenGlances`), so that a kind a later version adds shows.
+public struct MapGlances: Equatable, Sendable {
+    public static let defaultsKey = "order.map.hiddenGlances"
+
+    /// The kinds you hid.
+    public private(set) var hidden: Set<MapGlance.Kind>
+
+    public init(hidden: Set<MapGlance.Kind> = []) {
+        self.hidden = hidden
+    }
+
+    public func shows(_ kind: MapGlance.Kind) -> Bool {
+        !hidden.contains(kind)
+    }
+
+    /// What a node says of these: those of the kinds you didn't hide, in their order.
+    public func shown(_ glances: [MapGlance]) -> [MapGlance] {
+        glances.filter { shows($0.kind) }
+    }
+
+    /// As it is with a kind shown, or hidden.
+    public func setting(_ kind: MapGlance.Kind, shown: Bool) -> MapGlances {
+        var glances = self
+        if shown {
+            glances.hidden.remove(kind)
+        } else {
+            glances.hidden.insert(kind)
+        }
+        return glances
+    }
+
+    /// What you chose last: every kind until you hide one. A name it doesn't know is left out.
+    public static func load(from defaults: some SettingsStorage) -> MapGlances {
+        let names = defaults.object(forKey: defaultsKey) as? [String] ?? []
+        return MapGlances(hidden: Set(names.compactMap(MapGlance.Kind.init(rawValue:))))
+    }
+
+    /// Keeps the kinds you hid, by name, in their order; nothing once every kind shows.
+    public func save(to defaults: some SettingsStorage) {
+        if hidden.isEmpty {
+            defaults.removeObject(forKey: Self.defaultsKey)
+        } else {
+            defaults.set(MapGlance.Kind.allCases.filter(hidden.contains).map(\.rawValue), forKey: Self.defaultsKey)
+        }
+    }
+}
+
 /// The cards and steps you hid on My Work's Map, as they're not your focus now: by reference, the one you hid last first, at
 /// most `mostCards` of them, in the preferences (`order.map.hidden`), never a title. Hiding one changes only the Map: the
 /// Board, Up Next and every count still have it.
