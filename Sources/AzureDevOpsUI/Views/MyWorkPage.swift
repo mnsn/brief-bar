@@ -863,7 +863,9 @@ private struct MyWorkContent: View {
                                 board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
                                 linked: linkedWork(on: board), azureDevOps: Self.lines(of: dependencies.known), work: mapWork,
                                 showsOthers: showsWork && (others ?? ordering.mapShowsOthers),
-                                showsDone: showsDone ?? ordering.mapShowsDone
+                                showsDone: showsDone ?? ordering.mapShowsDone,
+                                parents: Self.parents(of: dependencies.parents), related: Self.related(of: dependencies.related),
+                                showsParents: ordering.mapShowsParents
                             ),
                             grouping: grouping ?? ordering.mapGrouping,
                             missions: missions, order: ordering, content: mapContent(board), shownOthers: others
@@ -887,6 +889,16 @@ private struct MyWorkContent: View {
     /// The dependencies Azure DevOps links, as lines of the Map between work items.
     static func lines(of dependencies: Set<WorkDependency>) -> Set<MapEdits.Line> {
         Set(dependencies.map { MapEdits.Line(.card($0.before.linkRef), .card($0.after.linkRef)) })
+    }
+
+    /// The parents Azure DevOps gives work items, for the Map, by their references.
+    static func parents(of parents: [WorkItemKey: WorkItemKey]) -> [ItemRef: ItemRef] {
+        Dictionary(parents.map { ($0.key.linkRef, $0.value.linkRef) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The work items Azure DevOps links as Related, for the Map, by their references.
+    static func related(of related: Set<RelatedWork>) -> Set<MapRelated> {
+        Set(related.map { MapRelated($0.first.linkRef, $0.second.linkRef) })
     }
 
     /// The dependencies lines of the Map between work items are, in Azure DevOps.

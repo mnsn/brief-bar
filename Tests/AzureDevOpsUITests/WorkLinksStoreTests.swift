@@ -184,6 +184,85 @@ import Testing
         #expect(lookups == [ref(9003), ref(9004), ref(9002)])
     }
 
+    /// The Map's parents to read climb from your work up the parents known, a level at a time: those read with their parent
+    /// otherwise need no read but are climbed through, parents that loop end where they started, and no more than `most`.
+    @Test func theMapReadsTheParentsAboveYourWorkALevelAtATime() {
+        func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        var parents = [key(5103): key(5101), key(5101): key(5190), key(9001): key(9002), key(9002): key(9001)]
+        let known: Set<WorkItemKey> = [key(5103), key(5101)]
+        #expect(WorkLinksStore.mapParentLookups(from: [key(5103)], parents: parents, known: known) == [key(5190)])
+        // Once the feature's read with its parent, its epic is read too.
+        parents[key(5190)] = key(5195)
+        #expect(WorkLinksStore.mapParentLookups(from: [key(5103)], parents: parents, known: known) == [key(5190), key(5195)])
+        #expect(WorkLinksStore.mapParentLookups(from: [key(9001)], parents: parents, known: []) == [key(9001), key(9002)])
+        #expect(WorkLinksStore.mapParentLookups(from: [key(9003), key(9001)], parents: parents, known: [], most: 2) == [key(9001), key(9003)])
+        #expect(WorkLinksStore.mapParentLookups(from: [], parents: parents, known: known).isEmpty)
+    }
+
+    /// Only while a window shows My Work's Map on screen with Parents on, Show Links reads the parents above your work that
+    /// nothing else read with theirs: the feature and epic above the story of your pull request, the story above tasks
+    /// outside the sprint, and a work item you added to the Map. The sprint's it reads already.
+    @Test func theMapReadsYourWorksParentsOnlyWhileItShowsThem() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        await workLinks.loadOnce()
+        func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        let added = key(9001)
+        order.addMapItem(added.linkRef, home: nil, undo: "")
+        order.setMyWorkPage(true)
+        order.setMyWorkView(.map)
+        #expect(workLinks.inputs().mapParents.isEmpty)
+        workLinks.setMyWorkOnScreen(true)
+        let wanted = workLinks.inputs().mapParents
+        #expect(wanted.isSuperset(of: [key(5180), key(5190), key(5195), added]))
+        #expect(wanted.isDisjoint(with: [key(5101), key(5103), key(5110), key(5112), key(5160)]))
+        order.setMapShowsParents(false)
+        #expect(workLinks.inputs().mapParents.isEmpty)
+        order.setMapShowsParents(true)
+        order.setMyWorkView(.board)
+        #expect(workLinks.inputs().mapParents.isEmpty)
+        order.setMyWorkView(.map)
+        workLinks.setMyWorkOnScreen(false)
+        #expect(workLinks.inputs().mapParents.isEmpty)
+    }
+
+    /// Show Links tells My Work's Map the parents of the work items it read, and the Related links Azure DevOps has, while
+    /// it's on; nothing once it's off.
+    @Test func theMapIsToldTheParentsAndRelatedLinksWhileShowLinksIsOn() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        )
+        let dependencies = MapDependencies(sprint: sprint, settings: settings, client: store.client)
+        workLinks.dependencies = dependencies
+        func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        workLinks.start()
+        defer { workLinks.stop() }
+        // The sprint's task under its story, the linked story under its feature, and that feature under its epic, once read.
+        try await until("the parents are told") { dependencies.parents[key(5190)] == key(5195) }
+        #expect(dependencies.parents[key(5103)] == key(5101) && dependencies.parents[key(5160)] == key(5190))
+        #expect(dependencies.related == [RelatedWork(key(5103), key(5104)), RelatedWork(key(5110), key(5160))])
+        links.setOn(false)
+        try await until("they're taken back") { dependencies.parents.isEmpty && dependencies.related.isEmpty }
+    }
+
     /// Your work outside the sprint is the sprint's to Show Links, whose pull requests it reads and which it doesn't look up,
     /// only while My Work shows its cards, with + All My Tasks: not for + Sprint Tasks' line alone.
     @Test func yourWorkOutsideTheSprintIsReadAsTheSprintsWhileMyWorkShowsItsCards() async throws {

@@ -381,18 +381,23 @@ package struct WorkMapView: View {
     }
 
     /// What's over the bands, or All's canvas: Done, while the Map has anything done, with how many it leaves out while it's
-    /// off; Others' work, with how many it shows; At a Glance, while it has anything to show; and Link in Azure DevOps… for
-    /// the lines Azure DevOps doesn't link yet; and, with All, + Task, + Step and what you hid there.
+    /// off; Parents, while Azure DevOps gives your work any; Others' work, with how many it shows; At a Glance, while it has
+    /// anything to show; and Link in Azure DevOps… for the lines Azure DevOps doesn't link yet; and, with All, + Task, + Step
+    /// and what you hid there.
     @ViewBuilder
     private var controls: some View {
         let unlinked = content.azureDevOps == nil ? [] : map.unlinked
         let showsAll = grouping == .all
         let offersDone = map.doneCount > 0 || !map.showsDone
+        let offersParents = map.hasParents || !map.showsParents
         let offersGlances = !map.bands.isEmpty || !map.groups.isEmpty || !map.loose.isEmpty
-        if offersDone || content.find != nil || offersGlances || !unlinked.isEmpty || showsAll {
+        if offersDone || offersParents || content.find != nil || offersGlances || !unlinked.isEmpty || showsAll {
             HStack(spacing: 10) {
                 if offersDone {
                     WorkMapDoneToggle(order: order, isOn: map.showsDone, count: map.doneCount)
+                }
+                if offersParents {
+                    WorkMapParentsToggle(order: order, isOn: map.showsParents)
                 }
                 if content.find != nil {
                     WorkMapOthersToggle(
@@ -900,7 +905,7 @@ struct WorkMapEditor {
     }
 
     /// What a line says, for its tooltip, VoiceOver and when it's selected: "API tests waits for !4105 · You said so", and
-    /// "· In Azure DevOps" where Azure DevOps links all it stands for.
+    /// "· In Azure DevOps" where Azure DevOps links all it stands for, as it does a parent.
     func words(_ line: WorkMapLine) -> String {
         let (first, then) = (label(line.before), label(line.after))
         let said = switch line.style {
@@ -910,8 +915,9 @@ struct WorkMapEditor {
         case .said(let author): "\(then) waits for \(first) · \(who(author))"
         case .through(let nodes):
             "\(then) waits for \(first), " + OrderText.through(nodes.map(label), hidden: nodes.filter(isHidden).count).lowercasedFirst
+        case .parent: "\(first) is part of \(then)"
         }
-        let isLinked = links(of: line).map(\.isLinked) ?? (line.style == .azureDevOps)
+        let isLinked = links(of: line).map(\.isLinked) ?? (line.style == .azureDevOps || line.style == .parent)
         return isLinked ? said + " · In Azure DevOps" : said
     }
 }
@@ -948,6 +954,9 @@ struct WorkMapMetrics {
     var lanesAcross: CGFloat { 24 * scale }
     /// How round a wrapping line's corners are.
     var corner: CGFloat { 6 * scale }
+    /// How far a box round related work goes outside its nodes: under half a row's gap, so that boxes in rows next to each
+    /// other don't touch.
+    var boxPadding: CGFloat { 5 * scale }
 
     func x(_ column: Int) -> CGFloat { CGFloat(column) * (nodeWidth + columnGap) }
     func y(_ row: Int) -> CGFloat { CGFloat(row) * (nodeHeight + rowGap) }
@@ -1016,8 +1025,16 @@ struct WorkMapCanvas: View {
             var frame: CGRect
         }
 
+        /// A box round work items Azure DevOps links as Related, round the rows it keeps across its columns: one for each tier
+        /// a fold has any of them in.
+        struct Box {
+            var members: [MapNodeID]
+            var frame: CGRect
+        }
+
         var nodes: [Placed] = []
         var lines: [Drawn] = []
+        var boxes: [Box] = []
         var blocks: [Placement] = []
         var titles: [Title] = []
         /// Where the grid's title is, with one.
@@ -1087,6 +1104,7 @@ struct WorkMapCanvas: View {
         let target = drawing.flatMap { drawing in node(at: drawing.to, in: geometry).flatMap { $0 == drawing.from ? nil : $0 } }
         let across = geometry.size.width - geometry.inset
         let linked = Set(geometry.lines.filter { editor.links(of: $0.line)?.isLinked == true }.map(\.id))
+        let ties = self.ties(of: lines)
         CanvasLayout(size: geometry.size) {
             ForEach(Array(geometry.titles.enumerated()), id: \.offset) { _, title in
                 Text(title.text)
@@ -1114,8 +1132,8 @@ struct WorkMapCanvas: View {
             }
             ForEach(geometry.nodes) { placed in
                 nodeView(
-                    placed, glances: glances[placed.id] ?? [], through: (into[placed.id] ?? []).compactMap(through), lit: lit,
-                    target: target, geometry: geometry
+                    placed, glances: glances[placed.id] ?? [], through: (into[placed.id] ?? []).compactMap(through),
+                    ties: ties[placed.id] ?? [], lit: lit, target: target, geometry: geometry
                 )
                 .at(placed.frame)
             }
@@ -1153,34 +1171,62 @@ struct WorkMapCanvas: View {
         return editor.words(line)
     }
 
+    /// What Azure DevOps ties each node to on the canvas, for its tooltip and VoiceOver, as VoiceOver doesn't see lines or
+    /// boxes: what it's part of, what's part of it, and what's in a box with it.
+    private func ties(of lines: [WorkMapLine]) -> [MapNodeID: [String]] {
+        var ties: [MapNodeID: [String]] = [:]
+        let parents = lines.filter { $0.style == .parent }
+        for line in parents {
+            ties[line.before, default: []].append(WorkMapText.partOf(editor.label(line.after)))
+        }
+        for (parent, children) in Dictionary(grouping: parents, by: \.after) {
+            ties[parent, default: []].append(WorkMapText.parts(children.map { editor.label($0.before) }))
+        }
+        for box in blocks.flatMap(\.graph.boxes) {
+            for member in box.members {
+                ties[member, default: []].append(WorkMapText.related(box.members.filter { $0 != member }.map(editor.label)))
+            }
+        }
+        return ties
+    }
+
     // MARK: Lines
 
     /// Azure DevOps' blue, for the mark of a line it links.
     static let azureDevOpsBlue = Color(red: 0, green: 0.47, blue: 0.83)
 
-    /// The lines, each marked at its middle where Azure DevOps links all it stands for (`linked`).
+    /// The boxes round related work, faint and dashed, then the lines, each marked at its middle where Azure DevOps links all
+    /// it stands for (`linked`); those to parents lighter. A box fades as lines do while nothing in it is lit up.
     private func linesLayer(
         _ geometry: Geometry, lit: Set<MapNodeID>?, linked: Set<WorkMapLineID>, metrics m: WorkMapMetrics
     ) -> some View {
         Canvas { context, _ in
+            for box in geometry.boxes {
+                let isFaded = lit.map { lit in !box.members.contains(where: lit.contains) } ?? false
+                let shape = Path(roundedRect: box.frame, cornerRadius: 9 * m.scale + m.boxPadding, style: .continuous)
+                let dash = StrokeStyle(lineWidth: m.scale, dash: [4 * m.scale, 3 * m.scale])
+                context.fill(shape, with: .color(.secondary.opacity(isFaded ? 0.02 : 0.06)))
+                context.stroke(shape, with: .color(.secondary.opacity(isFaded ? 0.2 : 0.55)), style: dash)
+            }
             for drawn in geometry.lines {
                 let isPicked = drawn.id == selectedLine || drawn.id == hoveredLine
                 let isLit = lit.map { $0.contains(drawn.line.before) && $0.contains(drawn.line.after) }
+                let isParent = drawn.line.style == .parent
                 let color: Color = if isPicked || isLit == true {
                     .accentColor
                 } else if isLit == false {
                     .secondary.opacity(0.18)
                 } else {
-                    .secondary.opacity(0.6)
+                    .secondary.opacity(isParent ? 0.35 : 0.6)
                 }
-                let width = (isPicked ? 2.5 : 1.5) * m.scale
+                let width = (isPicked ? 2.5 : isParent ? 1 : 1.5) * m.scale
                 let style = switch drawn.line.style {
-                case .stacked, .said, .azureDevOps: StrokeStyle(lineWidth: width, lineCap: .round)
+                case .stacked, .said, .azureDevOps, .parent: StrokeStyle(lineWidth: width, lineCap: .round)
                 case .order: StrokeStyle(lineWidth: width, lineCap: .round, dash: [3 * m.scale, 3 * m.scale])
                 case .through: StrokeStyle(lineWidth: width, lineCap: .round, dash: [0.5, 3.5 * m.scale])
                 }
                 context.stroke(drawn.path, with: .color(color), style: style)
-                context.fill(Self.arrowhead(at: drawn.end, size: 4.5 * m.scale), with: .color(color))
+                context.fill(Self.arrowhead(at: drawn.end, size: (isParent ? 3.5 : 4.5) * m.scale), with: .color(color))
                 if linked.contains(drawn.id) {
                     let radius = 6 * m.scale
                     let badge = CGRect(x: drawn.middle.x - radius, y: drawn.middle.y - radius, width: 2 * radius, height: 2 * radius)
@@ -1202,7 +1248,8 @@ struct WorkMapCanvas: View {
             selectedLine = line(at: point, in: geometry)
         }
         .contextMenu {
-            if let id = hoveredLine ?? selectedLine, let drawn = geometry.lines.first(where: { $0.id == id }) {
+            if let id = hoveredLine ?? selectedLine, let drawn = geometry.lines.first(where: { $0.id == id }),
+               drawn.line.style != .parent {
                 lineMenu(drawn.line)
                 Divider()
             }
@@ -1242,8 +1289,8 @@ struct WorkMapCanvas: View {
     }
 
     /// A selected line's card, at its middle: what it says; Link in Azure DevOps, or Unlink there, where it stands for
-    /// dependencies there; and Take Away. What it says shortens in the middle where the card is as wide as a narrow canvas
-    /// lets it be; its buttons never do.
+    /// dependencies there; and Take Away, but for one to a parent, which Azure DevOps gives. What it says shortens in the
+    /// middle where the card is as wide as a narrow canvas lets it be; its buttons never do.
     private func selectedLineCard(_ drawn: Geometry.Drawn, links: MapLineLinks?) -> some View {
         HStack(spacing: 8) {
             Text(editor.words(drawn.line))
@@ -1260,7 +1307,7 @@ struct WorkMapCanvas: View {
                     .buttonStyle(.borderless)
                     .fixedSize()
                 }
-            } else {
+            } else if drawn.line.style != .parent {
                 if let links, let azureDevOps = editor.content.azureDevOps {
                     let pairs = links.isLinked ? links.pairs : links.missing
                     Button(links.isLinked ? "Unlink in Azure DevOps" : "Link in Azure DevOps") {
@@ -1365,13 +1412,13 @@ struct WorkMapCanvas: View {
     }
 
     private func nodeView(
-        _ placed: Geometry.Placed, glances: [MapGlance], through: [String], lit: Set<MapNodeID>?, target: MapNodeID?,
-        geometry: Geometry
+        _ placed: Geometry.Placed, glances: [MapGlance], through: [String], ties: [String], lit: Set<MapNodeID>?,
+        target: MapNodeID?, geometry: Geometry
     ) -> some View {
         let id = placed.id
         return WorkMapNodeView(
             item: placed.item, elsewhere: placed.elsewhere.map(editor.content.laneTitle), editor: editor, order: order, through: through,
-            isDimmed: lit.map { !$0.contains(id) } ?? false, isTarget: target == id, focus: focus,
+            ties: ties, isDimmed: lit.map { !$0.contains(id) } ?? false, isTarget: target == id, focus: focus,
             showsHandle: hovered == id && drawing == nil, glances: glances
         )
         .onHover { inside in
@@ -1409,7 +1456,8 @@ extension WorkMapCanvas.Geometry {
     /// leaves from highest outermost and lowest, so that they don't cross. Where one column fits but not that room beside it,
     /// the lanes squeeze closer together, sideways, to fit. The grid has as many columns as fit, or `gridColumns` until the
     /// page knows its width. A node that says something at a glance (`glanced`) is as tall as a row of `m`; any other only as
-    /// tall as its title, at the top of its row; lines come into each and leave it level with its title's middle.
+    /// tall as its title, at the top of its row; lines come into each and leave it level with its title's middle. A box round
+    /// work Azure DevOps links as Related goes round the rows it keeps, in each tier it has any of them in.
     init(
         blocks: [WorkMapCanvas.Block], columns: [WorkMapColumn], grid: [WorkMapItem], width: CGFloat?, gridColumns: Int,
         metrics m: WorkMapMetrics, glanced: Set<MapNodeID> = []
@@ -1454,6 +1502,7 @@ extension WorkMapCanvas.Geometry {
         var y: CGFloat = title(0, at: 0) ? m.titleRow : 0
         var nodes: [Placed] = []
         var lines: [Drawn] = []
+        var boxes: [Box] = []
         var placements: [Placement] = []
         var frames: [MapNodeID: CGRect] = [:]
         for (index, block) in blocks.enumerated() {
@@ -1495,6 +1544,10 @@ extension WorkMapCanvas.Geometry {
                 let frame = CGRect(x: x(node.column), y: rowTop(node.column, node.row), width: m.nodeWidth, height: height)
                 nodes.append(Placed(item: node.item, frame: frame, elsewhere: node.elsewhere))
                 frames[node.id] = frame
+            }
+            let columnOf = Dictionary(graph.nodes.map { ($0.id, $0.column) }, uniquingKeysWith: { first, _ in first })
+            for box in graph.boxes {
+                boxes += Self.pieces(of: box, fold: fold, frames: frames, columnOf: columnOf, metrics: m, x: x, rowTop: rowTop)
             }
             let rowOf = Dictionary(graph.nodes.map { ($0.id, $0.row) }, uniquingKeysWith: { first, _ in first })
             /// The row a line is at in a column it goes through or ends in.
@@ -1593,12 +1646,36 @@ extension WorkMapCanvas.Geometry {
         let gridWidth: CGFloat = gridAcross > 0 ? inset + m.x(gridAcross) - m.columnGap : 0
         self.nodes = nodes
         self.lines = lines
+        self.boxes = boxes
         self.blocks = placements
         self.titles = titles
         self.frames = frames
         self.fold = fold
         self.inset = inset
         size = CGSize(width: max(graphs, gridWidth, m.nodeWidth), height: max(y, 0))
+    }
+
+    /// Where a box goes in each tier a fold has any of its cards or work items in: round the rows it keeps, from the top of
+    /// its first to the bottom of its tallest node in its last, across its columns there, a little outside them.
+    static func pieces(
+        of box: WorkMapBox, fold: WorkMapFold, frames: [MapNodeID: CGRect], columnOf: [MapNodeID: Int], metrics m: WorkMapMetrics,
+        x: (Int) -> CGFloat, rowTop: (Int, Int) -> CGFloat
+    ) -> [Box] {
+        var pieces: [Box] = []
+        for tier in 0..<fold.tiers {
+            let span = fold.columns(ofTier: tier)
+            let first = max(box.columns.lowerBound, span.lowerBound)
+            let last = min(box.columns.upperBound, span.upperBound - 1)
+            guard first <= last else { continue }
+            let members = box.members.filter { columnOf[$0].map { (first...last).contains($0) } ?? false }
+            guard !members.isEmpty else { continue }
+            let top = rowTop(first, box.rows.lowerBound)
+            let lowest = members.compactMap { frames[$0]?.maxY }.max() ?? 0
+            let bottom = max(rowTop(first, box.rows.upperBound) + m.headerHeight, lowest)
+            let frame = CGRect(x: x(first), y: top, width: x(last) - x(first) + m.nodeWidth, height: bottom - top)
+            pieces.append(Box(members: members, frame: frame.insetBy(dx: -m.boxPadding, dy: -m.boxPadding)))
+        }
+        return pieces
     }
 
     /// How many columns fit across a width: at least one.
@@ -1813,6 +1890,8 @@ struct WorkMapNodeView: View {
     @ObservedObject var order: PullRequestOrder
     /// What the dotted lines into it go through: "API tests waits for !4101, through !4102, which you hid".
     let through: [String]
+    /// What Azure DevOps ties it to on the canvas: "Part of Feature 5190", "Part of it: !4102", and what's in a box with it.
+    var ties: [String] = []
     let isDimmed: Bool
     /// A line being drawn would end on it.
     let isTarget: Bool
@@ -1891,7 +1970,7 @@ struct WorkMapNodeView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label(card))
-        .accessibilityValue(((details(card)) + through).joined(separator: ", "))
+        .accessibilityValue(((details(card)) + through + ties).joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(.default, press)
         .modifier(CardMissionActions(ref: item.card?.ref, context: card?.mission))
@@ -2177,19 +2256,19 @@ struct WorkMapNodeView: View {
             if let owner = face?.owner { details.append(owner == WorkMapText.unassigned ? owner : "\(owner)'s") }
             if let state = face?.state { details.append(state) }
             if !work.isKnown { details.append(WorkMapText.notReadYet) }
-            details.append(work.isAdded ? "You added it to the Map" : WorkMapText.othersNode)
+            details.append(work.isAdded ? "You added it to the Map" : work.isParent ? WorkMapText.parentNode : WorkMapText.othersNode)
         }
         if let elsewhere { details.append("In \(elsewhere)") }
         let said = Set(glances.flatMap { [$0.words, $0.sentence] })
         return glances.map(\.sentence) + details.filter { !said.contains($0) }
     }
 
-    /// Its tooltip: what it is, then what its card says of it, what dotted lines into it go through, and how to draw a line
-    /// from it.
+    /// Its tooltip: what it is, then what its card says of it, what dotted lines into it go through, what Azure DevOps ties it
+    /// to, and how to draw a line from it.
     private func help(_ card: BoardCardContent?) -> String {
         let name = card?.label ?? item.step.map { "Step: \($0.name)" } ?? item.workItem.map { _ in label(card) } ?? item.card?.ref.fullOrderLabel
         let lines = [name ?? ""] + details(card)
-        return (lines + through + [WorkMapText.dragHelp]).joined(separator: "\n")
+        return (lines + through + ties + [WorkMapText.dragHelp]).joined(separator: "\n")
     }
 
     @ViewBuilder
@@ -2619,6 +2698,24 @@ struct WorkMapDoneToggle: View {
     }
 }
 
+// MARK: - Parents
+
+/// Parents, over the Map: a checkbox, remembered.
+struct WorkMapParentsToggle: View {
+    let order: PullRequestOrder
+    /// Whether the Map shows the parents Azure DevOps gives your work, and theirs.
+    let isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isOn }, set: { order.setMapShowsParents($0) })) {
+            Text("Parents")
+                .font(size: 12, weight: .medium)
+        }
+        .toggleStyle(.checkbox)
+        .help(WorkMapText.parentsHelp)
+    }
+}
+
 // MARK: - Others' work and + Task
 
 /// Others' work, over the Map: a checkbox, remembered, and, while it's on, how many it shows.
@@ -2934,6 +3031,31 @@ package enum WorkMapText {
     /// What Done leaves out while it's off: "1 left out", "4 left out".
     static func doneLeftOut(_ count: Int) -> String {
         "\(count) left out"
+    }
+
+    // MARK: Parents and related work
+
+    static let parentsHelp = """
+        Show the parents Azure DevOps gives your work, and theirs, each after all that's part of it, as a parent waits for \
+        it to close, joined to it by a lighter line. Off, the Map leaves them out
+        """
+
+    /// What a parent's node is, for VoiceOver and its tooltip.
+    static let parentNode = "A parent in Azure DevOps: on the Map as your work is part of it"
+
+    /// What a node is part of: "Part of Feature 5190".
+    static func partOf(_ parent: String) -> String {
+        "Part of \(parent)"
+    }
+
+    /// What's part of a parent's node: "Part of it: !4102 and Task 5160".
+    static func parts(_ children: [String]) -> String {
+        "Part of it: \(ListFormatter.localizedString(byJoining: children))"
+    }
+
+    /// What's in a box with a node: "Related in Azure DevOps: in a box with Task 5104".
+    static func related(_ others: [String]) -> String {
+        "Related in Azure DevOps: in a box with \(ListFormatter.localizedString(byJoining: others))"
     }
 
     // MARK: Others' work and + Task

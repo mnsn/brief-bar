@@ -1334,9 +1334,10 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists, also while its organization's lists can't be read: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, or can't be reached, offline say, the rest are read at a later refresh, and none of them counts as one that can't be read: the one it couldn't be reached for is tried again at the next refresh, behind the others | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
-| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it; and the dependencies between work items each is in, predecessors and successors, for My Work's Map |
+| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it; and the dependencies between work items each is in, predecessors and successors, and the Related links it has with others, for My Work's Map |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, and, while a window shows My Work's Map on screen, the work items it can show that no list or sprint has (those the dependencies and its lines name, and those you added), every quarter of an hour; 200 a request | their title, type, state, who has each, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and My Work Page, while a window shows My Work's Map on screen with Parents on: for your work on it whose parent BriefBar doesn't read already, then for their parents, and theirs, a level at a time, as each read names them, then every quarter of an hour; 200 at most, 200 a request; one that can't be read is tried again an hour later | their title, type, state, who has each, project and when they changed, and their parent (`System.Parent`), for the Map's parents |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
@@ -2283,18 +2284,19 @@ after the loop comes after that. A line that skips columns keeps a row of each t
 edges do, so that no node sits on it; in each column, the nodes lines join come first, ordered by where their neighbours
 are, a few sweeps each way, each placed level with the middle of what comes into it where the nodes above let it, so that
 a chain runs straight, then neighbours swapped while that crosses fewer lines, each swap weighing only the lines into and
-out of the two (`WorkMapGraph.Layout`); those no line joins go after them. Where a canvas's columns don't all fit across
-the page, as with a card's details beside the Map or in a narrow window, its graphs fold (`WorkMapFold`): into as few
-tiers as that takes, one under the other, as text wraps, each with as many columns as fit beside the room the lines that
-wrap round need, folded where the fewest lines cross, and of those with the first tiers fullest; All's graphs fold alike,
-so that their columns still line up. A tier takes only the rows its nodes and the lines through it take
-(`WorkMapGraph.rows(in:)`), with the titles of its columns that have one over it; a line from a tier to the next goes on
-past the tier's end, down under it, back along the gap and into the next tier's first column, each in a lane of its own,
-the one that leaves from highest outermost past the end, lowest under the tier and innermost at the next's start, so
-that they don't cross (`WorkMapCanvas.Geometry`); where one column fits but not the room beside it, the lanes squeeze
-closer to it, sideways. Only where not even one column fits does a canvas scroll sideways. A graph of more than 60 of a
-band's own (`WorkMap.mostCards`) shows a line offering the Board instead, and its steps, which the Board doesn't show,
-in a grid of their own, to change there.
+out of the two, then each raised again toward the middle of what comes into it, as far as the nodes above it and boxes
+let it, where a box or a swap left a row free above it, each column keeping its order (`WorkMapGraph.Layout`); those no
+line joins go after them. Where a canvas's columns don't all fit across the page, as with a card's details beside the
+Map or in a narrow window, its graphs fold (`WorkMapFold`): into as few tiers as that takes, one under the other, as
+text wraps, each with as many columns as fit beside the room the lines that wrap round need, folded where the fewest
+lines cross, and of those with the first tiers fullest; All's graphs fold alike, so that their columns still line up. A
+tier takes only the rows its nodes and the lines through it take (`WorkMapGraph.rows(in:)`), with the titles of its
+columns that have one over it; a line from a tier to the next goes on past the tier's end, down under it, back along the
+gap and into the next tier's first column, each in a lane of its own, the one that leaves from highest outermost past
+the end, lowest under the tier and innermost at the next's start, so that they don't cross (`WorkMapCanvas.Geometry`);
+where one column fits but not the room beside it, the lanes squeeze closer to it, sideways. Only where not even one
+column fits does a canvas scroll sideways. A graph of more than 60 of a band's own (`WorkMap.mostCards`) shows a line
+offering the Board instead, and its steps, which the Board doesn't show, in a grid of their own, to change there.
 
 A card's node is its card's: a click shows its details, its menu is its card's, with Waits For, Add Step After… and Hide
 on Map, and VoiceOver hears it as the Board's card, with its actions; a step's circle marks it done, a double-click or
@@ -2431,6 +2433,50 @@ Undo, which takes back what BriefBar changed, with its Try Agains, and nothing t
 and how many went, with Try Again for the rest, but where Azure DevOps refused it. It goes as whom BriefBar read the sprint
 as; turning the setting off calls off one that hasn't gone, and forgets Undo; once someone else signs in, nothing more
 goes, and what went shows only as Show Links reads it.
+
+#### Parents and related work
+
+Azure DevOps gives a work item one parent (`System.Parent`), such as a task's story, a story's feature and a feature's
+epic, and links work items as Related (`System.LinkTypes.Related`), which has no direction. Show Links reads the Related
+links with the dependencies, from the same response, with nothing more asked (`ADOWorkItemRelations.related(in:)`,
+`RelatedWork`, `WorkLinks.related`): each work item's with work items of its organization, never with itself. It knows
+the parents of the sprint's work items, read with them, and of the linked ones it reads with theirs, with Pull Request
+Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, yours in the
+sprint and, with + All My Tasks, outside it, those linked to your pull requests and those you added, but not someone
+else's, up their parents, a level at a time, each in order, to the first 200 it doesn't read otherwise
+(`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with their own parent
+(`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before names it, then every
+quarter of an hour; one that can't be read is tried again an hour later, and one a read leaves out, as when it was
+deleted, is forgotten. Of a work item read more than one way, the sprint's read says its parent last, as it's read the
+most often (`WorkLinksStore.knownParents`). My Work's Map has them only while Show Links is on (`MapDependencies.told`),
+and forgets them once someone else signs in.
+
+**Parents** (`MapParents`, `order.map.hidesParents`, on until you uncheck it, at the top of the Map while Azure DevOps
+gives your work any parent, or while it's off: `WorkMapParentsToggle`, `WorkMap.hasParents`) makes nodes of them
+(`WorkMap(parents:showsParents:)`). Up the chains of the work items' own cards, those you added and those a pull
+request's card names, the hidden and the done too, so that an open story whose tasks are all done keeps its node,
+breadth first (`WorkMap.climb`), each parent is its own card, else the cards of the pull requests that name it, else a
+node added for it, if the page knows it, at most 30 (`mostParents`, `MapWorkItem.isParent`), faded and outlined dashed
+where it isn't yours, as others' work is; a chain ends at one the page doesn't know, and a card is never part of itself,
+as a pull request's that names a task and its story. Each goes in the band it's joined to most nearly, parts and parents
+counting as lines do (`Edges.nearest`). A lighter line (`WorkMapLine.Style.parent`), never dotted, goes from each node to
+the nearest it's part of, up its parents, through those that don't show (`Edges.parents(of:among:)`), as a parent waits
+for its children to close, so that it goes a wave after all that's part of it; but not where a line joins the two
+already, either way, which says more. It says "· In Azure DevOps", but stands for no dependency (`WorkMap.links(of:)`
+gives none): it has no Take Away, Link in Azure DevOps or blue mark, and Link 3 Lines in Azure DevOps… counts none. With
+Done off, a parent that's done is left out, as anything done is. Off, the Map climbs only to know whether there are any,
+adds no node and draws no line, and Show Links reads none for it.
+
+The nodes Azure DevOps links as Related, a pull request's card standing for a work item it names, as with lines, sit
+together in a box (`WorkMap(related:)`, `MapRelated`), with those related to them through others
+(`WorkMap.boxes(among:related:)`): By Mission, of a band's own only, not what it brings in, dimmed, from other bands;
+All draws them as one graph, whether a line joins them or not. A box (`WorkMapBox`) keeps rows to itself across its
+columns, from its first to its last, as many as the most of it any one column has, from where its first wants to go,
+clear of other boxes, so that nothing else of the graph is in it, and a fold's tier keeps them
+(`WorkMapGraph.rows(in:)`). The canvas draws it before the lines, a rounded rectangle, faintly filled and dashed, in a
+piece for each tier of a fold (`Geometry.pieces(of:)`), fainter while something is lit up and nothing in it is. A node's
+tooltip, and VoiceOver, say what it's part of, what's part of it and what's in its box (`WorkMapText.partOf`, `parts`,
+`related`). Nothing of them goes to Azure DevOps.
 
 #### Moving a task to a sprint
 

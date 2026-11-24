@@ -58,6 +58,50 @@ import Testing
         ])
     }
 
+    /// Its Related links with work items of its organization, the same from either end; not its other links, nor those to
+    /// another organization's work item, nor one to itself.
+    @Test func findsAWorkItemsRelatedLinksAmongItsRelations() throws {
+        let item = try Fixture.decode(ADOWorkItemRelations.self, [
+            "id": 5104,
+            "relations": [
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/Shop/_apis/wit/workItems/5107"],
+                ["rel": "System.LinkTypes.Related", "url": "https://contoso.visualstudio.com/_apis/wit/workItems/5101"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/fabrikam/_apis/wit/workItems/5102"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5104"],
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5103"],
+                ["rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5100"],
+            ] as [Any],
+        ])
+        let itself = WorkItemKey("contoso", 5104)
+        #expect(item.related(in: "Contoso") == [
+            RelatedWork(itself, WorkItemKey("contoso", 5107)), RelatedWork(itself, WorkItemKey("contoso", 5101)),
+        ])
+        #expect(RelatedWork(WorkItemKey("contoso", 5107), itself) == RelatedWork(itself, WorkItemKey("contoso", 5107)))
+    }
+
+    /// The sprint's read brings the Related links its work items have, one for both ends; one with neither end in the sprint
+    /// any more goes.
+    @Test func readsTheSprintsRelatedLinks() async {
+        let server = StubServer()
+        func related(_ id: Int) -> [String: Any] {
+            ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/\(id)"]
+        }
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations"], json: Fixture.list([
+            ["id": 5101, "relations": [related(5102)]], ["id": 5102, "relations": [related(5101), related(9001)]],
+        ]))
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations", "ids": "5101"], json: Fixture.list([
+            ["id": 5101, "relations": [related(5102)]],
+        ]))
+        let engine = engine(server, clock: Clock())
+        let first = WorkItemKey("contoso", 5101)
+        let second = WorkItemKey("contoso", 5102)
+        await engine.update(.init(sprintItems: [first, second], sprintShows: true))
+        #expect(await engine.currentLinks().related == [RelatedWork(first, second), RelatedWork(second, WorkItemKey("contoso", 9001))])
+
+        await engine.update(.init(sprintItems: [first], sprintShows: true))
+        #expect(await engine.currentLinks().related == [RelatedWork(first, second)])
+    }
+
     /// The sprint's read brings the dependencies its work items are in; one BriefBar links or takes away shows so at once, and
     /// the sprint is read again, after which Azure DevOps says it, and so it stays.
     @Test func readsTheSprintsDependenciesAndShowsThoseBriefBarChangesUntilReadAgain() async {
@@ -316,6 +360,66 @@ import Testing
         #expect(links.parents.isEmpty)
         #expect(links.workItems[task]?.parentId == nil && links.workItems[task]?.rank == nil)
         #expect(server.requests.count == before)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    /// What My Work's Map asks for, a level of parents more each time: what each is and its parent, read now, again every
+    /// quarter of an hour, at once when a session says it changed, an hour after a read fails; never the sprint's own, and
+    /// forgotten once no longer asked for.
+    @Test func readsWhatTheMapAsksForWithItsParent() async {
+        let server = StubServer()
+        let fields = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
+        let fails = Locked(false)
+        server.on("/_apis/wit/workitems", query: ["fields": fields]) { _ in
+            fails.value ? .status(500) : .json(Fixture.list([
+                WorkFixture.workItem(5101, "User Story", "Checkout redesign", parent: 5100), WorkFixture.workItem(5100, "Feature", "Faster checkout"),
+            ]))
+        }
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let story = WorkItemKey("contoso", 5101)
+        let feature = WorkItemKey("contoso", 5100)
+        let inSprint = WorkItemKey("contoso", 5110)
+        func reads() -> [String?] {
+            server.requests.filter { $0.url?.path.hasSuffix("/_apis/wit/workitems") == true }.map { query($0, "ids") }
+        }
+
+        await engine.update(.init(sprintItems: [inSprint], mapParents: [story, inSprint]))
+        var links = await engine.currentLinks()
+        #expect(reads() == ["5101"])
+        #expect(server.requests.compactMap { query($0, "fields") } == [fields])
+        #expect(links.mapParents.keys.sorted() == [story])
+        #expect(links.mapParents[story]?.parentId == 5100 && links.mapParents[story]?.title == "Checkout redesign")
+
+        // A level more: only what's new is read now.
+        await engine.update(.init(sprintItems: [inSprint], mapParents: [story, feature, inSprint]))
+        links = await engine.currentLinks()
+        #expect(reads() == ["5101", "5100"])
+        #expect(links.mapParents[feature]?.type == "Feature" && links.mapParents[feature]?.parentId == nil)
+
+        clock.advance(1)
+        await engine.reread(pullRequests: [], workItems: [feature])
+        #expect(reads() == ["5101", "5100", "5100"])
+
+        // A quarter of an hour later, both again; when that fails, what was read stays, and it's tried again an hour later.
+        clock.advance(15 * minute)
+        fails.set(true)
+        await engine.refresh()
+        #expect(reads().last == "5100,5101")
+        #expect(await engine.currentLinks().mapParents.count == 2)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(reads().count == 4)
+        clock.advance(45 * minute)
+        fails.set(false)
+        await engine.refresh()
+        #expect(reads().count == 5)
+
+        await engine.update(.init(sprintItems: [inSprint]))
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(reads().count == 5)
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 

@@ -124,7 +124,7 @@ same work as a graph of what holds what.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-my-work-map-window-dark.jpg">
-    <img src="docs/images/azureDevOps-my-work-map-window-light.jpg" width="900" alt="My Work's Map, under Up Next: a graph for each mission of its pull requests, tasks and steps, in waves, Now, Then and Later, each line going from what comes first to what waits for it, down to the steps left, such as load testing the retries and enabling them in production">
+    <img src="docs/images/azureDevOps-my-work-map-window-light.jpg" width="900" alt="My Work's Map, under Up Next: a graph for each mission of its pull requests, tasks and steps, in waves, Now, Then and Later, each line going from what comes first to what waits for it, down to the steps left, such as load testing the retries and enabling them in production; with Parents checked, the feature and epic that work is part of come after it, joined by lighter lines, and related pull requests sit together in a dashed box">
   </picture>
 </p>
 
@@ -136,6 +136,9 @@ same work as a graph of what holds what.
 - **Linked with Azure DevOps.** The Map draws the dependencies Azure DevOps links between work items. With **Make
   Changes in Azure DevOps** on, click a line to link it there, click a task's state, yours or a teammate's, to close it
   or set it active, as on the Sprint page, and drag your work's card on the Board to another column to set its state.
+- **Parents and related work.** Each parent Azure DevOps gives your work, such as a story's feature and its epic, comes
+  after all that's part of it, as it waits for it to close, joined to it by a lighter line. Uncheck **Parents** to leave
+  them out. Work that Azure DevOps links as Related sits together in a dashed box.
 - **Others' work.** Check **Others' work** to see, faded, a teammate's task that yours waits for, and add any of the
   sprint's with **+ Task**.
 - **✨ Ask Copilot** has a session read the code and the work, and tell BriefBar what waits for what, the steps left

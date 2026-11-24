@@ -734,6 +734,184 @@ import Testing
         MapGlances.load(from: defaults).setting(.draft, shown: true).save(to: defaults)
         #expect(defaults.object(forKey: MapGlances.defaultsKey) == nil)
     }
+
+    /// Parents: the parent Azure DevOps gives each work item, and that one's, up the chain, is a node of its own, a wave after
+    /// what's part of it, which it waits for, joined by a lighter line that stands for no dependency; in the band of what's
+    /// part of it. A chain ends at a parent the page doesn't know, and at `mostParents` of them; a line goes through one you
+    /// hid to the next one up.
+    @Test func parentsAreNodesAfterWhatsPartOfThemUpTheirChains() throws {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .toDo), Steps.work(5151, .toDo)], missions: [], stories: [])
+        let parents = [
+            Steps.task(5150): Steps.task(5180), Steps.task(5151): Steps.task(5180), Steps.task(5180): Steps.task(5190),
+            Steps.task(5190): Steps.task(5195), Steps.task(5195): Steps.task(5199),
+        ]
+        let known: Set<Int> = [5180, 5190, 5195]
+        let work = { (ref: ItemRef) -> MapWorkItem? in ref.number.map(known.contains) == true ? MapWorkItem(ref: ref) : nil }
+        let map = WorkMap(board, missions: [], work: work, parents: parents)
+        let graph = try #require(map.bands.first?.graph)
+        #expect(map.hasParents && map.showsParents)
+        #expect(graph.columns == [.wave(0), .wave(1), .wave(2), .wave(3)])
+        #expect(Self.places(graph) == ["5150 0,0", "5151 0,1", "5180 1,0", "5190 2,0", "5195 3,0"])
+        #expect(Self.lines(graph, in: map) == ["5150 > 5180", "5151 > 5180", "5180 > 5190", "5190 > 5195"])
+        #expect(graph.lines.allSatisfy { $0.style == .parent })
+        #expect(map.item(Self.work(5180))?.workItem == MapWorkItem(ref: Steps.task(5180), isParent: true))
+        #expect(map.item(Self.work(5199)) == nil)
+        #expect(map.band(of: Self.work(5195)) == .notInAMission)
+        #expect(map.waitsFor(Self.work(5180)).isEmpty)
+        #expect(map.links(of: WorkMapLine(before: Self.work(5150), after: Self.work(5180), style: .parent)) == nil)
+        #expect(map.groups.map { $0.items.map(Self.name) } == [["5150", "5151", "5180", "5190", "5195"]])
+        #expect(map.loose.isEmpty)
+
+        let hidden = WorkMap(board, missions: [], hidden: MapHidden([Self.work(5180)]), work: work, parents: parents)
+        let through = try #require(hidden.bands.first?.graph)
+        #expect(Self.places(through) == ["5150 0,0", "5151 0,1", "5190 1,0", "5195 2,0"])
+        #expect(Self.lines(through, in: hidden) == ["5150 > 5190", "5151 > 5190", "5190 > 5195"])
+        #expect(hidden.hidden.map(Self.name) == ["5180"])
+
+        var chain = [Steps.task(5150): Steps.task(6001)]
+        for id in 6001..<6040 {
+            chain[Steps.task(id)] = Steps.task(id + 1)
+        }
+        let long = WorkMap(board, missions: [], work: { ref in MapWorkItem(ref: ref) }, parents: chain)
+        #expect(long.everything.compactMap(\.workItem).count == WorkMap.mostParents)
+        #expect(long.item(Self.work(6030)) != nil && long.item(Self.work(6031)) == nil)
+    }
+
+    /// Parents off leaves them off the Map, lines and all, though it still knows Azure DevOps gives some, which is what the
+    /// switch is for; none it knows, or only one the page doesn't, and there's nothing to switch. On until you turn it off,
+    /// remembered.
+    @Test func parentsOffLeavesThemOffTheMap() {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .toDo), Steps.work(5151, .toDo)], missions: [], stories: [])
+        let parents = [Steps.task(5150): Steps.task(5180), Steps.task(5151): Steps.task(5180)]
+        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref) : nil }
+        let off = WorkMap(board, missions: [], work: work, parents: parents, showsParents: false)
+        #expect(off.hasParents && !off.showsParents)
+        #expect(Self.places(off.bands.first?.graph) == ["5150 0,0", "5151 0,1"])
+        #expect(off.bands.first?.graph?.lines.isEmpty == true)
+        #expect(off.item(Self.work(5180)) == nil)
+        #expect(off.groups.isEmpty && off.loose.map(Self.name) == ["5150", "5151"])
+        #expect(!WorkMap(board, missions: []).hasParents)
+        #expect(!WorkMap(board, missions: [], work: work, parents: [Steps.task(5150): Steps.task(5199)]).hasParents)
+
+        let defaults = MemorySettings()
+        #expect(MapParents.load(from: defaults))
+        MapParents.save(false, to: defaults)
+        #expect(defaults.object(forKey: "order.map.hidesParents") as? Bool == true)
+        #expect(!MapParents.load(from: defaults))
+        MapParents.save(true, to: defaults)
+        #expect(defaults.object(forKey: "order.map.hidesParents") == nil)
+    }
+
+    /// A parent the Board has a card for is that card; one a pull request's card names, or Show Links links to it, is that
+    /// card, which is never part of itself; a parent of its own goes in the band of what's part of it. A dependency says
+    /// more than a parent: where Azure DevOps links the two, either way, its line is the only one.
+    @Test func aParentIsItsCardOrItsPullRequestsAndADependencySaysMore() throws {
+        let checkout = Steps.mission([Steps.step(4091, .next, place: 1)])
+        let work = [Steps.work(5112, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5150, .toDo), Steps.work(5151, .toDo)]
+        let board = Steps.board(Self.open([4091]), missions: [checkout]).withWork(work, missions: [checkout], stories: [])
+        let parents = [Steps.task(5112): Steps.task(5180), Steps.task(5180): Steps.task(5190), Steps.task(5150): Steps.task(5151)]
+        let known = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5190) ? MapWorkItem(ref: ref) : nil }
+        let linked = [Self.pr(4091): [Steps.task(5180)]]
+        let map = WorkMap(board, missions: [checkout], linked: linked, work: known, parents: parents)
+        #expect(map.bands.map(\.lane.kind) == [.mission(checkout.key), .notInAMission])
+        #expect(Self.lines(map.bands.first?.graph, in: map) == ["!4091 > 5190"])
+        #expect(Self.lines(map.bands.last?.graph, in: map) == ["5150 > 5151"])
+        #expect(Self.places(map.bands.last?.graph) == ["5150 0,0", "5151 1,0"])
+        #expect(map.item(Self.work(5180)) == nil)
+        #expect(map.band(of: Self.work(5190)) == .mission(checkout.key))
+
+        let linking = WorkMap(board, missions: [checkout], azureDevOps: [.init(Self.work(5150), Self.work(5151))], parents: parents)
+        #expect(linking.bands.last?.graph?.lines.map(\.style) == [.azureDevOps])
+        let waiting = WorkMap(board, missions: [checkout], azureDevOps: [.init(Self.work(5151), Self.work(5150))], parents: parents)
+        let rest = try #require(waiting.bands.last?.graph)
+        #expect(Self.lines(rest, in: waiting) == ["5151 > 5150"])
+        #expect(rest.lines.map(\.style) == [.azureDevOps])
+        #expect(Self.places(rest) == ["5151 0,0", "5150 1,0"])
+    }
+
+    /// An open story whose tasks are all done still has its node, now, after them in Done; with Done off, alone.
+    @Test func anOpenParentOfDoneWorkStaysOnTheMap() {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .completed), Steps.work(5151, .completed)], missions: [], stories: [])
+        let parents = [Steps.task(5150): Steps.task(5180), Steps.task(5151): Steps.task(5180)]
+        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref) : nil }
+        let map = WorkMap(board, missions: [], work: work, parents: parents)
+        let graph = map.bands.first?.graph
+        #expect(graph?.columns == [.done, .wave(0)])
+        #expect(Self.places(graph) == ["5150 0,0", "5151 0,1", "5180 1,0"])
+        #expect(Self.lines(graph, in: map) == ["5150 > 5180", "5151 > 5180"])
+        let open = WorkMap(board, missions: [], work: work, showsDone: false, parents: parents)
+        #expect(Self.places(open.bands.first?.graph) == ["5180 0,0"])
+    }
+
+    /// Work items Azure DevOps links as Related sit together in a box, in rows of their own, either way round, with those
+    /// related to them through others; one related only to what the Map doesn't have is in none. All groups them, as it
+    /// groups what lines join.
+    @Test func relatedWorkSitsTogetherInABox() throws {
+        let work = [Steps.work(5150, .toDo), Steps.work(5151, .toDo), Steps.work(5152, .toDo), Steps.work(5153, .toDo)]
+        let board = Steps.board([:]).withWork(work, missions: [], stories: [])
+        let related: Set<MapRelated> = [
+            MapRelated(Steps.task(5152), Steps.task(5150)), MapRelated(Steps.task(5153), Steps.task(5999)),
+        ]
+        #expect(MapRelated(Steps.task(5152), Steps.task(5150)) == MapRelated(Steps.task(5150), Steps.task(5152)))
+        let map = WorkMap(board, missions: [], related: related)
+        let graph = try #require(map.bands.first?.graph)
+        #expect(Self.places(graph) == ["5150 0,0", "5152 0,1", "5151 0,2", "5153 0,3"])
+        #expect(graph.boxes == [WorkMapBox(members: [Self.work(5150), Self.work(5152)], columns: 0...0, rows: 0...1)])
+        #expect(map.groups.map { $0.items.map(Self.name) } == [["5150", "5152"]])
+        #expect(map.groups.first?.graph?.boxes.count == 1)
+        #expect(map.loose.map(Self.name) == ["5151", "5153"])
+    }
+
+    /// A box goes across the columns of what's in it, keeping its rows to itself in each, which a fold keeps too; a work item
+    /// a pull request's card names is related as that card, never to itself. By Mission, a box keeps to a band; All boxes
+    /// them across missions.
+    @Test func aBoxSpansItsColumnsAndKeepsToItsBand() throws {
+        let work = [
+            Steps.work(5110, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5112, .inProgress, linked: [Steps.linked(4091)]),
+            Steps.work(5160, .toDo), Steps.work(5161, .toDo), Steps.work(5170, .toDo),
+        ]
+        let board = Steps.board(Self.open([4091])).withWork(work, missions: [], stories: [])
+        let related: Set<MapRelated> = [
+            MapRelated(Steps.task(5110), Steps.task(5112)), MapRelated(Steps.task(5112), Steps.task(5160)),
+            MapRelated(Steps.task(5160), Steps.task(5161)),
+        ]
+        let map = WorkMap(board, missions: [], azureDevOps: [.init(Self.work(5110), Self.work(5160))], related: related)
+        let graph = try #require(map.bands.first?.graph)
+        #expect(Self.places(graph) == ["!4091 0,0", "5161 0,1", "5170 0,2", "5160 1,0"])
+        #expect(graph.boxes == [WorkMapBox(members: [Self.node(4091), Self.work(5161), Self.work(5160)], columns: 0...1, rows: 0...1)])
+        #expect(graph.rows(in: 1..<2) == [0, 1])
+        #expect(map.groups.map { $0.items.map(Self.name) } == [["!4091", "5160", "5161"]])
+
+        let retries = Steps.mission([Steps.step(4101, .next, place: 1)])
+        let coupons = Steps.mission([Steps.step(4091, .next, place: 1)])
+        let linked = [Steps.work(5110, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5160, .inProgress, linked: [Steps.linked(4101)])]
+        let missions = Steps.board(Self.open([4101, 4091]), missions: [retries, coupons])
+            .withWork(linked, missions: [retries, coupons], stories: [])
+        let apart = WorkMap(
+            missions, missions: [retries, coupons], azureDevOps: [.init(Self.work(5110), Self.work(5160))],
+            related: [MapRelated(Steps.task(5160), Steps.task(5110))]
+        )
+        #expect(apart.bands.count == 2 && apart.bands.allSatisfy { $0.graph?.boxes.isEmpty == true })
+        #expect(apart.groups.first?.graph?.boxes == [WorkMapBox(members: [Self.node(4091), Self.node(4101)], columns: 0...1, rows: 0...0)])
+    }
+
+    /// A box keeps its rows from its first column on, so a card that ties with one of its cards goes below it, and what comes
+    /// after them swaps to cross no lines; then each rises as far as it can, so that a chain through a box runs straight
+    /// along its row, with no row left empty above it.
+    @Test func aChainThroughABoxRunsStraightAlongItsRow() throws {
+        let work = (5201...5206).map { Steps.work($0, .toDo) }
+        let board = Steps.board([:]).withWork(work, missions: [], stories: [])
+        let lines = [(5201, 5202), (5201, 5203), (5202, 5205), (5203, 5204), (5205, 5206)]
+        let map = WorkMap(
+            board, missions: [], azureDevOps: Set(lines.map { MapEdits.Line(Self.work($0.0), Self.work($0.1)) }),
+            related: [MapRelated(Steps.task(5201), Steps.task(5202))]
+        )
+        let graph = try #require(map.bands.first?.graph)
+        #expect(Self.places(graph) == ["5201 0,0", "5202 1,0", "5203 1,1", "5205 2,0", "5204 2,1", "5206 3,0"])
+        #expect(graph.boxes == [WorkMapBox(members: [Self.work(5201), Self.work(5202)], columns: 0...1, rows: 0...0)])
+        #expect(graph.rows == 2)
+        #expect(graph.crossings == 0)
+    }
 }
 
 /// What you and sessions change of My Work's Map: lines and steps, the latest change of each winning, kept by reference with

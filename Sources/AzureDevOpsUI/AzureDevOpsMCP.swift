@@ -572,7 +572,8 @@ actor AzureDevOpsReader {
             for item in [row.parent].compactMap({ $0 }) + row.tasks { known[item.id] = item }
         }
         let links = DemoData.workLinks(now: now)
-        for (key, item) in links.workItems.merging(links.parents, uniquingKeysWith: { first, _ in first }) where known[key.id] == nil {
+        let under = links.parents.merging(links.mapParents, uniquingKeysWith: { first, _ in first })
+        for (key, item) in links.workItems.merging(under, uniquingKeysWith: { first, _ in first }) where known[key.id] == nil {
             known[key.id] = item
         }
         return known
