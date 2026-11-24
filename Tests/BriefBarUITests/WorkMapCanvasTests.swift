@@ -193,6 +193,17 @@ import Testing
         #expect(plain.nodes.allSatisfy { $0.frame.height == 44 })
         #expect(try #require(plain.blocks.first).height == Self.metrics.y(2) - Self.metrics.rowGap)
     }
+
+    /// At a Glance offers what a work item's node says while the Map shows your work, and while it has a work item's node all
+    /// the same, as one you added with + Task, which stays whatever Show shows; not for a Map of pull requests and steps.
+    @Test func atAGlanceOffersAWorkItemsKindsWhileTheMapHasOne() {
+        var edits = MapEdits()
+        edits.addItem(.workItem(organization: "contoso", id: 5104), home: nil, by: .you, at: Self.day)
+        let added = WorkMap(PullRequestBoard(), missions: [], state: MapEdits.merged([edits], now: Self.day))
+        #expect(WorkMapGlancesMenu.offersWork(added, showsWork: false))
+        #expect(!WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: false))
+        #expect(WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: true))
+    }
 }
 
 /// + Task's search, as Return goes.

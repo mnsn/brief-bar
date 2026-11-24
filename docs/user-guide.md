@@ -597,15 +597,16 @@ Azure DevOps** on, its state, at the start of its node, in its right-click menu 
 states it can be put in, as your own work's is, for one in your team's project (**Set your work's state**, below).
 
 **At a glance.** Under its title, a node says in a line of its own what you'd otherwise open its details for: a pull
-request's **Merge conflicts**, how many of its comments are left to resolve, such as **2 to resolve**, who wants changes,
-such as **Sam wants changes**, or else who approved it, such as **Priya approved** or **2 approved**, green once it has
-the approvals it needs, its builds or checks that failed or expired, such as **Build failed**, and **Draft**; a work
-item's state, the hours left on it, such as **3 h left**, and, for one of yours outside the sprint, where it is, such as
-**Sprint 41** or **No sprint**. Each shows only where it applies, in that order: red where something's wrong, orange where
-it waits on you, as comments a policy wants resolved on yours do, and gray otherwise. Hover one for all it says, such as
-which build failed and where. Where they don't all fit, the last of a pull request's show only their symbols and how
-many. A node with nothing to say stays as it was, and its graph leaves room under it. **At a Glance**, at the top of the
-Map, checks or unchecks each of them; a work item's while the Map has your work.
+request's **Merge conflicts**, how many of its comments are left to resolve, such as **2 to resolve**, who wants
+changes, such as **Sam wants changes**, or else who approved it, such as **Priya approved** or **2 approved**, green
+once it has the approvals it needs, its builds or checks that failed or expired, such as **Build failed**, and
+**Draft**; a work item's state, the hours left on it, such as **3 h left**, and, for one of yours outside the sprint,
+where it is, such as **Sprint 41** or **No sprint**. Each shows only where it applies, in that order: red where
+something's wrong, orange where it waits on you, as comments a policy wants resolved on yours do, and gray otherwise.
+Hover one for all it says, such as which build failed and where. Where they don't all fit, the last of a pull request's
+show only their symbols and how many. A node with nothing to say stays as it was, and its graph leaves room under it.
+**At a Glance**, at the top of the Map, checks or unchecks each of them; a work item's while the Map has your work, or a
+work item you added with **+ Task**.
 
 **✨ Ask Copilot**, in a band's header or over a graph of All, has a Copilot session work out what waits for what there:
 **Ask** one of the mission's sessions, or **a Fork** of it, so that its own work goes on as it was, with Send Work to

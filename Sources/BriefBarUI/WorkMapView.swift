@@ -400,7 +400,7 @@ package struct WorkMapView: View {
                     )
                 }
                 if offersGlances {
-                    WorkMapGlancesMenu(order: order, offersWork: content.work != nil)
+                    WorkMapGlancesMenu(order: order, offersWork: WorkMapGlancesMenu.offersWork(map, showsWork: content.work != nil))
                 }
                 Spacer(minLength: 0)
                 if let azureDevOps = content.azureDevOps, !unlinked.isEmpty {
@@ -1850,12 +1850,13 @@ struct WorkMapNodeView: View {
                 style: isDashed ? StrokeStyle(lineWidth: 1, dash: [3, 2]) : StrokeStyle(lineWidth: isSelected || isTarget ? 2 : 1)
             )
         )
-        .overlay(alignment: .trailing) {
+        // Level with its title's middle, where its lines leave it, whatever it says at a glance under its title.
+        .overlay(alignment: .topTrailing) {
             if showsHandle {
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 8 * textScale, height: 8 * textScale)
-                    .offset(x: 4 * textScale)
+                    .offset(x: 4 * textScale, y: WorkMapMetrics(scale: textScale).anchor - 4 * textScale)
                     .accessibilityHidden(true)
             }
         }
@@ -2425,11 +2426,17 @@ struct WorkMapGlanceLine: View {
 }
 
 /// At a Glance, over the Map: a menu of what nodes say under their titles (`MapGlance`), each checked while they say it,
-/// remembered: a pull request's, then, while the Map has your work, a work item's.
+/// remembered: a pull request's, then, while the Map has your work or a work item's node, a work item's.
 struct WorkMapGlancesMenu: View {
     @ObservedObject var order: PullRequestOrder
-    /// Whether it offers what a work item's node says: while the Map has your work, with + Sprint Tasks or + All My Tasks.
+    /// Whether it offers what a work item's node says (`offersWork(_:showsWork:)`).
     let offersWork: Bool
+
+    /// Whether it offers what a work item's node says: while the Map has your work, with + Sprint Tasks or + All My Tasks,
+    /// and while it has a work item's node all the same, as one you added with + Task, which stays whatever Show shows.
+    static func offersWork(_ map: WorkMap, showsWork: Bool) -> Bool {
+        showsWork || map.everything.contains { $0.workItem != nil }
+    }
 
     var body: some View {
         Menu {

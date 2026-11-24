@@ -81,6 +81,25 @@ import BriefBarCore
         #expect(said(record(sams([Reviewer(person: People.priya, vote: .rejected)]), role: .reviewer).glances) == ["· Priya rejected it"])
     }
 
+    /// Who approved it is done only once the reviewers it requires approved it, as its Approved stage counts them: not while
+    /// a reviewer it requires still waits, though the approvals policy passed, nor from policies read before its latest push,
+    /// or that BriefBar can't read. Its tooltip says what it still waits for.
+    @Test func approvedIsDoneOnlyOnceTheReviewersItRequiresApprovedIt() {
+        let priya = Reviewer(person: People.priya, vote: .approved)
+        let waiting = record(makePR(reviewers: [priya, Reviewer(person: People.sam, vote: .none, isRequired: true)]), checks: [minimumPolicy(.passed, 1)])
+        #expect(said(waiting.glances) == ["· Priya approved"])
+        #expect(waiting.glances.first?.sentence == "Approved by Priya Shah · Waiting on Sam")
+
+        let approved = makePR(reviewers: [priya])
+        #expect(said(record(approved, checks: [minimumPolicy(.passed, 1)]).glances) == ["✓ Priya approved"])
+        var pushed = approved
+        pushed.sourceCommit = "a later push"
+        let stale = PRRecord(pullRequest: pushed, role: .author, details: makeDetails(for: approved, checks: [minimumPolicy(.passed, 1)]), me: People.me.id)
+        #expect(said(stale.glances) == ["· Priya approved"])
+        let unreadable = PRRecord(pullRequest: approved, role: .author, details: makeDetails(for: approved, checksKnown: false), me: People.me.id)
+        #expect(said(unreadable.glances) == ["· Priya approved"])
+    }
+
     /// Builds that expired fail it too, with how many; a check that failed, where its builds didn't; but not a build that
     /// runs, nor one no policy requires. Before its details are read, it says only what its list says; once it's done,
     /// nothing.

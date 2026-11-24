@@ -47,8 +47,10 @@ extension PRRecord {
     }
 
     /// Who wants changes, you or someone else: "Priya wants changes", "You rejected it", "2 want changes"; else who approved
-    /// it: "Priya approved", "You approved", "2 approved", done once it has the approvals it needs, as `PRReadiness` counts
-    /// them. Nil while nobody voted either way.
+    /// it: "Priya approved", "You approved", "2 approved", done once the reviewers it requires approved it, as its Approved
+    /// stage counts them (`isApproved`): never while a reviewer it requires, or a reviewer policy, still waits, nor from
+    /// policies read before its latest push or vote, or that BriefBar can't read; until then its tooltip says what it waits
+    /// for, as What's Left does. Nil while nobody voted either way.
     private func votes(waitOnYou: Bool, readiness: PRReadiness?) -> MapGlance? {
         let people = pullRequest.reviewers.filter { !$0.isGroup }
         let name = { (reviewer: Reviewer) in PullRequestStory.isMe(reviewer.person, me) ? "You" : reviewer.person.firstName }
@@ -74,12 +76,14 @@ extension PRRecord {
         }
         let approvals = people.filter(\.vote.isApproval)
         guard let first = approvals.first else { return nil }
-        let needed = readiness?.items.first { $0.kind == .approvals }
         let approvedBy = "Approved by " + PullRequestStory.names(approvals.map(\.person), me: me)
+        let approved = isApproved(readiness) == true
+        let waiting = reviews(in: readiness).filter { !$0.isDone }
+        let left = approved ? nil : (waiting.first { $0.kind == .requiredReviewers } ?? waiting.first)?.label
         return MapGlance(
             .votes, approvals.count > 1 ? "\(approvals.count) approved" : "\(name(first)) approved", count: approvals.count,
-            state: needed?.isDone == true ? .done : nil, symbol: "checkmark.circle.fill",
-            sentence: needed.map { $0.isDone ? approvedBy : "\(approvedBy) · \($0.label)" } ?? approvedBy
+            state: approved ? .done : nil, symbol: "checkmark.circle.fill",
+            sentence: left.map { "\(approvedBy) · \($0)" } ?? approvedBy
         )
     }
 

@@ -716,7 +716,7 @@ import Testing
                 repositoryId: "Repository-Shop", repositoryName: "shop-web", mergeStatus: "succeeded", reviewers: reviewers,
                 sourceCommit: "c4099"
             )
-            return PullRequestOrderFacts.isApproved(pr, reviews: [], isCurrent: false)
+            return PRRecord.isApproved(pr, reviews: [], isCurrent: false)
         }
         #expect(stale([Reviewer(person: maria, vote: .approved), Reviewer(person: Self.sam, vote: .none, isRequired: true)]) == false)
         #expect(stale([Reviewer(person: Self.sam, vote: .none)]) == false)
