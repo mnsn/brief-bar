@@ -390,8 +390,8 @@ import Testing
     }
 
     /// What My Work's Map asks for, a level of parents more each time: what each is and its parent, read now, again every
-    /// quarter of an hour, at once when a session says it changed, an hour after a read fails; never the sprint's own, and
-    /// forgotten once no longer asked for.
+    /// quarter of an hour, at once when a session says it changed, an hour after a read fails; never the sprint's own while it
+    /// shows, and forgotten once no longer asked for.
     @Test func readsWhatTheMapAsksForWithItsParent() async {
         let server = StubServer()
         let fields = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
@@ -407,10 +407,10 @@ import Testing
         let feature = WorkItemKey("contoso", 5100)
         let inSprint = WorkItemKey("contoso", 5110)
         func reads() -> [String?] {
-            server.requests.filter { $0.url?.path.hasSuffix("/_apis/wit/workitems") == true }.map { query($0, "ids") }
+            server.requests.filter { query($0, "fields") == fields }.map { query($0, "ids") }
         }
 
-        await engine.update(.init(sprintItems: [inSprint], mapParents: [story, inSprint]))
+        await engine.update(.init(sprintItems: [inSprint], sprintShows: true, mapParents: [story, inSprint]))
         var links = await engine.currentLinks()
         #expect(reads() == ["5101"])
         #expect(server.requests.compactMap { query($0, "fields") } == [fields])
@@ -418,7 +418,7 @@ import Testing
         #expect(links.mapParents[story]?.parentId == 5100 && links.mapParents[story]?.title == "Checkout redesign")
 
         // A level more: only what's new is read now.
-        await engine.update(.init(sprintItems: [inSprint], mapParents: [story, feature, inSprint]))
+        await engine.update(.init(sprintItems: [inSprint], sprintShows: true, mapParents: [story, feature, inSprint]))
         links = await engine.currentLinks()
         #expect(reads() == ["5101", "5100"])
         #expect(links.mapParents[feature]?.type == "Feature" && links.mapParents[feature]?.parentId == nil)
@@ -476,6 +476,33 @@ import Testing
         links = await engine.currentLinks()
         #expect(reads() == [withStories, withStories, forTheMap])
         #expect(links.mapParents[task]?.parentId == 5101)
+    }
+
+    /// The sprint's work items the Map asks for are the sprint's to read only while it shows: once nothing does, it's read no
+    /// more, so the Map reads them itself, with their parent, and leaves them to the sprint again once it shows.
+    @Test func theMapReadsTheSprintsWorkItemsItselfWhileTheSprintDoesntShow() async {
+        let server = StubServer()
+        let fields = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
+        server.on("/_apis/wit/workitems", query: ["fields": fields], json: Fixture.list([
+            WorkFixture.workItem(5112, "Task", "Round half up in the coupon service", parent: 5111),
+        ]))
+        let engine = engine(server, clock: Clock())
+        let task = WorkItemKey("contoso", 5112)
+        func reads() -> [String?] {
+            server.requests.filter { query($0, "fields") == fields }.map { query($0, "ids") }
+        }
+
+        await engine.update(.init(sprintItems: [task], sprintShows: true, mapParents: [task]))
+        #expect(reads().isEmpty)
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+
+        await engine.update(.init(sprintItems: [task], mapParents: [task]))
+        #expect(reads() == ["5112"])
+        #expect(await engine.currentLinks().mapParents[task]?.parentId == 5111)
+
+        await engine.update(.init(sprintItems: [task], sprintShows: true, mapParents: [task]))
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+        #expect(reads() == ["5112"])
     }
 
     /// Waits for what a read under way has asked, for as long as a busy machine could need (`waitLimit`).

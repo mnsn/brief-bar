@@ -2445,15 +2445,19 @@ links with the dependencies, from the same response, with nothing more asked (`A
 the parents of the sprint's work items, read with them, and of the linked ones it reads with theirs, with Pull Request
 Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, the work
 items Show Links links to the pull requests on its board (`PullRequestBoard.onBoard`), as their cards stand for them,
-those you added and, with + Sprint Tasks or + All My Tasks, yours in the sprint and, with + All
-My Tasks, outside it, but not someone else's, up their parents, a level at a time, each in order, to the first 200 it
-doesn't read otherwise (`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with
-their own parent (`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before
-names it, then every quarter of an hour; one that can't be read is tried again an hour later, and one a read leaves out,
-as when it was deleted, is forgotten. Of a work item read more than one way, the sprint's read says its parent last, as
-it's read the most often (`WorkLinksStore.knownParents`). My Work's Map has them, and those read for it, so that it draws
-again as one is read or changes though no parent does, only while Show Links is on (`MapDependencies.told`,
-`parentItems`), and forgets them once someone else signs in.
+those you added and, with + Sprint Tasks or + All My Tasks, your work in the sprint, as My Work has cards for it
+(`SprintBoard.myWork`, `myDone`), not a story of yours whose tasks are all someone else's, and, with + All My Tasks,
+outside it, but not someone else's, up their parents, a level at a time, each in order, to the first 200 it doesn't read
+otherwise (`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with their own parent
+(`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before names it, then every
+quarter of an hour; one that can't be read is tried again an hour later, and one a read leaves out, as when it was
+deleted, is forgotten. Of a work item read more than one way, the sprint's read says its parent last while something
+shows the sprint, as it's read the most often then; once nothing does, the sprint is read no more, so its read says its
+parent first, and the Map reads the sprint's work items itself (`WorkLinksStore.knownParents`,
+`LinkEngine.wantedMapParents`). Of one read both with what stories want and for the Map, as when its read with stories
+failed, what the page shows of it is the newer read (`WorkLinksStore.linkedWorkItem`). My Work's Map has them, and those
+read for it, so that it draws again as one is read or changes though no parent does, only while Show Links is on
+(`MapDependencies.told`, `parentItems`), and forgets them once someone else signs in.
 
 **Parents** (`MapParents`, `order.map.hidesParents`, on until you uncheck it, at the top of the Map while Azure DevOps
 gives your work any parent, or while it's off: `WorkMapParentsToggle`, `WorkMap.hasParents`) makes nodes of them
@@ -2461,15 +2465,19 @@ gives your work any parent, or while it's off: `WorkMapParentsToggle`, `WorkMap.
 request's card names, the hidden and the done too, so that an open story whose tasks are all done keeps its node,
 breadth first (`WorkMap.climb`), each parent is its own card, else the cards of the pull requests that name it, else a
 node added for it, if the page knows it, at most 30 (`mostParents`, `MapWorkItem.isParent`), faded and outlined dashed
-where it isn't yours, as others' work is; a chain ends at one the page doesn't know, and a card is never part of itself,
-as a pull request's that names a task and its story, nor of another that stands for the parent too, as two that each
-name both, which would wait for each other. Each goes in the band it's joined to most nearly, parts and parents
-counting as lines do (`Edges.nearest`). A lighter line (`WorkMapLine.Style.parent`), never dotted, goes from each node to
-the nearest it's part of, up its parents, through those that don't show (`Edges.parents(of:among:)`), as a parent waits
-for its children to close, so that it goes a wave after all that's part of it; but not where a line joins the two
-already, either way, which says more, nor where the node waits for the parent already, through others, as a task that
-waits for its story's other task, which waits for the story: the three would be in a loop, which the Map would put in
-one wave, losing their lines (`Edges.lines(among:)`). It says "· In Azure DevOps", but stands for no dependency
+where it isn't yours, as others' work is: yours as the sprint has you, else as your pull requests in its organization
+have you, as with Show: Pull Requests, which reads no sprint (`MyWorkFacts.isAssigned`); a chain ends at one the page
+doesn't know, and a card is never part of itself, as a pull request's that names a task and its story, nor of another
+that stands for the parent too, as two that each name both, which would wait for each other. Each goes in the band it's
+joined to most nearly, parts and parents counting as lines do (`Edges.nearest`). A lighter line
+(`WorkMapLine.Style.parent`), never dotted, goes from each node to the nearest it's part of, up its own work items'
+parents, through those that don't show, so that a hidden card that names other work items too doesn't take it up theirs
+(`WorkMap.Chains`, `Edges.parents(of:among:)`), as a parent waits for its children to close, so that it goes a wave
+after all that's part of it; but not where a line joins the two already, either way, which says more, nor where the node
+waits for the parent already, through others, as a task that waits for its story's other task, which waits for the
+story: the three would be in a loop, which the Map would put in one wave, losing their lines (`Edges.lines(among:)`). A
+line into what's done, which holds nothing back and the graph doesn't draw, makes no such loop, so that with Done on, as
+with it off, a parent goes a wave after its open children. It says "· In Azure DevOps", but stands for no dependency
 (`WorkMap.links(of:)` gives none): it has no Take Away, Link in Azure DevOps or blue mark, and Link 3 Lines in Azure
 DevOps… counts none. With Done off, a parent that's done is left out, as anything done is, one in the team's project as
 the team's process counts its state, a custom one too (`StateChanges.item(_:)`). Off, the Map climbs only to know

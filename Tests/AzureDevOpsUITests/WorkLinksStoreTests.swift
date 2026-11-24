@@ -201,7 +201,8 @@ import Testing
 
     /// Only while a window shows My Work's Map on screen with Parents on, Show Links reads the parents above your work that
     /// nothing else read with theirs: the feature and epic above the story of your pull request, the story above tasks
-    /// outside the sprint, and a work item you added to the Map. The sprint's it reads already.
+    /// outside the sprint, and a work item you added to the Map. The sprint's it reads already, while something shows the
+    /// sprint; once nothing does, it's read no more, so the Map reads them itself.
     @Test func theMapReadsYourWorksParentsOnlyWhileItShowsThem() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
@@ -210,6 +211,7 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
         await store.loadOnce()
         await sprint.loadOnce()
+        sprint.setVisible(true, for: "sprint")
         let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
         let workLinks = WorkLinksStore(
             links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
@@ -227,6 +229,10 @@ import Testing
         let wanted = workLinks.inputs().mapParents
         #expect(wanted.isSuperset(of: [key(5180), key(5190), key(5195), added]))
         #expect(wanted.isDisjoint(with: [key(5101), key(5103), key(5110), key(5112), key(5160)]))
+        // Your pull request's bug and task in the sprint, once nothing shows it.
+        sprint.setVisible(false, for: "sprint")
+        #expect(workLinks.inputs().mapParents.isSuperset(of: [key(5110), key(5112)]))
+        sprint.setVisible(true, for: "sprint")
         order.setMapShowsParents(false)
         #expect(workLinks.inputs().mapParents.isEmpty)
         order.setMapShowsParents(true)
@@ -300,7 +306,8 @@ import Testing
     }
 
     /// The Map climbs from your work in the sprint only while Show shows your work: with Show: Pull Requests, a sprint read
-    /// before has none of its parents read. Changing Show tells the engine at once.
+    /// before has none of its parents read. Changing Show tells the engine at once. It climbs from the work My Work has cards
+    /// for, not from a story of yours whose tasks are all someone else's.
     @Test func theMapClimbsFromYourSprintWorkOnlyWhileShowShowsIt() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
@@ -319,6 +326,17 @@ import Testing
             state: "Active", category: .inProgress, assignedTo: DemoData.me, parentId: 9100
         )
         board.rows.append(SprintBoard.Row(parent: nil, tasks: [task]))
+        // A story of yours whose one task is a teammate's, under a feature the sprint doesn't have: My Work has no card for it.
+        let storyOfTheirs = WorkItem(
+            id: 9200, organization: organization, project: "Storefront", type: "User Story", title: "Coupons in every language",
+            state: "Active", category: .inProgress, assignedTo: DemoData.me, parentId: 9199
+        )
+        let theirs = WorkItem(
+            id: 9201, organization: organization, project: "Storefront", type: "Task", title: "Translate the coupon errors",
+            state: "Active", category: .inProgress, assignedTo: Person(id: "6f1c1a52-0000-4000-8000-00000000b001", name: "Sam Rivera"),
+            parentId: 9200
+        )
+        board.rows.append(SprintBoard.Row(parent: storyOfTheirs, tasks: [theirs]))
         sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
         let workLinks = WorkLinksStore(
             links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
@@ -343,6 +361,7 @@ import Testing
 
         settings.myWorkShows = .sprintTasks
         try await until("its story's read") { workLinks.engineInputs?.mapParents.contains(story) == true }
+        #expect(workLinks.engineInputs?.mapParents.isDisjoint(with: [9199, 9200, 9201].map { WorkItemKey(organization, $0) }) == true)
         settings.myWorkShows = .pullRequests
         try await until("it isn't") { workLinks.engineInputs?.mapParents.contains(story) == false }
     }
@@ -893,6 +912,40 @@ import Testing
         engines.told[0](WorkLinks(workItems: [key: task(9001, "Active", changed: 5_000)]))
         try await until("the read in another state") { workLinks.linkedWorkItem(other) == nil }
         #expect(workLinks.linkedWorkItem(key) == task(9001, "Active", changed: 5_000))
+    }
+
+    /// A work item read both with what stories want and for My Work's Map shows as its newer read, whichever it is: as one
+    /// read for the Map since its read with stories failed, or read with stories since.
+    @Test func aWorkItemReadBothWaysShowsAsItsNewerRead() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        // An engine that reads nothing, and whose own reads don't reach the store: the test tells what it read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        let key = WorkItemKey(organization, 9001)
+        func task(_ state: String, changed seconds: TimeInterval) -> WorkItem {
+            WorkItem(
+                id: 9001, organization: organization, project: "Storefront", type: "Task", title: "Check the coupon totals",
+                state: state, category: WorkItem.Category(category: nil, state: state), changedAt: Date(timeIntervalSince1970: seconds)
+            )
+        }
+        engines.told[0](WorkLinks(workItems: [key: task("Active", changed: 1_000)], mapParents: [key: task("Closed", changed: 2_000)]))
+        try await until("the Map's read") { workLinks.linkedWorkItem(key)?.state == "Closed" }
+        engines.told[0](WorkLinks(workItems: [key: task("New", changed: 3_000)], mapParents: [key: task("Closed", changed: 2_000)]))
+        try await until("the read with stories") { workLinks.linkedWorkItem(key)?.state == "New" }
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

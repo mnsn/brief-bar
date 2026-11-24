@@ -896,6 +896,37 @@ import Testing
         #expect(Self.places(open.bands.first?.graph) == ["5180 0,0"])
     }
 
+    /// A parent that waits for what's part of it, through what's done, still goes a wave after it: a line into what's done
+    /// holds nothing back, and the graph doesn't draw it, so it makes no loop.
+    @Test func aParentWaitingForDoneWorkStillGoesAfterWhatsPartOfIt() {
+        let work = [Steps.work(5150, .toDo), Steps.work(5151, .completed), Steps.work(5180, .toDo)]
+        let board = Steps.board([:]).withWork(work, missions: [], stories: [])
+        let lines: Set = [MapEdits.Line(Self.work(5180), Self.work(5151)), MapEdits.Line(Self.work(5151), Self.work(5150))]
+        let parents = [Steps.task(5150): Steps.task(5180)]
+        let map = WorkMap(board, missions: [], azureDevOps: lines, parents: parents)
+        #expect(Self.lines(map.bands.first?.graph, in: map) == ["5151 > 5150", "5150 > 5180"])
+        #expect(Self.places(map.bands.first?.graph) == ["5151 0,0", "5150 1,0", "5180 2,0"])
+        let open = WorkMap(board, missions: [], azureDevOps: lines, showsDone: false, parents: parents)
+        #expect(Self.lines(open.bands.first?.graph, in: open) == ["5150 > 5180"])
+        #expect(Self.places(open.bands.first?.graph) == ["5150 0,0", "5180 1,0"])
+    }
+
+    /// Work part of a work item a pull request's card names goes up that one's parents alone: with the card hidden, its line
+    /// goes to that one's parent, not to those of the card's other work items.
+    @Test func workUnderAHiddenCardGoesUpOnlyItsOwnWorkItemsParents() throws {
+        let board = Steps.board(Self.open([4091])).withWork([Steps.work(5150, .toDo)], missions: [], stories: [])
+        let parents = [Steps.task(5150): Steps.task(5112), Steps.task(5112): Steps.task(5180), Steps.task(5113): Steps.task(5190)]
+        let known = { (ref: ItemRef) -> MapWorkItem? in [5180, 5190].contains(ref.number ?? 0) ? MapWorkItem(ref: ref) : nil }
+        let linked = [Self.pr(4091): [Steps.task(5112), Steps.task(5113)]]
+        let map = WorkMap(board, missions: [], linked: linked, work: known, parents: parents)
+        #expect(Self.lines(map.bands.first?.graph, in: map) == ["5150 > !4091", "!4091 > 5180", "!4091 > 5190"])
+
+        let hidden = WorkMap(board, missions: [], hidden: MapHidden([Self.node(4091)]), linked: linked, work: known, parents: parents)
+        let graph = try #require(hidden.bands.first?.graph)
+        #expect(Self.lines(graph, in: hidden) == ["5150 > 5180"])
+        #expect(graph.partOf == [Self.work(5150): [Self.work(5180)]])
+    }
+
     /// Work items Azure DevOps links as Related sit together in a box, in rows of their own, either way round, with those
     /// related to them through others; one related only to what the Map doesn't have is in none. All groups them, as it
     /// groups what lines join.

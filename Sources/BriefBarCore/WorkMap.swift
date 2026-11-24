@@ -1211,7 +1211,7 @@ public struct WorkMap: Equatable, Sendable {
         }
         let edges = Edges(
             missions, state: state, items: byID, aliases: aliases, done: known, azureDevOps: azureDevOps,
-            parents: showsParents ? climbed.up : [:]
+            parents: showsParents ? climbed.chains : Chains()
         )
         if showsOthers {
             for item in Self.others(waitingWith: byID, edges: edges, work: work) {
@@ -1360,7 +1360,7 @@ public struct WorkMap: Equatable, Sendable {
         self.showsDone = showsDone
         doneCount = everything.filter { $0.isDone && !isHidden.contains($0.id) }.count
         self.showsParents = showsParents
-        hasParents = !climbed.up.isEmpty
+        hasParents = !climbed.chains.up.isEmpty
         self.edges = edges
         self.byID = byID
         self.bandOf = bandOf
@@ -1379,21 +1379,19 @@ public struct WorkMap: Equatable, Sendable {
     /// At most how many parents the Map adds nodes for (`init(showsParents:)`).
     public static let mostParents = 30
 
-    /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, and which nodes each of
-    /// them and those is part of: each parent as its own card, else as the pull requests' cards that name it, else as a node
-    /// added for it, if the page knows it, at most `mostParents` of those; a chain ends at one it doesn't. A card that stands
-    /// for the parent too is part of none of its cards, as pull requests' that each name a task and its story: else they'd
-    /// be part of each other, and wait for each other.
+    /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, and the nodes each of
+    /// them and those is: each parent its own card, else the pull requests' cards that name it, else a node added for it, if
+    /// the page knows it, at most `mostParents` of those; a chain ends at one it doesn't.
     static func climb(
         from starts: [ItemRef], parents: [ItemRef: ItemRef], items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
         work: (ItemRef) -> MapWorkItem?
-    ) -> (added: [MapWorkItem], up: [MapNodeID: Set<MapNodeID>]) {
+    ) -> (added: [MapWorkItem], chains: Chains) {
         var added: [MapWorkItem] = []
         var has = Set(items.keys)
         func nodes(of ref: ItemRef) -> [MapNodeID] {
             has.contains(.card(ref)) ? [.card(ref)] : (aliases[ref] ?? []).map(MapNodeID.card)
         }
-        var up: [MapNodeID: Set<MapNodeID>] = [:]
+        var chains = Chains()
         var climbed: Set<ItemRef> = []
         var pending = starts
         var next = 0
@@ -1409,13 +1407,39 @@ public struct WorkMap: Equatable, Sendable {
                 has.insert(item.id)
                 above = [item.id]
             }
-            let parentNodes = Set(above)
-            for node in nodes(of: child) where !parentNodes.contains(node) {
-                up[node, default: []].formUnion(above)
+            chains.parent[child] = parent
+            chains.nodes[parent] = above
+            for node in nodes(of: child) {
+                chains.refs[node, default: []].append(child)
             }
             pending.append(parent)
         }
-        return (added, up)
+        return (added, chains)
+    }
+
+    /// The chains of parents the Map climbs (`climb`), work item by work item, with the nodes each is: so a card that names
+    /// several goes up each one's chain, and only that one's goes up through it.
+    struct Chains: Equatable, Sendable {
+        /// The parent of each work item it climbed up from.
+        var parent: [ItemRef: ItemRef] = [:]
+        /// The nodes each parent is: its card, else the pull requests' cards that name it, else the node added for it.
+        var nodes: [ItemRef: [MapNodeID]] = [:]
+        /// The work items each node is, of those it climbed up from: its card's, or those a pull request's card names.
+        var refs: [MapNodeID: [ItemRef]] = [:]
+
+        /// What each node is part of: the nodes of its work items' parents. A card that stands for the parent too is part of
+        /// none of its cards, as pull requests' that each name a task and its story: else they'd be part of each other, and
+        /// wait for each other.
+        var up: [MapNodeID: Set<MapNodeID>] {
+            var up: [MapNodeID: Set<MapNodeID>] = [:]
+            for (node, refs) in refs {
+                for ref in refs {
+                    guard let parent = parent[ref], let above = nodes[parent], !above.contains(node) else { continue }
+                    up[node, default: []].formUnion(above)
+                }
+            }
+            return up
+        }
     }
 
     /// The sets of these that Azure DevOps links as Related, each to another of them, or through others of them, each to go in
@@ -1580,12 +1604,15 @@ public struct WorkMap: Equatable, Sendable {
         var up: [MapNodeID: Set<MapNodeID>] = [:]
         /// What's part of each.
         var down: [MapNodeID: Set<MapNodeID>] = [:]
+        /// The chains of parents those come from, with Parents: to go up each work item's own.
+        var chains = Chains()
 
         init(
             _ missions: [OrderMission], state: MapState, items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
-            done known: Set<ItemRef> = [], azureDevOps: Set<MapEdits.Line> = [], parents up: [MapNodeID: Set<MapNodeID>] = [:]
+            done known: Set<ItemRef> = [], azureDevOps: Set<MapEdits.Line> = [], parents chains: Chains = Chains()
         ) {
-            self.up = up
+            self.chains = chains
+            up = chains.up
             for (child, parents) in up {
                 for parent in parents {
                     down[parent, default: []].insert(child)
@@ -1744,9 +1771,11 @@ public struct WorkMap: Equatable, Sendable {
             }
             // Then a lighter one from each to the nearest of them it's part of, up its parents, which waits for it: but where a
             // line joins the two already, either way, which says more; nor where it waits for the parent already, through
-            // others, as the two would be in a loop, where none of it could go first.
-            var joined = Set(lines.flatMap { [MapEdits.Line($0.before, $0.after), MapEdits.Line($0.after, $0.before)] })
-            var later = Dictionary(grouping: lines, by: \.before).mapValues { $0.map(\.after) }
+            // others, as the two would be in a loop, where none of it could go first. A line into what's done, which holds
+            // nothing back and the graph doesn't draw, makes no loop and joins neither.
+            let holding = lines.filter { !done.contains($0.after) }
+            var joined = Set(holding.flatMap { [MapEdits.Line($0.before, $0.after), MapEdits.Line($0.after, $0.before)] })
+            var later = Dictionary(grouping: holding, by: \.before).mapValues { $0.map(\.after) }
             func leads(from start: MapNodeID, to end: MapNodeID) -> Bool {
                 var reached: Set<MapNodeID> = [start]
                 var pending = [start]
@@ -1761,29 +1790,34 @@ public struct WorkMap: Equatable, Sendable {
             for node in nodes {
                 for parent in parents(of: node, among: shown)
                 where !joined.contains(MapEdits.Line(node, parent)) && !leads(from: parent, to: node) {
-                    joined.insert(MapEdits.Line(node, parent))
-                    joined.insert(MapEdits.Line(parent, node))
-                    later[node, default: []].append(parent)
+                    if !done.contains(parent) {
+                        joined.insert(MapEdits.Line(node, parent))
+                        joined.insert(MapEdits.Line(parent, node))
+                        later[node, default: []].append(parent)
+                    }
                     lines.append(WorkMapLine(before: node, after: parent, style: .parent))
                 }
             }
             return lines
         }
 
-        /// The nearest of these one is part of, up its parents, breadth first, through those that aren't among them.
+        /// The nearest of these one is part of, up the parents of the work items it is, breadth first: each parent's nodes
+        /// among these, else, where none is, its parent's. So a card it goes up through, hidden, that names other work items
+        /// too doesn't take it up their parents.
         func parents(of node: MapNodeID, among shown: Set<MapNodeID>) -> [MapNodeID] {
             var found: [MapNodeID] = []
-            var visited: Set<MapNodeID> = [node]
-            var pending = (up[node] ?? []).sorted()
+            var climbed: Set<ItemRef> = []
+            var pending = (chains.refs[node] ?? []).compactMap { chains.parent[$0] }
             var next = 0
             while next < pending.count {
-                let current = pending[next]
+                let parent = pending[next]
                 next += 1
-                guard visited.insert(current).inserted else { continue }
-                if shown.contains(current) {
-                    found.append(current)
+                guard climbed.insert(parent).inserted, let above = chains.nodes[parent], !above.contains(node) else { continue }
+                let near = above.filter(shown.contains).sorted()
+                if near.isEmpty {
+                    if let grandparent = chains.parent[parent] { pending.append(grandparent) }
                 } else {
-                    pending += (up[current] ?? []).sorted()
+                    for each in near where !found.contains(each) { found.append(each) }
                 }
             }
             return found

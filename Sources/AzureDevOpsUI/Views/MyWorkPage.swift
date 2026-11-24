@@ -274,6 +274,15 @@ enum MyWorkFacts {
         if !open.isEmpty { parts.append(open.joined(separator: ", ") + " still open") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
+
+    /// Whether a work item is assigned to you: as the sprint's board has you; else as your pull requests in the work item's
+    /// organization have you, as with Show: Pull Requests, which reads no sprint, or for a team in another organization.
+    static func isAssigned(_ item: WorkItem, board: SprintBoard?, records: [PRRecord]) -> Bool {
+        if let board, item.isAssigned(to: board.me) { return true }
+        let organization = item.organization.lowercased()
+        let me = records.first { $0.id.organization.lowercased() == organization }?.me
+        return me.map(item.isAssigned(to:)) ?? false
+    }
 }
 
 private struct OnMyWorkKey: EnvironmentKey {
@@ -920,9 +929,11 @@ private struct MyWorkContent: View {
         return states.item(WorkItemKey(ref.scope, id))
     }
 
-    /// Whether a work item is yours: assigned to you, as one in the sprint is, or one of yours outside it.
+    /// Whether a work item is yours: assigned to you, as the sprint or your pull requests have you (`MyWorkFacts.isAssigned`),
+    /// or one of yours outside the sprint.
     private func isYours(_ item: WorkItem) -> Bool {
-        item.isAssigned(to: sprint.board?.me ?? "") || outside?.items.contains { $0.key == item.key } == true
+        MyWorkFacts.isAssigned(item, board: sprint.board, records: store.records)
+            || outside?.items.contains { $0.key == item.key } == true
     }
 
     /// What the Map knows of a work item its Board doesn't have: whether it holds nothing back, resolved, done or removed,

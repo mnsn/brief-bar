@@ -349,8 +349,8 @@ public actor LinkEngine {
         /// has.
         public var parentLookups: Set<WorkItemKey>
         /// The work items My Work's Map wants with their parent, while it shows parents: your linked work items, then their
-        /// parents, a level more each time a read names them (`WorkLinks.mapParents`). The sprint's aren't read, nor linked
-        /// work items read with what stories want.
+        /// parents, a level more each time a read names them (`WorkLinks.mapParents`). The sprint's aren't read while it
+        /// shows, as it reads them, nor linked work items read with what stories want.
         public var mapParents: Set<WorkItemKey>
 
         public init(
@@ -757,10 +757,11 @@ public actor LinkEngine {
         }
     }
 
-    /// The work items My Work's Map wants with their parent, while it shows parents: those the sprint doesn't have, nor the
-    /// linked work items read with what stories want, which have their parent already and are read again with it.
+    /// The work items My Work's Map wants with their parent, while it shows parents: those the sprint doesn't have while it
+    /// shows, as it reads them, nor the linked work items read with what stories want, which have their parent already and
+    /// are read again with it. Once nothing shows the sprint, it's read no more, so the Map reads the sprint's itself.
     private func wantedMapParents() -> Set<WorkItemKey> {
-        inputs.mapParents.subtracting(inputs.sprintItems).subtracting(readWithStories)
+        inputs.mapParents.subtracting(inputs.sprintShows ? inputs.sprintItems : []).subtracting(readWithStories)
     }
 
     /// What those work items are, with their parent, for the Map to climb a level more: a GET for up to 200, read again

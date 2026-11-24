@@ -288,7 +288,7 @@ final class WorkLinksStore {
     /// Copilot session said it changed (`reread`); in the demo, its made-up links change. So too a parent My Work's Map shows.
     /// Nothing for one Show Links doesn't read.
     func changedState(_ key: WorkItemKey, to changed: WorkItem?) {
-        guard let item = read.workItems[key] ?? read.mapParents[key] else { return }
+        guard let item = linkedWorkItem(key) else { return }
         if let changed, let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
             stateChanges[key] = newest
             _ = Self.show(newest, of: key, in: &read.workItems)
@@ -311,9 +311,10 @@ final class WorkLinksStore {
 
     /// A linked work item the sprint doesn't show, as Show Links read it: for My Work's search, the type and title of one
     /// linked to a pull request of yours, as your task outside the sprint is with Show: Pull Requests; else a parent My Work's
-    /// Map shows, as read for it. Nil for one it hasn't read, or couldn't.
+    /// Map shows, as read for it. Of one read both ways, the newer read, as when it was read for the Map since its read with
+    /// what stories want failed. Nil for one it hasn't read, or couldn't.
     func linkedWorkItem(_ key: WorkItemKey) -> WorkItem? {
-        read.workItems[key] ?? read.mapParents[key]
+        WorkItemDetailsStore.newest(read.workItems[key], read.mapParents[key])
     }
 
     /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
@@ -377,8 +378,9 @@ final class WorkLinksStore {
 
     /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents on: climbing
     /// from the work items Show Links links to the pull requests on its board, as their cards stand for them, those you added
-    /// to it and, while Show shows your work, those of yours in the sprint and outside it, up their parents
-    /// (`mapParentLookups`); someone else's work adds none. None otherwise.
+    /// to it and, while Show shows your work, those My Work has cards for, your work in the sprint, what's left and what's done
+    /// (`SprintBoard.myWork`, `myDone`), and outside it, up their parents (`mapParentLookups`): not a story of yours whose tasks
+    /// are all someone else's, which has none. Someone else's work adds none. None otherwise.
     private func mapParentNames() -> Set<WorkItemKey> {
         guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map, order.mapShowsParents else { return [] }
         var start: Set<WorkItemKey> = []
@@ -390,8 +392,7 @@ final class WorkLinksStore {
         }
         if settings.myWorkShows.showsWork {
             let board = sprint.board
-            let me = board?.me ?? ""
-            start.formUnion((board?.items ?? []).filter { $0.isAssigned(to: me) }.map(\.key))
+            if let board { start.formUnion((board.myWork + board.myDone).map(\.key)) }
             if sprint.showsOutside, let outside = sprint.outside?.without(board) { start.formUnion(outside.items.map(\.key)) }
         }
         order.mapState.items.keys.forEach(add)
@@ -427,8 +428,10 @@ final class WorkLinksStore {
     static let mostMapParents = 200
 
     /// Each work item's parent, of those read with it: the linked ones read with what stories want, those read for My Work's
-    /// Map, and the sprint's, which have the last word, as they're read the most often. With the work items read with their
-    /// parent other than for the Map, `readElsewhere`, which the Map needn't read.
+    /// Map, and the sprint's, which have the last word while something shows the sprint, as they're read the most often then.
+    /// Once nothing does, the sprint is read no more: what was read of it comes first, for what's read since to have the last
+    /// word, and the Map reads its work items itself. With the work items read with their parent other than for the Map,
+    /// `readElsewhere`, which the Map needn't read.
     private func knownParents() -> (parents: [WorkItemKey: WorkItemKey], readElsewhere: Set<WorkItemKey>) {
         var parents: [WorkItemKey: WorkItemKey] = [:]
         var readElsewhere: Set<WorkItemKey> = []
@@ -436,13 +439,19 @@ final class WorkLinksStore {
             parents[item.key] = item.parentId.map { WorkItemKey(item.organization, $0) }
             if elsewhere { readElsewhere.insert(item.key) }
         }
+        let sprintReads = sprint.isShowing
+        if !sprintReads {
+            for item in sprintItems { put(item, elsewhere: false) }
+        }
         // Without stories, a linked work item is read without its parent; with them, one partly read may be too.
         let withParents = order?.isOn == true
         for item in read.workItems.values where item.parentId != nil || withParents && !read.partlyRead.contains(item.key) {
             put(item, elsewhere: true)
         }
         for item in read.mapParents.values { put(item, elsewhere: false) }
-        for item in sprintItems { put(item, elsewhere: true) }
+        if sprintReads {
+            for item in sprintItems { put(item, elsewhere: true) }
+        }
         return (parents, readElsewhere)
     }
 
