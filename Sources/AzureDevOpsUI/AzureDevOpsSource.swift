@@ -142,7 +142,14 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// reads, such as someone else's on its Map, from its state, its menu or its details, a PATCH of its state, when
     /// you click it, after which BriefBar reads the sprint again, and, for one off its board that Show Links reads,
     /// that work item, with one request.
-    nonisolated package static let descriptionVersion = 37
+    /// 38: only if you turn on My Work Page, while it shows + Sprint Tasks or + All My Tasks, with Show Links on: the
+    /// Related links Azure DevOps has between the sprint's work items and others, which come with their dependencies,
+    /// for My Work's Map to put related work together; and, while My Work shows its Map with Parents on, the parents of
+    /// your work on it and of what you add to it, up their chains, 200 at most, each with what it is, who has it and
+    /// its own parent, one more request for every 200 of them BriefBar hasn't read already, a level of them at a time,
+    /// then every quarter of an hour. Whether the Map shows parents is kept in its preferences. None of it goes to
+    /// Azure DevOps.
+    nonisolated package static let descriptionVersion = 38
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"

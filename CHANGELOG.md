@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.28.0 - 2026-11-24
+
+- **See what holds each pull request on My Work's Map.** Under its title, a node says at a glance, in a line of its own,
+  what you'd otherwise open its details for: a pull request's **Merge conflicts**, how many comments are left to
+  resolve, who wants changes or else who approved it, its builds or checks that failed or expired, and **Draft**, in red
+  where something's wrong and orange where it waits on you; with your work on the Map, a work item's state, the hours
+  left on it and, for one of yours outside the sprint, where it is, such as **Sprint 41**. **At a Glance**, at the top of
+  the Map, shows or hides each of them, and a node with nothing to say stays as it was.
+- **See what your work is part of, and what's related, on My Work's Map.** With Show Links on, each parent Azure DevOps
+  gives your work, such as a story's feature and that feature's epic, up its chain, is a node of its own, a wave after
+  all that's part of it, as a parent waits for its children to close, joined to each by a lighter line. A parent the
+  Board has is its own card, and one that isn't yours is faded and outlined dashed. Uncheck **Parents**, at the top of
+  the Map, to leave them out. Work that Azure DevOps links as Related sits together in a faint dashed box, in its band
+  By Mission, and in one graph in All. Hover a node for what it's part of, what's part of it and what's in its box.
+- **Straighter lines on My Work's Map.** A node goes up as far as what comes before it, where a row is free above it,
+  rather than staying lower where the Map moved it to cross fewer lines: so more chains run straight along their row,
+  and the Map can be shorter.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With My Work
+  Page and Show Links on, Azure DevOps reads the Related links between work items, and the parents of your work on My
+  Work's Map, for the Map to show them.
+
 ## 0.27.0 - 2026-11-23
 
 - **Finished missions leave the Board.** The Board shows a mission's lane, or a story's, only while it has a card in a
