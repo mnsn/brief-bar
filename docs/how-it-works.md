@@ -3613,11 +3613,14 @@ never a removed one, which takes it off the board: remove one in Azure DevOps. A
 offers none. So can any other work item in the team's project that BriefBar reads, whose process gives every work item
 of a type the same states (`SprintBoard.isInTeamsProject`): one of yours outside the sprint, as My Work reads them
 (`SprintStore.outside`), and one Show Links read (`WorkLinksStore.linkedWorkItem`), such as someone else's that My
-Work's Map shows, or one you added there; BriefBar reads each as whichever of those changed last, for its menus, a
-change and what My Work's Map shows of it alike, in the category the team's backlog configuration puts its type's state
-in, such as a custom state the team counts as done, which Show Links would only guess from the state's name
-(`StateChanges.item(_:)`, `SprintBoard.categories(of:)`). Not one in another project, whose process
-may give it other states, nor with no sprint going on, whose board brings the team's states. A task's state, the symbol
+Work's Map shows, or one you added there; BriefBar reads each as whichever of those changed last, and one on the
+sprint's board as the board has it while something shows the sprint, which reads it the most often then, else as
+whichever changed last of the board's, as the sprint was last read, and those, such as a parent of your work that Show
+Links reads for the Map then, so that one closed or renamed since shows so: for its menus, a change and what My Work's
+Map shows of it alike, in the category the team's backlog configuration puts its type's state in, such as a custom state
+the team counts as done, which Show Links would only guess from the state's name (`StateChanges.item(_:)`,
+`SprintBoard.categories(of:)`). Not one in another project, whose process may give it other states, nor with no sprint
+going on, whose board brings the team's states. A task's state, the symbol
 at the start of its line, a story's or bug's on its card, and the state in a work item's details are then menus of them,
 its own checked (`StateSymbol`, `StateChip`), and its menus have **State** (`StateMenuItems`); with the setting off, the
 state's tooltip says how to turn it on. On My Work, a work item's card's menu has State too, and its node on the Map

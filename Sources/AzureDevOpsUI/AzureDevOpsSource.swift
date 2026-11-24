@@ -447,8 +447,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         tagChanges = TagChanges(store: store, settings: settings)
         sprintMoves = SprintMoves(sprint: sprint, settings: settings, client: store.client)
         let states = StateChanges(sprint: sprint, settings: settings, client: store.client)
-        // A work item off the sprint's board, as one My Work's Map shows: as Show Links read it, and, once its state changed,
-        // or may have, so there and in its details.
+        // A work item as Show Links read it, as one My Work's Map shows, the sprint's too while nothing shows the sprint; and,
+        // once the state of one off the sprint's board changed, or may have, so there and in its details.
         states.linked = { [weak workLinks] key in workLinks?.linkedWorkItem(key) }
         states.elsewhere = { [weak workLinks, weak details] key, changed in
             workLinks?.changedState(key, to: changed)

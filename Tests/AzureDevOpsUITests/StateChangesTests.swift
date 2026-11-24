@@ -529,6 +529,34 @@ import Testing
         #expect(states.item(parent.key) == parent)
     }
 
+    /// A work item on the sprint's board, as a story My Work's Map shows as your tasks' parent, is read as the board has it
+    /// while something shows the sprint, which reads it the most often then. Once nothing does, it's read as whichever
+    /// changed last of the board's, as the sprint was last read, and Show Links', which reads it for the Map then: closed and
+    /// renamed since, it shows so; a read from before the sprint's leaves it as the board has it.
+    @Test func aWorkItemOnTheBoardIsReadAsItChangedLastWhileNothingShowsTheSprint() throws {
+        let (sprint, states, _) = live()
+        let story = try item(sprint, 5101)
+        let changedAt = try #require(story.changedAt)
+        #expect(!sprint.isShowing)
+        var older = story
+        older.state = "New"
+        older.changedAt = changedAt.addingTimeInterval(-60)
+        states.linked = { $0 == story.key ? older : nil }
+        #expect(states.item(story.key) == story)
+
+        var closed = story
+        closed.title = "Save items for later"
+        closed.state = "Closed"
+        closed.category = .completed
+        closed.changedAt = changedAt.addingTimeInterval(60)
+        states.linked = { $0 == story.key ? closed : nil }
+        #expect(states.item(story.key) == closed)
+        #expect(states.item(story.key)?.isDone == true)
+
+        sprint.setVisible(true, for: "sprint")
+        #expect(states.item(story.key) == story)
+    }
+
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine
     /// could need (`waitLimit`), failing the test if it doesn't happen.
     private func waitUntil(_ condition: @MainActor () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
