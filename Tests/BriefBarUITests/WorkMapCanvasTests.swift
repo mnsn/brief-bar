@@ -240,6 +240,30 @@ import Testing
         let pieces = try [fourth, fifth].map { try #require(narrow.frames[$0]).insetBy(dx: -pad, dy: -pad) }
         #expect(narrow.boxes.map(\.frame) == pieces)
     }
+
+    /// A box round related work in the first or last column, or the last row, goes past the canvas's edge, into the padding
+    /// round it, so its boxes and lines are drawn that far (`reach`), dashed edge and all, while its nodes stay where they
+    /// are; a canvas with no box at its edge draws them only on itself.
+    @Test func aBoxAtTheCanvasEdgeIsDrawnPastIt() throws {
+        var edits = MapEdits()
+        let first = ItemRef.workItem(organization: "contoso", id: 5101)
+        let second = ItemRef.workItem(organization: "contoso", id: 5102)
+        for ref in [first, second] {
+            edits.addItem(ref, home: nil, by: .you, at: Self.day)
+        }
+        edits.set(MapEdits.Line(.card(first), .card(second)), on: true, by: .you, at: Self.day)
+        let state = MapEdits.merged([edits], now: Self.day)
+        let map = WorkMap(PullRequestBoard(), missions: [], state: state, related: [MapRelated(second, first)])
+        let geometry = Self.geometry(try #require(map.bands.first?.graph), width: nil)
+        let box = try #require(geometry.boxes.first?.frame)
+        let (pad, edge) = (Self.metrics.boxPadding, Self.metrics.scale)
+        #expect(box.minX == -pad && box.maxX == geometry.size.width + pad && box.maxY == geometry.size.height + pad)
+        #expect(geometry.reach.contains(box.insetBy(dx: -edge, dy: -edge)))
+        #expect(geometry.nodes.map(\.frame.minX).min() == 0)
+
+        let plain = Self.geometry(try #require(Self.map(chain: 2).bands.first?.graph), width: nil)
+        #expect(plain.boxes.isEmpty && plain.reach == CGRect(origin: .zero, size: plain.size))
+    }
 }
 
 /// + Task's search, as Return goes.

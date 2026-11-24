@@ -263,6 +263,100 @@ import Testing
         try await until("they're taken back") { dependencies.parents.isEmpty && dependencies.related.isEmpty }
     }
 
+    /// The Map climbs from your work in the sprint only while Show shows your work: with Show: Pull Requests, a sprint read
+    /// before has none of its parents read. Changing Show tells the engine at once.
+    @Test func theMapClimbsFromYourSprintWorkOnlyWhileShowShowsIt() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: false)
+        order.setOn(true)
+        order.setMyWorkPage(true)
+        order.setMyWorkView(.map)
+        // Your task in the sprint, under a story the sprint doesn't have.
+        var board = DemoData.sprintBoard(now: Date())
+        let task = WorkItem(
+            id: 9101, organization: organization, project: "Storefront", type: "Task", title: "Check the coupon totals",
+            state: "Active", category: .inProgress, assignedTo: DemoData.me, parentId: 9100
+        )
+        board.rows.append(SprintBoard.Row(parent: nil, tasks: [task]))
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        // An engine that reads nothing: the test reads what it's told to.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.setMyWorkOnScreen(true)
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 && workLinks.engineInputs != nil }
+        // Once what the lists and the Map changed has settled (their debounces take up to 300 ms): nothing else tells the
+        // engine anything after.
+        try await Task.sleep(for: .milliseconds(600))
+        let story = WorkItemKey(organization, 9100)
+        #expect(settings.myWorkShows == .pullRequests)
+        #expect(workLinks.engineInputs?.mapParents.contains(story) == false)
+
+        settings.myWorkShows = .sprintTasks
+        try await until("its story's read") { workLinks.engineInputs?.mapParents.contains(story) == true }
+        settings.myWorkShows = .pullRequests
+        try await until("it isn't") { workLinks.engineInputs?.mapParents.contains(story) == false }
+    }
+
+    /// The Map is told each parent read for it, so that it draws again as one is read, or its title or state changes, though
+    /// no work item's parent did: as when the top one is read, which has none.
+    @Test func theMapIsToldOfEachParentReadForIt() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        let dependencies = MapDependencies(sprint: sprint, settings: settings, client: store.client)
+        workLinks.dependencies = dependencies
+        // An engine that reads nothing, and whose own reads don't reach the store: the test tells what it read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        func item(_ id: Int, _ type: String, _ title: String, parent: Int? = nil) -> WorkItem {
+            WorkItem(
+                id: id, organization: organization, project: "Storefront", type: type, title: title, state: "Active",
+                category: .inProgress, parentId: parent
+            )
+        }
+        let story = item(9001, "User Story", "Save items for later", parent: 9002)
+        engines.told[0](WorkLinks(mapParents: [key(9001): story]))
+        try await until("the story's read") { dependencies.parentItems == [key(9001): story] }
+        #expect(dependencies.parents == [key(9001): key(9002)])
+        // The feature above it, at the top: no work item's parent changes.
+        let feature = item(9002, "Feature", "Cart")
+        engines.told[0](WorkLinks(mapParents: [key(9001): story, key(9002): feature]))
+        try await until("the feature's read") { dependencies.parentItems[key(9002)] == feature }
+        #expect(dependencies.parents == [key(9001): key(9002)])
+        let renamed = item(9002, "Feature", "Cart and wish list")
+        engines.told[0](WorkLinks(mapParents: [key(9001): story, key(9002): renamed]))
+        try await until("it's renamed") { dependencies.parentItems[key(9002)] == renamed }
+        links.setOn(false)
+        try await until("they're taken back") { dependencies.parentItems.isEmpty }
+    }
+
     /// Your work outside the sprint is the sprint's to Show Links, whose pull requests it reads and which it doesn't look up,
     /// only while My Work shows its cards, with + All My Tasks: not for + Sprint Tasks' line alone.
     @Test func yourWorkOutsideTheSprintIsReadAsTheSprintsWhileMyWorkShowsItsCards() async throws {

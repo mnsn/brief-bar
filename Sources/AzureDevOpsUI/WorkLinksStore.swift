@@ -131,11 +131,12 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.update() } }
             .store(in: &cancellables)
-        // What My Work's Map names, while it shows: what you and sessions changed of it, whether it shows, and its parents.
+        // What My Work's Map names, while it shows: what you and sessions changed of it, whether it shows, and its parents, which
+        // climb from your sprint work only while Show shows it.
         if let order {
             order.$mapEdits.map { _ in () }
                 .merge(with: order.$mapTold.map { _ in () }, order.$myWorkView.map { _ in () }, order.$myWorkPage.map { _ in () })
-                .merge(with: order.$mapShowsParents.map { _ in () })
+                .merge(with: order.$mapShowsParents.map { _ in () }, settings.$myWorkShows.removeDuplicates().map { _ in () })
                 .dropFirst()
                 .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
                 .sink { [weak self] in MainActor.assumeIsolated { self?.updateEngine() } }
@@ -149,7 +150,7 @@ final class WorkLinksStore {
         lastInputs = nil
         read = WorkLinks()
         stateChanges = [:]
-        dependencies?.told([], parents: [:], related: [])
+        dependencies?.told([], parents: [:], parentItems: [:], related: [])
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
         tellsStories = false
@@ -372,15 +373,18 @@ final class WorkLinksStore {
     static let mostMapLookups = 200
 
     /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents on: climbing
-    /// from your work items, those of yours in the sprint and outside it, those linked to your pull requests and those you
-    /// added to it, up their parents (`mapParentLookups`); someone else's work adds none. None otherwise.
+    /// from your work items, those linked to your pull requests, those you added to it and, while Show shows your work, those
+    /// of yours in the sprint and outside it, up their parents (`mapParentLookups`); someone else's work adds none. None
+    /// otherwise.
     private func mapParentNames() -> Set<WorkItemKey> {
         guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map, order.mapShowsParents else { return [] }
-        let board = sprint.board
-        let me = board?.me ?? ""
-        var start = Set((board?.items ?? []).filter { $0.isAssigned(to: me) }.map(\.key))
-        if sprint.showsOutside, let outside = sprint.outside?.without(board) { start.formUnion(outside.items.map(\.key)) }
-        start.formUnion(linkedToPullRequests)
+        var start = linkedToPullRequests
+        if settings.myWorkShows.showsWork {
+            let board = sprint.board
+            let me = board?.me ?? ""
+            start.formUnion((board?.items ?? []).filter { $0.isAssigned(to: me) }.map(\.key))
+            if sprint.showsOutside, let outside = sprint.outside?.without(board) { start.formUnion(outside.items.map(\.key)) }
+        }
         for ref in order.mapState.items.keys where ref.kind == .workItem {
             if let id = ref.number { start.insert(WorkItemKey(ref.scope, id)) }
         }
@@ -515,12 +519,15 @@ final class WorkLinksStore {
 
     // MARK: Telling Show Links
 
-    /// Tells My Work's Map what Show Links read: the dependencies; and, while it reads, the work items' parents and the
-    /// Related links.
+    /// Tells My Work's Map what Show Links read: the dependencies; and, while it reads, the work items' parents, the parents
+    /// read for the Map, in the state BriefBar changed them to (`keepingStateChanges`), and the Related links.
     private func tellMap() {
         guard let dependencies else { return }
-        let parents = links.isOn ? knownParents().parents : [:]
-        dependencies.told(read.dependencies, parents: parents, related: links.isOn ? read.related : [])
+        let on = links.isOn
+        dependencies.told(
+            read.dependencies, parents: on ? knownParents().parents : [:], parentItems: on ? read.mapParents : [:],
+            related: on ? read.related : []
+        )
     }
 
     private func publish() {

@@ -1040,6 +1040,9 @@ struct WorkMapCanvas: View {
         /// Where the grid's title is, with one.
         var gridTop: CGFloat?
         var size: CGSize = .zero
+        /// Where its boxes and lines are drawn: the canvas, and past its edges as far as a box round related work there goes,
+        /// edge and all, into the padding round it, as a box goes a little outside its nodes.
+        var reach: CGRect = .zero
         var frames: [MapNodeID: CGRect] = [:]
         /// How the graphs' columns fold to the page's width.
         var fold = WorkMapFold(columns: 0)
@@ -1115,7 +1118,7 @@ struct WorkMapCanvas: View {
                     .accessibilityHidden(true)
             }
             linesLayer(geometry, lit: lit, linked: linked, metrics: m)
-                .at(CGRect(origin: .zero, size: geometry.size))
+                .at(geometry.reach)
             ForEach(geometry.blocks, id: \.id) { placed in
                 if let block = blocks.first(where: { $0.id == placed.id }), let title = block.title, let top = placed.titleTop {
                     blockTitle(block, title: title)
@@ -1196,11 +1199,14 @@ struct WorkMapCanvas: View {
     static let azureDevOpsBlue = Color(red: 0, green: 0.47, blue: 0.83)
 
     /// The boxes round related work, faint and dashed, then the lines, each marked at its middle where Azure DevOps links all
-    /// it stands for (`linked`); those to parents lighter. A box fades as lines do while nothing in it is lit up.
+    /// it stands for (`linked`); those to parents lighter. A box fades as lines do while nothing in it is lit up. It's as big
+    /// as the geometry's `reach`, so that a box at the canvas's edge isn't cut off there, but only the canvas takes the pointer.
     private func linesLayer(
         _ geometry: Geometry, lit: Set<MapNodeID>?, linked: Set<WorkMapLineID>, metrics m: WorkMapMetrics
     ) -> some View {
-        Canvas { context, _ in
+        let canvas = CGRect(origin: CGPoint(x: -geometry.reach.minX, y: -geometry.reach.minY), size: geometry.size)
+        return Canvas { context, _ in
+            context.translateBy(x: canvas.minX, y: canvas.minY)
             for box in geometry.boxes {
                 let isFaded = lit.map { lit in !box.members.contains(where: lit.contains) } ?? false
                 let shape = Path(roundedRect: box.frame, cornerRadius: 9 * m.scale + m.boxPadding, style: .continuous)
@@ -1237,7 +1243,7 @@ struct WorkMapCanvas: View {
                 }
             }
         }
-        .contentShape(Rectangle())
+        .contentShape(Path(canvas))
         .onContinuousHover(coordinateSpace: .named(Self.space)) { phase in
             switch phase {
             case .active(let point): hoveredLine = line(at: point, in: geometry)
@@ -1653,6 +1659,7 @@ extension WorkMapCanvas.Geometry {
         self.fold = fold
         self.inset = inset
         size = CGSize(width: max(graphs, gridWidth, m.nodeWidth), height: max(y, 0))
+        reach = boxes.reduce(CGRect(origin: .zero, size: size)) { $0.union($1.frame.insetBy(dx: -m.scale, dy: -m.scale)) }
     }
 
     /// Where a box goes in each tier a fold has any of its cards or work items in: round the rows it keeps, from the top of

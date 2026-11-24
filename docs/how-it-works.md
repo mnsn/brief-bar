@@ -2441,15 +2441,16 @@ epic, and links work items as Related (`System.LinkTypes.Related`), which has no
 links with the dependencies, from the same response, with nothing more asked (`ADOWorkItemRelations.related(in:)`,
 `RelatedWork`, `WorkLinks.related`): each work item's with work items of its organization, never with itself. It knows
 the parents of the sprint's work items, read with them, and of the linked ones it reads with theirs, with Pull Request
-Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, yours in the
-sprint and, with + All My Tasks, outside it, those linked to your pull requests and those you added, but not someone
-else's, up their parents, a level at a time, each in order, to the first 200 it doesn't read otherwise
-(`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with their own parent
-(`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before names it, then every
-quarter of an hour; one that can't be read is tried again an hour later, and one a read leaves out, as when it was
-deleted, is forgotten. Of a work item read more than one way, the sprint's read says its parent last, as it's read the
-most often (`WorkLinksStore.knownParents`). My Work's Map has them only while Show Links is on (`MapDependencies.told`),
-and forgets them once someone else signs in.
+Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, those linked
+to your pull requests, those you added and, with + Sprint Tasks or + All My Tasks, yours in the sprint and, with + All
+My Tasks, outside it, but not someone else's, up their parents, a level at a time, each in order, to the first 200 it
+doesn't read otherwise (`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with
+their own parent (`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before
+names it, then every quarter of an hour; one that can't be read is tried again an hour later, and one a read leaves out,
+as when it was deleted, is forgotten. Of a work item read more than one way, the sprint's read says its parent last, as
+it's read the most often (`WorkLinksStore.knownParents`). My Work's Map has them, and those read for it, so that it draws
+again as one is read or changes though no parent does, only while Show Links is on (`MapDependencies.told`,
+`parentItems`), and forgets them once someone else signs in.
 
 **Parents** (`MapParents`, `order.map.hidesParents`, on until you uncheck it, at the top of the Map while Azure DevOps
 gives your work any parent, or while it's off: `WorkMapParentsToggle`, `WorkMap.hasParents`) makes nodes of them
