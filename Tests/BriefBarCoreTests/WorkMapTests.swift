@@ -822,11 +822,64 @@ import Testing
 
         let linking = WorkMap(board, missions: [checkout], azureDevOps: [.init(Self.work(5150), Self.work(5151))], parents: parents)
         #expect(linking.bands.last?.graph?.lines.map(\.style) == [.azureDevOps])
+        #expect(linking.bands.last?.graph?.partOf == [Self.work(5150): [Self.work(5151)]])
+        #expect(linking.groups.contains { $0.graph?.partOf == [Self.work(5150): [Self.work(5151)]] })
         let waiting = WorkMap(board, missions: [checkout], azureDevOps: [.init(Self.work(5151), Self.work(5150))], parents: parents)
         let rest = try #require(waiting.bands.last?.graph)
         #expect(Self.lines(rest, in: waiting) == ["5151 > 5150"])
         #expect(rest.lines.map(\.style) == [.azureDevOps])
+        #expect(rest.partOf == [Self.work(5150): [Self.work(5151)]])
         #expect(Self.places(rest) == ["5151 0,0", "5150 1,0"])
+    }
+
+    /// A parent that what's part of it waits for, through others, has no line from it, which would make a loop where none of
+    /// them could go first: the dependencies keep their waves, and it's still part of it. So up a chain of parents too.
+    @Test func aParentItsWorkWaitsForThroughOthersMakesNoLoop() throws {
+        let work = [Steps.work(5150, .toDo), Steps.work(5151, .toDo), Steps.work(5152, .toDo)]
+        let board = Steps.board([:]).withWork(work, missions: [], stories: [])
+        let first: Set = [MapEdits.Line(Self.work(5150), Self.work(5151)), MapEdits.Line(Self.work(5151), Self.work(5152))]
+        let parents = [Steps.task(5151): Steps.task(5150), Steps.task(5152): Steps.task(5150)]
+        let map = WorkMap(board, missions: [], azureDevOps: first, parents: parents)
+        let graph = try #require(map.bands.first?.graph)
+        #expect(Self.lines(graph, in: map) == ["5150 > 5151", "5151 > 5152"])
+        #expect(Self.places(graph) == ["5150 0,0", "5151 1,0", "5152 2,0"])
+        #expect(graph.partOf == [Self.work(5151): [Self.work(5150)], Self.work(5152): [Self.work(5150)]])
+
+        let chain = [Steps.task(5152): Steps.task(5151), Steps.task(5151): Steps.task(5150)]
+        let up = WorkMap(board, missions: [], azureDevOps: [MapEdits.Line(Self.work(5150), Self.work(5152))], parents: chain)
+        let climbing = try #require(up.bands.first?.graph)
+        #expect(Self.lines(climbing, in: up) == ["5150 > 5152", "5151 > 5150"])
+        #expect(Self.places(climbing) == ["5151 0,0", "5150 1,0", "5152 2,0"])
+        #expect(climbing.partOf == [Self.work(5151): [Self.work(5150)], Self.work(5152): [Self.work(5151)]])
+    }
+
+    /// Pull requests' cards that each name a task and its story both stand for the story: neither is part of the other, nor
+    /// waits for it. One that names only the task is part of the one that names the story.
+    @Test func cardsThatEachNameATaskAndItsStoryArentPartOfEachOther() {
+        let board = Steps.board(Self.open([4091, 4092]))
+        let both = [Steps.task(5112), Steps.task(5180)]
+        let parents = [Steps.task(5112): Steps.task(5180)]
+        let map = WorkMap(board, missions: [], linked: [Self.pr(4091): both, Self.pr(4092): both], parents: parents)
+        #expect(Self.places(map.bands.first?.graph) == ["!4091 0,0", "!4092 0,1"])
+        #expect(map.bands.first?.graph?.lines.isEmpty == true)
+        #expect(map.groups.isEmpty)
+
+        let one = WorkMap(board, missions: [], linked: [Self.pr(4091): both, Self.pr(4092): [Steps.task(5112)]], parents: parents)
+        #expect(Self.lines(one.bands.first?.graph, in: one) == ["!4092 > !4091"])
+        #expect(one.bands.first?.graph?.partOf == [Self.node(4092): [Self.node(4091)]])
+    }
+
+    /// Others' work counts only others' work items: not a parent of yours, nor one you added.
+    @Test func othersWorkCountsNeitherParentsNorWhatYouAdded() {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .toDo)], missions: [], stories: [])
+        var yours = MapEdits()
+        yours.addItem(Steps.task(5210), home: nil, by: .you, at: Self.day)
+        let map = WorkMap(
+            board, missions: [], state: MapEdits.merged([yours], now: Self.day), azureDevOps: [.init(Self.work(5201), Self.work(5150))],
+            work: { MapWorkItem(ref: $0) }, showsOthers: true, parents: [Steps.task(5150): Steps.task(5180)]
+        )
+        #expect(Set(map.everything.map(Self.name)) == ["5150", "5180", "5201", "5210"])
+        #expect(map.othersCount == 1)
     }
 
     /// An open story whose tasks are all done still has its node, now, after them in Done; with Done off, alone.

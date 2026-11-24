@@ -1893,13 +1893,12 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
   work items while it's on screen, on the Sprint page or My Work, and to your other tasks and bugs while My Work shows
-  them, and what the linked ones your lists don't show are; with **Pull Request
+  them, with the Related links between those work items and others, which come with them, kept in memory only, for My
+  Work's Map to put related work together, and what the linked ones your lists don't show are; with **Pull Request
   Order** on too, each linked work item's parent and place in the backlog, and what those parents, its stories, are
   when BriefBar hasn't read them, kept in memory only, to put a story's pull requests together; with **My Work Page**
-  on too, the Related links between the sprint's work items and others, which come with the pull requests linked to
-  them, and, while
-  My Work's Map is on screen with Parents on, what the parents of your work on it are, with their own parents, up their
-  chains, 200 at most, kept in memory only, for the Map to show; from the Copilot
+  on too, while My Work's Map is on screen with Parents on, what the parents of your work on it are, with their own
+  parents, up their chains, 200 at most, kept in memory only, for the Map to show; from the Copilot
   app's database, read-only, which pull request each session started from or opened. The links you add
   or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
   Azure DevOps, GitHub or Copilot.

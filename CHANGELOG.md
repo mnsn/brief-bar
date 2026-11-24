@@ -17,9 +17,9 @@
 - **Straighter lines on My Work's Map.** A node goes up as far as what comes before it, where a row is free above it,
   rather than staying lower where the Map moved it to cross fewer lines: so more chains run straight along their row,
   and the Map can be shorter.
-- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With My Work
-  Page and Show Links on, Azure DevOps reads the Related links between work items, and the parents of your work on My
-  Work's Map, for the Map to show them.
+- **After this update, Azure DevOps asks you once to look at what it reads, and waits until you have.** With Show Links
+  on, Azure DevOps reads the Related links between the sprint's work items and others, with their pull requests, and,
+  with My Work Page on too, the parents of your work on My Work's Map, for the Map to show them.
 
 ## 0.27.0 - 2026-11-23
 

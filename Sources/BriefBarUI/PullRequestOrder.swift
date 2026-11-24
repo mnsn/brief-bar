@@ -1925,6 +1925,11 @@ package final class PullRequestOrder: ObservableObject {
         PullRequestBoard.make(stages: stages, missions: missions, kinds: kinds, lanes: lanes ?? self.lanes, picks: picks)
     }
 
+    /// The pull requests of `kinds` the board has a card for, as `board(kinds:)` does, without making it.
+    package func refsOnBoard(kinds: Set<ItemRef.Kind>) -> Set<ItemRef> {
+        Set(PullRequestBoard.onBoard(stages, kinds: kinds).keys)
+    }
+
     /// The stage a mission's graph colors a pull request by: its own, or Merged for one BriefBar saw merge whose source
     /// tells stages, listed or not, so every merged one on Azure DevOps' page reads alike; nil for one with none, such as
     /// GitHub's, which show as they did.

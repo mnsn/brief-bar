@@ -216,6 +216,7 @@ import Testing
             order: order
         )
         await workLinks.loadOnce()
+        PullRequestOrderFacts(order: order, store: store, settings: settings, details: nil, workLinks: workLinks).publish()
         func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
         let added = key(9001)
         order.addMapItem(added.linkRef, home: nil, undo: "")
@@ -234,6 +235,41 @@ import Testing
         order.setMyWorkView(.map)
         workLinks.setMyWorkOnScreen(false)
         #expect(workLinks.inputs().mapParents.isEmpty)
+    }
+
+    /// The Map climbs from the work items the pull requests on your board are linked to, as their cards show them, those
+    /// you linked in BriefBar too; and from none of a pull request off it, such as someone else's you finished reviewing.
+    @Test func theMapClimbsFromTheWorkOfThePullRequestsOnYourBoard() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let order = PullRequestOrder(defaults: MemoryDefaults(), isDemo: true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings,
+            order: order
+        )
+        await workLinks.loadOnce()
+        PullRequestOrderFacts(order: order, store: store, settings: settings, details: nil, workLinks: workLinks).publish()
+        func key(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        let yours = ItemRef.pullRequest(organization: organization, number: 4102)
+        let jordans = ItemRef.pullRequest(organization: organization, number: 4113)
+        links.link(yours, key(9300).linkRef)
+        links.link(jordans, key(9310).linkRef)
+        order.setMyWorkPage(true)
+        order.setMyWorkView(.map)
+        workLinks.setMyWorkOnScreen(true)
+        #expect(order.refsOnBoard(kinds: [.pullRequest]).isSuperset(of: [yours, jordans]))
+        #expect(workLinks.inputs().mapParents.isSuperset(of: [key(9300), key(9310)]))
+
+        #expect(order.finishedReview(jordans) == .done)
+
+        #expect(!order.refsOnBoard(kinds: [.pullRequest]).contains(jordans))
+        let wanted = workLinks.inputs().mapParents
+        #expect(wanted.contains(key(9300)) && !wanted.contains(key(9310)))
     }
 
     /// Show Links tells My Work's Map the parents of the work items it read, and the Related links Azure DevOps has, while

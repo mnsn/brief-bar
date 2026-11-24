@@ -131,12 +131,15 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.update() } }
             .store(in: &cancellables)
-        // What My Work's Map names, while it shows: what you and sessions changed of it, whether it shows, and its parents, which
-        // climb from your sprint work only while Show shows it.
+        // What My Work's Map names, while it shows: what you and sessions changed of it, whether it shows, the pull requests on
+        // its board, and its parents, which climb from your sprint work only while Show shows it.
         if let order {
             order.$mapEdits.map { _ in () }
                 .merge(with: order.$mapTold.map { _ in () }, order.$myWorkView.map { _ in () }, order.$myWorkPage.map { _ in () })
-                .merge(with: order.$mapShowsParents.map { _ in () }, settings.$myWorkShows.removeDuplicates().map { _ in () })
+                .merge(
+                    with: order.$mapShowsParents.map { _ in () }, settings.$myWorkShows.removeDuplicates().map { _ in () },
+                    order.$stages.map { _ in () }
+                )
                 .dropFirst()
                 .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
                 .sink { [weak self] in MainActor.assumeIsolated { self?.updateEngine() } }
@@ -373,21 +376,25 @@ final class WorkLinksStore {
     static let mostMapLookups = 200
 
     /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents on: climbing
-    /// from your work items, those linked to your pull requests, those you added to it and, while Show shows your work, those
-    /// of yours in the sprint and outside it, up their parents (`mapParentLookups`); someone else's work adds none. None
-    /// otherwise.
+    /// from the work items Show Links links to the pull requests on its board, as their cards stand for them, those you added
+    /// to it and, while Show shows your work, those of yours in the sprint and outside it, up their parents
+    /// (`mapParentLookups`); someone else's work adds none. None otherwise.
     private func mapParentNames() -> Set<WorkItemKey> {
         guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map, order.mapShowsParents else { return [] }
-        var start = linkedToPullRequests
+        var start: Set<WorkItemKey> = []
+        func add(_ ref: ItemRef) {
+            if ref.kind == .workItem, let id = ref.number { start.insert(WorkItemKey(ref.scope, id)) }
+        }
+        for pullRequest in order.refsOnBoard(kinds: PullRequestsByMission.kinds) {
+            links.connections(of: pullRequest).forEach { add($0.item.ref) }
+        }
         if settings.myWorkShows.showsWork {
             let board = sprint.board
             let me = board?.me ?? ""
             start.formUnion((board?.items ?? []).filter { $0.isAssigned(to: me) }.map(\.key))
             if sprint.showsOutside, let outside = sprint.outside?.without(board) { start.formUnion(outside.items.map(\.key)) }
         }
-        for ref in order.mapState.items.keys where ref.kind == .workItem {
-            if let id = ref.number { start.insert(WorkItemKey(ref.scope, id)) }
-        }
+        order.mapState.items.keys.forEach(add)
         let known = knownParents()
         return Self.mapParentLookups(from: start, parents: known.parents, known: known.readElsewhere)
     }

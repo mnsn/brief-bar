@@ -203,8 +203,21 @@ package struct WorkMapQuestion {
     package var items: [WorkMapItem]
     /// What each waits for right before it, as the Map has it: on it or not.
     package var waits: [MapNodeID: [MapNodeID]]
+    /// The nearest of them each is part of, up its parents, as Azure DevOps gives them (`WorkMapGraph.partOf`).
+    package var partOf: [MapNodeID: [MapNodeID]]
     /// The steps the Map has, for their names.
     package var steps: [MapStep]
+
+    package init(
+        title: String, items: [WorkMapItem], waits: [MapNodeID: [MapNodeID]], partOf: [MapNodeID: [MapNodeID]] = [:],
+        steps: [MapStep]
+    ) {
+        self.title = title
+        self.items = items
+        self.waits = waits
+        self.partOf = partOf
+        self.steps = steps
+    }
 }
 
 /// Whom ✨ Ask Copilot asks.
@@ -400,9 +413,7 @@ package struct WorkMapView: View {
                     WorkMapParentsToggle(order: order, isOn: map.showsParents)
                 }
                 if content.find != nil {
-                    WorkMapOthersToggle(
-                        order: order, count: map.everything.filter { $0.workItem.map { !$0.isAdded } ?? false }.count, shown: shownOthers
-                    )
+                    WorkMapOthersToggle(order: order, count: map.othersCount, shown: shownOthers)
                 }
                 if offersGlances {
                     WorkMapGlancesMenu(order: order, offersWork: WorkMapGlancesMenu.offersWork(map, showsWork: content.work != nil))
@@ -589,7 +600,7 @@ package struct WorkMapView: View {
     private func question(title: String, graph: WorkMapGraph) -> WorkMapQuestion {
         let items = graph.nodes.map(\.item)
         let waits = Dictionary(items.map { ($0.id, map.waitsFor($0.id).map(\.node)) }, uniquingKeysWith: { first, _ in first })
-        return WorkMapQuestion(title: title, items: items, waits: waits, steps: order.mapState.steps)
+        return WorkMapQuestion(title: title, items: items, waits: waits, partOf: graph.partOf, steps: order.mapState.steps)
     }
 
     // MARK: All
@@ -1107,7 +1118,7 @@ struct WorkMapCanvas: View {
         let target = drawing.flatMap { drawing in node(at: drawing.to, in: geometry).flatMap { $0 == drawing.from ? nil : $0 } }
         let across = geometry.size.width - geometry.inset
         let linked = Set(geometry.lines.filter { editor.links(of: $0.line)?.isLinked == true }.map(\.id))
-        let ties = self.ties(of: lines)
+        let ties = self.ties
         CanvasLayout(size: geometry.size) {
             ForEach(Array(geometry.titles.enumerated()), id: \.offset) { _, title in
                 Text(title.text)
@@ -1175,15 +1186,20 @@ struct WorkMapCanvas: View {
     }
 
     /// What Azure DevOps ties each node to on the canvas, for its tooltip and VoiceOver, as VoiceOver doesn't see lines or
-    /// boxes: what it's part of, what's part of it, and what's in a box with it.
-    private func ties(of lines: [WorkMapLine]) -> [MapNodeID: [String]] {
+    /// boxes: what it's part of and what's part of it, whichever line joins them, and what's in a box with it.
+    private var ties: [MapNodeID: [String]] {
         var ties: [MapNodeID: [String]] = [:]
-        let parents = lines.filter { $0.style == .parent }
-        for line in parents {
-            ties[line.before, default: []].append(WorkMapText.partOf(editor.label(line.after)))
+        var parts: [MapNodeID: [MapNodeID]] = [:]
+        for graph in blocks.map(\.graph) {
+            for node in graph.nodes.map(\.id) {
+                for parent in graph.partOf[node] ?? [] {
+                    ties[node, default: []].append(WorkMapText.partOf(editor.label(parent)))
+                    parts[parent, default: []].append(node)
+                }
+            }
         }
-        for (parent, children) in Dictionary(grouping: parents, by: \.after) {
-            ties[parent, default: []].append(WorkMapText.parts(children.map { editor.label($0.before) }))
+        for (parent, children) in parts {
+            ties[parent, default: []].append(WorkMapText.parts(children.map(editor.label)))
         }
         for box in blocks.flatMap(\.graph.boxes) {
             for member in box.members {

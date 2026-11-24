@@ -433,6 +433,32 @@ import Testing
         #expect(fromSprint.pullRequestOnTop == nil)
     }
 
+    /// ✨ Ask Copilot's prompt on the Map says what's part of what, as Azure DevOps puts your work under its parents, apart
+    /// from what waits for what, so that the session doesn't tell BriefBar what it reads itself; with no parents, it says
+    /// nothing of them.
+    @Test func askCopilotsPromptSaysWhatsPartOfWhatApartFromWhatWaits() {
+        let task = ItemRef.workItem(organization: "contoso", id: 5103)
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let feature = ItemRef.workItem(organization: "contoso", id: 9002)
+        let labels = [task: "Task 5103", story: "User Story 5101", feature: "Feature 9002"]
+        let items = [task, story, feature].map { WorkMapItem.workItem(MapWorkItem(ref: $0, isYours: true)) }
+        let describe = { (ref: ItemRef) in labels[ref].map { WorkMapPrompt.Described(label: $0) } }
+
+        let partOf: [MapNodeID: [MapNodeID]] = [.card(task): [.card(story)], .card(story): [.card(feature)]]
+        let question = WorkMapQuestion(title: "Totals", items: items, waits: [:], partOf: partOf, steps: [])
+        let prompt = WorkMapPrompt.prompt(question, describe: describe)
+        #expect(prompt.contains(
+            WorkMapPrompt.partsLead + "\n- Task 5103 is part of User Story 5101\n- User Story 5101 is part of Feature 9002\n\n"
+                + "BriefBar knows of nothing else here that waits for anything yet."
+        ))
+
+        let waiting = WorkMapQuestion(title: "Totals", items: items, waits: [.card(feature): [.card(task)]], steps: [])
+        let plain = WorkMapPrompt.prompt(waiting, describe: describe)
+        #expect(!plain.contains(WorkMapPrompt.partsLead))
+        #expect(!plain.contains("is part of"))
+        #expect(plain.contains("What BriefBar has them wait for now:\n- Feature 9002 waits for Task 5103"))
+    }
+
     /// Once what waits on the main queue ran, as the source's sinks do.
     private func settled() async {
         await withCheckedContinuation { continuation in

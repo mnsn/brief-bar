@@ -510,6 +510,25 @@ import Testing
         #expect(states.item(sams.key) == changed)
     }
 
+    /// A work item only Show Links reads, as a parent My Work's Map shows, in a state the team's process counts as done
+    /// though its name doesn't say so, is done as the team's backlog configuration maps its type's states, which Show Links
+    /// doesn't read; one in another project, whose process may map them otherwise, keeps the category its state's name gives.
+    @Test func aWorkItemOnlyShowLinksReadsIsInTheTeamsCategoryOfItsState() throws {
+        let (sprint, states, _) = live()
+        var board = try #require(sprint.board)
+        board.stateCategories["Feature"] = ["New": "Proposed", "Active": "InProgress", "Verified": "Completed"]
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        var parent = WorkItem(
+            id: 9_002, organization: DemoData.organization, project: board.team.projectName, type: "Feature",
+            title: "Coupons at checkout", state: "Verified", category: WorkItem.Category(category: nil, state: "Verified")
+        )
+        #expect(!parent.isDone)
+        states.linked = { $0 == parent.key ? parent : nil }
+        #expect(states.item(parent.key)?.isDone == true)
+        parent.project = "Payments"
+        #expect(states.item(parent.key) == parent)
+    }
+
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine
     /// could need (`waitLimit`), failing the test if it doesn't happen.
     private func waitUntil(_ condition: @MainActor () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {

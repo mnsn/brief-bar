@@ -518,6 +518,9 @@ public struct WorkMapGraph: Equatable, Sendable {
     public private(set) var crossings: Int
     /// The boxes round those Azure DevOps links as Related, in the order their first ones come.
     public private(set) var boxes: [WorkMapBox]
+    /// With Parents, the nearest of its nodes each of them is part of, up its parents, as Azure DevOps gives them: whether a
+    /// lighter line joins the two, or another line that says more does.
+    public private(set) var partOf: [MapNodeID: [MapNodeID]]
 
     /// Whether a card counts as done: a pull request that merged or closed, or work that's resolved or done.
     public static func isDone(_ item: BoardItem) -> Bool {
@@ -559,13 +562,15 @@ public struct WorkMapGraph: Equatable, Sendable {
     ///     least one wave on.
     ///   - elsewhere: By Mission, those of other bands, with their bands.
     ///   - boxes: those Azure DevOps links as Related, each set of them in a box.
+    ///   - partOf: what each is part of, up its parents (`partOf`): of those among these.
     ///   - shared: the columns it has, as All's graphs share them, so that they line up; nil for those its own take.
     init(
         _ items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID> = [], elsewhere: [MapNodeID: BoardLane.Kind] = [:],
-        boxes: [Set<MapNodeID>] = [], columns shared: [WorkMapColumn]? = nil
+        boxes: [Set<MapNodeID>] = [], partOf: [MapNodeID: [MapNodeID]] = [:], columns shared: [WorkMapColumn]? = nil
     ) {
         let ids = items.map(\.id)
         let index = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        self.partOf = partOf.filter { index[$0.key] != nil }.mapValues { $0.filter { index[$0] != nil } }.filter { !$0.value.isEmpty }
         let done = Set(items.filter(\.isDone).map(\.id))
         let lines = lines.filter { index[$0.before] != nil && index[$0.after] != nil && !done.contains($0.after) }
         let place = Self.places(items, lines: lines, waits: waits)
@@ -1109,6 +1114,10 @@ public struct WorkMap: Equatable, Sendable {
     public let showsParents: Bool
     /// Whether Azure DevOps gives any of its work items a parent, shown or not: what Parents is for.
     public private(set) var hasParents: Bool
+    /// How many of others' work items it shows, hidden or not (`init(showsOthers:)`): not those you added, nor parents.
+    public var othersCount: Int {
+        everything.filter { $0.workItem.map { !$0.isAdded && !$0.isParent } ?? false }.count
+    }
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
     /// The band each card and step is in, a card's first.
@@ -1267,6 +1276,7 @@ public struct WorkMap: Equatable, Sendable {
         let shownIDs = Set(shown.map(\.id))
         // The lines All draws, between all that shows: those that leave a band bring in, dimmed, what they're joined to.
         let lines = edges.lines(among: shown.map(\.id))
+        let partOf = edges.partOf(among: shown.map(\.id))
 
         bands = lanes.compactMap { lane in
             let items = (itemsOf[lane.kind] ?? []).filter { !isLeftOut($0) }
@@ -1339,7 +1349,9 @@ public struct WorkMap: Equatable, Sendable {
                     kinds.append(kind)
                 }
             }
-            let graph = laid.map { WorkMapGraph($0.items, lines: $0.lines, waits: $0.waits, boxes: $0.boxes, columns: shared) }
+            let graph = laid.map {
+                WorkMapGraph($0.items, lines: $0.lines, waits: $0.waits, boxes: $0.boxes, partOf: partOf, columns: shared)
+            }
             return Group(graph: graph, items: items, lanes: kinds)
         }
         loose = single.filter { !$0.isDone } + single.filter(\.isDone)
@@ -1369,8 +1381,9 @@ public struct WorkMap: Equatable, Sendable {
 
     /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, and which nodes each of
     /// them and those is part of: each parent as its own card, else as the pull requests' cards that name it, else as a node
-    /// added for it, if the page knows it, at most `mostParents` of those; a chain ends at one it doesn't. A card is never
-    /// part of itself, as a pull request's that names a task and its story.
+    /// added for it, if the page knows it, at most `mostParents` of those; a chain ends at one it doesn't. A card that stands
+    /// for the parent too is part of none of its cards, as pull requests' that each name a task and its story: else they'd
+    /// be part of each other, and wait for each other.
     static func climb(
         from starts: [ItemRef], parents: [ItemRef: ItemRef], items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
         work: (ItemRef) -> MapWorkItem?
@@ -1396,10 +1409,9 @@ public struct WorkMap: Equatable, Sendable {
                 has.insert(item.id)
                 above = [item.id]
             }
-            for node in nodes(of: child) {
-                for later in above where later != node {
-                    up[node, default: []].insert(later)
-                }
+            let parentNodes = Set(above)
+            for node in nodes(of: child) where !parentNodes.contains(node) {
+                up[node, default: []].formUnion(above)
             }
             pending.append(parent)
         }
@@ -1731,11 +1743,27 @@ public struct WorkMap: Equatable, Sendable {
                 }
             }
             // Then a lighter one from each to the nearest of them it's part of, up its parents, which waits for it: but where a
-            // line joins the two already, either way, which says more.
+            // line joins the two already, either way, which says more; nor where it waits for the parent already, through
+            // others, as the two would be in a loop, where none of it could go first.
             var joined = Set(lines.flatMap { [MapEdits.Line($0.before, $0.after), MapEdits.Line($0.after, $0.before)] })
+            var later = Dictionary(grouping: lines, by: \.before).mapValues { $0.map(\.after) }
+            func leads(from start: MapNodeID, to end: MapNodeID) -> Bool {
+                var reached: Set<MapNodeID> = [start]
+                var pending = [start]
+                while let current = pending.popLast() {
+                    for next in later[current] ?? [] {
+                        if next == end { return true }
+                        if reached.insert(next).inserted { pending.append(next) }
+                    }
+                }
+                return false
+            }
             for node in nodes {
-                for parent in parents(of: node, among: shown) where joined.insert(MapEdits.Line(node, parent)).inserted {
+                for parent in parents(of: node, among: shown)
+                where !joined.contains(MapEdits.Line(node, parent)) && !leads(from: parent, to: node) {
+                    joined.insert(MapEdits.Line(node, parent))
                     joined.insert(MapEdits.Line(parent, node))
+                    later[node, default: []].append(parent)
                     lines.append(WorkMapLine(before: node, after: parent, style: .parent))
                 }
             }
@@ -1782,7 +1810,20 @@ public struct WorkMap: Equatable, Sendable {
             let ids = items.map(\.id)
             let shown = Set(ids)
             let waiting = Set(items.filter { !$0.isDone && waits($0.id, among: shown) }.map(\.id))
-            return WorkMapGraph(items, lines: lines(among: ids), waits: waiting, elsewhere: elsewhere, boxes: boxes)
+            return WorkMapGraph(
+                items, lines: lines(among: ids), waits: waiting, elsewhere: elsewhere, boxes: boxes, partOf: partOf(among: ids)
+            )
+        }
+
+        /// The nearest of these each of them is part of, up its parents (`WorkMapGraph.partOf`).
+        func partOf(among nodes: [MapNodeID]) -> [MapNodeID: [MapNodeID]] {
+            let shown = Set(nodes)
+            var partOf: [MapNodeID: [MapNodeID]] = [:]
+            for node in nodes where partOf[node] == nil {
+                let parents = parents(of: node, among: shown)
+                if !parents.isEmpty { partOf[node] = parents }
+            }
+            return partOf
         }
     }
 }

@@ -999,7 +999,7 @@ public struct PullRequestBoard: Equatable, Sendable {
         picks: UpNextPicks = UpNextPicks()
     ) -> PullRequestBoard {
         let shown = missions.filter { $0.shows(kinds) }
-        let onBoard = stages.filter { kinds.contains($0.key.kind) && $0.value.isOnBoard }
+        let onBoard = Self.onBoard(stages, kinds: kinds)
 
         // Each pull request once, in the first mission that has it, but one that waits (below).
         var first: [ItemRef: BoardCard] = [:]
@@ -1076,6 +1076,11 @@ public struct PullRequestBoard: Equatable, Sendable {
             lanes: boardLanes, counts: counts, next: next, picked: picked, nextInColumn: nextInColumn, upNext: UpNext(slots: slots),
             refs: Set(onBoard.keys), kinds: kinds, mode: lanes
         )
+    }
+
+    /// The pull requests of `kinds` that `stages` put on the board, each a card of it, with their stages.
+    public static func onBoard(_ stages: [ItemRef: StageReading], kinds: Set<ItemRef.Kind>) -> [ItemRef: StageReading] {
+        stages.filter { kinds.contains($0.key.kind) && $0.value.isOnBoard }
     }
 
     /// A mission's lane, as a lane for each mission has it, for its next steps in List and on the Map too.

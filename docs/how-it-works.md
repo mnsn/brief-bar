@@ -2351,8 +2351,10 @@ was.
 
 **✨ Ask Copilot**, in a band's header or over a graph of All, asks one of its missions' sessions, or a fork of it, while
 Send Work to Copilot can send it a prompt, or copies the prompt for a new session (`WorkMapAskMenu`): what's there, each
-pull request and work item with its title and link, each step by its ID, and what waits for what now, with what to do, work out
-what waits for what and the steps left, and tell BriefBar with `tell_dependencies` (`WorkMapPrompt`). It goes as the
+pull request and work item with its title and link, each step by its ID, and what waits for what now, and, apart from
+it, what's part of what, as Azure DevOps puts them under their parents, which BriefBar reads itself and the session is
+to tell it nothing of (`WorkMapQuestion.partOf`), with what to do, work out what waits for what and the steps left, and
+tell BriefBar with `tell_dependencies` (`WorkMapPrompt`). It goes as the
 composer sends work (`CopilotTasksStore.deliver`), to the session's choice as its sessions read
 (`sessionChoices(ids:)`), and the band says what became of it.
 
@@ -2441,8 +2443,9 @@ epic, and links work items as Related (`System.LinkTypes.Related`), which has no
 links with the dependencies, from the same response, with nothing more asked (`ADOWorkItemRelations.related(in:)`,
 `RelatedWork`, `WorkLinks.related`): each work item's with work items of its organization, never with itself. It knows
 the parents of the sprint's work items, read with them, and of the linked ones it reads with theirs, with Pull Request
-Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, those linked
-to your pull requests, those you added and, with + Sprint Tasks or + All My Tasks, yours in the sprint and, with + All
+Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, the work
+items Show Links links to the pull requests on its board (`PullRequestBoard.onBoard`), as their cards stand for them,
+those you added and, with + Sprint Tasks or + All My Tasks, yours in the sprint and, with + All
 My Tasks, outside it, but not someone else's, up their parents, a level at a time, each in order, to the first 200 it
 doesn't read otherwise (`WorkLinksStore.mapParentNames`, `mapParentLookups`, `mostMapParents`), and reads those with
 their own parent (`LinkEngine.readMapParents`, `WorkLinks.mapParents`): 200 a request, each level as the read before
@@ -2459,14 +2462,18 @@ request's card names, the hidden and the done too, so that an open story whose t
 breadth first (`WorkMap.climb`), each parent is its own card, else the cards of the pull requests that name it, else a
 node added for it, if the page knows it, at most 30 (`mostParents`, `MapWorkItem.isParent`), faded and outlined dashed
 where it isn't yours, as others' work is; a chain ends at one the page doesn't know, and a card is never part of itself,
-as a pull request's that names a task and its story. Each goes in the band it's joined to most nearly, parts and parents
+as a pull request's that names a task and its story, nor of another that stands for the parent too, as two that each
+name both, which would wait for each other. Each goes in the band it's joined to most nearly, parts and parents
 counting as lines do (`Edges.nearest`). A lighter line (`WorkMapLine.Style.parent`), never dotted, goes from each node to
 the nearest it's part of, up its parents, through those that don't show (`Edges.parents(of:among:)`), as a parent waits
 for its children to close, so that it goes a wave after all that's part of it; but not where a line joins the two
-already, either way, which says more. It says "· In Azure DevOps", but stands for no dependency (`WorkMap.links(of:)`
-gives none): it has no Take Away, Link in Azure DevOps or blue mark, and Link 3 Lines in Azure DevOps… counts none. With
-Done off, a parent that's done is left out, as anything done is. Off, the Map climbs only to know whether there are any,
-adds no node and draws no line, and Show Links reads none for it.
+already, either way, which says more, nor where the node waits for the parent already, through others, as a task that
+waits for its story's other task, which waits for the story: the three would be in a loop, which the Map would put in
+one wave, losing their lines (`Edges.lines(among:)`). It says "· In Azure DevOps", but stands for no dependency
+(`WorkMap.links(of:)` gives none): it has no Take Away, Link in Azure DevOps or blue mark, and Link 3 Lines in Azure
+DevOps… counts none. With Done off, a parent that's done is left out, as anything done is, one in the team's project as
+the team's process counts its state, a custom one too (`StateChanges.item(_:)`). Off, the Map climbs only to know
+whether there are any, adds no node and draws no line, and Show Links reads none for it.
 
 The nodes Azure DevOps links as Related, a pull request's card standing for a work item it names, as with lines, sit
 together in a box (`WorkMap(related:)`, `MapRelated`), with those related to them through others
@@ -2476,8 +2483,9 @@ columns, from its first to its last, as many as the most of it any one column ha
 clear of other boxes, so that nothing else of the graph is in it, and a fold's tier keeps them
 (`WorkMapGraph.rows(in:)`). The canvas draws it before the lines, a rounded rectangle, faintly filled and dashed, in a
 piece for each tier of a fold (`Geometry.pieces(of:)`), fainter while something is lit up and nothing in it is. A node's
-tooltip, and VoiceOver, say what it's part of, what's part of it and what's in its box (`WorkMapText.partOf`, `parts`,
-`related`). Nothing of them goes to Azure DevOps.
+tooltip, and VoiceOver, say what it's part of and what's part of it, even where a line that says more stands in for the
+lighter one (`WorkMapGraph.partOf`), and what's in its box (`WorkMapText.partOf`, `parts`, `related`). Nothing of them
+goes to Azure DevOps.
 
 #### Moving a task to a sprint
 
@@ -3598,8 +3606,9 @@ offers none. So can any other work item in the team's project that BriefBar read
 of a type the same states (`SprintBoard.isInTeamsProject`): one of yours outside the sprint, as My Work reads them
 (`SprintStore.outside`), and one Show Links read (`WorkLinksStore.linkedWorkItem`), such as someone else's that My
 Work's Map shows, or one you added there; BriefBar reads each as whichever of those changed last, for its menus, a
-change and what My Work's Map shows of it alike, keeping the category the team's process puts its state in while it's in
-it, which Show Links guesses from the state's name (`StateChanges.item(_:)`). Not one in another project, whose process
+change and what My Work's Map shows of it alike, in the category the team's backlog configuration puts its type's state
+in, such as a custom state the team counts as done, which Show Links would only guess from the state's name
+(`StateChanges.item(_:)`, `SprintBoard.categories(of:)`). Not one in another project, whose process
 may give it other states, nor with no sprint going on, whose board brings the team's states. A task's state, the symbol
 at the start of its line, a story's or bug's on its card, and the state in a work item's details are then menus of them,
 its own checked (`StateSymbol`, `StateChip`), and its menus have **State** (`StateMenuItems`); with the setting off, the

@@ -55,8 +55,9 @@ public struct WorkLinks: Sendable, Equatable {
     /// The Related links Azure DevOps has between the sprint's work items and others of their organization: from their
     /// links, which the read of their pull requests brings, as the dependencies do.
     public var related: Set<RelatedWork>
-    /// While My Work's Map shows parents, the work items it asked for that the sprint doesn't have, as read with their own
-    /// parent: your linked work items, and their parents all the way up (`LinkEngine.Inputs.mapParents`).
+    /// While My Work's Map shows parents, the work items it asked for that the sprint doesn't have, nor `workItems` with what
+    /// stories want, as read with their own parent: your linked work items, and their parents all the way up
+    /// (`LinkEngine.Inputs.mapParents`).
     public var mapParents: [WorkItemKey: WorkItem]
 
     public init(
@@ -348,7 +349,8 @@ public actor LinkEngine {
         /// has.
         public var parentLookups: Set<WorkItemKey>
         /// The work items My Work's Map wants with their parent, while it shows parents: your linked work items, then their
-        /// parents, a level more each time a read names them (`WorkLinks.mapParents`). The sprint's aren't read.
+        /// parents, a level more each time a read names them (`WorkLinks.mapParents`). The sprint's aren't read, nor linked
+        /// work items read with what stories want.
         public var mapParents: Set<WorkItemKey>
 
         public init(
@@ -618,9 +620,11 @@ public actor LinkEngine {
                 }
             }
         }
-        links.pullRequestsOfWorkItems = found.filter { inputs.sprintItems.contains($0.key) && !$0.value.isEmpty }
-        readDependencies = dependencies
-        readRelated = related
+        // Of what the sprint has now: what it no longer has went while it read, as `prune()` takes it away.
+        let sprint = inputs.sprintItems
+        links.pullRequestsOfWorkItems = found.filter { sprint.contains($0.key) && !$0.value.isEmpty }
+        readDependencies = dependencies.filter { sprint.contains($0.before) || sprint.contains($0.after) }
+        readRelated = related.filter { sprint.contains($0.first) || sprint.contains($0.second) }
         // What BriefBar changed before this read started, Azure DevOps says now, where it read either end; of work items
         // the sprint doesn't have, no read says, so it stays.
         dependencyChanges = dependencyChanges.filter { dependency, change in
@@ -753,9 +757,10 @@ public actor LinkEngine {
         }
     }
 
-    /// The work items My Work's Map wants with their parent, while it shows parents: those the sprint doesn't have.
+    /// The work items My Work's Map wants with their parent, while it shows parents: those the sprint doesn't have, nor the
+    /// linked work items read with what stories want, which have their parent already and are read again with it.
     private func wantedMapParents() -> Set<WorkItemKey> {
-        inputs.mapParents.subtracting(inputs.sprintItems)
+        inputs.mapParents.subtracting(inputs.sprintItems).subtracting(readWithStories)
     }
 
     /// What those work items are, with their parent, for the Map to climb a level more: a GET for up to 200, read again
