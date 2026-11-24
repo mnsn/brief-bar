@@ -165,6 +165,45 @@ import Testing
         let unknown = WorkMapCanvas.Geometry(blocks: [], columns: [], grid: loose, width: nil, gridColumns: 4, metrics: Self.metrics)
         #expect(Set(unknown.nodes.map(\.frame.minX)).count == 4)
     }
+
+    /// A node that says something at a glance has room for it under its title, and every row of its canvas as much, so that
+    /// its rows stay evenly apart; one that says nothing is only as tall as its title, at the top of its row. Lines come into
+    /// each and leave it level with its title's middle, so that a chain runs straight. Without glances, nothing moves.
+    @Test func aNodeThatSaysSomethingAtAGlanceHasRoomUnderItsTitle() throws {
+        let graph = try #require(Self.map(chain: 3, loose: 1, lines: [(4, 3)]).bands.first?.graph)
+        let m = WorkMapMetrics(scale: 1, glances: true)
+        let glanced = WorkMapCanvas.Geometry(
+            blocks: [WorkMapCanvas.Block(id: "band", graph: graph)], columns: graph.columns, grid: [], width: nil, gridColumns: 4,
+            metrics: m, glanced: [Self.step(2)]
+        )
+        let frames = try (1...4).map { try #require(glanced.frames[Self.step($0)]) }
+        #expect(frames.map(\.height) == [m.headerHeight, m.headerHeight + m.glanceHeight, m.headerHeight, m.headerHeight])
+        #expect(abs(frames[3].minY - frames[0].minY) == m.y(1) && m.y(1) == 44 + 22 + m.rowGap)
+        #expect(glanced.blocks.first?.height == m.y(2) - m.rowGap)
+        for drawn in glanced.lines {
+            let before = try #require(glanced.frames[drawn.line.before])
+            let after = try #require(glanced.frames[drawn.line.after])
+            #expect(drawn.end == CGPoint(x: after.minX, y: after.minY + m.anchor))
+            #expect(drawn.path.boundingRect.minY <= before.minY + m.anchor && drawn.path.boundingRect.maxY >= before.minY + m.anchor)
+        }
+        let chain = try #require(glanced.lines.first { $0.line.before == Self.step(1) })
+        #expect(chain.path.boundingRect.height == 0)
+
+        let plain = Self.geometry(graph, width: nil)
+        #expect(plain.nodes.allSatisfy { $0.frame.height == 44 })
+        #expect(try #require(plain.blocks.first).height == Self.metrics.y(2) - Self.metrics.rowGap)
+    }
+
+    /// At a Glance offers what a work item's node says while the Map shows your work, and while it has a work item's node all
+    /// the same, as one you added with + Task, which stays whatever Show shows; not for a Map of pull requests and steps.
+    @Test func atAGlanceOffersAWorkItemsKindsWhileTheMapHasOne() {
+        var edits = MapEdits()
+        edits.addItem(.workItem(organization: "contoso", id: 5104), home: nil, by: .you, at: Self.day)
+        let added = WorkMap(PullRequestBoard(), missions: [], state: MapEdits.merged([edits], now: Self.day))
+        #expect(WorkMapGlancesMenu.offersWork(added, showsWork: false))
+        #expect(!WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: false))
+        #expect(WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: true))
+    }
 }
 
 /// + Task's search, as Return goes.

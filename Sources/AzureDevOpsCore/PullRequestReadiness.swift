@@ -290,3 +290,40 @@ extension PRReadiness.Item {
         }
     }
 }
+
+extension PRRecord {
+    /// What's Left's items for its reviews (`PRReadiness`): its approvals, the reviewers it requires, and any other reviewer
+    /// policy, by its name. Without a reviewer policy, What's Left wants someone's approval; with one that doesn't apply,
+    /// nobody's review holds it up.
+    public func reviews(in readiness: PRReadiness?) -> [PRReadiness.Item] {
+        let reviewerPolicies = Set((details?.checks ?? []).filter { $0.kind == .reviewers }.map(\.name))
+        return (readiness?.items ?? []).filter { item in
+            item.kind == .approvals || item.kind == .requiredReviewers
+                || (item.kind == .policy && reviewerPolicies.contains(item.label))
+        }
+    }
+
+    /// Whether the reviewers it requires approved it, as its Approved stage and My Work's Map count them
+    /// (`isApproved(_:reviews:isCurrent:)`): where BriefBar could read its policies, as they are now; else the votes alone, as
+    /// What's Left's approval then stands for one vote, whatever its policies want.
+    public func isApproved(_ readiness: PRReadiness?) -> Bool? {
+        Self.isApproved(
+            pullRequest, reviews: reviews(in: readiness), isCurrent: readiness?.isCurrent == true && details?.checksKnown == true
+        )
+    }
+
+    /// Whether the reviewers a pull request requires approved it, as What's Left says it: its approvals, the reviewers it
+    /// requires and its other reviewer policies, all done. Never while a reviewer it requires hasn't approved, as one who
+    /// wants changes, or rejected it, which What's Left says only as changes someone wants. One that requires nobody's
+    /// review, as where its reviewer policy doesn't apply, isn't approved until someone approves it, which What's Left
+    /// then counts. While what was read of its policies isn't current, after a push or a vote, or where BriefBar can't read
+    /// them, only what its reviewers' votes tell: not approved while nobody approved it; else nil, as BriefBar can't tell.
+    /// - Parameters:
+    ///   - reviews: What's Left's items for its reviews, as last read.
+    ///   - isCurrent: BriefBar read its policies, as it is now.
+    public static func isApproved(_ pr: PullRequest, reviews: [PRReadiness.Item], isCurrent: Bool) -> Bool? {
+        if pr.reviewers.contains(where: { !$0.isGroup && $0.isRequired && !$0.vote.isApproval }) { return false }
+        if isCurrent { return !reviews.isEmpty && reviews.allSatisfy(\.isDone) }
+        return pr.reviewers.contains(where: \.vote.isApproval) ? nil : false
+    }
+}

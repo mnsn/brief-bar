@@ -111,6 +111,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var mapShowsOthers: Bool
     /// Done on My Work's Map (`MapDoneWork`): what's done, in its Done column, until you turn it off, remembered.
     @Published package private(set) var mapShowsDone: Bool
+    /// At a Glance on My Work's Map (`MapGlances`): what its nodes say under their titles, every kind until you hide it,
+    /// remembered.
+    @Published package private(set) var mapGlances: MapGlances
     /// Why the Board's keys couldn't move a pull request while its details covered the Board, for them to say
     /// (`StageRefusalLine`), until the Board shows again. In memory only.
     @Published package var stageRefusal: StageRefusal?
@@ -259,6 +262,7 @@ package final class PullRequestOrder: ObservableObject {
         mapTold = MapEdits.load(from: defaults, key: MapEdits.toldKey)
         mapShowsOthers = MapOthersWork.load(from: defaults)
         mapShowsDone = MapDoneWork.load(from: defaults)
+        mapGlances = MapGlances.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
     }
@@ -834,6 +838,13 @@ package final class PullRequestOrder: ObservableObject {
         guard shows != mapShowsDone else { return }
         mapShowsDone = shows
         MapDoneWork.save(shows, to: defaults)
+    }
+
+    /// Shows or hides a kind of what My Work's Map's nodes say at a glance, remembered.
+    package func setMapGlance(_ kind: MapGlance.Kind, shown: Bool) {
+        guard shown != mapGlances.shows(kind) else { return }
+        mapGlances = mapGlances.setting(kind, shown: shown)
+        mapGlances.save(to: defaults)
     }
 
     /// Adds a work item the Board doesn't have to My Work's Map, as you found it, in the band you added it in, with what waits

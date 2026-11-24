@@ -60,6 +60,9 @@ package struct WorkMapContent {
     /// The menu's items and VoiceOver's actions of a work item's node the Board has no card for, as someone else's or one you
     /// added, before the Map's, as a card's are; nil for one the page doesn't know.
     package var workItem: (ItemRef) -> WorkMapWorkItemMenu?
+    /// What a pull request's or work item's node says at a glance, under its title, in their order, whatever At a Glance
+    /// hides (`MapGlance`): none for one the page doesn't know.
+    package var glances: (ItemRef) -> [MapGlance]
 
     package init(
         card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (ItemRef) -> WorkMapFace?,
@@ -68,7 +71,7 @@ package struct WorkMapContent {
         select: @escaping (ItemRef) -> Void, related: Set<ItemRef> = [], showBoard: @escaping () -> Void,
         ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false, find: WorkMapFinder? = nil,
         azureDevOps: WorkMapAzureDevOps? = nil, state: @escaping (ItemRef) -> AnyView? = { _ in nil },
-        workItem: @escaping (ItemRef) -> WorkMapWorkItemMenu? = { _ in nil }
+        workItem: @escaping (ItemRef) -> WorkMapWorkItemMenu? = { _ in nil }, glances: @escaping (ItemRef) -> [MapGlance] = { _ in [] }
     ) {
         self.card = card
         self.work = work
@@ -86,6 +89,7 @@ package struct WorkMapContent {
         self.azureDevOps = azureDevOps
         self.state = state
         self.workItem = workItem
+        self.glances = glances
     }
 }
 
@@ -377,14 +381,15 @@ package struct WorkMapView: View {
     }
 
     /// What's over the bands, or All's canvas: Done, while the Map has anything done, with how many it leaves out while it's
-    /// off; Others' work, with how many it shows; and Link in Azure DevOps… for the lines Azure DevOps doesn't link yet; and,
-    /// with All, + Task, + Step and what you hid there.
+    /// off; Others' work, with how many it shows; At a Glance, while it has anything to show; and Link in Azure DevOps… for
+    /// the lines Azure DevOps doesn't link yet; and, with All, + Task, + Step and what you hid there.
     @ViewBuilder
     private var controls: some View {
         let unlinked = content.azureDevOps == nil ? [] : map.unlinked
         let showsAll = grouping == .all
         let offersDone = map.doneCount > 0 || !map.showsDone
-        if offersDone || content.find != nil || !unlinked.isEmpty || showsAll {
+        let offersGlances = !map.bands.isEmpty || !map.groups.isEmpty || !map.loose.isEmpty
+        if offersDone || content.find != nil || offersGlances || !unlinked.isEmpty || showsAll {
             HStack(spacing: 10) {
                 if offersDone {
                     WorkMapDoneToggle(order: order, isOn: map.showsDone, count: map.doneCount)
@@ -393,6 +398,9 @@ package struct WorkMapView: View {
                     WorkMapOthersToggle(
                         order: order, count: map.everything.filter { $0.workItem.map { !$0.isAdded } ?? false }.count, shown: shownOthers
                     )
+                }
+                if offersGlances {
+                    WorkMapGlancesMenu(order: order, offersWork: WorkMapGlancesMenu.offersWork(map, showsWork: content.work != nil))
                 }
                 Spacer(minLength: 0)
                 if let azureDevOps = content.azureDevOps, !unlinked.isEmpty {
@@ -788,6 +796,13 @@ struct WorkMapEditor {
         order.mapHidden.contains(node)
     }
 
+    /// What a card's or work item's node says at a glance, under its title, of the kinds At a Glance shows; a step says
+    /// nothing.
+    func glances(of item: WorkMapItem) -> [MapGlance] {
+        guard let ref = item.card?.ref ?? item.workItem?.ref else { return [] }
+        return order.mapGlances.shown(content.glances(ref))
+    }
+
     /// What one could wait for, in its menu: what's on the Map and still to do, but what it waits for, and what waits for it,
     /// which would close a loop; those of its band first.
     func candidates(for node: MapNodeID) -> (near: [MapNodeID], far: [MapNodeID]) {
@@ -906,9 +921,20 @@ struct WorkMapEditor {
 /// How big things are on the Map, at a text size.
 struct WorkMapMetrics {
     let scale: CGFloat
+    /// Whether a canvas's nodes have room under their titles for what they say at a glance (`MapGlance`): one of them says
+    /// something, so that its rows stay as far apart as theirs.
+    var glances = false
     var titleRow: CGFloat { 20 * scale }
     var nodeWidth: CGFloat { 196 * scale }
-    var nodeHeight: CGFloat { 44 * scale }
+    /// A node's room, as far as the next row: its title's, and its glances' under it on a canvas with any.
+    var nodeHeight: CGFloat { glances ? headerHeight + glanceHeight : headerHeight }
+    /// A node's title's: the whole of a node that says nothing at a glance.
+    var headerHeight: CGFloat { 44 * scale }
+    /// The line of what a node says at a glance, under its title.
+    var glanceHeight: CGFloat { 22 * scale }
+    /// How far down a node lines come into it and leave it: its title's middle, so that a chain runs straight whatever its
+    /// nodes say at a glance.
+    var anchor: CGFloat { headerHeight / 2 }
     var columnGap: CGFloat { 40 * scale }
     var rowGap: CGFloat { 12 * scale }
     var blockTitle: CGFloat { 26 * scale }
@@ -1030,12 +1056,31 @@ struct WorkMapCanvas: View {
     private static let space = "WorkMapCanvas"
 
     func geometry(metrics m: WorkMapMetrics) -> Geometry {
-        Geometry(blocks: blocks, columns: columns, grid: grid, width: width, gridColumns: gridColumns, metrics: m)
+        geometry(metrics: m, glanced: Set(glances.keys))
+    }
+
+    /// Where everything goes, with room under their titles for what its nodes say at a glance, where any says something.
+    private func geometry(metrics m: WorkMapMetrics, glanced: Set<MapNodeID>) -> Geometry {
+        Geometry(
+            blocks: blocks, columns: columns, grid: grid, width: width, gridColumns: gridColumns,
+            metrics: WorkMapMetrics(scale: m.scale, glances: !glanced.isEmpty), glanced: glanced
+        )
+    }
+
+    /// What its cards' and work items' nodes say at a glance, of the kinds At a Glance shows, but for those that say nothing.
+    private var glances: [MapNodeID: [MapGlance]] {
+        var glances: [MapNodeID: [MapGlance]] = [:]
+        for item in blocks.flatMap({ $0.graph.nodes.map(\.item) }) + grid where glances[item.id] == nil {
+            let said = editor.glances(of: item)
+            if !said.isEmpty { glances[item.id] = said }
+        }
+        return glances
     }
 
     var body: some View {
-        let m = WorkMapMetrics(scale: textScale)
-        let geometry = geometry(metrics: m)
+        let glances = self.glances
+        let m = WorkMapMetrics(scale: textScale, glances: !glances.isEmpty)
+        let geometry = geometry(metrics: m, glanced: Set(glances.keys))
         let lines = geometry.lines.map(\.line)
         let lit = (drawing?.from ?? hovered ?? focus.wrappedValue).map { WorkMapLines.related(to: $0, by: lines) }
         let into = Dictionary(grouping: lines, by: \.after)
@@ -1068,8 +1113,11 @@ struct WorkMapCanvas: View {
                     .at(CGRect(x: geometry.inset, y: top, width: across, height: m.blockTitle))
             }
             ForEach(geometry.nodes) { placed in
-                nodeView(placed, through: (into[placed.id] ?? []).compactMap(through), lit: lit, target: target, geometry: geometry)
-                    .at(placed.frame)
+                nodeView(
+                    placed, glances: glances[placed.id] ?? [], through: (into[placed.id] ?? []).compactMap(through), lit: lit,
+                    target: target, geometry: geometry
+                )
+                .at(placed.frame)
             }
             drawingLayer(geometry, target: target, metrics: m)
                 .at(CGRect(origin: .zero, size: geometry.size))
@@ -1266,10 +1314,10 @@ struct WorkMapCanvas: View {
     private func drawingLayer(_ geometry: Geometry, target: MapNodeID?, metrics m: WorkMapMetrics) -> some View {
         if let drawing, let from = geometry.frames[drawing.from] {
             let verdict = target.map { editor.verdict(drawing.from, before: $0) }
-            let end = target.flatMap { geometry.frames[$0] }.map { CGPoint(x: $0.minX, y: $0.midY) } ?? drawing.to
+            let end = target.flatMap { geometry.frames[$0] }.map { CGPoint(x: $0.minX, y: $0.minY + m.anchor) } ?? drawing.to
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
-                    let start = CGPoint(x: from.maxX, y: from.midY)
+                    let start = CGPoint(x: from.maxX, y: from.minY + m.anchor)
                     var path = Path()
                     path.move(to: start)
                     let reach = max(12 * m.scale, abs(end.x - start.x) / 2)
@@ -1317,13 +1365,14 @@ struct WorkMapCanvas: View {
     }
 
     private func nodeView(
-        _ placed: Geometry.Placed, through: [String], lit: Set<MapNodeID>?, target: MapNodeID?, geometry: Geometry
+        _ placed: Geometry.Placed, glances: [MapGlance], through: [String], lit: Set<MapNodeID>?, target: MapNodeID?,
+        geometry: Geometry
     ) -> some View {
         let id = placed.id
         return WorkMapNodeView(
             item: placed.item, elsewhere: placed.elsewhere.map(editor.content.laneTitle), editor: editor, order: order, through: through,
             isDimmed: lit.map { !$0.contains(id) } ?? false, isTarget: target == id, focus: focus,
-            showsHandle: hovered == id && drawing == nil
+            showsHandle: hovered == id && drawing == nil, glances: glances
         )
         .onHover { inside in
             if inside {
@@ -1359,10 +1408,11 @@ extension WorkMapCanvas.Geometry {
     /// tier's end, down under it, back along the gap to the next's start and into it, each in a lane of its own: the one that
     /// leaves from highest outermost and lowest, so that they don't cross. Where one column fits but not that room beside it,
     /// the lanes squeeze closer together, sideways, to fit. The grid has as many columns as fit, or `gridColumns` until the
-    /// page knows its width.
+    /// page knows its width. A node that says something at a glance (`glanced`) is as tall as a row of `m`; any other only as
+    /// tall as its title, at the top of its row; lines come into each and leave it level with its title's middle.
     init(
         blocks: [WorkMapCanvas.Block], columns: [WorkMapColumn], grid: [WorkMapItem], width: CGFloat?, gridColumns: Int,
-        metrics m: WorkMapMetrics
+        metrics m: WorkMapMetrics, glanced: Set<MapNodeID> = []
     ) {
         let spans: [[ClosedRange<Int>]] = blocks.map(\.graph.spans)
         let fold: WorkMapFold
@@ -1441,7 +1491,8 @@ extension WorkMapCanvas.Geometry {
                 return (tierTop[tier] ?? top) + m.y(at)
             }
             for node in graph.nodes {
-                let frame = CGRect(x: x(node.column), y: rowTop(node.column, node.row), width: m.nodeWidth, height: m.nodeHeight)
+                let height = glanced.contains(node.id) ? m.nodeHeight : m.headerHeight
+                let frame = CGRect(x: x(node.column), y: rowTop(node.column, node.row), width: m.nodeWidth, height: height)
                 nodes.append(Placed(item: node.item, frame: frame, elsewhere: node.elsewhere))
                 frames[node.id] = frame
             }
@@ -1473,14 +1524,14 @@ extension WorkMapCanvas.Geometry {
                 guard let from = frames[line.before], let to = frames[line.after], ends[number].lowerBound < ends[number].upperBound
                 else { continue }
                 let span = ends[number]
-                let start = CGPoint(x: from.maxX, y: from.midY)
+                let start = CGPoint(x: from.maxX, y: from.minY + m.anchor)
                 var path = Path()
                 path.move(to: start)
                 var point = start
                 var turned: CGPoint?
                 // Through each column it skips, along the row it keeps there, wrapping round into each tier it goes on to.
                 for column in (span.lowerBound + 1)...span.upperBound {
-                    let entry = CGPoint(x: x(column), y: rowTop(column, row(number, at: column)) + m.nodeHeight / 2)
+                    let entry = CGPoint(x: x(column), y: rowTop(column, row(number, at: column)) + m.anchor)
                     let tier = fold.tier(of: column)
                     if tier == fold.tier(of: column - 1) {
                         Self.curve(&path, from: point, to: entry, metrics: m)
@@ -1505,11 +1556,11 @@ extension WorkMapCanvas.Geometry {
                         path.addLine(to: point)
                     }
                 }
-                let end = CGPoint(x: to.minX, y: to.midY)
+                let end = CGPoint(x: to.minX, y: to.minY + m.anchor)
                 let middle: CGPoint
                 if let first = line.rows.first {
                     let column = span.lowerBound + 1
-                    middle = CGPoint(x: x(column) + m.nodeWidth / 2, y: rowTop(column, first) + m.nodeHeight / 2)
+                    middle = CGPoint(x: x(column) + m.nodeWidth / 2, y: rowTop(column, first) + m.anchor)
                 } else if let turned {
                     middle = turned
                 } else {
@@ -1527,7 +1578,8 @@ extension WorkMapCanvas.Geometry {
             gridAcross = width.map { Self.across($0 - inset, metrics: m) } ?? max(gridColumns, 1)
             for (index, item) in grid.enumerated() {
                 let frame = CGRect(
-                    x: inset + m.x(index % gridAcross), y: y + m.y(index / gridAcross), width: m.nodeWidth, height: m.nodeHeight
+                    x: inset + m.x(index % gridAcross), y: y + m.y(index / gridAcross), width: m.nodeWidth,
+                    height: glanced.contains(item.id) ? m.nodeHeight : m.headerHeight
                 )
                 nodes.append(Placed(item: item, frame: frame, elsewhere: nil))
                 frames[item.id] = frame
@@ -1768,6 +1820,8 @@ struct WorkMapNodeView: View {
     var focus: FocusState<MapNodeID?>.Binding
     /// Whether it shows where a line can be drawn from: its right edge, while the pointer's on it.
     var showsHandle = false
+    /// What it says at a glance, under its title, in a compartment of its own: none for a node with no such line.
+    var glances: [MapGlance] = []
 
     @Environment(\.textScale) private var textScale
     /// Waits for a Task… is finding a work item it waits for.
@@ -1779,61 +1833,69 @@ struct WorkMapNodeView: View {
         let color = self.color
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         let isDashed = (isToStart || isOthers || elsewhere != nil) && !isSelected && !isTarget
-        face
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(shape.fill(color.opacity(0.12)))
-            .overlay(
-                shape.strokeBorder(
-                    isSelected || isTarget ? Color.accentColor : color.opacity(0.4),
-                    style: isDashed ? StrokeStyle(lineWidth: 1, dash: [3, 2]) : StrokeStyle(lineWidth: isSelected || isTarget ? 2 : 1)
-                )
+        VStack(spacing: 0) {
+            face
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !glances.isEmpty {
+                WorkMapGlanceLine(glances: glances, tint: color)
+                    .frame(height: WorkMapMetrics(scale: textScale).glanceHeight)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(shape.fill(color.opacity(0.12)))
+        .overlay(
+            shape.strokeBorder(
+                isSelected || isTarget ? Color.accentColor : color.opacity(0.4),
+                style: isDashed ? StrokeStyle(lineWidth: 1, dash: [3, 2]) : StrokeStyle(lineWidth: isSelected || isTarget ? 2 : 1)
             )
-            .overlay(alignment: .trailing) {
-                if showsHandle {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 8 * textScale, height: 8 * textScale)
-                        .offset(x: 4 * textScale)
-                        .accessibilityHidden(true)
-                }
+        )
+        // Level with its title's middle, where its lines leave it, whatever it says at a glance under its title.
+        .overlay(alignment: .topTrailing) {
+            if showsHandle {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 8 * textScale, height: 8 * textScale)
+                    .offset(x: 4 * textScale, y: WorkMapMetrics(scale: textScale).anchor - 4 * textScale)
+                    .accessibilityHidden(true)
             }
-            .contentShape(shape)
-            .contentShape(.focusEffect, shape)
-            .modifier(StepDoubleClick(step: elsewhere == nil ? item.step : nil) { editor.rename($0) })
-            .onTapGesture(perform: click)
-            // As a card on the Board takes the keyboard's focus, on a click and with Tab, whatever the Mac's keyboard
-            // navigation: Return or Space shows its details, or renames a step.
-            .focusable(interactions: .edit)
-            .focused(focus, equals: item.id)
-            .onKeyPress(keys: [.return, .space], phases: .down) { _ in
-                press()
-                return .handled
-            }
-            .opacity(opacity)
-            .help(help(card))
-            .contextMenu { menu(card) }
-            .popover(isPresented: $findsWhatItWaitsFor, arrowEdge: .bottom) {
-                if let find = editor.content.find {
-                    WorkMapTaskSearch(
-                        map: editor.map, finder: find, title: "Add What \(editor.label(item.id)) Waits For",
-                        refusal: { ref in
-                            let verdict = editor.verdict(.card(ref), before: item.id)
-                            return verdict.allowed ? nil : verdict.words.isEmpty ? "" : verdict.words + "."
-                        }
-                    ) { ref in
-                        findsWhatItWaitsFor = false
-                        editor.add(ref, before: item.id)
+        }
+        .contentShape(shape)
+        .contentShape(.focusEffect, shape)
+        .modifier(StepDoubleClick(step: elsewhere == nil ? item.step : nil) { editor.rename($0) })
+        .onTapGesture(perform: click)
+        // As a card on the Board takes the keyboard's focus, on a click and with Tab, whatever the Mac's keyboard
+        // navigation: Return or Space shows its details, or renames a step.
+        .focusable(interactions: .edit)
+        .focused(focus, equals: item.id)
+        .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+            press()
+            return .handled
+        }
+        .opacity(opacity)
+        .help(help(card))
+        .contextMenu { menu(card) }
+        .popover(isPresented: $findsWhatItWaitsFor, arrowEdge: .bottom) {
+            if let find = editor.content.find {
+                WorkMapTaskSearch(
+                    map: editor.map, finder: find, title: "Add What \(editor.label(item.id)) Waits For",
+                    refusal: { ref in
+                        let verdict = editor.verdict(.card(ref), before: item.id)
+                        return verdict.allowed ? nil : verdict.words.isEmpty ? "" : verdict.words + "."
                     }
+                ) { ref in
+                    findsWhatItWaitsFor = false
+                    editor.add(ref, before: item.id)
                 }
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(label(card))
-            .accessibilityValue(((details(card)) + through).joined(separator: ", "))
-            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction(.default, press)
-            .modifier(CardMissionActions(ref: item.card?.ref, context: card?.mission))
-            .accessibilityActions { actions(card) }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label(card))
+        .accessibilityValue(((details(card)) + through).joined(separator: ", "))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, press)
+        .modifier(CardMissionActions(ref: item.card?.ref, context: card?.mission))
+        .accessibilityActions { actions(card) }
     }
 
     /// Someone else's work item, which the Board doesn't have: faded.
@@ -1962,7 +2024,7 @@ struct WorkMapNodeView: View {
                         Text(face?.label ?? task.ref.shortOrderLabel)
                             .font(size: 11, weight: .semibold)
                             .monospacedDigit()
-                        if let words = elsewhere.map({ "in " + $0 }) ?? face?.state {
+                        if let words = elsewhere.map({ "in " + $0 }) ?? headerState(face) {
                             Text("· " + words)
                                 .font(size: 10.5, weight: .medium)
                                 .foregroundStyle(.secondary)
@@ -2079,13 +2141,18 @@ struct WorkMapNodeView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            if details, let words = elsewhere.map({ "in " + $0 }) ?? face?.state {
+            if details, let words = elsewhere.map({ "in " + $0 }) ?? headerState(face) {
                 Text("· " + words)
                     .font(size: 10.5, weight: .medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
+    }
+
+    /// A work item's state, on its first line, "Active": but where it says its state at a glance, under its title.
+    private func headerState(_ face: WorkMapFace?) -> String? {
+        glances.contains { $0.kind == .state } ? nil : face?.state
     }
 
     private func label(_ card: BoardCardContent?) -> String {
@@ -2096,8 +2163,8 @@ struct WorkMapNodeView: View {
         }
     }
 
-    /// What it says, for VoiceOver and its tooltip: its card's words, or a step's, with who added it; where it is, for one
-    /// of another band.
+    /// What it says, for VoiceOver and its tooltip: what it says at a glance, then its card's words, or a step's, with who
+    /// added it, but what its glances say already; where it is, for one of another band.
     private func details(_ card: BoardCardContent?) -> [String] {
         var details: [String] = []
         switch item {
@@ -2113,7 +2180,8 @@ struct WorkMapNodeView: View {
             details.append(work.isAdded ? "You added it to the Map" : WorkMapText.othersNode)
         }
         if let elsewhere { details.append("In \(elsewhere)") }
-        return details
+        let said = Set(glances.flatMap { [$0.words, $0.sentence] })
+        return glances.map(\.sentence) + details.filter { !said.contains($0) }
     }
 
     /// Its tooltip: what it is, then what its card says of it, what dotted lines into it go through, and how to draw a line
@@ -2294,6 +2362,107 @@ private struct WorkMapControlLabel: View {
         .font(size: 12, weight: .semibold)
         .foregroundStyle(.secondary)
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - At a glance
+
+/// What a node of the Map says at a glance (`MapGlance`), in a compartment of its own under its title, set off by a hairline in
+/// the node's color: each a symbol and a few words, in their order, colored only where something's wrong, waits on you or is
+/// done, its tooltip all it says. Its words show as far as they fit, from the first: past them, a pull request's say only how
+/// many after their symbols, and what still doesn't fit is cut short.
+struct WorkMapGlanceLine: View {
+    let glances: [MapGlance]
+    /// The node's color, for the hairline over it.
+    let tint: Color
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach((0...glances.count).reversed(), id: \.self) { worded in
+                line(worded: worded)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(
+            UnevenRoundedRectangle(bottomLeadingRadius: 9, bottomTrailingRadius: 9, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.5))
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(tint.opacity(0.3))
+                .frame(height: 1)
+        }
+    }
+
+    /// Its glances, the first `worded` with their words, and past them, a pull request's with how many after their symbols.
+    private func line(worded: Int) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(glances.enumerated()), id: \.offset) { index, glance in
+                item(glance, compact: index >= worded)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func item(_ glance: MapGlance, compact: Bool) -> some View {
+        HStack(spacing: 3) {
+            if let symbol = glance.symbol {
+                Image(systemName: symbol)
+                    .font(size: 9.5, weight: .semibold)
+                    .foregroundStyle(glance.state?.color ?? Color.secondary)
+            }
+            if !compact || glance.symbol == nil || !glance.kind.isAboutPullRequests {
+                Text(glance.words)
+            } else if let count = glance.count {
+                Text("\(count)")
+                    .monospacedDigit()
+            }
+        }
+        .font(size: 10.5, weight: .semibold)
+        .foregroundStyle(glance.state?.textColor ?? Color.secondary)
+        .help(glance.sentence)
+    }
+}
+
+/// At a Glance, over the Map: a menu of what nodes say under their titles (`MapGlance`), each checked while they say it,
+/// remembered: a pull request's, then, while the Map has your work or a work item's node, a work item's.
+struct WorkMapGlancesMenu: View {
+    @ObservedObject var order: PullRequestOrder
+    /// Whether it offers what a work item's node says (`offersWork(_:showsWork:)`).
+    let offersWork: Bool
+
+    /// Whether it offers what a work item's node says: while the Map has your work, with + Sprint Tasks or + All My Tasks,
+    /// and while it has a work item's node all the same, as one you added with + Task, which stays whatever Show shows.
+    static func offersWork(_ map: WorkMap, showsWork: Bool) -> Bool {
+        showsWork || map.everything.contains { $0.workItem != nil }
+    }
+
+    var body: some View {
+        Menu {
+            Section("Pull Requests") {
+                toggles(MapGlance.Kind.allCases.filter(\.isAboutPullRequests))
+            }
+            if offersWork {
+                Section("Work Items") {
+                    toggles(MapGlance.Kind.allCases.filter { !$0.isAboutPullRequests })
+                }
+            }
+        } label: {
+            WorkMapControlLabel(title: "At a Glance", systemImage: "rectangle.split.1x2", isMenu: true)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(WorkMapText.glancesHelp)
+        .accessibilityLabel("At a Glance")
+    }
+
+    private func toggles(_ kinds: [MapGlance.Kind]) -> some View {
+        ForEach(kinds, id: \.self) { kind in
+            Toggle(kind.title, isOn: Binding(get: { order.mapGlances.shows(kind) }, set: { order.setMapGlance(kind, shown: $0) }))
+        }
     }
 }
 
@@ -2772,6 +2941,11 @@ package enum WorkMapText {
     static let othersHelp = """
         Show, faded, the work items of others that your work waits for, and what those wait for, and those that wait right \
         after yours, as Azure DevOps links them and you or sessions said on the Map
+        """
+
+    static let glancesHelp = """
+        What nodes say under their titles: a pull request's merge conflicts, comments to resolve, who wants changes or \
+        approved it, failed builds and whether it's a draft; a work item's state, hours left and sprint, when it isn't this one
         """
 
     /// What Others' work shows, while it's on: "none found", "1 shown", "3 shown".

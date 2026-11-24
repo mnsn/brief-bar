@@ -2313,8 +2313,37 @@ does, which, on your work's own card and on a work item's the Board has no card 
 `WorkMapContent.state`): with Make Changes in Azure DevOps on, a menu of the states it can be put in, as its card's menu's
 State is, and, for one the Board has no card for, its right-click menu's, with Show Details and Open in Azure DevOps, and
 VoiceOver's actions (`WorkMapContent.workItem`); then its type's symbol, but a task's,
-and its ID, state and title, in the color of its column: To start's gray, outlined dashed, In progress's, Merged's once
-resolved, and green once done; a step's is gray and dashed until it's done, then green, with ✨ where a session added it.
+and its ID, its state, but where it says it at a glance, below, and its title, in the color of its column: To start's
+gray, outlined dashed, In progress's, Merged's once resolved, and green once done; a step's is gray and dashed until it's
+done, then green, with ✨ where a session added it.
+
+**At a Glance** (`MapGlances`, `order.map.hiddenGlances`, every kind until you uncheck it, at the top of the Map:
+`WorkMapGlancesMenu`) has a node say under its title, in a compartment of its own set off by a hairline in its color
+(`WorkMapGlanceLine`), what the page knows of it at a glance (`MapGlance`, `WorkMapContent.glances`): each a symbol and
+a few words, only where it applies, in this order. A pull request's, from what the engine read of it, whoever's it is,
+and nothing once it's completed or abandoned (`PRRecord.glances`): its merge conflicts; how many of its comment threads
+are active or pending, "2 to resolve"; who wants changes, "Sam wants changes", "You rejected it", "2 want changes", or
+else who approved it, "Priya approved", "2 approved", done once the reviewers it requires approved it, as its Approved
+stage counts them (`PRRecord.isApproved`): not while a reviewer it requires, or a reviewer policy, still waits, which
+its tooltip then names, "Approved by Priya Shah · Waiting on Sam", nor from policies read before its latest push or
+vote, or that BriefBar can't read; its builds that failed or expired, or else its checks that failed, of those a policy
+requires, in `PRReadiness`'s words, "Build failed", "2 builds expired"; and "Draft". Comments and builds only once its
+details are read; on yours, comments a policy requires resolving, and changes someone wants, wait on you. A work item's,
+from what it was read with (`WorkItem.glances(place:)`): its state, which its first line then leaves out; the hours left
+on it while it isn't done, "3 h left", where BriefBar reads them: with the sprint, anyone's, as the Sprint page shows
+them, and with your work outside it, but not for one only Show Links reads; and, for one of yours outside the sprint,
+where it is, as its card says it (`OutsideWork.place`), "Sprint 41", "No sprint", which a teammate's doesn't say, as
+BriefBar doesn't read where it is. Each is red where something's wrong, orange where it waits on you and green where
+it's done (`ItemState`), gray otherwise, and its tooltip says all of it, as VoiceOver does before the node's other
+words, but those that say the same: "Build failed: shop-web CI · Run unit tests: 2 tests failed". Their words show as
+far as they fit, from the first: past them, a pull request's say only how many after their symbols, and what still
+doesn't fit is cut short. On a canvas where any node says something at a glance, every row has room for it
+(`WorkMapMetrics.glances`), so that its rows stay evenly apart: such a node is its title's 44 points and 22 more, at the
+text size, and one that says nothing, as a step, only its title's, at the top of its row; lines come into each and leave
+it level with its title's middle (`WorkMapMetrics.anchor`), so that a chain runs straight, as does the handle a drag
+draws a line from. The menu offers a work item's kinds while the Map has your work, or a work item's node all the same,
+as one you added with + Task (`WorkMapGlancesMenu.offersWork`). Nothing more is read for any of it.
+
 Each of your changes is kept at once, with an Undo line at the top of the Map (`MapUndo`), which puts back the Map as it
 was.
 

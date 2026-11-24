@@ -1031,8 +1031,18 @@ private struct MyWorkContent: View {
                         actions: AnyView(StateActions(item: item))
                     )
                 }
-            }
+            },
+            glances: { ref in mapGlances(ref) }
         )
+    }
+
+    /// What a node of the Map says at a glance: a pull request's, from what the engine read of it; a work item's, with where
+    /// it is for one of yours outside the sprint, as its card says it, from what it was read with.
+    private func mapGlances(_ ref: ItemRef) -> [MapGlance] {
+        guard ref.kind == .workItem else { return record(of: ref)?.glances ?? [] }
+        guard let item = anyWorkItem(ref) else { return [] }
+        let place = outside.flatMap { outside in outside.items.first { $0.key == item.key }.flatMap(outside.place(of:)) }
+        return item.glances(place: place)
     }
 
     /// ✨ Ask Copilot on the Map: the prompt, with the links of what's there, sent to a session of the mission or a fork of it,
