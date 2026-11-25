@@ -591,6 +591,37 @@ import Testing
         }
     }
 
+    /// A work item on the sprint's board that Show Links read since as another type, while nothing shows the sprint, is that
+    /// type, in the state that read has, and offers that type's states; once you change its state, the board has it as that
+    /// type too, as Azure DevOps answered the change. One read since in another project, as when it was moved there, offers
+    /// none, though the board has it, as that project's process may give its type other states.
+    @Test func aWorkItemReadSinceAsAnotherTypeOrInAnotherProjectIsAsItIsNow() async throws {
+        let (sprint, states, _) = live()
+        let task = try item(sprint)
+        #expect(task.type == "Task" && !sprint.isShowing)
+        var read = task
+        read.type = "Bug"
+        read.state = "Active"
+        read.category = .inProgress
+        read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+        states.linked = { $0 == task.key ? read : nil }
+        let bug = try #require(states.item(task.key))
+        #expect(bug.type == "Bug" && bug.state == "Active")
+        #expect(states.choices(for: task).map(\.name) == ["New", "Active", "Resolved", "Closed"])
+
+        #expect(await states.change(bug, to: "Resolved"))
+        let onBoard = try item(sprint)
+        #expect(onBoard.type == "Bug" && onBoard.state == "Resolved")
+
+        read.state = onBoard.state
+        read.category = onBoard.category
+        read.project = "Payments"
+        read.changedAt = try #require(onBoard.changedAt).addingTimeInterval(60)
+        states.linked = { $0 == task.key ? read : nil }
+        #expect(states.item(task.key)?.project == "Payments")
+        #expect(states.choices(for: task).isEmpty)
+    }
+
     /// A story My Work's Map shows as your tasks' parent, renamed and given to someone else since the sprint was last read,
     /// while nothing shows the sprint, keeps its new name and owner once you changed its state from the Map, as Azure DevOps
     /// answered the change, with the whole work item: on the sprint's board too, though it isn't read again until something

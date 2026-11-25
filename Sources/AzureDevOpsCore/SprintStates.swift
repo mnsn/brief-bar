@@ -54,19 +54,20 @@ extension SprintBoard {
             .sorted(by: WorkItemState.ordered)
     }
 
-    /// Whether a work item's type has the states the team's backlog configuration maps (`states(of:)`): one on the board, and
-    /// any other in the team's project, whose process gives every work item of a type the same states; not one in another
-    /// project, or whose project isn't known. Its organization's and project's names whatever the case of their letters.
+    /// Whether a work item's type has the states the team's backlog configuration maps (`states(of:)`): one on the board, in
+    /// the project the board read it in, and any other in the team's project, whose process gives every work item of a type
+    /// the same states; not one in another project, or whose project isn't known, such as one on the board read since in
+    /// another, as when it was moved there. Its organization's and project's names whatever the case of their letters.
     public func isInTeamsProject(_ item: WorkItem) -> Bool {
-        if self.item(item.key) != nil { return true }
+        if let onBoard = self.item(item.key), onBoard.project.caseInsensitiveCompare(item.project) == .orderedSame { return true }
         return item.organization.caseInsensitiveCompare(team.organization) == .orderedSame
             && item.project.caseInsensitiveCompare(team.projectName) == .orderedSame
     }
 
     /// As it is once BriefBar changed the state of one of its work items, as Azure DevOps answered: that work item in its new
-    /// state, named and assigned as the change has it (`WorkItem.takingState(of:)`), where it is, until the sprint is read
-    /// again; out of it, in a removed state, as a read would leave it out (`removing`). The rest of it, such as what's left
-    /// of it and the story it's under, as read. Unchanged when it doesn't have it.
+    /// state, named, assigned, typed and in the project as the change has it (`WorkItem.takingState(of:)`), where it is,
+    /// until the sprint is read again; out of it, in a removed state, as a read would leave it out (`removing`). The rest of
+    /// it, such as what's left of it and the story it's under, as read. Unchanged when it doesn't have it.
     public func changingState(_ item: WorkItem) -> SprintBoard {
         guard self.item(item.key) != nil else { return self }
         if item.category == .removed { return removing(item.key) }
@@ -101,11 +102,13 @@ extension WorkItem {
         return item
     }
 
-    /// With the state of `changed`, its category and when it changed, and its title and owner, as Azure DevOps answered the
-    /// change, or BriefBar last read the work item before it (`StateChanges`), which every read of it asks for: what shows
-    /// of a change of its state, so that one renamed since the sprint was read doesn't take its old name back, stamped as
-    /// changed when the change was; and of a later read of it that has only those, as Show Links' (`StateChanges.item(_:)`).
-    /// Nothing else, such as where it is or what's left of it, which not every read has.
+    /// With the state of `changed`, its category and when it changed, and its title, owner, type and project, as Azure DevOps
+    /// answered the change, or BriefBar last read the work item before it (`StateChanges`), which every read of it asks for:
+    /// what shows of a change of its state, so that one renamed since the sprint was read doesn't take its old name back,
+    /// stamped as changed when the change was; and of a later read of it that has only those, as Show Links'
+    /// (`StateChanges.item(_:)`), so that its state is never another type's, and one turned into another type, or moved to
+    /// another project, offers the states it has now. Nothing else, such as where it is or what's left of it, which not
+    /// every read has.
     public func takingState(of changed: WorkItem) -> WorkItem {
         var item = self
         item.state = changed.state
@@ -113,6 +116,8 @@ extension WorkItem {
         item.changedAt = changed.changedAt
         item.title = changed.title
         item.assignedTo = changed.assignedTo
+        item.type = changed.type
+        item.project = changed.project
         return item
     }
 }

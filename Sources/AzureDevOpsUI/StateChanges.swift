@@ -172,12 +172,12 @@ final class StateChanges: ObservableObject {
     /// sprint was last read, which wins a tie, yours outside the sprint, the last one off the board whose state BriefBar
     /// changed, as Azure DevOps answered, and Show Links' (`linked`), such as a parent the Map shows, which reads it last; so
     /// one closed or renamed since the sprint was last read shows so. Of one the board or your work outside the sprint has,
-    /// whose reads have all BriefBar shows of it, a later read gives only its state and when it changed, its title and its
-    /// owner, which every read has (`WorkItem.takingState(of:)`): the hours left, its tags and where it is stay as those last
-    /// read them. Show Links guesses the
-    /// category of its state from its name, so one in the team's project takes its state's category as the team's backlog
-    /// configuration maps its type's states, as a custom state's that the team counts as done; the others' category stays
-    /// while it's in the same state. Nil for one BriefBar doesn't read.
+    /// whose reads have all BriefBar shows of it, a later read gives only its state and when it changed, its title, its
+    /// owner, its type and its project, which every read has (`WorkItem.takingState(of:)`), so that one turned into another
+    /// type offers that type's states, and one moved to another project none: the hours left, its tags and where it is stay
+    /// as those last read them. Show Links guesses the category of its state from its name, so one in the team's project
+    /// takes its state's category as the team's backlog configuration maps its type's states, as a custom state's that the
+    /// team counts as done; the others' category stays while it's in the same state. Nil for one BriefBar doesn't read.
     func item(_ key: WorkItemKey) -> WorkItem? {
         let onBoard = sprint?.board?.item(key)
         if let onBoard, sprint?.isShowing == true { return onBoard }

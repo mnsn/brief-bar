@@ -94,9 +94,9 @@ public struct OutsideWork: Sendable, Equatable {
     }
 
     /// As it is once BriefBar changed the state of one of them, as Azure DevOps answered (`WorkItem.changing(state:answer:at:
-    /// categories:)`): that work item in its new state, named and assigned as the change has it (`WorkItem.takingState(of:)`),
-    /// where it is, until they're read again, which leaves it out once it's resolved, done or removed (`yours`). Unchanged
-    /// when it doesn't have it.
+    /// categories:)`): that work item in its new state, named, assigned, typed and in the project as the change has it
+    /// (`WorkItem.takingState(of:)`), where it is, until they're read again, which leaves it out once it's resolved, done or
+    /// removed (`yours`). Unchanged when it doesn't have it.
     public func changingState(_ item: WorkItem) -> OutsideWork {
         guard items.contains(where: { $0.key == item.key }) else { return self }
         var work = self
