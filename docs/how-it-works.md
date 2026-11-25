@@ -3643,8 +3643,9 @@ name once Show Links reads it again, a task going where its card orders that sta
 the sprint (`OutsideWork.changingState`), until a read leaves it out, as one that's done; the engine keeps it so over
 any read of the board, and of your work outside it, that started before the change, until one that started after it has
 read the board (`SprintEngine.changedState`, `settleStateChanges`), and refreshes at once. One only Show Links reads
-shows so there at once, with the team's category for its state, over what its engine read before, until it reads it in
-another state, and it reads it again at once (`WorkLinksStore.changedState`), and in its details
+shows so there at once, with the team's category for its state, over what its engine read before, though still under the
+parent that read has, as a change of state never changes it, until it reads it in another state, and it reads it again
+at once (`WorkLinksStore.changedState`), and in its details
 (`WorkItemDetailsStore.changed`), and the sprint is read again all the same, as one of yours reopened comes back among
 your work outside it; and the last one off the board that changed is known as Azure DevOps answered, for what shows of
 it and for Undo, until something reads it again since, as one of yours that leaves your work outside the sprint once

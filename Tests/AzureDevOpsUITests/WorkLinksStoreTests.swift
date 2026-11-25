@@ -914,6 +914,56 @@ import Testing
         #expect(workLinks.linkedWorkItem(key) == task(9001, "Active", changed: 5_000))
     }
 
+    /// A change of a work item's state from My Work never changes what it's under: the Map still shows the parent Show Links
+    /// read, though the change went from an older read of it under another, as your work outside the sprint was last read
+    /// before My Work came to show only pull requests; so too once Show Links reads it again, at the change.
+    @Test func aChangeOfAWorkItemsStateKeepsTheParentShowLinksRead() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        let dependencies = MapDependencies(sprint: sprint, settings: settings, client: store.client)
+        workLinks.dependencies = dependencies
+        // An engine that reads nothing, and whose own reads don't reach the store: the test tells what it read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens())) { _ in }
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        let key = WorkItemKey(organization, 9001), other = WorkItemKey(organization, 9002)
+        let parent = WorkItemKey(organization, 9102)
+        func task(_ id: Int, _ state: String, under parent: Int, changed seconds: TimeInterval) -> WorkItem {
+            WorkItem(
+                id: id, organization: organization, project: "Storefront", type: "Task", title: "Check the coupon totals",
+                state: state, category: WorkItem.Category(category: nil, state: state), parentId: parent,
+                changedAt: Date(timeIntervalSince1970: seconds)
+            )
+        }
+        let moved = task(9001, "Active", under: 9102, changed: 2_000)
+        engines.told[0](WorkLinks(workItems: [key: moved], mapParents: [key: moved]))
+        try await until("it's read under its new parent") { dependencies.parents[key] == parent }
+
+        // Changed from what was read of it before it moved, under its old parent, as Azure DevOps answered.
+        workLinks.changedState(key, to: task(9001, "Closed", under: 9101, changed: 3_000))
+        #expect(workLinks.linkedWorkItem(key)?.state == "Closed")
+        #expect(workLinks.linkedWorkItem(key)?.parentId == 9102)
+        #expect(dependencies.parents[key] == parent)
+        // Read again at the change.
+        let closed = task(9001, "Closed", under: 9102, changed: 3_000)
+        engines.told[0](WorkLinks(workItems: [key: closed, other: task(9002, "New", under: 9102, changed: 1_000)], mapParents: [key: closed]))
+        try await until("the read at the change") { workLinks.linkedWorkItem(other) != nil }
+        #expect(workLinks.linkedWorkItem(key) == closed)
+        #expect(dependencies.parents[key] == parent)
+    }
+
     /// A work item read both with what stories want and for My Work's Map shows as its newer read, whichever it is: as one
     /// read for the Map since its read with stories failed, or read with stories since.
     @Test func aWorkItemReadBothWaysShowsAsItsNewerRead() async throws {
