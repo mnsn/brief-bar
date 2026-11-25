@@ -584,25 +584,29 @@ draws that Azure DevOps doesn't link yet, once you've seen them listed. Each say
 with **Undo**, or why it stopped, with **Try Again** for the rest. **Take Away** still changes only the Map: Azure DevOps
 keeps its link.
 
-**Parents and related work.** The Map shows the parents Azure DevOps gives your work, as Show Links reads them: a task's
-story, a story's feature, that feature's epic, and on up the chain. Each is a node of its own, a wave after all that's
-part of it, as a parent waits for its children to close, joined to each by a lighter line, which says so, such as **User
-Story 5160 is part of Feature 5190 · In Azure DevOps**. A parent the Board has is its own card, one a pull request names
-is that pull request's card, and the Map adds a node for up to 30 others, faded and outlined dashed where it isn't yours,
-as others' work is. A story whose tasks are all done still has its node while it's open, and with **Done** off, a parent
-that's done leaves the Map, as anything done does. Parents' lines change only in Azure DevOps: a click on one offers no
-**Take Away** or **Link in Azure DevOps**. Uncheck **Parents**, at the top of the Map while Azure DevOps gives your work
-any, to leave them out, and BriefBar reads no more of them. With + Sprint Tasks or + All My Tasks, work that Azure DevOps
-links as Related sits together in a faint dashed box, which keeps its rows to itself across its columns: By Mission, a
-box keeps to its band, and All draws related work as one graph, whether a line joins it or not. Hover a node for what
-it's part of, what's part of it and what's in its box, such as **Part of Feature 5190** or **Related in Azure DevOps: in
-a box with Task 5104**. BriefBar never changes a parent or a Related link.
+**Parents and related work.** The Map shows the parents Azure DevOps gives your work, as Show Links reads them, as high
+as **Parents**, at the top of the Map while Azure DevOps gives your work any, says: **Stories**, as it starts, shows a
+task's story; **Features** that story's feature too, **Epics** that feature's epic, and so on up your team's backlogs,
+as it names them, such as **Key Results** and **Objectives** where it has those; **All** goes on to the top of each
+chain, past your team's backlogs too; and **None** leaves them out, and BriefBar reads no more of them. Each is a node
+of its own, a wave after all that's part of it, as a parent waits for its children to close, joined to each by a lighter
+line, which says so, such as **User Story 5160 is part of Feature 5190 · In Azure DevOps**. A parent the Board has is
+its own card, one a pull request names is that pull request's card, and the Map adds a node for up to 30 others. One
+that isn't yours shows only with **Others' work** on, faded and outlined dashed, as others' work is; without it, the
+line goes on past it, to the next parent up that shows. A story whose tasks are all done still has its node while it's
+open, and with **Done** off, a parent that's done leaves the Map, as anything done does. Parents' lines change only in
+Azure DevOps: a click on one offers no **Take Away** or **Link in Azure DevOps**. With + Sprint Tasks or + All My Tasks,
+work that Azure DevOps links as Related sits together in a faint dashed box, which keeps its rows to itself across its
+columns: By Mission, a box keeps to its band, and All draws related work as one graph, whether a line joins it or not.
+Hover a node for what it's part of, what's part of it and what's in its box, such as **Part of Feature 5190** or
+**Related in Azure DevOps: in a box with Task 5104**. BriefBar never changes a parent or a Related link.
 
 **Others' work.** Check **Others' work**, at the top of the Map, to see a teammate's task that's holding yours: faded,
 outlined dashed, with whose it is, such as **Task 5122 · Alex · Active**. It shows the open work items the Board doesn't
 have that your work waits for, as Azure DevOps or a line you or a session drew says, what those wait for in turn, and
 those that wait right after yours, at most 30, in the band of what they're joined to; one that's done holds nothing back
-and doesn't show. Without it, your work that waits for one still goes a wave on, and a line through it is dotted.
+and doesn't show. It shows the parents that aren't yours too, as high as **Parents** goes, and counts them with the rest.
+Without it, your work that waits for one still goes a wave on, and a line through it is dotted.
 **+ Task**, in a band's header or above All, adds a work item to the Map: one of the sprint's, anyone's, or of yours
 outside it, found by its ID or by words of its title or whom it's for, or any other by its ID, which BriefBar asks Azure
 DevOps for. It shows whatever Others' work says, until **Remove from Map** in its menu. **Waits for a Task…**, in a
@@ -1897,8 +1901,8 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
   Work's Map to put related work together, and what the linked ones your lists don't show are; with **Pull Request
   Order** on too, each linked work item's parent and place in the backlog, and what those parents, its stories, are
   when BriefBar hasn't read them, kept in memory only, to put a story's pull requests together; with **My Work Page**
-  on too, while My Work's Map is on screen with Parents on, what the parents of your work on it are, with their own
-  parents, up their chains, 200 at most, kept in memory only, for the Map to show; from the Copilot
+  on too, while My Work's Map is on screen with Parents other than None, what the parents of your work on it are,
+  with their own parents, up their chains, 200 at most, kept in memory only, for the Map to show; from the Copilot
   app's database, read-only, which pull request each session started from or opened. The links you add
   or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
   Azure DevOps, GitHub or Copilot.
@@ -1936,7 +1940,7 @@ State**. Each widget has its own **Position** (on the desktop or floating above 
   start and In progress, by reference, never a title, for the 50 lanes you ordered last, the cards and steps you hid on
   its Map, by reference, up to 300, the steps and lines you and Copilot sessions added or took away there, by
   reference and the names given steps, up to 300 steps and 1,000 lines each, the work items you added there, by
-  reference, up to 100, and whether it shows others' work and parents; the tasks you sent to Copilot,
+  reference, up to 100, whether it shows others' work, and how high it shows parents; the tasks you sent to Copilot,
   and what Copilot printed at their end; which Copilot sessions you've cleared; the links you added or hid, with Show
   Links; with Make Changes in Azure DevOps, the tags you added to pull requests, up to 20 for each project, to suggest
   them; with Pull Request Order, the names you give missions with **Rename…**, up to 200, each forgotten once its

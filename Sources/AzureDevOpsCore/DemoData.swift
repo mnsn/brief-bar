@@ -347,20 +347,21 @@ extension DemoData {
     /// 5150) after Alex's check of gift card codes (Task 5122), which waits for the checkout analytics events, which no one
     /// has (Task 5124); and the rounding fix (Task 5112) after Priya reproduced the bug (Task 5111), done. And, for the Map's
     /// parents, the story of the payments' retry (User Story 5160) under Feature 5190, "Reliable payments", under Epic 5195,
-    /// "A checkout shoppers trust", read for the Map with User Story 5180 (`mapParents`); and the Related links Azure DevOps
-    /// has between showing saved items (Task 5103) and moving one back (Task 5104), and between the coupon bug (Bug 5110)
-    /// and the retry's story.
+    /// "A checkout shoppers trust", read for the Map with User Story 5180 (`mapParents`): the stories and the feature yours,
+    /// the epic no one's; and the Related links Azure DevOps has between showing saved items (Task 5103) and moving one back
+    /// (Task 5104), and between the coupon bug (Bug 5110) and the retry's story.
     public static func workLinks(now: Date = Date()) -> WorkLinks {
         let project = "Storefront"
         let projectId = "7a0c4e1d-0000-4000-8000-000000000001"
         func key(_ number: Int) -> PRKey { PRKey(organization, number) }
         func workItem(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
         func linked(
-            _ id: Int, _ type: String, _ title: String, _ state: String, changed hoursAgo: Double, parent: Int? = nil, rank: Double? = nil
+            _ id: Int, _ type: String, _ title: String, _ state: String, changed hoursAgo: Double, parent: Int? = nil, rank: Double? = nil,
+            assignedTo: Person? = nil
         ) -> WorkItem {
             WorkItem(
                 id: id, organization: organization, project: project, type: type, title: title, state: state,
-                category: WorkItem.Category(category: nil, state: state), parentId: parent, rank: rank,
+                category: WorkItem.Category(category: nil, state: state), assignedTo: assignedTo, parentId: parent, rank: rank,
                 changedAt: now.addingTimeInterval(-hoursAgo * 3_600)
             )
         }
@@ -393,7 +394,9 @@ extension DemoData {
                 workItem(5152): [key(4115), key(4116)],
             ],
             workItems: [
-                workItem(5160): linked(5160, "User Story", "Retry payments that fail for a moment", "Active", changed: 30, parent: 5190),
+                workItem(5160): linked(
+                    5160, "User Story", "Retry payments that fail for a moment", "Active", changed: 30, parent: 5190, assignedTo: me
+                ),
                 workItem(5170): linked(5170, "User Story", "Dark mode for the account page", "Resolved", changed: 48),
                 workItem(5181): linked(5181, "Task", "Speed up the checkout page", "Active", changed: 5, parent: 5180, rank: 1),
                 workItem(5182): linked(5182, "Task", "Show delivery estimates", "Active", changed: 26, parent: 5180, rank: 2),
@@ -406,7 +409,7 @@ extension DemoData {
                                      branch: "gift-card-codes", hoursAgo: 9),
             ],
             parents: [
-                workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50),
+                workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50, assignedTo: me),
             ],
             dependencies: [
                 WorkDependency(workItem(5102), workItem(5103)), WorkDependency(workItem(5103), workItem(5105)),
@@ -415,8 +418,10 @@ extension DemoData {
             ],
             related: [RelatedWork(workItem(5103), workItem(5104)), RelatedWork(workItem(5110), workItem(5160))],
             mapParents: [
-                workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50),
-                workItem(5190): linked(5190, "Feature", "Reliable payments", "Active", changed: 24 * 3, parent: 5195),
+                workItem(5180): linked(5180, "User Story", "Checkout redesign", "Active", changed: 50, assignedTo: me),
+                workItem(5190): linked(
+                    5190, "Feature", "Reliable payments", "Active", changed: 24 * 3, parent: 5195, assignedTo: me
+                ),
                 workItem(5195): linked(5195, "Epic", "A checkout shoppers trust", "Active", changed: 24 * 8),
             ]
         )

@@ -199,10 +199,11 @@ import Testing
         #expect(WorkLinksStore.mapParentLookups(from: [], parents: parents, known: known).isEmpty)
     }
 
-    /// Only while a window shows My Work's Map on screen with Parents on, Show Links reads the parents above your work that
-    /// nothing else read with theirs: the feature and epic above the story of your pull request, the story above tasks
-    /// outside the sprint, and a work item you added to the Map. The sprint's it reads already, while something shows the
-    /// sprint; once nothing does, it's read no more, so the Map reads them itself.
+    /// Only while a window shows My Work's Map on screen with Parents showing any, Show Links reads the parents above your
+    /// work that nothing else read with theirs, however high Parents goes, so another level shows at once: the feature and
+    /// epic above the story of your pull request at Stories too, the story above tasks outside the sprint, and a work item
+    /// you added to the Map. The sprint's it reads already, while something shows the sprint; once nothing does, it's read
+    /// no more, so the Map reads them itself.
     @Test func theMapReadsYourWorksParentsOnlyWhileItShowsThem() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
@@ -227,15 +228,17 @@ import Testing
         #expect(workLinks.inputs().mapParents.isEmpty)
         workLinks.setMyWorkOnScreen(true)
         let wanted = workLinks.inputs().mapParents
+        #expect(order.mapParentLevel == MapParentLevel.stories)
         #expect(wanted.isSuperset(of: [key(5180), key(5190), key(5195), added]))
         #expect(wanted.isDisjoint(with: [key(5101), key(5103), key(5110), key(5112), key(5160)]))
         // Your pull request's bug and task in the sprint, once nothing shows it.
         sprint.setVisible(false, for: "sprint")
         #expect(workLinks.inputs().mapParents.isSuperset(of: [key(5110), key(5112)]))
         sprint.setVisible(true, for: "sprint")
-        order.setMapShowsParents(false)
+        order.setMapParentLevel(MapParentLevel.none)
         #expect(workLinks.inputs().mapParents.isEmpty)
-        order.setMapShowsParents(true)
+        order.setMapParentLevel(MapParentLevel.all)
+        #expect(workLinks.inputs().mapParents == wanted)
         order.setMyWorkView(.board)
         #expect(workLinks.inputs().mapParents.isEmpty)
         order.setMyWorkView(.map)

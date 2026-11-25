@@ -475,7 +475,7 @@ private final class Clock {
 
     /// A work item you add to My Work's Map is kept with your lines and steps, by reference, with the line from it to what
     /// waits for it, each with an Undo; Remove from Map takes it away with that line. Others' work stays off until you turn
-    /// it on, and is remembered then; Parents stays on until you turn it off, and is remembered then.
+    /// it on, and is remembered then; Parents shows stories until you choose another level, and is remembered then.
     @Test func itKeepsTheWorkItemsYouAddToTheMapAndWhetherItShowsOthersWorkAndParents() {
         let defaults = MemoryDefaults()
         let order = Self.service(defaults)
@@ -497,11 +497,13 @@ private final class Clock {
         order.setMapShowsOthers(false)
         #expect(!Self.service(defaults).mapShowsOthers)
 
-        #expect(order.mapShowsParents)
-        order.setMapShowsParents(false)
-        #expect(!Self.service(defaults).mapShowsParents)
-        order.setMapShowsParents(true)
-        #expect(Self.service(defaults).mapShowsParents)
+        #expect(order.mapParentLevel == MapParentLevel.stories)
+        order.setMapParentLevel(MapParentLevel.none)
+        #expect(Self.service(defaults).mapParentLevel == MapParentLevel.none)
+        order.setMapParentLevel(MapParentLevel.all)
+        #expect(Self.service(defaults).mapParentLevel == MapParentLevel.all)
+        order.setMapParentLevel(MapParentLevel.stories)
+        #expect(Self.service(defaults).mapParentLevel == MapParentLevel.stories)
     }
 
     @Test func itNamesWhatTheSourcesDescribe() throws {

@@ -55,10 +55,13 @@ enum WorkFixture {
     }
 
     static var backlogConfiguration: [String: Any] { [
-        "taskBacklog": ["name": "Tasks", "workItemTypes": [["name": "Task", "url": "https://example.invalid"]]],
+        "taskBacklog": ["name": "Tasks", "rank": 0, "workItemTypes": [["name": "Task", "url": "https://example.invalid"]]],
+        "requirementBacklog": ["name": "Stories", "rank": 1, "workItemTypes": [["name": "User Story", "url": "https://example.invalid"]]],
+        // Azure DevOps lists them in no set order: their ranks say which is higher.
         "portfolioBacklogs": [
-            ["name": "Features", "workItemTypes": [["name": "Feature", "url": "https://example.invalid"]]],
-            ["name": "Epics", "workItemTypes": [["name": "Epic", "url": "https://example.invalid"], "junk"]],
+            ["name": "Epics", "rank": 3, "workItemTypes": [["name": "Epic", "url": "https://example.invalid"], "junk"]],
+            ["name": "Features", "rank": 2, "workItemTypes": [["name": "Feature", "url": "https://example.invalid"]]],
+            ["name": "Empty", "rank": 4, "workItemTypes": []],
         ],
         "workItemTypeMappedStates": [
             ["workItemTypeName": "Task", "states": ["New": "Proposed", "Active": "InProgress", "Closed": "Completed"]],
@@ -282,7 +285,13 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
     @Test func decodesTheBacklogConfiguration() throws {
         let configuration = try Fixture.decode(ADOBacklogConfiguration.self, WorkFixture.backlogConfiguration)
         #expect(configuration.taskBacklog?.workItemTypes?.elements.map(\.name) == ["Task"])
-        #expect(configuration.portfolioBacklogs?.elements.map { $0.workItemTypes?.elements.map(\.name) ?? [] } == [["Feature"], ["Epic"]])
+        #expect(configuration.requirementBacklog?.name == "Stories" && configuration.requirementBacklog?.rank == 1)
+        #expect(configuration.portfolioBacklogs?.elements.map { $0.workItemTypes?.elements.map(\.name) ?? [] } == [["Epic"], ["Feature"], []])
+        // Its backlogs from the lowest, by rank: one without types is none.
+        #expect(SprintEngine.levels(of: configuration) == [
+            BacklogLevel(name: "Stories", types: ["User Story"]), BacklogLevel(name: "Features", types: ["Feature"]),
+            BacklogLevel(name: "Epics", types: ["Epic"]),
+        ])
         #expect(configuration.workItemTypeMappedStates?.elements.first { $0.workItemTypeName == "User Story" }?.states["Ready to Code"] == "Proposed")
     }
 
@@ -724,8 +733,9 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(board.rows[0].progress == .inProgress)
         #expect(board.myWork.map(\.id) == [3])
         #expect(board.remainingWork == 3)
-        // What its backlogs are, for which stories pull requests are for.
+        // What its backlogs are, for which stories pull requests are for and how far up the Map shows parents.
         #expect(board.taskTypes == ["Task"] && board.portfolioTypes == ["Feature", "Epic"])
+        #expect(board.levels.map(\.name) == ["Stories", "Features", "Epics"])
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
         // Your teams, your identity, the sprint, the board's setup, the sprint's work items and their fields.
         #expect(server.requests.count == 6)

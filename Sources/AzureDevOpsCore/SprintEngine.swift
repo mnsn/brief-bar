@@ -61,6 +61,9 @@ public actor SprintEngine {
         var taskTypes: Set<String>
         /// Its portfolio backlogs' types, such as Feature and Epic; none when its configuration couldn't be read.
         var portfolioTypes: Set<String> = []
+        /// Its backlogs above tasks, from the lowest: its stories', then its portfolio backlogs; none when its configuration
+        /// couldn't be read.
+        var levels: [BacklogLevel] = []
         /// Work item type → state → category.
         var categories: [String: [String: String]]
     }
@@ -459,7 +462,7 @@ public actor SprintEngine {
         guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return }
         board = SprintBoard.build(
             team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes,
-            portfolioTypes: setup.portfolioTypes, stateCategories: setup.categories
+            portfolioTypes: setup.portfolioTypes, levels: setup.levels, stateCategories: setup.categories
         )
     }
 
@@ -728,8 +731,9 @@ public actor SprintEngine {
         return me
     }
 
-    /// Which types are tasks and each state's category, once per team. Without it (some teams can't read it), Task
-    /// is the task type and categories are guessed from the states' names.
+    /// Which types are tasks, what the backlogs above them are and each state's category, once per team. Without it (some
+    /// teams can't read it), Task is the task type, the backlogs are as standard (`BacklogLevels.standard`) and categories
+    /// are guessed from the states' names.
     private func boardSetup(of team: TeamRef) async throws -> BoardSetup {
         if let setup = setups[team.id] { return setup }
         var setup = BoardSetup(taskTypes: ["Task"], categories: [:])
@@ -738,6 +742,7 @@ public actor SprintEngine {
             let types = configuration.taskBacklog?.workItemTypes?.elements.map(\.name) ?? []
             if !types.isEmpty { setup.taskTypes = Set(types) }
             setup.portfolioTypes = Set((configuration.portfolioBacklogs?.elements ?? []).flatMap { $0.workItemTypes?.elements.map(\.name) ?? [] })
+            setup.levels = Self.levels(of: configuration)
             for mapped in configuration.workItemTypeMappedStates?.elements ?? [] {
                 setup.categories[mapped.workItemTypeName] = mapped.states
             }
@@ -746,6 +751,20 @@ public actor SprintEngine {
         }
         setups[team.id] = setup
         return setup
+    }
+
+    /// A team's backlogs above tasks, from the lowest: its stories', then its portfolio backlogs by their rank, hidden ones
+    /// too, each named as the team's backlogs name it; those without types left out.
+    static func levels(of configuration: ADOBacklogConfiguration) -> [BacklogLevel] {
+        let portfolio = (configuration.portfolioBacklogs?.elements ?? []).enumerated()
+            .sorted { ($0.element.rank ?? .max, $0.offset) < ($1.element.rank ?? .max, $1.offset) }
+            .map(\.element)
+        return ([configuration.requirementBacklog].compactMap { $0 } + portfolio).compactMap { level in
+            let types = level.workItemTypes?.elements.map(\.name).filter { !$0.isEmpty } ?? []
+            guard !types.isEmpty else { return nil }
+            let name = level.name?.trimmingCharacters(in: .whitespaces) ?? ""
+            return BacklogLevel(name: name.isEmpty ? types.joined(separator: ", ") : name, types: Set(types))
+        }
     }
 
     private func snapshot() -> SprintSnapshot {

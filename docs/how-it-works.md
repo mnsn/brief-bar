@@ -1337,7 +1337,7 @@ DevOps** makes, last in the table, each when you click it ([below](#replying-and
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to, and, while My Work shows + All My Tasks, each of your open tasks and bugs outside it; and the dependencies between work items each is in, predecessors and successors, and the Related links it has with others, for My Work's Map |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, and, while a window shows My Work's Map on screen, the work items it can show that no list or sprint has (those the dependencies and its lines name, and those you added), every quarter of an hour; 200 a request | their title, type, state, who has each, project and when they changed; and, while Pull Request Order is on too, their parent and backlog rank (`System.Parent`, `Microsoft.VSTS.Common.StackRank`, `Microsoft.VSTS.Common.BacklogPriority`), for By Mission's stories |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and Pull Request Order: for the parents of the tasks linked to your pull requests, their stories, that BriefBar doesn't read already, every quarter of an hour; 200 a request | their title, type, state, project and when they changed, to name a story's mission |
-| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and My Work Page, while a window shows My Work's Map on screen with Parents on: for your work on it whose parent BriefBar doesn't read already, then for their parents, and theirs, a level at a time, as each read names them, then every quarter of an hour; 200 at most, 200 a request; one that can't be read is tried again an hour later | their title, type, state, who has each, project and when they changed, and their parent (`System.Parent`), for the Map's parents |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links and My Work Page, while a window shows My Work's Map on screen with Parents other than None, however high it goes: for your work on it whose parent BriefBar doesn't read already, then for their parents, and theirs, a level at a time, as each read names them, then every quarter of an hour; 200 at most, 200 a request; one that can't be read is tried again an hour later | their title, type, state, who has each, project and when they changed, and their parent (`System.Parent`), for the Map's parents |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 | `POST {project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads/{thread}/comments` | only with Make Changes in Azure DevOps on, when you click **Reply**, **Reply & Resolve** or **Reply & Reactivate**: once | your reply, in reply to the thread's first comment; Azure DevOps answers with it, as it keeps it |
@@ -2443,7 +2443,8 @@ epic, and links work items as Related (`System.LinkTypes.Related`), which has no
 links with the dependencies, from the same response, with nothing more asked (`ADOWorkItemRelations.related(in:)`,
 `RelatedWork`, `WorkLinks.related`): each work item's with work items of its organization, never with itself. It knows
 the parents of the sprint's work items, read with them, and of the linked ones it reads with theirs, with Pull Request
-Order on; and, while a window shows My Work's Map on screen with Parents on, it climbs from your work on it, the work
+Order on; and, while a window shows My Work's Map on screen with Parents other than None, however high it goes, so that
+another level shows at once, it climbs from your work on it, the work
 items Show Links links to the pull requests on its board (`PullRequestBoard.onBoard`), as their cards stand for them,
 those you added and, with + Sprint Tasks or + All My Tasks, your work in the sprint, as My Work has cards for it
 (`SprintBoard.myWork`, `myDone`), not a story of yours whose tasks are all someone else's, and, with + All My Tasks,
@@ -2459,16 +2460,29 @@ failed, what the page shows of it is the newer read (`WorkLinksStore.linkedWorkI
 read for it, so that it draws again as one is read or changes though no parent does, only while Show Links is on
 (`MapDependencies.told`, `parentItems`), and forgets them once someone else signs in.
 
-**Parents** (`MapParents`, `order.map.hidesParents`, on until you uncheck it, at the top of the Map while Azure DevOps
-gives your work any parent, or while it's off: `WorkMapParentsToggle`, `WorkMap.hasParents`) makes nodes of them
-(`WorkMap(parents:showsParents:)`). Up the chains of the work items' own cards, those you added and those a pull
-request's card names, the hidden and the done too, so that an open story whose tasks are all done keeps its node,
-breadth first (`WorkMap.climb`), each parent is its own card, else the cards of the pull requests that name it, else a
-node added for it, if the page knows it, at most 30 (`mostParents`, `MapWorkItem.isParent`), faded and outlined dashed
-where it isn't yours, as others' work is: yours as the sprint has you, else as your pull requests in its organization
-have you, as with Show: Pull Requests, which reads no sprint (`MyWorkFacts.isAssigned`); a chain ends at one the page
-doesn't know, and a card is never part of itself, as a pull request's that names a task and its story, nor of another
-that stands for the parent too, as two that each name both, which would wait for each other. Each goes in the band it's
+**Parents** (`MapParentLevel`, `order.map.parentLevel`, Stories until you choose another; `order.map.hidesParents`, kept
+while it was a checkbox and off, reads as None and is then forgotten), a menu at the top of the Map while Azure DevOps
+gives your work any parent, or while it's None (`WorkMapParentsMenu`, `WorkMap.hasParents`), says how high up their
+chains the Map makes nodes of them (`WorkMap(parents:parentLevel:level:)`): None; each of the team's backlogs above its
+tasks, from the lowest, as its backlog configuration names them, its stories' (`requirementBacklog`) and then its
+portfolio backlogs by their `rank`, those without types left out (`SprintEngine.levels(of:)`, `SprintBoard.levels`), or
+Stories, Features and Epics, as the Agile, Scrum and CMMI processes have them, without a sprint or where its
+configuration couldn't be read (`BacklogLevels.standard`); or All, which goes on past them. One saved above the backlogs
+the team has now, as one chosen on another team's, reads and shows as All (`MapParentLevel.choice`). A work item's level
+is its type's on those backlogs, whatever its case: 0 for a task, 1 for one on the stories' backlog, and so on, by the
+team's in its project and the standard ones elsewhere, as `WorkItemStories` takes types (`BacklogLevels.level(of:)`,
+`WorkItemLevels`); a parent of a type on none of them, such as a key result above the epics, is a level above its child,
+and work a chain starts from of such a type, as a bug the team keeps off its backlogs, is a task. Up the chains of the
+work items' own cards, those you added and those a pull request's card names, the hidden and the done too, so that an
+open story whose tasks are all done keeps its node, breadth first (`WorkMap.climb`), each parent is its own card, else
+the cards of the pull requests that name it, else a node added for it, if the page knows it and it's yours, or anyone's
+with Others' work on, at most 30 (`mostParents`, `MapWorkItem.isParent`), faded and outlined dashed where it isn't
+yours, as others' work is, and counted with it (`othersCount`): yours as the sprint has you, else as your pull requests
+in its organization have you, as with Show: Pull Requests, which reads no sprint and shows no others' work
+(`MyWorkFacts.isAssigned`); without Others' work, someone else's has no node, and its chain goes on up through it. A
+chain ends at one the page doesn't know, and below one above the level chosen, which has no line, even where it's a
+card; and a card is never part of itself, as a pull request's that names a task and its story, nor of another that
+stands for the parent too, as two that each name both, which would wait for each other. Each goes in the band it's
 joined to most nearly, parts and parents counting as lines do (`Edges.nearest`). A lighter line
 (`WorkMapLine.Style.parent`), never dotted, goes from each node to the nearest it's part of, up its own work items'
 parents, through those that don't show, so that a hidden card that names other work items too doesn't take it up theirs
@@ -2480,7 +2494,7 @@ line into what's done, which holds nothing back and the graph doesn't draw, make
 with it off, a parent goes a wave after its open children. It says "· In Azure DevOps", but stands for no dependency
 (`WorkMap.links(of:)` gives none): it has no Take Away, Link in Azure DevOps or blue mark, and Link 3 Lines in Azure
 DevOps… counts none. With Done off, a parent that's done is left out, as anything done is, one in the team's project as
-the team's process counts its state, a custom one too (`StateChanges.item(_:)`). Off, the Map climbs only to know
+the team's process counts its state, a custom one too (`StateChanges.item(_:)`). With None, the Map climbs only to know
 whether there are any, adds no node and draws no line, and Show Links reads none for it.
 
 The nodes Azure DevOps links as Related, a pull request's card standing for a work item it names, as with lines, sit

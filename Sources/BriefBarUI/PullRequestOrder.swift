@@ -111,8 +111,9 @@ package final class PullRequestOrder: ObservableObject {
     @Published package private(set) var mapShowsOthers: Bool
     /// Done on My Work's Map (`MapDoneWork`): what's done, in its Done column, until you turn it off, remembered.
     @Published package private(set) var mapShowsDone: Bool
-    /// Parents on My Work's Map (`MapParents`): your work items' parents, up their chains, until you turn it off, remembered.
-    @Published package private(set) var mapShowsParents: Bool
+    /// Parents on My Work's Map (`MapParentLevel`): how high up their chains it shows your work items' parents, stories until
+    /// you choose another, remembered.
+    @Published package private(set) var mapParentLevel: Int
     /// At a Glance on My Work's Map (`MapGlances`): what its nodes say under their titles, every kind until you hide it,
     /// remembered.
     @Published package private(set) var mapGlances: MapGlances
@@ -264,7 +265,7 @@ package final class PullRequestOrder: ObservableObject {
         mapTold = MapEdits.load(from: defaults, key: MapEdits.toldKey)
         mapShowsOthers = MapOthersWork.load(from: defaults)
         mapShowsDone = MapDoneWork.load(from: defaults)
-        mapShowsParents = MapParents.load(from: defaults)
+        mapParentLevel = MapParentLevel.load(from: defaults)
         mapGlances = MapGlances.load(from: defaults)
         myWorkPage = defaults.bool(forKey: Self.myWorkPageKey)
         if isOn { load() }
@@ -843,11 +844,12 @@ package final class PullRequestOrder: ObservableObject {
         MapDoneWork.save(shows, to: defaults)
     }
 
-    /// Parents on My Work's Map, remembered.
-    package func setMapShowsParents(_ shows: Bool) {
-        guard shows != mapShowsParents else { return }
-        mapShowsParents = shows
-        MapParents.save(shows, to: defaults)
+    /// Parents on My Work's Map, how high it shows them, remembered.
+    package func setMapParentLevel(_ level: Int) {
+        let level = max(level, MapParentLevel.none)
+        guard level != mapParentLevel else { return }
+        mapParentLevel = level
+        MapParentLevel.save(level, to: defaults)
     }
 
     /// Shows or hides a kind of what My Work's Map's nodes say at a glance, remembered.
