@@ -622,6 +622,33 @@ import Testing
         #expect(states.choices(for: task).isEmpty)
     }
 
+    /// A work item on the sprint's board in a state the team's process counts as done though its name doesn't say so, that
+    /// Show Links read since in a state of the same name, while nothing shows the sprint: in the team's project, it's still
+    /// done; moved to another project since, it's in the category the state's name gives rather than the board's, as that
+    /// project's process may put it in another, so that My Work's Map doesn't take it for done.
+    @Test func aWorkItemMovedToAnotherProjectInAStateOfTheSameNameIsInTheCategoryItsNameGives() throws {
+        let (sprint, states, _) = live()
+        var board = try #require(sprint.board)
+        board.stateCategories["Task"]?["Verified"] = "Completed"
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        try readAgain(sprint, in: "Verified")
+        let task = try item(sprint)
+        #expect(task.isDone && !sprint.isShowing)
+
+        var read = task
+        read.category = WorkItem.Category(category: nil, state: task.state)
+        read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+        #expect(!read.isDone)
+        states.linked = { $0 == task.key ? read : nil }
+        #expect(states.item(task.key)?.isDone == true)
+
+        read.project = "Payments"
+        states.linked = { $0 == task.key ? read : nil }
+        let moved = try #require(states.item(task.key))
+        #expect(moved.project == "Payments" && moved.state == "Verified")
+        #expect(!moved.isDone)
+    }
+
     /// A story My Work's Map shows as your tasks' parent, renamed and given to someone else since the sprint was last read,
     /// while nothing shows the sprint, keeps its new name and owner once you changed its state from the Map, as Azure DevOps
     /// answered the change, with the whole work item: on the sprint's board too, though it isn't read again until something

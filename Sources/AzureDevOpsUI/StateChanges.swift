@@ -177,7 +177,9 @@ final class StateChanges: ObservableObject {
     /// type offers that type's states, and one moved to another project none: the hours left, its tags and where it is stay
     /// as those last read them. Show Links guesses the category of its state from its name, so one in the team's project
     /// takes its state's category as the team's backlog configuration maps its type's states, as a custom state's that the
-    /// team counts as done; the others' category stays while it's in the same state. Nil for one BriefBar doesn't read.
+    /// team counts as done; the others' category stays while it's in the same state, of the same type and in the same
+    /// project, so that one moved to another project since, in a state of the same name, is in the category that name
+    /// gives rather than the board's, as that project's process may put it in another. Nil for one BriefBar doesn't read.
     func item(_ key: WorkItemKey) -> WorkItem? {
         let onBoard = sprint?.board?.item(key)
         if let onBoard, sprint?.isShowing == true { return onBoard }

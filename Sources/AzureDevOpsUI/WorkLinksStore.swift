@@ -225,9 +225,10 @@ final class WorkLinksStore {
     }
 
     /// What the engine read, with the linked work items whose state BriefBar changed since in their new state, and, while one
-    /// is in the state it went to, in the category the team's process puts that state in (`WorkItemDetailsStore.newest`),
-    /// which the engine guesses from its name; those it read in another state since, or no longer reads, as it read them. So
-    /// too the parents My Work's Map shows.
+    /// is in the state it went to, of the same type and in the same project, in the category the team's process puts that
+    /// state in (`WorkItemDetailsStore.newest`), which the engine guesses from its name; those it read in another state,
+    /// as another type or in another project since, or no longer reads, as it read them. So too the parents My Work's Map
+    /// shows.
     private func keepingStateChanges(_ read: WorkLinks) -> WorkLinks {
         guard !stateChanges.isEmpty else { return read }
         var read = read
@@ -284,9 +285,9 @@ final class WorkLinksStore {
 
     /// A work item BriefBar changed the state of from My Work, or may have, as it didn't hear back (`StateChanges`): one Show
     /// Links read shows in its new state at once, as Azure DevOps answered, with the category the team's process puts it in,
-    /// over what the engine read before, until it reads it in another state, and it reads it again now, as it does what a
-    /// Copilot session said it changed (`reread`); in the demo, its made-up links change. So too a parent My Work's Map shows.
-    /// Nothing for one Show Links doesn't read.
+    /// over what the engine read before, until it reads it in another state, as another type or in another project, and it
+    /// reads it again now, as it does what a Copilot session said it changed (`reread`); in the demo, its made-up links
+    /// change. So too a parent My Work's Map shows. Nothing for one Show Links doesn't read.
     func changedState(_ key: WorkItemKey, to changed: WorkItem?) {
         guard let item = linkedWorkItem(key) else { return }
         if let changed, let newest = WorkItemDetailsStore.newest(changed, item), newest != item {

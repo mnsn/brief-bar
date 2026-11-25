@@ -3622,8 +3622,10 @@ those last read them (`WorkItem.takingState(of:)`): for its menus, a change and 
 the category the team's backlog configuration puts its type's state in, such as a custom state the team counts as done,
 which Show Links would only guess from the state's name (`StateChanges.item(_:)`, `SprintBoard.categories(of:)`). Not
 one in another project, whose process may give it other states, though the sprint's board has it, as one moved there
-since; nor with no sprint going on, whose board brings the team's states. A task's state, the symbol at the start of its
-line, a story's or bug's on its card, and the state in a work item's details are then menus of them,
+since, which is then in the category its state's name gives rather than the board's, as that project's process may put
+it in another (`WorkItemDetailsStore.newest`); nor with no sprint going on, whose board brings the team's states. A
+task's state, the symbol at the start of its line, a story's or bug's on its card, and the state in a work item's
+details are then menus of them,
 its own checked (`StateSymbol`, `StateChip`), and its menus have **State** (`StateMenuItems`); with the setting off, the
 state's tooltip says how to turn it on. On My Work, a work item's card's menu has State too, and its node on the Map
 starts with the same symbol and menu (`WorkMapContent.state`), as does one the Board has no card for, whose right-click
