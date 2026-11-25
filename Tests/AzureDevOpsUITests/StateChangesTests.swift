@@ -563,6 +563,34 @@ import Testing
         #expect(states.item(story.key) == story)
     }
 
+    /// A task on the sprint's board, or one of yours outside it, that changed since the sprint was last read, while nothing
+    /// shows the sprint, keeps the hours left and where it is as that read has them, which Show Links doesn't read: its later
+    /// read gives only its state, title and owner, so My Work's Map still shows what's left of it.
+    @Test func aTaskKeepsItsHoursLeftAsALaterReadWithoutThemChangesIt() throws {
+        let (sprint, states, _) = live()
+        var outside = DemoData.outsideWork(now: Self.referenceNow)
+        let index = try #require(outside.items.firstIndex { $0.id == 5052 })
+        outside.items[index].remainingWork = 4
+        readOutside(sprint, outside)
+        #expect(!sprint.isShowing)
+        let onBoard = try item(sprint)
+        for task in [onBoard, outside.items[index]] {
+            let hours = try #require(task.remainingWork)
+            #expect(hours > 0)
+            var read = task
+            read.title = "Move it back"
+            read.state = "Active"
+            read.category = .inProgress
+            read.remainingWork = nil
+            read.iteration = nil
+            read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+            states.linked = { $0 == task.key ? read : nil }
+            let now = try #require(states.item(task.key))
+            #expect(now.state == "Active" && now.title == read.title && now.changedAt == read.changedAt)
+            #expect(now.remainingWork == hours && now.iteration == task.iteration)
+        }
+    }
+
     /// A story My Work's Map shows as your tasks' parent, renamed and given to someone else since the sprint was last read,
     /// while nothing shows the sprint, keeps its new name and owner once you changed its state from the Map, as Azure DevOps
     /// answered the change, with the whole work item: on the sprint's board too, though it isn't read again until something

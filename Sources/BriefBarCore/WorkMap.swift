@@ -519,7 +519,8 @@ public struct WorkMapGraph: Equatable, Sendable {
     /// The boxes round those Azure DevOps links as Related, in the order their first ones come.
     public private(set) var boxes: [WorkMapBox]
     /// With Parents, the nearest of its nodes each of them is part of, up its parents, as Azure DevOps gives them: whether a
-    /// lighter line joins the two, or another line that says more does.
+    /// lighter line joins the two, another line that says more does, or none, where the part waits for its parent through
+    /// others (`Edges.lines(among:)`).
     public private(set) var partOf: [MapNodeID: [MapNodeID]]
 
     /// Whether a card counts as done: a pull request that merged or closed, or work that's resolved or done.

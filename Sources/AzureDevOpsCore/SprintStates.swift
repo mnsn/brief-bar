@@ -104,8 +104,9 @@ extension WorkItem {
     /// With the state of `changed`, its category and when it changed, and its title and owner, as Azure DevOps answered the
     /// change, or BriefBar last read the work item before it (`StateChanges`), which every read of it asks for: what shows
     /// of a change of its state, so that one renamed since the sprint was read doesn't take its old name back, stamped as
-    /// changed when the change was. Nothing else, such as where it is or what's left of it, which not every read has.
-    func takingState(of changed: WorkItem) -> WorkItem {
+    /// changed when the change was; and of a later read of it that has only those, as Show Links' (`StateChanges.item(_:)`).
+    /// Nothing else, such as where it is or what's left of it, which not every read has.
+    public func takingState(of changed: WorkItem) -> WorkItem {
         var item = self
         item.state = changed.state
         item.category = changed.category

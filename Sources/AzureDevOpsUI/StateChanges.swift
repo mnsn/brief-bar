@@ -166,21 +166,26 @@ final class StateChanges: ObservableObject {
         return states
     }
 
-    /// A work item as BriefBar reads it now, for its state's menus, what a change of it goes from and whether My Work's Map
-    /// counts it done: the sprint's board's while something shows the sprint, as it's read the most often then; else
-    /// whichever changed last (`WorkItemDetailsStore.newest`) of the board's, as the sprint was last read, which wins a tie,
-    /// yours outside the sprint, the last one off the board whose state BriefBar changed, as Azure DevOps answered, and Show
-    /// Links' (`linked`), such as a parent the Map shows, which reads it last; so one closed or renamed since the sprint was
-    /// last read shows so. Show Links guesses the category of its state from its name, so one in the team's project takes its
-    /// state's category as the team's backlog configuration maps its type's states, as a custom state's that the team counts
-    /// as done; the others' category stays while it's in the same state. Nil for one BriefBar doesn't read.
+    /// A work item as BriefBar reads it now, for its state's menus, what a change of it goes from and what My Work's Map
+    /// shows of it, such as whether it's done and the hours left: the sprint's board's while something shows the sprint, as
+    /// it's read the most often then; else whichever changed last (`WorkItemDetailsStore.newest`) of the board's, as the
+    /// sprint was last read, which wins a tie, yours outside the sprint, the last one off the board whose state BriefBar
+    /// changed, as Azure DevOps answered, and Show Links' (`linked`), such as a parent the Map shows, which reads it last; so
+    /// one closed or renamed since the sprint was last read shows so. Of one the board or your work outside the sprint has,
+    /// whose reads have all BriefBar shows of it, a later read gives only its state and when it changed, its title and its
+    /// owner, which every read has (`WorkItem.takingState(of:)`): the hours left, its tags and where it is stay as those last
+    /// read them. Show Links guesses the
+    /// category of its state from its name, so one in the team's project takes its state's category as the team's backlog
+    /// configuration maps its type's states, as a custom state's that the team counts as done; the others' category stays
+    /// while it's in the same state. Nil for one BriefBar doesn't read.
     func item(_ key: WorkItemKey) -> WorkItem? {
         let onBoard = sprint?.board?.item(key)
         if let onBoard, sprint?.isShowing == true { return onBoard }
         let outside = sprint?.outside?.items.first { $0.key == key }
         let changed = changedElsewhere?.key == key ? changedElsewhere : nil
-        let reads = [outside, changed, linked(key)]
-        guard var item = reads.reduce(onBoard, { WorkItemDetailsStore.newest($0, $1) }) else { return nil }
+        let whole = WorkItemDetailsStore.newest(onBoard, outside)
+        guard let latest = [changed, linked(key)].reduce(whole, { WorkItemDetailsStore.newest($0, $1) }) else { return nil }
+        var item = if let whole, latest != whole { whole.takingState(of: latest) } else { latest }
         if let board = sprint?.board, board.isInTeamsProject(item), let category = board.categories(of: item.type)?[item.state] {
             item.category = WorkItem.Category(category: category, state: item.state)
         }

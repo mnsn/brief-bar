@@ -81,8 +81,9 @@ enum WorkMapPrompt {
 
     /// What comes before what's part of what.
     static let partsLead = """
-        What's part of what, as Azure DevOps puts them under their parents, which the Map has wait for what's part of them. \
-        BriefBar reads these from Azure DevOps itself: tell it nothing of them.
+        What's part of what, as Azure DevOps puts them under their parents, which the Map has wait for what's part of them, \
+        but for a part that waits for its parent already. BriefBar reads these from Azure DevOps itself: tell it nothing of \
+        them.
         """
 
     private static func list(_ names: [String]) -> String {

@@ -923,8 +923,9 @@ private struct MyWorkContent: View {
     /// A work item as BriefBar reads it now, as its state's menus and a change of it have it (`StateChanges.item`): the
     /// sprint's, anyone's, while something shows the sprint; else whichever changed last of the sprint's, as last read, yours
     /// outside it, one Show Links read and the last one whose state you changed off the sprint's board, as Azure DevOps
-    /// answered, as a task of yours outside the sprint once it's done. So what the Map shows of it, and whether Done leaves it
-    /// out, is what its state's menu changes it from.
+    /// answered, as a task of yours outside the sprint once it's done, with the hours left the sprint or yours outside it
+    /// last read, which Show Links doesn't read. So what the Map shows of it, and whether Done leaves it out, is what its
+    /// state's menu changes it from.
     private func anyWorkItem(_ ref: ItemRef) -> WorkItem? {
         guard ref.kind == .workItem, let id = ref.number else { return nil }
         return states.item(WorkItemKey(ref.scope, id))
