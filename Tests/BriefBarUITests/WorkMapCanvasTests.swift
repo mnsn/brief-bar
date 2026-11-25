@@ -204,6 +204,66 @@ import Testing
         #expect(!WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: false))
         #expect(WorkMapGlancesMenu.offersWork(Self.map(chain: 2), showsWork: true))
     }
+
+    /// A box round related work goes round its nodes across its columns, a little outside them, down to the bottom of the
+    /// tallest, as one that says something at a glance; where the columns fold, a piece in each tier, round what's there.
+    @Test func aBoxRoundRelatedWorkGoesRoundItsNodesInEachTier() throws {
+        var edits = MapEdits()
+        let refs = (1...7).map { ItemRef.workItem(organization: "contoso", id: 5100 + $0) }
+        for ref in refs {
+            edits.addItem(ref, home: nil, by: .you, at: Self.day)
+        }
+        for (before, after) in zip(refs, refs.dropFirst()) {
+            edits.set(MapEdits.Line(.card(before), .card(after)), on: true, by: .you, at: Self.day)
+        }
+        let state = MapEdits.merged([edits], now: Self.day)
+        let map = WorkMap(PullRequestBoard(), missions: [], state: state, related: [MapRelated(refs[4], refs[3])])
+        let graph = try #require(map.bands.first?.graph)
+        let fourth = MapNodeID.card(refs[3])
+        let fifth = MapNodeID.card(refs[4])
+        #expect(graph.boxes == [WorkMapBox(members: [fourth, fifth], columns: 3...4, rows: 0...0)])
+
+        let m = WorkMapMetrics(scale: 1, glances: true)
+        let wide = WorkMapCanvas.Geometry(
+            blocks: [WorkMapCanvas.Block(id: "band", graph: graph)], columns: graph.columns, grid: [], width: nil, gridColumns: 4,
+            metrics: m, glanced: [fifth]
+        )
+        let round = try #require(wide.frames[fourth]).union(try #require(wide.frames[fifth]))
+        #expect(wide.boxes.map(\.members) == [[fourth, fifth]])
+        #expect(wide.boxes.map(\.frame) == [round.insetBy(dx: -m.boxPadding, dy: -m.boxPadding)])
+        #expect(try #require(wide.frames[fifth]).height > (try #require(wide.frames[fourth])).height)
+
+        let narrow = Self.geometry(graph, width: 950)
+        #expect(narrow.fold.starts == [0, 4])
+        let pad = Self.metrics.boxPadding
+        #expect(narrow.boxes.map(\.members) == [[fourth], [fifth]])
+        let pieces = try [fourth, fifth].map { try #require(narrow.frames[$0]).insetBy(dx: -pad, dy: -pad) }
+        #expect(narrow.boxes.map(\.frame) == pieces)
+    }
+
+    /// A box round related work in the first or last column, or the last row, goes past the canvas's edge, into the padding
+    /// round it, so its boxes and lines are drawn that far (`reach`), dashed edge and all, while its nodes stay where they
+    /// are; a canvas with no box at its edge draws them only on itself.
+    @Test func aBoxAtTheCanvasEdgeIsDrawnPastIt() throws {
+        var edits = MapEdits()
+        let first = ItemRef.workItem(organization: "contoso", id: 5101)
+        let second = ItemRef.workItem(organization: "contoso", id: 5102)
+        for ref in [first, second] {
+            edits.addItem(ref, home: nil, by: .you, at: Self.day)
+        }
+        edits.set(MapEdits.Line(.card(first), .card(second)), on: true, by: .you, at: Self.day)
+        let state = MapEdits.merged([edits], now: Self.day)
+        let map = WorkMap(PullRequestBoard(), missions: [], state: state, related: [MapRelated(second, first)])
+        let geometry = Self.geometry(try #require(map.bands.first?.graph), width: nil)
+        let box = try #require(geometry.boxes.first?.frame)
+        let (pad, edge) = (Self.metrics.boxPadding, Self.metrics.scale)
+        #expect(box.minX == -pad && box.maxX == geometry.size.width + pad && box.maxY == geometry.size.height + pad)
+        #expect(geometry.reach.contains(box.insetBy(dx: -edge, dy: -edge)))
+        #expect(geometry.nodes.map(\.frame.minX).min() == 0)
+
+        let plain = Self.geometry(try #require(Self.map(chain: 2).bands.first?.graph), width: nil)
+        #expect(plain.boxes.isEmpty && plain.reach == CGRect(origin: .zero, size: plain.size))
+    }
 }
 
 /// + Task's search, as Return goes.

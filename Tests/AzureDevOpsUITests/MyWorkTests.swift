@@ -433,6 +433,60 @@ import Testing
         #expect(fromSprint.pullRequestOnTop == nil)
     }
 
+    /// ✨ Ask Copilot's prompt on the Map says what's part of what, as Azure DevOps puts your work under its parents, apart
+    /// from what waits for what, so that the session doesn't tell BriefBar what it reads itself; with no parents, it says
+    /// nothing of them.
+    @Test func askCopilotsPromptSaysWhatsPartOfWhatApartFromWhatWaits() {
+        let task = ItemRef.workItem(organization: "contoso", id: 5103)
+        let story = ItemRef.workItem(organization: "contoso", id: 5101)
+        let feature = ItemRef.workItem(organization: "contoso", id: 9002)
+        let labels = [task: "Task 5103", story: "User Story 5101", feature: "Feature 9002"]
+        let items = [task, story, feature].map { WorkMapItem.workItem(MapWorkItem(ref: $0, isYours: true)) }
+        let describe = { (ref: ItemRef) in labels[ref].map { WorkMapPrompt.Described(label: $0) } }
+
+        let partOf: [MapNodeID: [MapNodeID]] = [.card(task): [.card(story)], .card(story): [.card(feature)]]
+        let question = WorkMapQuestion(title: "Totals", items: items, waits: [:], partOf: partOf, steps: [])
+        let prompt = WorkMapPrompt.prompt(question, describe: describe)
+        #expect(prompt.contains(
+            WorkMapPrompt.partsLead + "\n- Task 5103 is part of User Story 5101\n- User Story 5101 is part of Feature 9002\n\n"
+                + "BriefBar knows of nothing else here that waits for anything yet."
+        ))
+
+        let waiting = WorkMapQuestion(title: "Totals", items: items, waits: [.card(feature): [.card(task)]], steps: [])
+        let plain = WorkMapPrompt.prompt(waiting, describe: describe)
+        #expect(!plain.contains(WorkMapPrompt.partsLead))
+        #expect(!plain.contains("is part of"))
+        #expect(plain.contains("What BriefBar has them wait for now:\n- Feature 9002 waits for Task 5103"))
+    }
+
+    /// A work item on the Map is yours as the sprint has you; with no sprint read, as with Show: Pull Requests, or for a team
+    /// in another organization, as your pull requests in the work item's organization have you.
+    @Test func aWorkItemIsYoursAsYourPullRequestsHaveYouWhereTheSprintDoesnt() throws {
+        let now = Date()
+        let board = DemoData.sprintBoard(now: now)
+        let records = DemoData.records(now: now)
+        let sam = Person(id: "6f1c1a52-0000-4000-8000-00000000b001", name: "Sam Rivera")
+        func story(in organization: String = DemoData.organization, assignedTo person: Person?) -> WorkItem {
+            WorkItem(
+                id: 5111, organization: organization, project: "Storefront", type: "User Story", title: "Coupons",
+                state: "Active", category: .inProgress, assignedTo: person
+            )
+        }
+        #expect(MyWorkFacts.isAssigned(story(assignedTo: DemoData.me), board: board, records: []))
+        #expect(MyWorkFacts.isAssigned(story(assignedTo: DemoData.me), board: nil, records: records))
+        #expect(!MyWorkFacts.isAssigned(story(assignedTo: DemoData.me), board: nil, records: []))
+        #expect(!MyWorkFacts.isAssigned(story(assignedTo: sam), board: nil, records: records))
+        #expect(!MyWorkFacts.isAssigned(story(assignedTo: nil), board: nil, records: records))
+
+        // You in another organization, whose identity there your pull request there has, while the sprint is Contoso's.
+        let elsewhere = Person(id: "6f1c1a52-0000-4000-8000-00000000c001", name: "Robin Diaz")
+        var fabrikam = try #require(records.first)
+        fabrikam.pullRequest.key.organization = "Fabrikam"
+        fabrikam.me = elsewhere.id
+        #expect(MyWorkFacts.isAssigned(story(in: "fabrikam", assignedTo: elsewhere), board: board, records: records + [fabrikam]))
+        #expect(!MyWorkFacts.isAssigned(story(in: "fabrikam", assignedTo: elsewhere), board: board, records: records))
+    }
+
     /// Once what waits on the main queue ran, as the source's sinks do.
     private func settled() async {
         await withCheckedContinuation { continuation in

@@ -54,8 +54,8 @@ final class StateChanges: ObservableObject {
     /// Sends a change to Azure DevOps, as whom it was asked for as, when that's known, if it's still wanted as it goes, once
     /// its token came (`ADOClient.send(_:as:while:)`): the client's; a test's stand-in. Never in the demo.
     var send: (ADOWrite, String?, @escaping @Sendable () async -> Bool) async throws -> ADOWrite.Answer
-    /// A work item that neither the sprint's board nor your work outside it has, as Show Links read it, such as someone
-    /// else's that My Work's Map shows, or one you added there: the source's (`WorkLinksStore.linkedWorkItem`); none by
+    /// A work item as Show Links read it, such as someone else's that My Work's Map shows, one you added there, or one of the
+    /// sprint's, which it reads while nothing shows the sprint: the source's (`WorkLinksStore.linkedWorkItem`); none by
     /// default.
     var linked: (WorkItemKey) -> WorkItem? = { _ in nil }
     /// Tells what else shows a work item that isn't on the sprint's board that its state changed, as Azure DevOps answered,
@@ -166,16 +166,32 @@ final class StateChanges: ObservableObject {
         return states
     }
 
-    /// A work item as BriefBar reads it now, for its state's menus and what a change of it goes from: the sprint's board's;
-    /// else whichever changed last (`WorkItemDetailsStore.newest`) of yours outside the sprint, the last one off the board
-    /// whose state BriefBar changed, as Azure DevOps answered, and Show Links' (`linked`), which reads it last, as it guesses
-    /// the category of its state from its name: the others' category, the team's, stays while it's in the same state, as a
-    /// custom state's that the team counts as done. Nil for one BriefBar doesn't read.
+    /// A work item as BriefBar reads it now, for its state's menus, what a change of it goes from and what My Work's Map
+    /// shows of it, such as whether it's done and the hours left: the sprint's board's while something shows the sprint, as
+    /// it's read the most often then; else whichever changed last (`WorkItemDetailsStore.newest`) of the board's, as the
+    /// sprint was last read, which wins a tie, yours outside the sprint, the last one off the board whose state BriefBar
+    /// changed, as Azure DevOps answered, and Show Links' (`linked`), such as a parent the Map shows, which reads it last; so
+    /// one closed or renamed since the sprint was last read shows so. Of one the board or your work outside the sprint has,
+    /// whose reads have all BriefBar shows of it, a later read gives only its state and when it changed, its title, its
+    /// owner, its type and its project, which every read has (`WorkItem.takingState(of:)`), so that one turned into another
+    /// type offers that type's states, and one moved to another project none: the hours left, its tags and where it is stay
+    /// as those last read them. Show Links guesses the category of its state from its name, so one in the team's project
+    /// takes its state's category as the team's backlog configuration maps its type's states, as a custom state's that the
+    /// team counts as done; the others' category stays while it's in the same state, of the same type and in the same
+    /// project, so that one moved to another project since, in a state of the same name, is in the category that name
+    /// gives rather than the board's, as that project's process may put it in another. Nil for one BriefBar doesn't read.
     func item(_ key: WorkItemKey) -> WorkItem? {
-        if let item = sprint?.board?.item(key) { return item }
+        let onBoard = sprint?.board?.item(key)
+        if let onBoard, sprint?.isShowing == true { return onBoard }
         let outside = sprint?.outside?.items.first { $0.key == key }
         let changed = changedElsewhere?.key == key ? changedElsewhere : nil
-        return [changed, linked(key)].reduce(outside) { WorkItemDetailsStore.newest($0, $1) }
+        let whole = WorkItemDetailsStore.newest(onBoard, outside)
+        guard let latest = [changed, linked(key)].reduce(whole, { WorkItemDetailsStore.newest($0, $1) }) else { return nil }
+        var item = if let whole, latest != whole { whole.takingState(of: latest) } else { latest }
+        if let board = sprint?.board, board.isInTeamsProject(item), let category = board.categories(of: item.type)?[item.state] {
+            item.category = WorkItem.Category(category: category, state: item.state)
+        }
+        return item
     }
 
     /// A change is on its way: no other starts meanwhile.

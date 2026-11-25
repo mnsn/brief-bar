@@ -482,7 +482,9 @@ final class WorkItemDetailsStore: ObservableObject {
 
     /// The one that changed last; the sprint's, which knows its team's states, when neither did. One that doesn't say when
     /// it changed, such as a linked work item that couldn't be read, gives way to what's read. The details guess the
-    /// category of the state, so they keep the sprint's while the state is the same.
+    /// category of the state, so they keep the sprint's while it's in the same state, of the same type and in the same
+    /// project: not once it was turned into another type, or moved to another project, whose process may put a state of
+    /// the same name in another category. Its type's and project's names whatever the case of their letters.
     nonisolated static func newest(_ sprint: WorkItem?, _ read: WorkItem?) -> WorkItem? {
         guard let read else { return sprint }
         guard let sprint else { return read }
@@ -490,7 +492,10 @@ final class WorkItemDetailsStore: ObservableObject {
             guard isNewer(read.changedAt, than: sprint.changedAt) else { return sprint }
         }
         var item = read
-        if item.state == sprint.state { item.category = sprint.category }
+        if item.state == sprint.state, item.type.caseInsensitiveCompare(sprint.type) == .orderedSame,
+           item.project.caseInsensitiveCompare(sprint.project) == .orderedSame {
+            item.category = sprint.category
+        }
         if item.rank == nil { item.rank = sprint.rank }
         return item
     }

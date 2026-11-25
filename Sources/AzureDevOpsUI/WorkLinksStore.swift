@@ -15,7 +15,9 @@ import SwiftUI
 /// their work items, and what those stories are when nothing else has them, which the engine reads then. And it tells My
 /// Work's Map the dependencies Azure DevOps links the sprint's work items with (`MapDependencies`), and, while My Work shows
 /// the Map, has the engine read what the work items the Map can show that no list or sprint has are: those the
-/// dependencies, and the lines you and sessions said, name, and those you added.
+/// dependencies, and the lines you and sessions said, name, and those you added. With Parents on, it climbs from your work
+/// items to their parents, a level each time a read names them, all the way up (`mapParentLookups`), and tells the Map
+/// those parents, with the Related links Azure DevOps has between the sprint's work items and others.
 @MainActor
 final class WorkLinksStore {
     /// The stories your pull requests are for, while Show Links reads them and Pull Request Order wants them.
@@ -66,7 +68,7 @@ final class WorkLinksStore {
     var showPullRequest: (PRKey) -> Bool = { _ in false }
     /// My Work's Map's dependencies, which it tells what Azure DevOps links.
     weak var dependencies: MapDependencies? {
-        didSet { dependencies?.told(read.dependencies) }
+        didSet { tellMap() }
     }
 
     /// Whether a window shows My Work on screen (`AzureDevOpsSource.setMyWorkVisible`): what only its Map names is read
@@ -129,10 +131,15 @@ final class WorkLinksStore {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.update() } }
             .store(in: &cancellables)
-        // What My Work's Map names, while it shows: what you and sessions changed of it, and whether it shows.
+        // What My Work's Map names, while it shows: what you and sessions changed of it, whether it shows, the pull requests on
+        // its board, and its parents, which climb from your sprint work only while Show shows it.
         if let order {
             order.$mapEdits.map { _ in () }
                 .merge(with: order.$mapTold.map { _ in () }, order.$myWorkView.map { _ in () }, order.$myWorkPage.map { _ in () })
+                .merge(
+                    with: order.$mapShowsParents.map { _ in () }, settings.$myWorkShows.removeDuplicates().map { _ in () },
+                    order.$stages.map { _ in () }
+                )
                 .dropFirst()
                 .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
                 .sink { [weak self] in MainActor.assumeIsolated { self?.updateEngine() } }
@@ -146,7 +153,7 @@ final class WorkLinksStore {
         lastInputs = nil
         read = WorkLinks()
         stateChanges = [:]
-        dependencies?.told([])
+        dependencies?.told([], parents: [:], parentItems: [:], related: [])
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
         tellsStories = false
@@ -217,20 +224,32 @@ final class WorkLinksStore {
         updateEngine()
     }
 
-    /// What the engine read, with the linked work items whose state BriefBar changed since in their new state, and, while one
-    /// is in the state it went to, in the category the team's process puts that state in (`WorkItemDetailsStore.newest`),
-    /// which the engine guesses from its name; those it read in another state since, or no longer reads, as it read them.
+    /// What the engine read, with the linked work items whose state BriefBar changed since in their new state, under the parent
+    /// it read (`show`), and, while one is in the state it went to, of the same type and in the same project, in the category
+    /// the team's process puts that state in (`WorkItemDetailsStore.newest`), which the engine guesses from its name; those it
+    /// read in another state, as another type or in another project since, or no longer reads, as it read them. So too the
+    /// parents My Work's Map shows.
     private func keepingStateChanges(_ read: WorkLinks) -> WorkLinks {
         guard !stateChanges.isEmpty else { return read }
         var read = read
         for (key, changed) in stateChanges {
-            if let item = read.workItems[key], let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
-                read.workItems[key] = newest
-            } else {
-                stateChanges[key] = nil
-            }
+            let linked = Self.show(changed, of: key, in: &read.workItems)
+            let parent = Self.show(changed, of: key, in: &read.mapParents)
+            if !linked && !parent { stateChanges[key] = nil }
         }
         return read
+    }
+
+    /// Shows a work item's state as BriefBar changed it, `changed`, over what's read of it among `items`, while what's read
+    /// isn't newer: whether it does. Under the parent read there, as a change of state never changes what a work item is
+    /// under, though BriefBar changed it from an older read of it under another, such as your work outside the sprint as
+    /// last read before My Work came to show only pull requests.
+    private static func show(_ changed: WorkItem, of key: WorkItemKey, in items: inout [WorkItemKey: WorkItem]) -> Bool {
+        guard let item = items[key], var newest = WorkItemDetailsStore.newest(changed, item) else { return false }
+        newest.parentId = item.parentId
+        guard newest != item else { return false }
+        items[key] = newest
+        return true
     }
 
     private func update() {
@@ -256,7 +275,7 @@ final class WorkLinksStore {
     /// is read again (`LinkEngine.changed`), which says so too once Azure DevOps does; in the demo, its made-up links change.
     func changed(_ dependency: WorkDependency, linked: Bool) {
         if linked { read.dependencies.insert(dependency) } else { read.dependencies.remove(dependency) }
-        dependencies?.told(read.dependencies)
+        tellMap()
         guard store.mode == .live, let engine else { return }
         Task { await engine.changed(dependency, linked: linked) }
     }
@@ -270,14 +289,16 @@ final class WorkLinksStore {
 
     /// A work item BriefBar changed the state of from My Work, or may have, as it didn't hear back (`StateChanges`): one Show
     /// Links read shows in its new state at once, as Azure DevOps answered, with the category the team's process puts it in,
-    /// over what the engine read before, until it reads it in another state, and it reads it again now, as it does what a
-    /// Copilot session said it changed (`reread`); in the demo, its made-up links change. Nothing for one Show Links doesn't
-    /// read.
+    /// under the parent Show Links read (`show`), over what the engine read before, until it reads it in another state, as
+    /// another type or in another project, and it reads it again now, as it does what a Copilot session said it changed
+    /// (`reread`); in the demo, its made-up links change. So too a parent My Work's Map shows. Nothing for one Show Links
+    /// doesn't read.
     func changedState(_ key: WorkItemKey, to changed: WorkItem?) {
-        guard let item = read.workItems[key] else { return }
+        guard let item = linkedWorkItem(key) else { return }
         if let changed, let newest = WorkItemDetailsStore.newest(changed, item), newest != item {
             stateChanges[key] = newest
-            read.workItems[key] = newest
+            _ = Self.show(newest, of: key, in: &read.workItems)
+            _ = Self.show(newest, of: key, in: &read.mapParents)
             publish()
         }
         reread(pullRequests: [], workItems: [key])
@@ -295,10 +316,11 @@ final class WorkLinksStore {
     }
 
     /// A linked work item the sprint doesn't show, as Show Links read it: for My Work's search, the type and title of one
-    /// linked to a pull request of yours, as your task outside the sprint is with Show: Pull Requests. Nil for one it hasn't
-    /// read, or couldn't.
+    /// linked to a pull request of yours, as your task outside the sprint is with Show: Pull Requests; else a parent My Work's
+    /// Map shows, as read for it. Of one read both ways, the newer read, as when it was read for the Map since its read with
+    /// what stories want failed. Nil for one it hasn't read, or couldn't.
     func linkedWorkItem(_ key: WorkItemKey) -> WorkItem? {
-        read.workItems[key]
+        WorkItemDetailsStore.newest(read.workItems[key], read.mapParents[key])
     }
 
     /// The organizations of what it looks up, what's linked that your lists and the sprint don't show, while it reads:
@@ -331,7 +353,8 @@ final class WorkLinksStore {
             workItemLookups: lookups.workItems,
             pullRequestLookups: lookups.pullRequests,
             wantsStories: wantsStories,
-            parentLookups: wantsStories ? storyFinder.parents(ofTasksIn: linkedToPullRequests) : []
+            parentLookups: wantsStories ? storyFinder.parents(ofTasksIn: linkedToPullRequests) : [],
+            mapParents: mapParentNames()
         )
     }
 
@@ -358,6 +381,85 @@ final class WorkLinksStore {
 
     /// At most how many work items the Map has read for it.
     static let mostMapLookups = 200
+
+    /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents on: climbing
+    /// from the work items Show Links links to the pull requests on its board, as their cards stand for them, those you added
+    /// to it and, while Show shows your work, those My Work has cards for, your work in the sprint, what's left and what's done
+    /// (`SprintBoard.myWork`, `myDone`), and outside it, up their parents (`mapParentLookups`): not a story of yours whose tasks
+    /// are all someone else's, which has none. Someone else's work adds none. None otherwise.
+    private func mapParentNames() -> Set<WorkItemKey> {
+        guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map, order.mapShowsParents else { return [] }
+        var start: Set<WorkItemKey> = []
+        func add(_ ref: ItemRef) {
+            if ref.kind == .workItem, let id = ref.number { start.insert(WorkItemKey(ref.scope, id)) }
+        }
+        for pullRequest in order.refsOnBoard(kinds: PullRequestsByMission.kinds) {
+            links.connections(of: pullRequest).forEach { add($0.item.ref) }
+        }
+        if settings.myWorkShows.showsWork {
+            let board = sprint.board
+            if let board { start.formUnion((board.myWork + board.myDone).map(\.key)) }
+            if sprint.showsOutside, let outside = sprint.outside?.without(board) { start.formUnion(outside.items.map(\.key)) }
+        }
+        order.mapState.items.keys.forEach(add)
+        let known = knownParents()
+        return Self.mapParentLookups(from: start, parents: known.parents, known: known.readElsewhere)
+    }
+
+    /// The work items to read with their parent for My Work's Map, the first `most` of them: climbing from `start` up the
+    /// `parents` known, a level at a time, each level in order, those not read with their parent otherwise, `known`. One read
+    /// for the Map already stays among them, so the engine keeps it, rather than forget it and read it again, over and over;
+    /// with its parent, it climbs a level more.
+    static func mapParentLookups(
+        from start: Set<WorkItemKey>, parents: [WorkItemKey: WorkItemKey], known: Set<WorkItemKey>, most: Int = mostMapParents
+    ) -> Set<WorkItemKey> {
+        var wanted: Set<WorkItemKey> = []
+        var seen: Set<WorkItemKey> = []
+        var level = start.sorted()
+        while !level.isEmpty {
+            var next: [WorkItemKey] = []
+            for key in level where seen.insert(key).inserted {
+                if !known.contains(key) {
+                    guard wanted.count < most else { return wanted }
+                    wanted.insert(key)
+                }
+                if let parent = parents[key] { next.append(parent) }
+            }
+            level = next.sorted()
+        }
+        return wanted
+    }
+
+    /// At most how many work items the Map reads with their parent.
+    static let mostMapParents = 200
+
+    /// Each work item's parent, of those read with it: the linked ones read with what stories want, those read for My Work's
+    /// Map, and the sprint's, which have the last word while something shows the sprint, as they're read the most often then.
+    /// Once nothing does, the sprint is read no more: what was read of it comes first, for what's read since to have the last
+    /// word, and the Map reads its work items itself. With the work items read with their parent other than for the Map,
+    /// `readElsewhere`, which the Map needn't read.
+    private func knownParents() -> (parents: [WorkItemKey: WorkItemKey], readElsewhere: Set<WorkItemKey>) {
+        var parents: [WorkItemKey: WorkItemKey] = [:]
+        var readElsewhere: Set<WorkItemKey> = []
+        func put(_ item: WorkItem, elsewhere: Bool) {
+            parents[item.key] = item.parentId.map { WorkItemKey(item.organization, $0) }
+            if elsewhere { readElsewhere.insert(item.key) }
+        }
+        let sprintReads = sprint.isShowing
+        if !sprintReads {
+            for item in sprintItems { put(item, elsewhere: false) }
+        }
+        // Without stories, a linked work item is read without its parent; with them, one partly read may be too.
+        let withParents = order?.isOn == true
+        for item in read.workItems.values where item.parentId != nil || withParents && !read.partlyRead.contains(item.key) {
+            put(item, elsewhere: true)
+        }
+        for item in read.mapParents.values { put(item, elsewhere: false) }
+        if sprintReads {
+            for item in sprintItems { put(item, elsewhere: true) }
+        }
+        return (parents, readElsewhere)
+    }
 
     /// The work items linked to your pull requests, as read.
     private var linkedToPullRequests: Set<WorkItemKey> {
@@ -439,8 +541,19 @@ final class WorkLinksStore {
 
     // MARK: Telling Show Links
 
+    /// Tells My Work's Map what Show Links read: the dependencies; and, while it reads, the work items' parents, the parents
+    /// read for the Map, in the state BriefBar changed them to (`keepingStateChanges`), and the Related links.
+    private func tellMap() {
+        guard let dependencies else { return }
+        let on = links.isOn
+        dependencies.told(
+            read.dependencies, parents: on ? knownParents().parents : [:], parentItems: on ? read.mapParents : [:],
+            related: on ? read.related : []
+        )
+    }
+
     private func publish() {
-        dependencies?.told(read.dependencies)
+        tellMap()
         updateStories()
         guard links.isOn else {
             links.withdraw(.azureDevOps)

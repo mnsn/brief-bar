@@ -274,6 +274,15 @@ enum MyWorkFacts {
         if !open.isEmpty { parts.append(open.joined(separator: ", ") + " still open") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
+
+    /// Whether a work item is assigned to you: as the sprint's board has you; else as your pull requests in the work item's
+    /// organization have you, as with Show: Pull Requests, which reads no sprint, or for a team in another organization.
+    static func isAssigned(_ item: WorkItem, board: SprintBoard?, records: [PRRecord]) -> Bool {
+        if let board, item.isAssigned(to: board.me) { return true }
+        let organization = item.organization.lowercased()
+        let me = records.first { $0.id.organization.lowercased() == organization }?.me
+        return me.map(item.isAssigned(to:)) ?? false
+    }
 }
 
 private struct OnMyWorkKey: EnvironmentKey {
@@ -863,7 +872,9 @@ private struct MyWorkContent: View {
                                 board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
                                 linked: linkedWork(on: board), azureDevOps: Self.lines(of: dependencies.known), work: mapWork,
                                 showsOthers: showsWork && (others ?? ordering.mapShowsOthers),
-                                showsDone: showsDone ?? ordering.mapShowsDone
+                                showsDone: showsDone ?? ordering.mapShowsDone,
+                                parents: Self.parents(of: dependencies.parents), related: Self.related(of: dependencies.related),
+                                showsParents: ordering.mapShowsParents
                             ),
                             grouping: grouping ?? ordering.mapGrouping,
                             missions: missions, order: ordering, content: mapContent(board), shownOthers: others
@@ -889,6 +900,16 @@ private struct MyWorkContent: View {
         Set(dependencies.map { MapEdits.Line(.card($0.before.linkRef), .card($0.after.linkRef)) })
     }
 
+    /// The parents Azure DevOps gives work items, for the Map, by their references.
+    static func parents(of parents: [WorkItemKey: WorkItemKey]) -> [ItemRef: ItemRef] {
+        Dictionary(parents.map { ($0.key.linkRef, $0.value.linkRef) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The work items Azure DevOps links as Related, for the Map, by their references.
+    static func related(of related: Set<RelatedWork>) -> Set<MapRelated> {
+        Set(related.map { MapRelated($0.first.linkRef, $0.second.linkRef) })
+    }
+
     /// The dependencies lines of the Map between work items are, in Azure DevOps.
     static func dependencies(of lines: [MapEdits.Line]) -> [WorkDependency] {
         lines.compactMap { line in
@@ -900,17 +921,21 @@ private struct MyWorkContent: View {
     }
 
     /// A work item as BriefBar reads it now, as its state's menus and a change of it have it (`StateChanges.item`): the
-    /// sprint's, anyone's; else whichever changed last of yours outside it, one Show Links read and the last one whose state
-    /// you changed off the sprint's board, as Azure DevOps answered, as a task of yours outside the sprint once it's done. So
-    /// what the Map shows of it, and whether Done leaves it out, is what its state's menu changes it from.
+    /// sprint's, anyone's, while something shows the sprint; else whichever changed last of the sprint's, as last read, yours
+    /// outside it, one Show Links read and the last one whose state you changed off the sprint's board, as Azure DevOps
+    /// answered, as a task of yours outside the sprint once it's done, with the hours left the sprint or yours outside it
+    /// last read, which Show Links doesn't read. So what the Map shows of it, and whether Done leaves it out, is what its
+    /// state's menu changes it from.
     private func anyWorkItem(_ ref: ItemRef) -> WorkItem? {
         guard ref.kind == .workItem, let id = ref.number else { return nil }
         return states.item(WorkItemKey(ref.scope, id))
     }
 
-    /// Whether a work item is yours: assigned to you, as one in the sprint is, or one of yours outside it.
+    /// Whether a work item is yours: assigned to you, as the sprint or your pull requests have you (`MyWorkFacts.isAssigned`),
+    /// or one of yours outside the sprint.
     private func isYours(_ item: WorkItem) -> Bool {
-        item.isAssigned(to: sprint.board?.me ?? "") || outside?.items.contains { $0.key == item.key } == true
+        MyWorkFacts.isAssigned(item, board: sprint.board, records: store.records)
+            || outside?.items.contains { $0.key == item.key } == true
     }
 
     /// What the Map knows of a work item its Board doesn't have: whether it holds nothing back, resolved, done or removed,

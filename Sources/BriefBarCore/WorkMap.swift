@@ -10,9 +10,11 @@ import Foundation
 // comes after it in an order, or as you or a session said on the Map, or as Azure DevOps links two work items, a predecessor
 // and its successor; through what the Map doesn't show there, such as what you hid, it's dotted. With Others' work, work
 // items the Board doesn't have, such as a teammate's task yours waits for, are nodes too, faded, and so is any you added.
-// With Done off, what's done leaves the Map, with no dotted line through it, as it holds nothing back. Where the page is too
-// narrow for a graph's columns, they fold into tiers, one under the other, as text wraps (`WorkMapFold`). Only where things
-// go, never how they're drawn: the views draw them.
+// With Done off, what's done leaves the Map, with no dotted line through it, as it holds nothing back. With Parents, the
+// parents Azure DevOps gives your work, a story, its feature, that feature's epic, are nodes too, each after the work that's
+// part of it, as it's done once that is, with a lighter line from each. Work items Azure DevOps links as Related go in a box
+// together. Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as text wraps
+// (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -90,6 +92,26 @@ public enum MapOthersWork {
 public enum MapDoneWork {
     /// Where it's kept, while it's off.
     public static let defaultsKey = "order.map.hidesDone"
+
+    public static func load(from defaults: some SettingsStorage) -> Bool {
+        !defaults.bool(forKey: defaultsKey)
+    }
+
+    public static func save(_ shows: Bool, to defaults: some SettingsStorage) {
+        if shows {
+            defaults.removeObject(forKey: defaultsKey)
+        } else {
+            defaults.set(true, forKey: defaultsKey)
+        }
+    }
+}
+
+/// Parents, on My Work's Map: whether it shows the parents Azure DevOps gives your work items, a story, its feature, that
+/// feature's epic, each a node of its own after the work that's part of it (`WorkMap(showsParents:)`). On until you turn it
+/// off, remembered.
+public enum MapParents {
+    /// Where it's kept, while it's off.
+    public static let defaultsKey = "order.map.hidesParents"
 
     public static func load(from defaults: some SettingsStorage) -> Bool {
         !defaults.bool(forKey: defaultsKey)
@@ -297,7 +319,8 @@ public struct MapHidden: Equatable, Sendable {
 // MARK: - A graph
 
 /// A work item on the Map that the Board doesn't have, by its reference: someone else's that your work waits for, or that
-/// waits for yours, with Others' work (`WorkMap(showsOthers:)`); or one you added to the Map (`MapEdits.addItem`).
+/// waits for yours, with Others' work (`WorkMap(showsOthers:)`); one you added to the Map (`MapEdits.addItem`); or, with
+/// Parents, one Azure DevOps gives as the parent of your work, or of one of its parents (`WorkMap(showsParents:)`).
 public struct MapWorkItem: Equatable, Sendable, Identifiable {
     public var ref: ItemRef
     /// Resolved, done or removed: it holds nothing back.
@@ -308,16 +331,37 @@ public struct MapWorkItem: Equatable, Sendable, Identifiable {
     public var isAdded: Bool
     /// The page knows what it is: one you added that it hasn't read yet isn't.
     public var isKnown: Bool
+    /// Parents brought it there, as the parent of your work, or of one of its parents.
+    public var isParent: Bool
 
-    public init(ref: ItemRef, isDone: Bool = false, isYours: Bool = false, isAdded: Bool = false, isKnown: Bool = true) {
+    public init(
+        ref: ItemRef, isDone: Bool = false, isYours: Bool = false, isAdded: Bool = false, isKnown: Bool = true, isParent: Bool = false
+    ) {
         self.ref = ref
         self.isDone = isDone
         self.isYours = isYours
         self.isAdded = isAdded
         self.isKnown = isKnown
+        self.isParent = isParent
     }
 
     public var id: MapNodeID { .card(ref) }
+}
+
+/// Two work items Azure DevOps links as Related, by their references, either way round: on the Map, they go in a box together
+/// (`WorkMap(related:)`).
+public struct MapRelated: Hashable, Comparable, Sendable {
+    /// The one that comes first, by its reference.
+    public let first: ItemRef
+    public let second: ItemRef
+
+    public init(_ one: ItemRef, _ other: ItemRef) {
+        (first, second) = other < one ? (other, one) : (one, other)
+    }
+
+    public static func < (lhs: MapRelated, rhs: MapRelated) -> Bool {
+        (lhs.first, lhs.second) < (rhs.first, rhs.second)
+    }
 }
 
 /// What a node of the Map is: a card of the Board, a step, or a work item the Board doesn't have.
@@ -412,6 +456,9 @@ public struct WorkMapLine: Hashable, Sendable {
         /// It waits for it through these, which the Map doesn't show there, nearest to it last: what you hid, pull requests
         /// that aren't on your board, and, By Mission, what's in another band.
         case through([MapNodeID])
+        /// It's part of it: Azure DevOps gives the later one as its parent, or as a parent of its parent where the Map doesn't
+        /// show those between. The parent waits for it, as it's done once its children are.
+        case parent
     }
 
     public var before: MapNodeID
@@ -440,10 +487,26 @@ public struct WorkMapNode: Equatable, Sendable, Identifiable {
     public var id: MapNodeID { item.id }
 }
 
+/// Cards and work items Azure DevOps links as Related, on the Map: a box round them, across these columns and rows, which
+/// nothing else of the graph is in.
+public struct WorkMapBox: Equatable, Sendable {
+    /// Its cards and work items, column by column, each from the top.
+    public var members: [MapNodeID]
+    public var columns: ClosedRange<Int>
+    public var rows: ClosedRange<Int>
+
+    public init(members: [MapNodeID], columns: ClosedRange<Int>, rows: ClosedRange<Int>) {
+        self.members = members
+        self.columns = columns
+        self.rows = rows
+    }
+}
+
 /// Cards and steps of the Map as a graph, in columns, from left to right: what's done, then wave by wave. In each column, those
 /// lines join come first, ordered to cross as few lines as it finds, and each where the lines into it come from, so that a
 /// chain runs straight; those no line joins go after them. A line that skips columns keeps a row of each to itself, as a
-/// layered drawing's long edges do, so that no card sits on it.
+/// layered drawing's long edges do, so that no card sits on it. Those Azure DevOps links as Related sit together, in rows of
+/// their own across their columns, in a box (`WorkMapBox`).
 public struct WorkMapGraph: Equatable, Sendable {
     public private(set) var columns: [WorkMapColumn]
     /// Column by column, each from the top: as VoiceOver reads them.
@@ -453,6 +516,12 @@ public struct WorkMapGraph: Equatable, Sendable {
     public private(set) var rows: Int
     /// How many of its lines cross, as it's laid out.
     public private(set) var crossings: Int
+    /// The boxes round those Azure DevOps links as Related, in the order their first ones come.
+    public private(set) var boxes: [WorkMapBox]
+    /// With Parents, the nearest of its nodes each of them is part of, up its parents, as Azure DevOps gives them: whether a
+    /// lighter line joins the two, another line that says more does, or none, where the part waits for its parent through
+    /// others (`Edges.lines(among:)`).
+    public private(set) var partOf: [MapNodeID: [MapNodeID]]
 
     /// Whether a card counts as done: a pull request that merged or closed, or work that's resolved or done.
     public static func isDone(_ item: BoardItem) -> Bool {
@@ -471,8 +540,8 @@ public struct WorkMapGraph: Equatable, Sendable {
         }
     }
 
-    /// The rows its cards, steps and lines take in these columns, from the top: all a tier of a fold has (`WorkMapFold`), so
-    /// that it's no taller than they are.
+    /// The rows its cards, steps, lines and boxes take in these columns, from the top: all a tier of a fold has
+    /// (`WorkMapFold`), so that it's no taller than they are.
     public func rows(in columns: Range<Int>) -> [Int] {
         let column = Dictionary(nodes.map { ($0.id, $0.column) }, uniquingKeysWith: { first, _ in first })
         var taken = Set(nodes.filter { columns.contains($0.column) }.map(\.row))
@@ -482,6 +551,9 @@ public struct WorkMapGraph: Equatable, Sendable {
                 taken.insert(row)
             }
         }
+        for box in boxes where box.columns.overlaps(columns) {
+            taken.formUnion(box.rows)
+        }
         return taken.sorted()
     }
 
@@ -490,13 +562,16 @@ public struct WorkMapGraph: Equatable, Sendable {
     ///   - waits: those that wait for something it doesn't show, such as a pull request in another mission: each goes at
     ///     least one wave on.
     ///   - elsewhere: By Mission, those of other bands, with their bands.
+    ///   - boxes: those Azure DevOps links as Related, each set of them in a box.
+    ///   - partOf: what each is part of, up its parents (`partOf`): of those among these.
     ///   - shared: the columns it has, as All's graphs share them, so that they line up; nil for those its own take.
     init(
         _ items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID> = [], elsewhere: [MapNodeID: BoardLane.Kind] = [:],
-        columns shared: [WorkMapColumn]? = nil
+        boxes: [Set<MapNodeID>] = [], partOf: [MapNodeID: [MapNodeID]] = [:], columns shared: [WorkMapColumn]? = nil
     ) {
         let ids = items.map(\.id)
         let index = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        self.partOf = partOf.filter { index[$0.key] != nil }.mapValues { $0.filter { index[$0] != nil } }.filter { !$0.value.isEmpty }
         let done = Set(items.filter(\.isDone).map(\.id))
         let lines = lines.filter { index[$0.before] != nil && index[$0.after] != nil && !done.contains($0.after) }
         let place = Self.places(items, lines: lines, waits: waits)
@@ -504,19 +579,25 @@ public struct WorkMapGraph: Equatable, Sendable {
         let columnIndex = Dictionary(columns.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         let columnOf = Dictionary(ids.map { ($0, place[$0].flatMap { columnIndex[$0] } ?? 0) }, uniquingKeysWith: { first, _ in first })
 
-        // A line that skips columns passes through a slot of each between its ends.
+        // A line that skips columns passes through a slot of each between its ends, in the box its ends are both in.
         var layout = Layout(columns: columns.count)
         for id in ids {
             layout.add(.node(id), in: columnOf[id] ?? 0)
+        }
+        let boxed = boxes.map { $0.filter { index[$0] != nil } }.filter { $0.count > 1 }
+        for (number, box) in boxed.enumerated() {
+            for id in box { layout.boxOf[.node(id)] = number }
         }
         var forwards: [WorkMapLine] = []
         for line in lines {
             guard let from = columnOf[line.before], let to = columnOf[line.after], from < to else { continue }
             forwards.append(line)
+            let box = layout.boxOf[.node(line.before)].flatMap { layout.boxOf[.node(line.after)] == $0 ? $0 : nil }
             var previous = Slot.node(line.before)
             for column in (from + 1)..<to {
                 let passing = Slot.passing(forwards.count - 1, column)
                 layout.add(passing, in: column)
+                layout.boxOf[passing] = box
                 layout.join(previous, passing)
                 previous = passing
             }
@@ -534,6 +615,12 @@ public struct WorkMapGraph: Equatable, Sendable {
             let from = columnOf[line.before] ?? 0, to = columnOf[line.after] ?? 0
             line.rows = to - from > 1 ? ((from + 1)..<to).map { layout.row[.passing(number, $0)] ?? 0 } : []
             return line
+        }
+        let placed = nodes
+        self.boxes = boxed.indices.compactMap { number -> WorkMapBox? in
+            guard let span = layout.boxes[number] else { return nil }
+            let members = placed.filter { layout.boxOf[.node($0.id)] == number }.map(\.id)
+            return WorkMapBox(members: members, columns: span.columns, rows: span.rows)
         }
     }
 
@@ -633,6 +720,17 @@ public struct WorkMapGraph: Equatable, Sendable {
         var predecessors: [Slot: [Slot]] = [:]
         var successors: [Slot: [Slot]] = [:]
         var row: [Slot: Int] = [:]
+        /// The box each slot is in, by its number: a card or step Azure DevOps links as Related, or a line passing between two
+        /// of the same box.
+        var boxOf: [Slot: Int] = [:]
+        /// The columns and rows each box keeps to itself, by its number, once it has them.
+        private(set) var boxes: [Int: Kept] = [:]
+
+        /// The columns and rows a box keeps.
+        struct Kept {
+            var columns: ClosedRange<Int>
+            var rows: ClosedRange<Int>
+        }
 
         init(columns count: Int) {
             columns = Array(repeating: [], count: max(count, 1))
@@ -656,21 +754,25 @@ public struct WorkMapGraph: Equatable, Sendable {
             !(predecessors[slot] ?? []).isEmpty || !(successors[slot] ?? []).isEmpty
         }
 
-        /// Orders each column, the slots lines join first, by where their neighbours are, a few times each way; then gives
-        /// each a row: where the lines into it come from, as far as the slots above it let it; then swaps neighbours while
-        /// that crosses fewer lines. Each swap weighs only the lines it changes, rather than counting every crossing again, as
-        /// a graph with many long lines has many slots.
+        /// Whether a line joins a slot, or it's in a box: those its column orders.
+        func isTied(_ slot: Slot) -> Bool {
+            isJoined(slot) || boxOf[slot] != nil
+        }
+
+        /// Orders each column, the slots lines join or boxes keep first, by where their neighbours are, a few times each way,
+        /// a box's together; then gives each a row: where the lines into it come from, as far as the slots above it and the
+        /// boxes let it; then swaps neighbours while that crosses fewer lines, but never into or out of a box; then raises
+        /// each as far as it can go, as a swap or a box can leave free rows above it. Each swap weighs only the lines it
+        /// changes, rather than counting every crossing again, as a graph with many long lines has many slots.
         mutating func arrange() {
-            columns = columns.map { slots in slots.filter { isJoined($0) } + slots.filter { !isJoined($0) } }
+            columns = columns.map { slots in slots.filter { isTied($0) } + slots.filter { !isTied($0) } }
             var order: [Slot: Double] = [:]
-            for slots in columns {
-                for (index, slot) in slots.enumerated() { order[slot] = Double(index) }
-            }
+            for column in columns.indices { sort(column, by: [:], order: &order) }
             for _ in 0..<4 {
                 for column in columns.indices.dropFirst() { sort(column, by: predecessors, order: &order) }
                 for column in columns.indices.dropLast().reversed() { sort(column, by: successors, order: &order) }
             }
-            for column in columns.indices { place(column) }
+            placeAll()
             var improved = true
             var passes = 0
             while improved, passes < 8 {
@@ -679,24 +781,67 @@ public struct WorkMapGraph: Equatable, Sendable {
                 for column in columns.indices {
                     for at in columns[column].indices.dropLast() {
                         let (upper, lower) = (columns[column][at], columns[column][at + 1])
-                        guard isJoined(upper), isJoined(lower), crossingsGained(swapping: upper, lower) < 0 else { continue }
+                        guard isJoined(upper), isJoined(lower), boxOf[upper] == boxOf[lower] else { continue }
+                        guard crossingsGained(swapping: upper, lower) < 0 else { continue }
                         swapRows(upper, lower, column: column, at: at)
                         improved = true
                     }
                 }
             }
+            raise()
         }
 
-        /// Orders a column's slots that lines join by the average place of their neighbours on one side, keeping their order
-        /// where they have none there, or the same; those no line joins stay last. `order` has each slot's place in its
-        /// column, which this keeps for the column it orders.
-        private mutating func sort(_ column: Int, by neighbours: [Slot: [Slot]], order: inout [Slot: Double]) {
-            let keyed = columns[column].enumerated().map { index, slot -> (slot: Slot, key: Double, index: Int) in
-                let around = (neighbours[slot] ?? []).compactMap { order[$0] }
-                return (slot, around.isEmpty ? Double(index) : around.reduce(0, +) / Double(around.count), index)
+        /// Moves each slot no box keeps up, column by column, in their order, as far as where the lines into it come from, the
+        /// slot above it and the boxes let it: a slot that a box pushed down, or that swapped rows with one, can have free rows
+        /// above it that it wanted, and what comes after it follows it up. Each stays below the slot above it, so every column
+        /// keeps its order, and as many lines cross.
+        private mutating func raise() {
+            for column in columns.indices {
+                var last = -1
+                for slot in columns[column] {
+                    guard let at = row[slot] else { continue }
+                    if boxOf[slot] == nil {
+                        let from = (predecessors[slot] ?? []).compactMap { row[$0] }.sorted()
+                        let wanted = from.isEmpty ? last + 1 : from[(from.count - 1) / 2]
+                        row[slot] = min(at, free(from: max(wanted, last + 1), height: 1, columns: column...column))
+                    }
+                    last = row[slot] ?? at
+                }
             }
-            let joined = keyed.filter { isJoined($0.slot) }.sorted { ($0.key, $0.index) < ($1.key, $1.index) }
-            columns[column] = joined.map(\.slot) + keyed.filter { !isJoined($0.slot) }.map(\.slot)
+        }
+
+        /// Orders a column's slots that lines join or boxes keep by the average place of their neighbours on one side,
+        /// keeping their order where they have none there, or the same; a box's together, where theirs are on average; the
+        /// rest stay last. `order` has each slot's place in its column, which this keeps for the column it orders.
+        private mutating func sort(_ column: Int, by neighbours: [Slot: [Slot]], order: inout [Slot: Double]) {
+            let slots = columns[column]
+            var keys: [Double] = []
+            for (index, slot) in slots.enumerated() {
+                let around = (neighbours[slot] ?? []).compactMap { order[$0] }
+                keys.append(around.isEmpty ? Double(index) : around.reduce(0, +) / Double(around.count))
+            }
+            var total: [Int: Double] = [:]
+            var count: [Int: Int] = [:]
+            for (index, slot) in slots.enumerated() {
+                guard let box = boxOf[slot] else { continue }
+                total[box, default: 0] += keys[index]
+                count[box, default: 0] += 1
+            }
+            var tied: [(slot: Slot, key: (Double, Int, Double, Int))] = []
+            var rest: [Slot] = []
+            for (index, slot) in slots.enumerated() {
+                let key = keys[index]
+                if let box = boxOf[slot] {
+                    let mean = (total[box] ?? key) / Double(count[box] ?? 1)
+                    tied.append((slot, (mean, box + 1, key, index)))
+                } else if isJoined(slot) {
+                    tied.append((slot, (key, 0, key, index)))
+                } else {
+                    rest.append(slot)
+                }
+            }
+            tied.sort { $0.key < $1.key }
+            columns[column] = tied.map(\.slot) + rest
             for (index, slot) in columns[column].enumerated() { order[slot] = Double(index) }
         }
 
@@ -716,17 +861,75 @@ public struct WorkMapGraph: Equatable, Sendable {
             return gained
         }
 
-        /// Gives a column's slots their rows, in their order: each where the middle of the lines into it come from, but below
-        /// the slot above it.
-        private mutating func place(_ column: Int) {
-            var last = -1
-            for slot in columns[column] {
-                let from = (predecessors[slot] ?? []).compactMap { row[$0] }.sorted()
-                let wanted = from.isEmpty ? last + 1 : from[(from.count - 1) / 2]
-                let at = max(wanted, last + 1)
-                row[slot] = at
-                last = at
+        /// Gives every slot its row, column by column, in their order: each where the middle of the lines into it come from,
+        /// but below the slot above it. A box keeps rows to itself across its columns, as many as it has slots in any one,
+        /// from where its first one wants them, below the slots above it and clear of other boxes; its slots go in those, in
+        /// their order, and nothing else does.
+        private mutating func placeAll() {
+            let spans = boxSpans()
+            for column in columns.indices {
+                var last = -1
+                var previous: [Int: Int] = [:]
+                var left: [Int: Int] = [:]
+                for slot in columns[column] {
+                    if let box = boxOf[slot] { left[box, default: 0] += 1 }
+                }
+                for slot in columns[column] {
+                    let from = (predecessors[slot] ?? []).compactMap { row[$0] }.sorted()
+                    let wanted = from.isEmpty ? last + 1 : from[(from.count - 1) / 2]
+                    let at: Int
+                    if let box = boxOf[slot], let span = spans[box] {
+                        let rows = boxes[box]?.rows ?? keep(box, span: span, from: max(wanted, last + 1))
+                        left[box, default: 1] -= 1
+                        let lowest = (previous[box] ?? rows.lowerBound - 1) + 1
+                        at = min(max(wanted, lowest), rows.upperBound - (left[box] ?? 0))
+                        previous[box] = at
+                    } else {
+                        at = free(from: max(wanted, last + 1), height: 1, columns: column...column)
+                    }
+                    row[slot] = at
+                    last = max(last, at)
+                }
+                columns[column].sort { (row[$0] ?? 0) < (row[$1] ?? 0) }
             }
+        }
+
+        /// Each box's columns, from its first slot's to its last's, and how many rows it needs: as many as it has slots in
+        /// any one of them.
+        private func boxSpans() -> [Int: (columns: ClosedRange<Int>, height: Int)] {
+            var counts: [Int: [Int: Int]] = [:]
+            for (column, slots) in columns.enumerated() {
+                for slot in slots {
+                    if let box = boxOf[slot] { counts[box, default: [:]][column, default: 0] += 1 }
+                }
+            }
+            return counts.compactMapValues { perColumn -> (columns: ClosedRange<Int>, height: Int)? in
+                guard let first = perColumn.keys.min(), let last = perColumn.keys.max() else { return nil }
+                return (first...last, perColumn.values.max() ?? 1)
+            }
+        }
+
+        /// Gives a box the first rows it needs from `start` on that no other box keeps in its columns.
+        private mutating func keep(_ box: Int, span: (columns: ClosedRange<Int>, height: Int), from start: Int) -> ClosedRange<Int> {
+            let first = free(from: start, height: span.height, columns: span.columns)
+            let rows = first...(first + span.height - 1)
+            boxes[box] = Kept(columns: span.columns, rows: rows)
+            return rows
+        }
+
+        /// The first of `height` rows from `start` on that no box keeps in any of these columns: the lowest, whichever order
+        /// it meets them in, as each it moves past is one those rows can't start before.
+        private func free(from start: Int, height: Int, columns span: ClosedRange<Int>) -> Int {
+            var at = start
+            var moved = true
+            while moved {
+                moved = false
+                for kept in boxes.values where kept.columns.overlaps(span) && kept.rows.overlaps(at...(at + height - 1)) {
+                    at = kept.rows.upperBound + 1
+                    moved = true
+                }
+            }
+            return at
         }
 
         private mutating func swapRows(_ upper: Slot, _ lower: Slot, column: Int, at index: Int) {
@@ -844,8 +1047,9 @@ public struct WorkMapFold: Equatable, Sendable {
 // MARK: - The Map
 
 /// My Work's Map, as the Board has its cards now, with the steps and lines you and sessions added: a band for each of its lanes,
-/// By Mission; and, for All, a graph for each set of cards and steps lines join, and those no line joins. A graph has no more
-/// than `mostCards` of its own: past them it's too many to read but to follow a path, and the Board shows them.
+/// By Mission; and, for All, a graph for each set of cards and steps that lines join, or Azure DevOps links as Related, and
+/// those nothing joins. A graph has no more than `mostCards` of its own: past them it's too many to read but to follow a path,
+/// and the Board shows them.
 public struct WorkMap: Equatable, Sendable {
     /// A band By Mission: a lane of the Board, its cards and the steps added there as a graph, with what they're joined to in
     /// other bands, dimmed.
@@ -865,7 +1069,8 @@ public struct WorkMap: Equatable, Sendable {
         public var id: BoardLane.Kind { lane.kind }
     }
 
-    /// A set of cards and steps that lines join, for All: as a graph, with the lanes of the Board they're in.
+    /// A set of cards and steps that lines join, or Azure DevOps links as Related, for All: as a graph, with the lanes of the
+    /// Board they're in.
     public struct Group: Equatable, Sendable, Identifiable {
         /// Its cards and steps as a graph; nil past `mostCards`.
         public var graph: WorkMapGraph?
@@ -885,11 +1090,11 @@ public struct WorkMap: Equatable, Sendable {
     /// only for an Undo line, or one whose cards and steps are all done while Done is off; then Not in a mission, for steps
     /// joined to no card, when the Board has no such lane.
     public private(set) var bands: [Band]
-    /// All: each set of cards and steps that lines join, the one with the Board's first card first.
+    /// All: each set of cards and steps that lines join, or Related links, the one with the Board's first card first.
     public private(set) var groups: [Group]
     /// All: the columns its graphs share, so that they line up.
     public private(set) var columns: [WorkMapColumn]
-    /// All: the cards and steps no line joins, those still to do first, each in the Board's order.
+    /// All: the cards and steps nothing joins, those still to do first, each in the Board's order.
     public private(set) var loose: [WorkMapItem]
     /// All: the cards and steps you hid, in the Board's order, but what's done while Done is off.
     public private(set) var hidden: [WorkMapItem]
@@ -906,6 +1111,14 @@ public struct WorkMap: Equatable, Sendable {
     public let showsDone: Bool
     /// How many of its cards, work items and steps are done, but those you hid: what Done shows, or leaves out.
     public private(set) var doneCount: Int
+    /// Whether it shows the parents Azure DevOps gives your work items, and theirs (`MapParents`).
+    public let showsParents: Bool
+    /// Whether Azure DevOps gives any of its work items a parent, shown or not: what Parents is for.
+    public private(set) var hasParents: Bool
+    /// How many of others' work items it shows, hidden or not (`init(showsOthers:)`): not those you added, nor parents.
+    public var othersCount: Int {
+        everything.filter { $0.workItem.map { !$0.isAdded && !$0.isParent } ?? false }.count
+    }
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
     /// The band each card and step is in, a card's first.
@@ -937,10 +1150,17 @@ public struct WorkMap: Equatable, Sendable {
     ///     `mostOthers`, the nearest first.
     ///   - showsDone: Done: what's done, in its Done column; off, what's done is off the Map, as what you hid is, but listed
     ///     nowhere, and, as it holds nothing back, with no dotted line through it.
+    ///   - parents: the parent Azure DevOps gives each work item it knows one for, by their references.
+    ///   - related: the work items Azure DevOps links as Related, two by two: those on the Map go in a box together, with
+    ///     those they're related to through others, By Mission only those of the same band.
+    ///   - showsParents: Parents: the parents of its work items, and theirs, up their chains, are nodes too, at most
+    ///     `mostParents` of them, of those the page knows, each joined by a lighter line to the nearest of what's part of it,
+    ///     which it waits for; a pull request's card standing for a work item it names, as with lines.
     public init(
         _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
         done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:], azureDevOps: Set<MapEdits.Line> = [],
-        work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false, showsDone: Bool = true
+        work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false, showsDone: Bool = true,
+        parents: [ItemRef: ItemRef] = [:], related: Set<MapRelated> = [], showsParents: Bool = true
     ) {
         // Every card, once, with the lanes it's in.
         var cards: [BoardItem] = []
@@ -975,16 +1195,41 @@ public struct WorkMap: Equatable, Sendable {
             items.append(item)
             byID[item.id] = .workItem(item)
         }
+        // With Parents, each work item's parents up its chain, from your work's, the hidden and the done too: an open story
+        // whose tasks are all done still has its node.
+        let starts = cards.map(\.ref).filter { $0.kind == .workItem } + items.map(\.ref) + aliases.keys.sorted()
+        let climbed = Self.climb(from: starts, parents: parents, items: byID, aliases: aliases, work: work)
+        if showsParents {
+            for item in climbed.added {
+                items.append(item)
+                byID[item.id] = .workItem(item)
+            }
+        }
         // Of the work items the Board doesn't have that lines name, those the page knows are done hold nothing back.
         var known = done
         for ref in Self.workItems(named: state, azureDevOps) where !seen.contains(ref) && work(ref)?.isDone == true {
             known.insert(ref)
         }
-        let edges = Edges(missions, state: state, items: byID, aliases: aliases, done: known, azureDevOps: azureDevOps)
+        let edges = Edges(
+            missions, state: state, items: byID, aliases: aliases, done: known, azureDevOps: azureDevOps,
+            parents: showsParents ? climbed.chains : Chains()
+        )
         if showsOthers {
             for item in Self.others(waitingWith: byID, edges: edges, work: work) {
                 items.append(item)
                 byID[item.id] = .workItem(item)
+            }
+        }
+        // What Azure DevOps links as Related, of a work item a card names as of that card, but a card with itself.
+        let nodesOf = { (ref: ItemRef) -> [MapNodeID] in
+            byID[.card(ref)] != nil ? [.card(ref)] : (aliases[ref] ?? []).map(MapNodeID.card)
+        }
+        var relatedNodes: [(MapNodeID, MapNodeID)] = []
+        for pair in related.sorted() {
+            for one in nodesOf(pair.first) {
+                for other in nodesOf(pair.second) where one != other {
+                    relatedNodes.append((one, other))
+                }
             }
         }
 
@@ -1032,6 +1277,7 @@ public struct WorkMap: Equatable, Sendable {
         let shownIDs = Set(shown.map(\.id))
         // The lines All draws, between all that shows: those that leave a band bring in, dimmed, what they're joined to.
         let lines = edges.lines(among: shown.map(\.id))
+        let partOf = edges.partOf(among: shown.map(\.id))
 
         bands = lanes.compactMap { lane in
             let items = (itemsOf[lane.kind] ?? []).filter { !isLeftOut($0) }
@@ -1046,14 +1292,16 @@ public struct WorkMap: Equatable, Sendable {
                 elsewhere[other] = bandOf[other] ?? .notInAMission
                 others.append(item)
             }
-            let graph = own.isEmpty || own.count > Self.mostCards ? nil : edges.graph(of: own + others, elsewhere: elsewhere)
+            let graph = own.isEmpty || own.count > Self.mostCards
+                ? nil
+                : edges.graph(of: own + others, elsewhere: elsewhere, boxes: Self.boxes(among: own.map(\.id), related: relatedNodes))
             return Band(
                 lane: lane, key: LaneOrderKey(lane.kind, missions: missions), graph: graph, count: own.count,
                 hidden: items.filter { isHidden.contains($0.id) }
             )
         }
 
-        // All: which set of joined ones each is in, the first of its set in the Board's order.
+        // All: which set of joined ones each is in, by lines or as Related, the first of its set in the Board's order.
         var root = Dictionary(shown.map { ($0.id, $0.id) }, uniquingKeysWith: { first, _ in first })
         func find(_ id: MapNodeID) -> MapNodeID {
             var id = id
@@ -1061,10 +1309,16 @@ public struct WorkMap: Equatable, Sendable {
             return id
         }
         let place = Dictionary(shown.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for line in lines {
-            let (left, right) = (find(line.before), find(line.after))
-            guard left != right else { continue }
+        func join(_ one: MapNodeID, _ other: MapNodeID) {
+            let (left, right) = (find(one), find(other))
+            guard left != right else { return }
             if (place[left] ?? 0) < (place[right] ?? 0) { root[right] = left } else { root[left] = right }
+        }
+        for line in lines {
+            join(line.before, line.after)
+        }
+        for (one, other) in relatedNodes where shownIDs.contains(one) && shownIDs.contains(other) {
+            join(one, other)
         }
         var members: [MapNodeID: [WorkMapItem]] = [:]
         for item in shown {
@@ -1077,11 +1331,13 @@ public struct WorkMap: Equatable, Sendable {
             if items.count > 1 { sets.append(items) } else { single.append(item) }
         }
         // Their graphs share their columns, so that what can go now lines up across them, and so on.
-        let laidOut = sets.map { items -> (items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID>)? in
+        typealias Laid = (items: [WorkMapItem], lines: [WorkMapLine], waits: Set<MapNodeID>, boxes: [Set<MapNodeID>])
+        let laidOut = sets.map { items -> Laid? in
             guard items.count <= Self.mostCards else { return nil }
             let ids = Set(items.map(\.id))
             let waits = Set(items.filter { !$0.isDone && edges.waits($0.id, among: shownIDs) }.map(\.id))
-            return (items, lines.filter { ids.contains($0.before) && ids.contains($0.after) }, waits)
+            let boxes = Self.boxes(among: items.map(\.id), related: relatedNodes)
+            return (items, lines.filter { ids.contains($0.before) && ids.contains($0.after) }, waits, boxes)
         }
         let shared = Set(laidOut.compactMap { $0 }.flatMap { WorkMapGraph.places($0.items, lines: $0.lines, waits: $0.waits).values })
             .sorted()
@@ -1094,7 +1350,9 @@ public struct WorkMap: Equatable, Sendable {
                     kinds.append(kind)
                 }
             }
-            let graph = laid.map { WorkMapGraph($0.items, lines: $0.lines, waits: $0.waits, columns: shared) }
+            let graph = laid.map {
+                WorkMapGraph($0.items, lines: $0.lines, waits: $0.waits, boxes: $0.boxes, partOf: partOf, columns: shared)
+            }
             return Group(graph: graph, items: items, lanes: kinds)
         }
         loose = single.filter { !$0.isDone } + single.filter(\.isDone)
@@ -1102,6 +1360,8 @@ public struct WorkMap: Equatable, Sendable {
         self.everything = everything
         self.showsDone = showsDone
         doneCount = everything.filter { $0.isDone && !isHidden.contains($0.id) }.count
+        self.showsParents = showsParents
+        hasParents = !climbed.chains.up.isEmpty
         self.edges = edges
         self.byID = byID
         self.bandOf = bandOf
@@ -1117,6 +1377,93 @@ public struct WorkMap: Equatable, Sendable {
 
     /// At most how many of others' work the Map shows (`init(showsOthers:)`).
     public static let mostOthers = 30
+    /// At most how many parents the Map adds nodes for (`init(showsParents:)`).
+    public static let mostParents = 30
+
+    /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, and the nodes each of
+    /// them and those is: each parent its own card, else the pull requests' cards that name it, else a node added for it, if
+    /// the page knows it, at most `mostParents` of those; a chain ends at one it doesn't.
+    static func climb(
+        from starts: [ItemRef], parents: [ItemRef: ItemRef], items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
+        work: (ItemRef) -> MapWorkItem?
+    ) -> (added: [MapWorkItem], chains: Chains) {
+        var added: [MapWorkItem] = []
+        var has = Set(items.keys)
+        func nodes(of ref: ItemRef) -> [MapNodeID] {
+            has.contains(.card(ref)) ? [.card(ref)] : (aliases[ref] ?? []).map(MapNodeID.card)
+        }
+        var chains = Chains()
+        var climbed: Set<ItemRef> = []
+        var pending = starts
+        var next = 0
+        while next < pending.count {
+            let child = pending[next]
+            next += 1
+            guard climbed.insert(child).inserted, let parent = parents[child], parent != child else { continue }
+            var above = nodes(of: parent)
+            if above.isEmpty {
+                guard added.count < mostParents, var item = work(parent) else { continue }
+                item.isParent = true
+                added.append(item)
+                has.insert(item.id)
+                above = [item.id]
+            }
+            chains.parent[child] = parent
+            chains.nodes[parent] = above
+            for node in nodes(of: child) {
+                chains.refs[node, default: []].append(child)
+            }
+            pending.append(parent)
+        }
+        return (added, chains)
+    }
+
+    /// The chains of parents the Map climbs (`climb`), work item by work item, with the nodes each is: so a card that names
+    /// several goes up each one's chain, and only that one's goes up through it.
+    struct Chains: Equatable, Sendable {
+        /// The parent of each work item it climbed up from.
+        var parent: [ItemRef: ItemRef] = [:]
+        /// The nodes each parent is: its card, else the pull requests' cards that name it, else the node added for it.
+        var nodes: [ItemRef: [MapNodeID]] = [:]
+        /// The work items each node is, of those it climbed up from: its card's, or those a pull request's card names.
+        var refs: [MapNodeID: [ItemRef]] = [:]
+
+        /// What each node is part of: the nodes of its work items' parents. A card that stands for the parent too is part of
+        /// none of its cards, as pull requests' that each name a task and its story: else they'd be part of each other, and
+        /// wait for each other.
+        var up: [MapNodeID: Set<MapNodeID>] {
+            var up: [MapNodeID: Set<MapNodeID>] = [:]
+            for (node, refs) in refs {
+                for ref in refs {
+                    guard let parent = parent[ref], let above = nodes[parent], !above.contains(node) else { continue }
+                    up[node, default: []].formUnion(above)
+                }
+            }
+            return up
+        }
+    }
+
+    /// The sets of these that Azure DevOps links as Related, each to another of them, or through others of them, each to go in
+    /// a box, in the order their first ones come.
+    static func boxes(among ids: [MapNodeID], related: [(MapNodeID, MapNodeID)]) -> [Set<MapNodeID>] {
+        let place = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        var root = Dictionary(ids.map { ($0, $0) }, uniquingKeysWith: { first, _ in first })
+        func find(_ id: MapNodeID) -> MapNodeID {
+            var id = id
+            while let parent = root[id], parent != id { id = parent }
+            return id
+        }
+        for (one, other) in related where place[one] != nil && place[other] != nil {
+            let (left, right) = (find(one), find(other))
+            guard left != right else { continue }
+            if (place[left] ?? 0) < (place[right] ?? 0) { root[right] = left } else { root[left] = right }
+        }
+        var members: [MapNodeID: Set<MapNodeID>] = [:]
+        for id in ids {
+            members[find(id), default: []].insert(id)
+        }
+        return ids.filter { find($0) == $0 }.compactMap { members[$0] }.filter { $0.count > 1 }
+    }
 
     /// The work items these name: those lines join, Azure DevOps' and what you and sessions said, and those you added.
     static func workItems(named state: MapState, _ azureDevOps: Set<MapEdits.Line>) -> Set<ItemRef> {
@@ -1213,10 +1560,11 @@ public struct WorkMap: Equatable, Sendable {
     /// What a line of the Map stands for in Azure DevOps (`MapLineLinks`): a dependency of each work item its later end
     /// stands for on each its earlier end does, in the same organization, never of one on itself; where Azure DevOps links
     /// it, or you or a session said it, only between the work items it was said of. Nil for one that stands for none: a
-    /// dotted one, through what the Map doesn't show, one with a step, or with a pull request that names no work item of
-    /// yours.
+    /// dotted one, through what the Map doesn't show, one to a parent, one with a step, or with a pull request that names no
+    /// work item of yours.
     public func links(of line: WorkMapLine) -> MapLineLinks? {
         if case .through = line.style { return nil }
+        if line.style == .parent { return nil }
         let said = edges.facts[MapEdits.Line(line.before, line.after)] ?? []
         let ends = said.isEmpty ? [MapEdits.Line(line.before, line.after)] : said.sorted()
         var pairs: Set<MapEdits.Line> = []
@@ -1253,11 +1601,24 @@ public struct WorkMap: Equatable, Sendable {
         /// What each line was said of, where Azure DevOps links it, or you or a session said it: between what each was said
         /// of, before a work item a card names stood for that card. A line an order draws alone is said of its cards.
         var facts: [MapEdits.Line: Set<MapEdits.Line>] = [:]
+        /// What each is part of, as Azure DevOps gives its parent, with Parents.
+        var up: [MapNodeID: Set<MapNodeID>] = [:]
+        /// What's part of each.
+        var down: [MapNodeID: Set<MapNodeID>] = [:]
+        /// The chains of parents those come from, with Parents: to go up each work item's own.
+        var chains = Chains()
 
         init(
             _ missions: [OrderMission], state: MapState, items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
-            done known: Set<ItemRef> = [], azureDevOps: Set<MapEdits.Line> = []
+            done known: Set<ItemRef> = [], azureDevOps: Set<MapEdits.Line> = [], parents chains: Chains = Chains()
         ) {
+            self.chains = chains
+            up = chains.up
+            for (child, parents) in up {
+                for parent in parents {
+                    down[parent, default: []].insert(child)
+                }
+            }
             var status: [ItemRef: OrderStatus] = [:]
             let steps = missions.flatMap { $0.steps + $0.attached + $0.sameStory }
             // What a pull request's own step says of it first, then what another's prerequisite does.
@@ -1349,8 +1710,8 @@ public struct WorkMap: Equatable, Sendable {
             return false
         }
 
-        /// The band of the nearest cards and steps joined to one, either way, that have one: of those as near, the band most
-        /// of them are in, the first of those in `order`.
+        /// The band of the nearest cards and steps joined to one, either way, by lines or as parts and parents, that have one: of
+        /// those as near, the band most of them are in, the first of those in `order`.
         func nearest(_ node: MapNodeID, in bands: [MapNodeID: BoardLane.Kind], order: [BoardLane.Kind]) -> BoardLane.Kind? {
             var visited: Set<MapNodeID> = [node]
             var frontier = [node]
@@ -1358,7 +1719,8 @@ public struct WorkMap: Equatable, Sendable {
                 var next: [MapNodeID] = []
                 var counts: [BoardLane.Kind: Int] = [:]
                 for current in frontier {
-                    for neighbour in predecessors(current) + successors(current) where visited.insert(neighbour).inserted {
+                    let family = (up[current] ?? []).sorted() + (down[current] ?? []).sorted()
+                    for neighbour in predecessors(current) + successors(current) + family where visited.insert(neighbour).inserted {
                         if let kind = bands[neighbour] { counts[kind, default: 0] += 1 }
                         next.append(neighbour)
                     }
@@ -1408,7 +1770,58 @@ public struct WorkMap: Equatable, Sendable {
                     lines.append(WorkMapLine(before: earlier, after: node, style: style))
                 }
             }
+            // Then a lighter one from each to the nearest of them it's part of, up its parents, which waits for it: but where a
+            // line joins the two already, either way, which says more; nor where it waits for the parent already, through
+            // others, as the two would be in a loop, where none of it could go first. A line into what's done, which holds
+            // nothing back and the graph doesn't draw, makes no loop and joins neither.
+            let holding = lines.filter { !done.contains($0.after) }
+            var joined = Set(holding.flatMap { [MapEdits.Line($0.before, $0.after), MapEdits.Line($0.after, $0.before)] })
+            var later = Dictionary(grouping: holding, by: \.before).mapValues { $0.map(\.after) }
+            func leads(from start: MapNodeID, to end: MapNodeID) -> Bool {
+                var reached: Set<MapNodeID> = [start]
+                var pending = [start]
+                while let current = pending.popLast() {
+                    for next in later[current] ?? [] {
+                        if next == end { return true }
+                        if reached.insert(next).inserted { pending.append(next) }
+                    }
+                }
+                return false
+            }
+            for node in nodes {
+                for parent in parents(of: node, among: shown)
+                where !joined.contains(MapEdits.Line(node, parent)) && !leads(from: parent, to: node) {
+                    if !done.contains(parent) {
+                        joined.insert(MapEdits.Line(node, parent))
+                        joined.insert(MapEdits.Line(parent, node))
+                        later[node, default: []].append(parent)
+                    }
+                    lines.append(WorkMapLine(before: node, after: parent, style: .parent))
+                }
+            }
             return lines
+        }
+
+        /// The nearest of these one is part of, up the parents of the work items it is, breadth first: each parent's nodes
+        /// among these, else, where none is, its parent's. So a card it goes up through, hidden, that names other work items
+        /// too doesn't take it up their parents.
+        func parents(of node: MapNodeID, among shown: Set<MapNodeID>) -> [MapNodeID] {
+            var found: [MapNodeID] = []
+            var climbed: Set<ItemRef> = []
+            var pending = (chains.refs[node] ?? []).compactMap { chains.parent[$0] }
+            var next = 0
+            while next < pending.count {
+                let parent = pending[next]
+                next += 1
+                guard climbed.insert(parent).inserted, let above = chains.nodes[parent], !above.contains(node) else { continue }
+                let near = above.filter(shown.contains).sorted()
+                if near.isEmpty {
+                    if let grandparent = chains.parent[parent] { pending.append(grandparent) }
+                } else {
+                    for each in near where !found.contains(each) { found.append(each) }
+                }
+            }
+            return found
         }
 
         static func style(of link: WorkMapLink) -> WorkMapLine.Style {
@@ -1425,12 +1838,27 @@ public struct WorkMap: Equatable, Sendable {
             predecessors(node).contains { !shown.contains($0) && !done.contains($0) }
         }
 
-        /// These as a graph.
-        func graph(of items: [WorkMapItem], elsewhere: [MapNodeID: BoardLane.Kind] = [:]) -> WorkMapGraph {
+        /// These as a graph, with the boxes of those Related.
+        func graph(
+            of items: [WorkMapItem], elsewhere: [MapNodeID: BoardLane.Kind] = [:], boxes: [Set<MapNodeID>] = []
+        ) -> WorkMapGraph {
             let ids = items.map(\.id)
             let shown = Set(ids)
             let waiting = Set(items.filter { !$0.isDone && waits($0.id, among: shown) }.map(\.id))
-            return WorkMapGraph(items, lines: lines(among: ids), waits: waiting, elsewhere: elsewhere)
+            return WorkMapGraph(
+                items, lines: lines(among: ids), waits: waiting, elsewhere: elsewhere, boxes: boxes, partOf: partOf(among: ids)
+            )
+        }
+
+        /// The nearest of these each of them is part of, up its parents (`WorkMapGraph.partOf`).
+        func partOf(among nodes: [MapNodeID]) -> [MapNodeID: [MapNodeID]] {
+            let shown = Set(nodes)
+            var partOf: [MapNodeID: [MapNodeID]] = [:]
+            for node in nodes where partOf[node] == nil {
+                let parents = parents(of: node, among: shown)
+                if !parents.isEmpty { partOf[node] = parents }
+            }
+            return partOf
         }
     }
 }

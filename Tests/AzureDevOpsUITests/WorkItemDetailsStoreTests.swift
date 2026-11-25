@@ -321,6 +321,19 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         newer.changedAt = changed + 60
         #expect(WorkItemDetailsStore.newest(sprint, newer)?.title == newer.title)
         #expect(WorkItemDetailsStore.newest(sprint, newer)?.category == sprint.category)
+        // Whatever the case of the letters of its type's and project's names.
+        var cased = newer
+        cased.type = sprint.type.uppercased()
+        cased.project = sprint.project.lowercased()
+        #expect(WorkItemDetailsStore.newest(sprint, cased)?.category == sprint.category)
+        // Turned into another type since, or moved to another project, in a state of the same name: what was read, in the
+        // category it was read in, as that type's or project's process may put the state in another.
+        var turned = newer
+        turned.type = "Bug"
+        #expect(WorkItemDetailsStore.newest(sprint, turned) == turned)
+        var moved = newer
+        moved.project = "Payments"
+        #expect(WorkItemDetailsStore.newest(sprint, moved) == moved)
         // A linked work item that couldn't be read, then was.
         let unread = WorkItem(
             id: 9, organization: "contoso", project: "Storefront", type: "Work Item", title: "Work item 9", state: "", category: .proposed

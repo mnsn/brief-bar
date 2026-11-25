@@ -475,8 +475,8 @@ private final class Clock {
 
     /// A work item you add to My Work's Map is kept with your lines and steps, by reference, with the line from it to what
     /// waits for it, each with an Undo; Remove from Map takes it away with that line. Others' work stays off until you turn
-    /// it on, and is remembered then.
-    @Test func itKeepsTheWorkItemsYouAddToTheMapAndWhetherItShowsOthersWork() {
+    /// it on, and is remembered then; Parents stays on until you turn it off, and is remembered then.
+    @Test func itKeepsTheWorkItemsYouAddToTheMapAndWhetherItShowsOthersWorkAndParents() {
         let defaults = MemoryDefaults()
         let order = Self.service(defaults)
         let teammates = ItemRef.workItem(organization: "contoso", id: 5122)
@@ -496,6 +496,12 @@ private final class Clock {
         #expect(Self.service(defaults).mapShowsOthers)
         order.setMapShowsOthers(false)
         #expect(!Self.service(defaults).mapShowsOthers)
+
+        #expect(order.mapShowsParents)
+        order.setMapShowsParents(false)
+        #expect(!Self.service(defaults).mapShowsParents)
+        order.setMapShowsParents(true)
+        #expect(Self.service(defaults).mapShowsParents)
     }
 
     @Test func itNamesWhatTheSourcesDescribe() throws {

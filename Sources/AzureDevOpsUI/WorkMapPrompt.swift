@@ -3,8 +3,9 @@ import BriefBarCore
 import BriefBarUI
 import Foundation
 
-/// ✨ Ask Copilot's prompt on My Work's Map: what's on a band or a graph, by links, with what waits for what there now, and what
-/// to do: work out the rest, the steps with no pull request or work item yet too, and tell BriefBar with its tools.
+/// ✨ Ask Copilot's prompt on My Work's Map: what's on a band or a graph, by links, with what waits for what there now and
+/// what's part of what, and what to do: work out the rest, the steps with no pull request or work item yet too, and tell
+/// BriefBar with its tools.
 enum WorkMapPrompt {
     /// What the page knows of a card: "!4113", "Task 5103"; its title; its link.
     struct Described {
@@ -47,8 +48,14 @@ enum WorkMapPrompt {
             guard !earlier.isEmpty else { return nil }
             return "- \(name(item.id)) waits for \(list(earlier.map(name)))"
         }
+        let parts = question.items.compactMap { item -> String? in
+            let parents = question.partOf[item.id] ?? []
+            guard !parents.isEmpty else { return nil }
+            return "- \(name(item.id)) is part of \(list(parents.map(name)))"
+        }
+        let hierarchy = parts.isEmpty ? "" : partsLead + "\n" + parts.joined(separator: "\n") + "\n\n"
         let known = waits.isEmpty
-            ? "BriefBar knows of nothing here that waits for anything yet."
+            ? "BriefBar knows of nothing \(parts.isEmpty ? "" : "else ")here that waits for anything yet."
             : "What BriefBar has them wait for now:\n" + waits.joined(separator: "\n")
         return """
             Work out what waits for what in “\(question.title)”, for the Map on My Work in BriefBar, and tell BriefBar.
@@ -56,7 +63,7 @@ enum WorkMapPrompt {
             What's there now: pull requests, work items, and steps, work with no pull request or work item yet:
             \(items.joined(separator: "\n"))
 
-            \(known)
+            \(hierarchy)\(known)
 
             Read the pull requests, the work items and the code where you need to, then work out:
             - which of them must wait for which, beyond what's above, and what above is wrong;
@@ -71,6 +78,13 @@ enum WorkMapPrompt {
             add. Change nothing in Azure DevOps or in the code for this.
             """
     }
+
+    /// What comes before what's part of what.
+    static let partsLead = """
+        What's part of what, as Azure DevOps puts them under their parents, which the Map has wait for what's part of them, \
+        but for a part that waits for its parent already. BriefBar reads these from Azure DevOps itself: tell it nothing of \
+        them.
+        """
 
     private static func list(_ names: [String]) -> String {
         guard names.count > 1, let last = names.last else { return names.first ?? "" }

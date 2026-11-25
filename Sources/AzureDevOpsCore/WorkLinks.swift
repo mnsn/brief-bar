@@ -20,8 +20,9 @@ public struct WorkItemKey: Hashable, Comparable, Sendable, Codable, CustomString
 
 /// What Azure DevOps links, as BriefBar reads it for Show Links: your pull requests' work items, the sprint's work items'
 /// pull requests, and what those linked work items and pull requests are, when no list shows them; and, while Pull Request
-/// Order wants stories, the parents of linked work items that nothing else has. And the dependencies Azure DevOps links the
-/// sprint's work items with, which My Work's Map draws.
+/// Order wants stories, the parents of linked work items that nothing else has. And what My Work's Map draws: the
+/// dependencies and Related links Azure DevOps links the sprint's work items with, and, while it shows parents, your work's
+/// parents all the way up, that the sprint doesn't have.
 public struct WorkLinks: Sendable, Equatable {
     /// Each pull request's work items, by ID, in its organization.
     public var workItemsOfPullRequests: [PRKey: [Int]]
@@ -51,12 +52,19 @@ public struct WorkLinks: Sendable, Equatable {
     /// predecessor: from their links, which the read of their pull requests brings, and those BriefBar linked or took away
     /// since, until the sprint is read again.
     public var dependencies: Set<WorkDependency>
+    /// The Related links Azure DevOps has between the sprint's work items and others of their organization: from their
+    /// links, which the read of their pull requests brings, as the dependencies do.
+    public var related: Set<RelatedWork>
+    /// While My Work's Map shows parents, the work items it asked for that the sprint doesn't have, nor `workItems` with what
+    /// stories want, as read with their own parent: your linked work items, and their parents all the way up
+    /// (`LinkEngine.Inputs.mapParents`).
+    public var mapParents: [WorkItemKey: WorkItem]
 
     public init(
         workItemsOfPullRequests: [PRKey: [Int]] = [:], pullRequestsOfWorkItems: [WorkItemKey: [PRKey]] = [:],
         workItems: [WorkItemKey: WorkItem] = [:], pullRequests: [PRKey: PullRequest] = [:], parents: [WorkItemKey: WorkItem] = [:],
         pendingWorkItems: Set<WorkItemKey> = [], unreadablePullRequests: Set<PRKey> = [], partlyRead: Set<WorkItemKey> = [],
-        dependencies: Set<WorkDependency> = []
+        dependencies: Set<WorkDependency> = [], related: Set<RelatedWork> = [], mapParents: [WorkItemKey: WorkItem] = [:]
     ) {
         self.workItemsOfPullRequests = workItemsOfPullRequests
         self.pullRequestsOfWorkItems = pullRequestsOfWorkItems
@@ -67,6 +75,8 @@ public struct WorkLinks: Sendable, Equatable {
         self.unreadablePullRequests = unreadablePullRequests
         self.partlyRead = partlyRead
         self.dependencies = dependencies
+        self.related = related
+        self.mapParents = mapParents
     }
 
     /// Every link it read, between pull requests and work items.
@@ -172,6 +182,19 @@ public struct ADOWorkItemRelations: Decodable, Sendable {
         }
         return found
     }
+
+    /// The Related links it has with work items of its organization.
+    public func related(in organization: String) -> Set<RelatedWork> {
+        let itself = WorkItemKey(organization, id)
+        var found: Set<RelatedWork> = []
+        for relation in relations where relation.rel == RelatedWork.link {
+            guard let url = relation.url, let target = ADOWorkItemDetails.Relation.workItem(at: url),
+                  target.organization.caseInsensitiveCompare(organization) == .orderedSame, target.id != id
+            else { continue }
+            found.insert(RelatedWork(itself, WorkItemKey(organization, target.id)))
+        }
+        return found
+    }
 }
 
 /// A dependency Azure DevOps links between two work items of an organization: `after` waits for `before`, its predecessor,
@@ -199,6 +222,27 @@ public struct WorkDependency: Hashable, Comparable, Sendable, CustomStringConver
 
     public static func < (lhs: WorkDependency, rhs: WorkDependency) -> Bool {
         (lhs.after, lhs.before) < (rhs.after, rhs.before)
+    }
+}
+
+/// A Related link Azure DevOps has between two work items of an organization. It has no direction: either end names the
+/// other the same way, so `first` is always the lower.
+public struct RelatedWork: Hashable, Comparable, Sendable, CustomStringConvertible {
+    public let first: WorkItemKey
+    public let second: WorkItemKey
+
+    public init(_ one: WorkItemKey, _ other: WorkItemKey) {
+        first = min(one, other)
+        second = max(one, other)
+    }
+
+    /// The link, as Azure DevOps names it from either end.
+    public static let link = "System.LinkTypes.Related"
+
+    public var description: String { "\(first) ~ \(second)" }
+
+    public static func < (lhs: RelatedWork, rhs: RelatedWork) -> Bool {
+        (lhs.first, lhs.second) < (rhs.first, rhs.second)
     }
 }
 
@@ -267,12 +311,13 @@ extension ADOEndpoint {
 
 /// Reads what Show Links needs from Azure DevOps, with the pull requests' client, after each of their refreshes: each of
 /// your pull requests' work items (one GET each, then every quarter of an hour), the sprint's work items' pull requests
-/// while the sprint shows (one GET for up to 200, then every quarter of an hour), with the dependencies Azure DevOps links
-/// them with, which come with them, and what the linked work items and pull requests that no list shows are, who has each
-/// work item too (a GET for up to 200 work items; one for each pull request, ten a refresh). While Pull
+/// while the sprint shows (one GET for up to 200, then every quarter of an hour), with the dependencies and Related links
+/// Azure DevOps links them with, which come with them, and what the linked work items and pull requests that no list shows
+/// are, who has each work item too (a GET for up to 200 work items; one for each pull request, ten a refresh). While Pull
 /// Request Order wants stories, the linked work items' parent and place in the backlog come with what they are, three more
-/// fields, and the parents nothing else has are read as they are, with what they are only (a GET for up to 200). Every
-/// request is a GET. What can't be read is tried again an hour later.
+/// fields, and the parents nothing else has are read as they are, with what they are only (a GET for up to 200). While My
+/// Work's Map shows parents, the work items it asks for are read with what they are and their parent (a GET for up to 200,
+/// then every quarter of an hour). Every request is a GET. What can't be read is tried again an hour later.
 public actor LinkEngine {
     public typealias ChangeHandler = @Sendable (WorkLinks) -> Void
 
@@ -303,11 +348,15 @@ public actor LinkEngine {
         /// The parents of linked work items to read what they are, while stories are wanted: those no list, sprint or link
         /// has.
         public var parentLookups: Set<WorkItemKey>
+        /// The work items My Work's Map wants with their parent, while it shows parents: your linked work items, then their
+        /// parents, a level more each time a read names them (`WorkLinks.mapParents`). The sprint's aren't read while it
+        /// shows, as it reads them, nor linked work items read with what stories want.
+        public var mapParents: Set<WorkItemKey>
 
         public init(
             pullRequests: [PRKey: Place] = [:], sprintItems: Set<WorkItemKey> = [], sprintShows: Bool = false,
             workItemLookups: Set<WorkItemKey> = [], pullRequestLookups: Set<PRKey> = [], wantsStories: Bool = false,
-            parentLookups: Set<WorkItemKey> = []
+            parentLookups: Set<WorkItemKey> = [], mapParents: Set<WorkItemKey> = []
         ) {
             self.pullRequests = Dictionary(pullRequests.map { (PRKey($0.key.organization.lowercased(), $0.key.number), $0.value) },
                                            uniquingKeysWith: { first, _ in first })
@@ -317,6 +366,7 @@ public actor LinkEngine {
             self.pullRequestLookups = Set(pullRequestLookups.map { PRKey($0.organization.lowercased(), $0.number) })
             self.wantsStories = wantsStories
             self.parentLookups = wantsStories ? parentLookups : []
+            self.mapParents = mapParents
         }
     }
 
@@ -342,6 +392,7 @@ public actor LinkEngine {
     /// the rest doesn't say whether a task has a parent (`WorkLinks.partlyRead`).
     private var readWithStories: Set<WorkItemKey> = []
     private var parentsRead: [WorkItemKey: Date] = [:]
+    private var mapParentsRead: [WorkItemKey: Date] = [:]
     private var lookupsRead: [PRKey: Date] = [:]
     /// When each read failed, by what it read, to try again later rather than every refresh.
     private var failures: [String: Date] = [:]
@@ -354,6 +405,8 @@ public actor LinkEngine {
     private var lastPublished: WorkLinks?
     /// The dependencies the sprint's last read found.
     private var readDependencies: Set<WorkDependency> = []
+    /// The Related links the sprint's last read found.
+    private var readRelated: Set<RelatedWork> = []
     /// The dependencies BriefBar linked or took away since, with when (`changed`): each shows so until a read of the sprint
     /// that started after it.
     private var dependencyChanges: [WorkDependency: (linked: Bool, at: Date)] = [:]
@@ -436,7 +489,8 @@ public actor LinkEngine {
 
     /// Reads again now, rather than when they're due, what a Copilot session said it changed: the work items of these of
     /// your pull requests, and what these linked pull requests no list shows are, the first `mostRereads` of each; the
-    /// sprint's pull requests, when it names one of the sprint's work items; and what these linked work items are. Only
+    /// sprint's pull requests, when it names one of the sprint's work items; and what these linked work items, and these
+    /// that My Work's Map asked for with their parent, are. Only
     /// what it reads anyway, ahead of the rest; one that failed still waits its hour. A read under way that started before
     /// now doesn't count, though it's the first: it's read again after it. A request is forgotten after a quarter of an
     /// hour, when it's read again anyway.
@@ -456,6 +510,9 @@ public actor LinkEngine {
         }
         for key in wantedParents().filter(workItems.contains).sorted().prefix(Self.mostRereads) {
             asked["parent \(key)"] = date
+        }
+        for key in wantedMapParents().filter(workItems.contains).sorted().prefix(Self.mostRereads) {
+            asked["mapParent \(key)"] = date
         }
         await refresh()
     }
@@ -483,6 +540,7 @@ public actor LinkEngine {
             try await readPullRequestsOfSprint(at: date)
             try await readLinkedWorkItems(at: date)
             try await readParents(at: date)
+            try await readMapParents(at: date)
             try await readLinkedPullRequests(at: date)
         } catch {
             // Azure DevOps asked to slow down, or it stopped: the rest waits.
@@ -541,6 +599,7 @@ public actor LinkEngine {
         let items = inputs.sprintItems
         var found: [WorkItemKey: [PRKey]] = [:]
         var dependencies: Set<WorkDependency> = []
+        var related: Set<RelatedWork> = []
         for (organization, keys) in Dictionary(grouping: items, by: \.organization) {
             let ids = keys.map(\.id).sorted()
             for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
@@ -552,6 +611,7 @@ public actor LinkEngine {
                     for item in list.value {
                         found[WorkItemKey(organization, item.id)] = item.pullRequests(in: organization)
                         dependencies.formUnion(item.dependencies(in: organization))
+                        related.formUnion(item.related(in: organization))
                     }
                 } catch {
                     try Self.rethrowThrottling(error)
@@ -560,8 +620,11 @@ public actor LinkEngine {
                 }
             }
         }
-        links.pullRequestsOfWorkItems = found.filter { inputs.sprintItems.contains($0.key) && !$0.value.isEmpty }
-        readDependencies = dependencies
+        // Of what the sprint has now: what it no longer has went while it read, as `prune()` takes it away.
+        let sprint = inputs.sprintItems
+        links.pullRequestsOfWorkItems = found.filter { sprint.contains($0.key) && !$0.value.isEmpty }
+        readDependencies = dependencies.filter { sprint.contains($0.before) || sprint.contains($0.after) }
+        readRelated = related.filter { sprint.contains($0.first) || sprint.contains($0.second) }
         // What BriefBar changed before this read started, Azure DevOps says now, where it read either end; of work items
         // the sprint doesn't have, no read says, so it stays.
         dependencyChanges = dependencyChanges.filter { dependency, change in
@@ -694,6 +757,58 @@ public actor LinkEngine {
         }
     }
 
+    /// The work items My Work's Map wants with their parent, while it shows parents: those the sprint doesn't have while it
+    /// shows, as it reads them, nor the linked work items read with what stories want, which have their parent already and
+    /// are read again with it. Once nothing shows the sprint, it's read no more, so the Map reads the sprint's itself.
+    private func wantedMapParents() -> Set<WorkItemKey> {
+        inputs.mapParents.subtracting(inputs.sprintShows ? inputs.sprintItems : []).subtracting(readWithStories)
+    }
+
+    /// What those work items are, with their parent, for the Map to climb a level more: a GET for up to 200, read again
+    /// every quarter of an hour. One a read leaves out, deleted or that can't be read, is forgotten.
+    private func readMapParents(at date: Date) async throws {
+        let wanted = wantedMapParents()
+        links.mapParents = links.mapParents.filter { wanted.contains($0.key) }
+        mapParentsRead = mapParentsRead.filter { wanted.contains($0.key) }
+        let due = wanted.filter { key in
+            let read = mapParentsRead[key]
+            return isDue(read, failed: failures["mapParent \(key)"], at: date, asked: isAsked("mapParent \(key)", read: read))
+        }
+        let fields = WorkLinks.workItemFields + ["System.Parent"]
+        for (organization, keys) in Dictionary(grouping: due, by: \.organization) {
+            let ids = keys.map(\.id).sorted()
+            for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
+                // Only those still wanted: the Map may have gone, or what it climbs from changed, during the last request.
+                let wantedNow = wantedMapParents()
+                let batch = ids[start..<min(start + Self.batchSize, ids.count)].filter { wantedNow.contains(WorkItemKey(organization, $0)) }
+                guard !batch.isEmpty else { continue }
+                do {
+                    let list = try await get(
+                        ADOEndpoint.workItems(organization: organization, ids: batch, fields: fields), as: ADOList<ADOWorkItem>.self
+                    )
+                    let stillWanted = wantedMapParents()
+                    for id in batch {
+                        links.mapParents[WorkItemKey(organization, id)] = nil
+                    }
+                    for dto in list.value {
+                        let key = WorkItemKey(organization, dto.id)
+                        guard stillWanted.contains(key) else { continue }
+                        links.mapParents[key] = WorkItem(organization: organization, project: dto.fields.teamProject ?? "", dto)
+                    }
+                    for id in batch where stillWanted.contains(WorkItemKey(organization, id)) {
+                        let key = WorkItemKey(organization, id)
+                        mapParentsRead[key] = date
+                        failures["mapParent \(key)"] = nil
+                        settle("mapParent \(key)", readAt: date)
+                    }
+                } catch {
+                    try Self.rethrowThrottling(error)
+                    for id in batch { failures["mapParent \(WorkItemKey(organization, id))"] = date }
+                }
+            }
+        }
+    }
+
     /// What the pull requests linked to the sprint's work items are, when your lists don't show them, and those you
     /// linked: ten a refresh, the ones never read first. An open one is read again every quarter of an hour, a closed one
     /// every six hours.
@@ -738,9 +853,13 @@ public actor LinkEngine {
         links.pullRequestsOfWorkItems = links.pullRequestsOfWorkItems.filter { inputs.sprintItems.contains($0.key) }
         let sprint = inputs.sprintItems
         readDependencies = readDependencies.filter { sprint.contains($0.before) || sprint.contains($0.after) }
+        readRelated = readRelated.filter { sprint.contains($0.first) || sprint.contains($0.second) }
         let parents = wantedParents()
         links.parents = links.parents.filter { parents.contains($0.key) }
         parentsRead = parentsRead.filter { parents.contains($0.key) }
+        let mapParents = wantedMapParents()
+        links.mapParents = links.mapParents.filter { mapParents.contains($0.key) }
+        mapParentsRead = mapParentsRead.filter { mapParents.contains($0.key) }
     }
 
     private func publish() {
@@ -765,6 +884,7 @@ public actor LinkEngine {
             if change.linked { dependencies.insert(dependency) } else { dependencies.remove(dependency) }
         }
         links.dependencies = dependencies
+        links.related = readRelated
         guard links != lastPublished else { return }
         lastPublished = links
         onChange(links)

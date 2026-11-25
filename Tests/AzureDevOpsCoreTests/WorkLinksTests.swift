@@ -58,6 +58,76 @@ import Testing
         ])
     }
 
+    /// Its Related links with work items of its organization, the same from either end; not its other links, nor those to
+    /// another organization's work item, nor one to itself.
+    @Test func findsAWorkItemsRelatedLinksAmongItsRelations() throws {
+        let item = try Fixture.decode(ADOWorkItemRelations.self, [
+            "id": 5104,
+            "relations": [
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/Shop/_apis/wit/workItems/5107"],
+                ["rel": "System.LinkTypes.Related", "url": "https://contoso.visualstudio.com/_apis/wit/workItems/5101"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/fabrikam/_apis/wit/workItems/5102"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5104"],
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5103"],
+                ["rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5100"],
+            ] as [Any],
+        ])
+        let itself = WorkItemKey("contoso", 5104)
+        #expect(item.related(in: "Contoso") == [
+            RelatedWork(itself, WorkItemKey("contoso", 5107)), RelatedWork(itself, WorkItemKey("contoso", 5101)),
+        ])
+        #expect(RelatedWork(WorkItemKey("contoso", 5107), itself) == RelatedWork(itself, WorkItemKey("contoso", 5107)))
+    }
+
+    /// The sprint's read brings the Related links its work items have, one for both ends; one with neither end in the sprint
+    /// any more goes.
+    @Test func readsTheSprintsRelatedLinks() async {
+        let server = StubServer()
+        func related(_ id: Int) -> [String: Any] {
+            ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/\(id)"]
+        }
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations"], json: Fixture.list([
+            ["id": 5101, "relations": [related(5102)]], ["id": 5102, "relations": [related(5101), related(9001)]],
+        ]))
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations", "ids": "5101"], json: Fixture.list([
+            ["id": 5101, "relations": [related(5102)]],
+        ]))
+        let engine = engine(server, clock: Clock())
+        let first = WorkItemKey("contoso", 5101)
+        let second = WorkItemKey("contoso", 5102)
+        await engine.update(.init(sprintItems: [first, second], sprintShows: true))
+        #expect(await engine.currentLinks().related == [RelatedWork(first, second), RelatedWork(second, WorkItemKey("contoso", 9001))])
+
+        await engine.update(.init(sprintItems: [first], sprintShows: true))
+        #expect(await engine.currentLinks().related == [RelatedWork(first, second)])
+    }
+
+    /// The sprint emptied while its read is under way: the Related links and dependencies that read brings go with it,
+    /// rather than come back once it ends, where no read takes them away.
+    @Test func whatASprintReadBringsGoesIfTheSprintEmptiedDuringIt() async throws {
+        let server = StubServer()
+        let emptied = Mutex(false)
+        server.on("/_apis/wit/workitems", query: ["$expand": "relations"]) { _ in
+            let relations: [Any] = [
+                ["rel": "System.LinkTypes.Dependency-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5101"],
+                ["rel": "System.LinkTypes.Related", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/5101"],
+            ]
+            var reply = StubServer.Reply.json(Fixture.list([["id": 5102, "relations": relations], ["id": 5101]]))
+            reply.waitsFor = { emptied.withLock { $0 } }
+            return reply
+        }
+        let engine = engine(server, clock: Clock())
+        let sprint: Set<WorkItemKey> = [WorkItemKey("contoso", 5101), WorkItemKey("contoso", 5102)]
+        let reading = Task { await engine.update(.init(sprintItems: sprint, sprintShows: true)) }
+        try await until { server.requests.contains { query($0, "$expand") == "relations" } }
+        await engine.update(.init())
+        emptied.withLock { $0 = true }
+        await reading.value
+        let links = await engine.currentLinks()
+        #expect(links.related.isEmpty && links.dependencies.isEmpty)
+        #expect(count(server, "/_apis/wit/workitems") == 1)
+    }
+
     /// The sprint's read brings the dependencies its work items are in; one BriefBar links or takes away shows so at once, and
     /// the sprint is read again, after which Azure DevOps says it, and so it stays.
     @Test func readsTheSprintsDependenciesAndShowsThoseBriefBarChangesUntilReadAgain() async {
@@ -317,6 +387,122 @@ import Testing
         #expect(links.workItems[task]?.parentId == nil && links.workItems[task]?.rank == nil)
         #expect(server.requests.count == before)
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    /// What My Work's Map asks for, a level of parents more each time: what each is and its parent, read now, again every
+    /// quarter of an hour, at once when a session says it changed, an hour after a read fails; never the sprint's own while it
+    /// shows, and forgotten once no longer asked for.
+    @Test func readsWhatTheMapAsksForWithItsParent() async {
+        let server = StubServer()
+        let fields = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
+        let fails = Locked(false)
+        server.on("/_apis/wit/workitems", query: ["fields": fields]) { _ in
+            fails.value ? .status(500) : .json(Fixture.list([
+                WorkFixture.workItem(5101, "User Story", "Checkout redesign", parent: 5100), WorkFixture.workItem(5100, "Feature", "Faster checkout"),
+            ]))
+        }
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let story = WorkItemKey("contoso", 5101)
+        let feature = WorkItemKey("contoso", 5100)
+        let inSprint = WorkItemKey("contoso", 5110)
+        func reads() -> [String?] {
+            server.requests.filter { query($0, "fields") == fields }.map { query($0, "ids") }
+        }
+
+        await engine.update(.init(sprintItems: [inSprint], sprintShows: true, mapParents: [story, inSprint]))
+        var links = await engine.currentLinks()
+        #expect(reads() == ["5101"])
+        #expect(server.requests.compactMap { query($0, "fields") } == [fields])
+        #expect(links.mapParents.keys.sorted() == [story])
+        #expect(links.mapParents[story]?.parentId == 5100 && links.mapParents[story]?.title == "Checkout redesign")
+
+        // A level more: only what's new is read now.
+        await engine.update(.init(sprintItems: [inSprint], sprintShows: true, mapParents: [story, feature, inSprint]))
+        links = await engine.currentLinks()
+        #expect(reads() == ["5101", "5100"])
+        #expect(links.mapParents[feature]?.type == "Feature" && links.mapParents[feature]?.parentId == nil)
+
+        clock.advance(1)
+        await engine.reread(pullRequests: [], workItems: [feature])
+        #expect(reads() == ["5101", "5100", "5100"])
+
+        // A quarter of an hour later, both again; when that fails, what was read stays, and it's tried again an hour later.
+        clock.advance(15 * minute)
+        fails.set(true)
+        await engine.refresh()
+        #expect(reads().last == "5100,5101")
+        #expect(await engine.currentLinks().mapParents.count == 2)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(reads().count == 4)
+        clock.advance(45 * minute)
+        fails.set(false)
+        await engine.refresh()
+        #expect(reads().count == 5)
+
+        await engine.update(.init(sprintItems: [inSprint]))
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(reads().count == 5)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    /// A work item the Map asks for that's read as a linked one with what stories want has its parent already: the Map
+    /// doesn't read it again, now or a quarter of an hour later. Without stories, the Map reads it itself.
+    @Test func whatTheMapAsksForThatsReadWithStoriesIsntReadAgainForIt() async {
+        let server = StubServer()
+        server.on("/_apis/wit/workitems", json: Fixture.list([WorkFixture.workItem(5199, "Task", "Round coupon totals", parent: 5101)]))
+        let clock = Clock()
+        let engine = engine(server, clock: clock)
+        let task = WorkItemKey("contoso", 5199)
+        let withStories = (WorkLinks.workItemFields + WorkLinks.storyFields).joined(separator: ",")
+        let forTheMap = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
+        func reads() -> [String?] {
+            server.requests.filter { $0.url?.path.hasSuffix("/_apis/wit/workitems") == true }.map { query($0, "fields") }
+        }
+
+        await engine.update(.init(workItemLookups: [task], wantsStories: true, mapParents: [task]))
+        var links = await engine.currentLinks()
+        #expect(reads() == [withStories])
+        #expect(links.workItems[task]?.parentId == 5101)
+        #expect(links.mapParents.isEmpty)
+        clock.advance(15 * minute)
+        await engine.refresh()
+        #expect(reads() == [withStories, withStories])
+
+        await engine.update(.init(workItemLookups: [task], mapParents: [task]))
+        links = await engine.currentLinks()
+        #expect(reads() == [withStories, withStories, forTheMap])
+        #expect(links.mapParents[task]?.parentId == 5101)
+    }
+
+    /// The sprint's work items the Map asks for are the sprint's to read only while it shows: once nothing does, it's read no
+    /// more, so the Map reads them itself, with their parent, and leaves them to the sprint again once it shows.
+    @Test func theMapReadsTheSprintsWorkItemsItselfWhileTheSprintDoesntShow() async {
+        let server = StubServer()
+        let fields = (WorkLinks.workItemFields + ["System.Parent"]).joined(separator: ",")
+        server.on("/_apis/wit/workitems", query: ["fields": fields], json: Fixture.list([
+            WorkFixture.workItem(5112, "Task", "Round half up in the coupon service", parent: 5111),
+        ]))
+        let engine = engine(server, clock: Clock())
+        let task = WorkItemKey("contoso", 5112)
+        func reads() -> [String?] {
+            server.requests.filter { query($0, "fields") == fields }.map { query($0, "ids") }
+        }
+
+        await engine.update(.init(sprintItems: [task], sprintShows: true, mapParents: [task]))
+        #expect(reads().isEmpty)
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+
+        await engine.update(.init(sprintItems: [task], mapParents: [task]))
+        #expect(reads() == ["5112"])
+        #expect(await engine.currentLinks().mapParents[task]?.parentId == 5111)
+
+        await engine.update(.init(sprintItems: [task], sprintShows: true, mapParents: [task]))
+        #expect(await engine.currentLinks().mapParents.isEmpty)
+        #expect(reads() == ["5112"])
     }
 
     /// Waits for what a read under way has asked, for as long as a busy machine could need (`waitLimit`).

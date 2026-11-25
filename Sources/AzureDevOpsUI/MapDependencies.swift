@@ -13,7 +13,9 @@ import SwiftUI
 /// one done shows at once, and Show Links reads the sprint again (`changed`). The line at the top of the Map says what it's
 /// doing, what it did, with Undo, which takes back what BriefBar changed and nothing else, or why it stopped, with Try Again
 /// for the rest. A change goes as whom BriefBar read the sprint as. The demo changes only its made-up links, and reads
-/// nothing.
+/// nothing. Show Links tells here too the work items' parents, the parents it read for the Map and the Related links it read
+/// (`parents`, `parentItems`, `related`), which the Map only shows: your work items' parents above them, and related work
+/// boxed together.
 @MainActor
 final class MapDependencies: ObservableObject {
     /// Dependencies to link, or take away.
@@ -48,6 +50,15 @@ final class MapDependencies: ObservableObject {
 
     /// What Azure DevOps links, as Show Links read it last, with what BriefBar changed since.
     @Published private(set) var known: Set<WorkDependency> = []
+    /// The parent of each work item Show Links read with its parent: the sprint's, your linked ones, and the parents the Map
+    /// climbs to.
+    @Published private(set) var parents: [WorkItemKey: WorkItemKey] = [:]
+    /// The parents the Map climbs to, as Show Links read them (`WorkLinks.mapParents`). My Work shows them as it reads any
+    /// work item (`StateChanges.item`); they're here so the Map draws again as one is read, or its title or state changes,
+    /// though no work item's parent did, as when the top one is read: it has none.
+    @Published private(set) var parentItems: [WorkItemKey: WorkItem] = [:]
+    /// The Related links Azure DevOps has between the sprint's work items and others, as Show Links read them last.
+    @Published private(set) var related: Set<RelatedWork> = []
     @Published private(set) var line: Line?
 
     let settings: AppSettings
@@ -97,9 +108,16 @@ final class MapDependencies: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// What Show Links read, with what BriefBar changed since it read the sprint.
-    func told(_ dependencies: Set<WorkDependency>) {
+    /// What Show Links read: the dependencies, with what BriefBar changed since it read the sprint; and the parents, those it
+    /// read for the Map and the Related links, which the Map only shows.
+    func told(
+        _ dependencies: Set<WorkDependency>, parents: [WorkItemKey: WorkItemKey], parentItems: [WorkItemKey: WorkItem],
+        related: Set<RelatedWork>
+    ) {
         if dependencies != known { known = dependencies }
+        if parents != self.parents { self.parents = parents }
+        if parentItems != self.parentItems { self.parentItems = parentItems }
+        if related != self.related { self.related = related }
     }
 
     // MARK: What you can do
@@ -314,6 +332,9 @@ final class MapDependencies: ObservableObject {
         guard let known = self.account, known != account else { return }
         forgetAll()
         self.known = []
+        parents = [:]
+        parentItems = [:]
+        related = []
     }
 }
 

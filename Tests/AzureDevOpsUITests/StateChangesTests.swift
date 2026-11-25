@@ -18,6 +18,9 @@ import Testing
         var fails: ADOError?
         /// Whom the Azure CLI is signed in as: as the client does, a change asked for as someone else goes nowhere.
         var signedIn: String?
+        /// The rest of the work item it answers a change of its state with, by its fields' names, as Azure DevOps answers
+        /// with the whole of it: nothing more than its state and when it changed, unless a test says.
+        var fields: [String: Any] = [:]
 
         /// As the client does: nothing goes as someone else, nor once `wanted` no longer wants it, as it's about to go.
         func send(
@@ -28,9 +31,12 @@ import Testing
             sent.append(write)
             if let fails { throw fails }
             guard case .setState(let key, _, let state) = write else { throw ADOError.http(400) }
+            var fields = self.fields
+            fields["System.Id"] = key.id
+            fields["System.State"] = state
+            fields["System.ChangedDate"] = "2030-01-01T10:00:00Z"
             return .workItem(try ADOJSON.decoder().decode(ADOWorkItem.self, from: JSONSerialization.data(withJSONObject: [
-                "id": key.id, "rev": 2,
-                "fields": ["System.Id": key.id, "System.State": state, "System.ChangedDate": "2030-01-01T10:00:00Z"],
+                "id": key.id, "rev": 2, "fields": fields,
             ] as [String: Any])))
         }
     }
@@ -508,6 +514,178 @@ import Testing
         sams.changedAt = changed.changedAt
         #expect(!sams.isDone)
         #expect(states.item(sams.key) == changed)
+    }
+
+    /// A work item only Show Links reads, as a parent My Work's Map shows, in a state the team's process counts as done
+    /// though its name doesn't say so, is done as the team's backlog configuration maps its type's states, which Show Links
+    /// doesn't read; one in another project, whose process may map them otherwise, keeps the category its state's name gives.
+    @Test func aWorkItemOnlyShowLinksReadsIsInTheTeamsCategoryOfItsState() throws {
+        let (sprint, states, _) = live()
+        var board = try #require(sprint.board)
+        board.stateCategories["Feature"] = ["New": "Proposed", "Active": "InProgress", "Verified": "Completed"]
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        var parent = WorkItem(
+            id: 9_002, organization: DemoData.organization, project: board.team.projectName, type: "Feature",
+            title: "Coupons at checkout", state: "Verified", category: WorkItem.Category(category: nil, state: "Verified")
+        )
+        #expect(!parent.isDone)
+        states.linked = { $0 == parent.key ? parent : nil }
+        #expect(states.item(parent.key)?.isDone == true)
+        parent.project = "Payments"
+        #expect(states.item(parent.key) == parent)
+    }
+
+    /// A work item on the sprint's board, as a story My Work's Map shows as your tasks' parent, is read as the board has it
+    /// while something shows the sprint, which reads it the most often then. Once nothing does, it's read as whichever
+    /// changed last of the board's, as the sprint was last read, and Show Links', which reads it for the Map then: closed and
+    /// renamed since, it shows so; a read from before the sprint's leaves it as the board has it.
+    @Test func aWorkItemOnTheBoardIsReadAsItChangedLastWhileNothingShowsTheSprint() throws {
+        let (sprint, states, _) = live()
+        let story = try item(sprint, 5101)
+        let changedAt = try #require(story.changedAt)
+        #expect(!sprint.isShowing)
+        var older = story
+        older.state = "New"
+        older.changedAt = changedAt.addingTimeInterval(-60)
+        states.linked = { $0 == story.key ? older : nil }
+        #expect(states.item(story.key) == story)
+
+        var closed = story
+        closed.title = "Save items for later"
+        closed.state = "Closed"
+        closed.category = .completed
+        closed.changedAt = changedAt.addingTimeInterval(60)
+        states.linked = { $0 == story.key ? closed : nil }
+        #expect(states.item(story.key) == closed)
+        #expect(states.item(story.key)?.isDone == true)
+
+        sprint.setVisible(true, for: "sprint")
+        #expect(states.item(story.key) == story)
+    }
+
+    /// A task on the sprint's board, or one of yours outside it, that changed since the sprint was last read, while nothing
+    /// shows the sprint, keeps the hours left and where it is as that read has them, which Show Links doesn't read: its later
+    /// read gives only its state, title and owner, so My Work's Map still shows what's left of it.
+    @Test func aTaskKeepsItsHoursLeftAsALaterReadWithoutThemChangesIt() throws {
+        let (sprint, states, _) = live()
+        var outside = DemoData.outsideWork(now: Self.referenceNow)
+        let index = try #require(outside.items.firstIndex { $0.id == 5052 })
+        outside.items[index].remainingWork = 4
+        readOutside(sprint, outside)
+        #expect(!sprint.isShowing)
+        let onBoard = try item(sprint)
+        for task in [onBoard, outside.items[index]] {
+            let hours = try #require(task.remainingWork)
+            #expect(hours > 0)
+            var read = task
+            read.title = "Move it back"
+            read.state = "Active"
+            read.category = .inProgress
+            read.remainingWork = nil
+            read.iteration = nil
+            read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+            states.linked = { $0 == task.key ? read : nil }
+            let now = try #require(states.item(task.key))
+            #expect(now.state == "Active" && now.title == read.title && now.changedAt == read.changedAt)
+            #expect(now.remainingWork == hours && now.iteration == task.iteration)
+        }
+    }
+
+    /// A work item on the sprint's board that Show Links read since as another type, while nothing shows the sprint, is that
+    /// type, in the state that read has, and offers that type's states; once you change its state, the board has it as that
+    /// type too, as Azure DevOps answered the change. One read since in another project, as when it was moved there, offers
+    /// none, though the board has it, as that project's process may give its type other states.
+    @Test func aWorkItemReadSinceAsAnotherTypeOrInAnotherProjectIsAsItIsNow() async throws {
+        let (sprint, states, _) = live()
+        let task = try item(sprint)
+        #expect(task.type == "Task" && !sprint.isShowing)
+        var read = task
+        read.type = "Bug"
+        read.state = "Active"
+        read.category = .inProgress
+        read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+        states.linked = { $0 == task.key ? read : nil }
+        let bug = try #require(states.item(task.key))
+        #expect(bug.type == "Bug" && bug.state == "Active")
+        #expect(states.choices(for: task).map(\.name) == ["New", "Active", "Resolved", "Closed"])
+
+        #expect(await states.change(bug, to: "Resolved"))
+        let onBoard = try item(sprint)
+        #expect(onBoard.type == "Bug" && onBoard.state == "Resolved")
+
+        read.state = onBoard.state
+        read.category = onBoard.category
+        read.project = "Payments"
+        read.changedAt = try #require(onBoard.changedAt).addingTimeInterval(60)
+        states.linked = { $0 == task.key ? read : nil }
+        #expect(states.item(task.key)?.project == "Payments")
+        #expect(states.choices(for: task).isEmpty)
+    }
+
+    /// A work item on the sprint's board in a state the team's process counts as done though its name doesn't say so, that
+    /// Show Links read since in a state of the same name, while nothing shows the sprint: in the team's project, it's still
+    /// done; moved to another project since, it's in the category the state's name gives rather than the board's, as that
+    /// project's process may put it in another, so that My Work's Map doesn't take it for done.
+    @Test func aWorkItemMovedToAnotherProjectInAStateOfTheSameNameIsInTheCategoryItsNameGives() throws {
+        let (sprint, states, _) = live()
+        var board = try #require(sprint.board)
+        board.stateCategories["Task"]?["Verified"] = "Completed"
+        sprint.receive(SprintSnapshot(board: board, hasLoaded: true))
+        try readAgain(sprint, in: "Verified")
+        let task = try item(sprint)
+        #expect(task.isDone && !sprint.isShowing)
+
+        var read = task
+        read.category = WorkItem.Category(category: nil, state: task.state)
+        read.changedAt = try #require(task.changedAt).addingTimeInterval(60)
+        #expect(!read.isDone)
+        states.linked = { $0 == task.key ? read : nil }
+        #expect(states.item(task.key)?.isDone == true)
+
+        read.project = "Payments"
+        states.linked = { $0 == task.key ? read : nil }
+        let moved = try #require(states.item(task.key))
+        #expect(moved.project == "Payments" && moved.state == "Verified")
+        #expect(!moved.isDone)
+    }
+
+    /// A story My Work's Map shows as your tasks' parent, renamed and given to someone else since the sprint was last read,
+    /// while nothing shows the sprint, keeps its new name and owner once you changed its state from the Map, as Azure DevOps
+    /// answered the change, with the whole work item: on the sprint's board too, though it isn't read again until something
+    /// shows the sprint, so that Show Links' next read, as the change left it and changed as late as the board has it,
+    /// doesn't give it back its old name.
+    @Test func aWorkItemRenamedWhileNothingShowsTheSprintKeepsItsNameOnceItsStateChanged() async throws {
+        let (sprint, states, azure) = live()
+        let story = try item(sprint, 5101)
+        let changedAt = try #require(story.changedAt)
+        #expect(!sprint.isShowing)
+        let sam = Person(id: "22222222-2222-2222-2222-222222222222", name: "Sam Rivera")
+        #expect(story.assignedTo != sam)
+        var renamed = story
+        renamed.title = "Save items for later"
+        renamed.assignedTo = sam
+        renamed.changedAt = changedAt.addingTimeInterval(60)
+        states.linked = { $0 == story.key ? renamed : nil }
+        #expect(states.item(story.key) == renamed)
+        azure.fields = [
+            "System.Title": renamed.title,
+            "System.AssignedTo": ["id": sam.id.uppercased(), "displayName": sam.name, "uniqueName": "sam@contoso.com"],
+        ]
+
+        #expect(await states.change(renamed, to: "Closed"))
+        let changed = try #require(states.item(story.key))
+        #expect(changed.state == "Closed" && changed.isDone && changed.changedAt != renamed.changedAt)
+        #expect(changed.title == renamed.title && changed.assignedTo == sam)
+        let onBoard = try item(sprint, 5101)
+        #expect(onBoard.title == renamed.title && onBoard.assignedTo == sam && onBoard.changedAt == changed.changedAt)
+
+        var read = renamed
+        read.state = changed.state
+        read.category = changed.category
+        read.changedAt = changed.changedAt
+        states.linked = { $0 == story.key ? read : nil }
+        #expect(states.item(story.key)?.title == renamed.title)
+        #expect(states.item(story.key) == changed)
     }
 
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine
