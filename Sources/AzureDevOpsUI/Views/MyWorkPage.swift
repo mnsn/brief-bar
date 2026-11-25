@@ -322,13 +322,16 @@ struct MyWorkPage: View {
     var others: Bool? = nil
     /// Whether the Map shows what's done, for pictures; nil for what you chose.
     var showsDone: Bool? = nil
+    /// How far up the Map shows parents (`MapParentLevel`), for pictures; nil for what you chose.
+    var parentLevel: Int? = nil
 
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
         MyWorkContent(
             links: services.links, linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: shows, lanes: lanes,
-            search: search, view: view, grouping: grouping, hidden: hidden, others: others, showsDone: showsDone
+            search: search, view: view, grouping: grouping, hidden: hidden, others: others, showsDone: showsDone,
+            parentLevel: parentLevel
         )
     }
 }
@@ -341,7 +344,7 @@ extension MyWorkPage {
     /// All as wide as the page beside a card's details, By Mission in a narrow window, with text at 150%, with !4102
     /// hidden, with others' work, By Mission and All, and with Done off. And, at about a window's size, for the README and
     /// its tour: the Board with + Sprint Tasks and Lanes: None, your tasks in To start and In progress beside your pull
-    /// requests, and the Map By Mission, wide enough for the first mission's graph.
+    /// requests, and the Map By Mission with Parents: Features, wide enough for the first mission's graph and its feature.
     static func renderings(
         services: AppServices, linkedPullRequest: @escaping (PRKey) -> PullRequest?,
         linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?, environment: (AnyView) -> AnyView
@@ -361,20 +364,22 @@ extension MyWorkPage {
         ]
         let demo = DemoData.organization
         typealias Mapped = (
-            name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?, others: Bool, done: Bool
+            name: String, grouping: WorkMapGrouping, size: CGSize, scale: CGFloat?, hidden: MapHidden?, others: Bool, done: Bool,
+            parents: Int?
         )
+        let features = MapParentLevel.stories + 1
         let mapped: [Mapped] = [
-            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil, false, true),
-            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil, false, true),
-            ("my-work-map-all-beside-details", .all, CGSize(width: 900, height: 1_500), nil, nil, false, true),
-            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil, false, true),
-            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil, false, true),
+            ("my-work-map", .byMission, CGSize(width: 2_000, height: 2_700), nil, nil, false, true, nil),
+            ("my-work-map-all", .all, CGSize(width: 2_200, height: 1_300), nil, nil, false, true, nil),
+            ("my-work-map-all-beside-details", .all, CGSize(width: 900, height: 1_500), nil, nil, false, true, nil),
+            ("my-work-map-narrow", .byMission, CGSize(width: 560, height: 2_700), nil, nil, false, true, nil),
+            ("my-work-map-150", .byMission, CGSize(width: 1_400, height: 3_600), 1.5, nil, false, true, nil),
             ("my-work-map-hidden", .byMission, CGSize(width: 2_000, height: 1_300), nil,
-             MapHidden([.card(.pullRequest(organization: demo, number: 4102))]), false, true),
-            ("my-work-map-others", .byMission, CGSize(width: 2_000, height: 2_900), nil, nil, true, true),
-            ("my-work-map-all-others", .all, CGSize(width: 2_200, height: 1_500), nil, nil, true, true),
-            ("my-work-map-done-off", .byMission, CGSize(width: 2_000, height: 1_900), nil, nil, false, false),
-            ("my-work-map-window", .byMission, CGSize(width: 1_260, height: 875), nil, nil, false, true),
+             MapHidden([.card(.pullRequest(organization: demo, number: 4102))]), false, true, nil),
+            ("my-work-map-others", .byMission, CGSize(width: 2_000, height: 2_900), nil, nil, true, true, nil),
+            ("my-work-map-all-others", .all, CGSize(width: 2_200, height: 1_500), nil, nil, true, true, nil),
+            ("my-work-map-done-off", .byMission, CGSize(width: 2_000, height: 1_900), nil, nil, false, false, nil),
+            ("my-work-map-window", .byMission, CGSize(width: 1_260, height: 875), nil, nil, false, true, features),
         ]
         let showLinksOff = SprintTasksNeedShowLinks(links: Links(defaults: MemoryDefaults(), isDemo: false))
             .padding(16)
@@ -382,10 +387,10 @@ extension MyWorkPage {
             .background(WindowBackdrop())
             .environment(\.isRendering, true)
         let foot = (name: "my-work-show-links-off", view: environment(AnyView(showLinksOff)))
-        let maps = mapped.map { name, grouping, size, scale, hidden, others, done in
+        let maps = mapped.map { name, grouping, size, scale, hidden, others, done, parents in
             let page = MyWorkPage(
                 linkedPullRequest: linkedPullRequest, linkedWorkItem: linkedWorkItem, shows: .sprintTasks, view: .map,
-                grouping: grouping, hidden: hidden, others: others, showsDone: done
+                grouping: grouping, hidden: hidden, others: others, showsDone: done, parentLevel: parents
             )
                 .environment(\.panelStyle, .page)
             let scaled: AnyView = if let scale {
@@ -492,6 +497,7 @@ private struct MyWorkContent: View {
     let hidden: MapHidden?
     let others: Bool?
     let showsDone: Bool?
+    let parentLevel: Int?
 
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var store: PRStore
@@ -519,7 +525,7 @@ private struct MyWorkContent: View {
     init(
         links: Links, linkedPullRequest: @escaping (PRKey) -> PullRequest?, linkedWorkItem: @escaping (WorkItemKey) -> WorkItem?,
         shows: MyWorkShows?, lanes: BoardLanes?, search: String?, view: MyWorkView?, grouping: WorkMapGrouping?, hidden: MapHidden?,
-        others: Bool?, showsDone: Bool?
+        others: Bool?, showsDone: Bool?, parentLevel: Int?
     ) {
         self.links = links
         self.linkedPullRequest = linkedPullRequest
@@ -531,6 +537,7 @@ private struct MyWorkContent: View {
         self.hidden = hidden
         self.others = others
         self.showsDone = showsDone
+        self.parentLevel = parentLevel
         _searchText = LocalState(wrappedValue: search ?? "")
     }
 
@@ -867,6 +874,7 @@ private struct MyWorkContent: View {
                         )
                     case .map:
                         let missions = PullRequestsByMission.missions(ordering.missions)
+                        let backlogs = WorkItemLevels(board: sprint.board)
                         WorkMapView(
                             map: WorkMap(
                                 board, missions: missions, state: ordering.mapState, hidden: hidden ?? ordering.mapHidden, done: done,
@@ -874,7 +882,10 @@ private struct MyWorkContent: View {
                                 showsOthers: showsWork && (others ?? ordering.mapShowsOthers),
                                 showsDone: showsDone ?? ordering.mapShowsDone,
                                 parents: Self.parents(of: dependencies.parents), related: Self.related(of: dependencies.related),
-                                showsParents: ordering.mapShowsParents
+                                parentLevel: MapParentLevel.choice(
+                                    of: parentLevel ?? ordering.mapParentLevel, among: backlogs.levels.names.count
+                                ),
+                                level: { ref in anyWorkItem(ref).flatMap(backlogs.level(of:)) }
                             ),
                             grouping: grouping ?? ordering.mapGrouping,
                             missions: missions, order: ordering, content: mapContent(board), shownOthers: others
@@ -1057,7 +1068,8 @@ private struct MyWorkContent: View {
                     )
                 }
             },
-            glances: { ref in mapGlances(ref) }
+            glances: { ref in mapGlances(ref) },
+            parentLevels: WorkItemLevels(board: sprint.board).levels.names
         )
     }
 

@@ -214,16 +214,32 @@ public struct ADOPredefinedQuery: Decodable, Sendable {
 }
 
 /// How a team's backlogs are set up, from `{org}/{project}/{team}/_apis/work/backlogconfiguration`: which
-/// work item types are cards on its task board, which are its portfolio backlogs' (features and epics), and which
-/// category each state of each type is in.
+/// work item types are cards on its task board, which are its stories' and its portfolio backlogs' (features and epics),
+/// and which category each state of each type is in.
 public struct ADOBacklogConfiguration: Decodable, Sendable {
     public var taskBacklog: Level?
-    /// Features, epics, and any others the process adds above the stories, from the lowest.
+    /// The stories' backlog, such as Stories, Backlog items or Requirements.
+    public var requirementBacklog: Level?
+    /// Features, epics, and any others the process adds above the stories, in no set order: each one's `rank` says how
+    /// high it is.
     public var portfolioBacklogs: LenientArray<Level>?
     public var workItemTypeMappedStates: LenientArray<MappedStates>?
 
     public struct Level: Decodable, Sendable {
+        /// As the team's backlogs name it, such as Stories or Features.
+        public var name: String?
+        /// How high it is: tasks' 0, stories' 1, and each portfolio backlog's higher than the one below it.
+        public var rank: Int?
         public var workItemTypes: LenientArray<TypeReference>?
+
+        private enum CodingKeys: String, CodingKey { case name, rank, workItemTypes }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = container.lenient(String.self, forKey: .name)
+            rank = container.lenient(Int.self, forKey: .rank)
+            workItemTypes = container.lenient(LenientArray<TypeReference>.self, forKey: .workItemTypes)
+        }
     }
 
     public struct TypeReference: Decodable, Sendable {
@@ -237,11 +253,12 @@ public struct ADOBacklogConfiguration: Decodable, Sendable {
         public var states: [String: String]
     }
 
-    private enum CodingKeys: String, CodingKey { case taskBacklog, portfolioBacklogs, workItemTypeMappedStates }
+    private enum CodingKeys: String, CodingKey { case taskBacklog, requirementBacklog, portfolioBacklogs, workItemTypeMappedStates }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         taskBacklog = container.lenient(Level.self, forKey: .taskBacklog)
+        requirementBacklog = container.lenient(Level.self, forKey: .requirementBacklog)
         portfolioBacklogs = container.lenient(LenientArray<Level>.self, forKey: .portfolioBacklogs)
         workItemTypeMappedStates = container.lenient(LenientArray<MappedStates>.self, forKey: .workItemTypeMappedStates)
     }

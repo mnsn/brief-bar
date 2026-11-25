@@ -11,10 +11,11 @@ import Foundation
 // and its successor; through what the Map doesn't show there, such as what you hid, it's dotted. With Others' work, work
 // items the Board doesn't have, such as a teammate's task yours waits for, are nodes too, faded, and so is any you added.
 // With Done off, what's done leaves the Map, with no dotted line through it, as it holds nothing back. With Parents, the
-// parents Azure DevOps gives your work, a story, its feature, that feature's epic, are nodes too, each after the work that's
-// part of it, as it's done once that is, with a lighter line from each. Work items Azure DevOps links as Related go in a box
-// together. Where the page is too narrow for a graph's columns, they fold into tiers, one under the other, as text wraps
-// (`WorkMapFold`). Only where things go, never how they're drawn: the views draw them.
+// parents Azure DevOps gives your work, a story, its feature, that feature's epic, as high as you choose, are nodes too, each
+// after the work that's part of it, as it's done once that is, with a lighter line from each: others' only with Others' work,
+// else the line goes up through them. Work items Azure DevOps links as Related go in a box together. Where the page is too
+// narrow for a graph's columns, they fold into tiers, one under the other, as text wraps (`WorkMapFold`). Only where things
+// go, never how they're drawn: the views draw them.
 
 // MARK: - Your choices
 
@@ -106,23 +107,40 @@ public enum MapDoneWork {
     }
 }
 
-/// Parents, on My Work's Map: whether it shows the parents Azure DevOps gives your work items, a story, its feature, that
-/// feature's epic, each a node of its own after the work that's part of it (`WorkMap(showsParents:)`). On until you turn it
-/// off, remembered.
-public enum MapParents {
-    /// Where it's kept, while it's off.
-    public static let defaultsKey = "order.map.hidesParents"
+/// Parents, on My Work's Map: how high up their chains it shows the parents Azure DevOps gives your work items, each a node of
+/// its own after the work that's part of it, by their backlog levels (`WorkMap(parentLevel:level:)`): none, or up to
+/// stories, the first level above tasks, or features, the next, and so on, or all of them. Stories until you choose
+/// another, remembered.
+public enum MapParentLevel {
+    /// Where it's kept, but while it's stories.
+    public static let defaultsKey = "order.map.parentLevel"
+    /// Where Parents was kept while it was off, when it was a checkbox: none, until you choose again.
+    static let hidesParentsKey = "order.map.hidesParents"
+    /// No parents.
+    public static let none = 0
+    /// Up to stories.
+    public static let stories = 1
+    /// Every level, however many the backlogs have, and parents of types they don't have too.
+    public static let all = Int.max
 
-    public static func load(from defaults: some SettingsStorage) -> Bool {
-        !defaults.bool(forKey: defaultsKey)
+    public static func load(from defaults: some SettingsStorage) -> Int {
+        if let level = defaults.object(forKey: defaultsKey) as? Int { return max(level, none) }
+        return defaults.bool(forKey: hidesParentsKey) ? none : stories
     }
 
-    public static func save(_ shows: Bool, to defaults: some SettingsStorage) {
-        if shows {
+    public static func save(_ level: Int, to defaults: some SettingsStorage) {
+        defaults.removeObject(forKey: hidesParentsKey)
+        if level == stories {
             defaults.removeObject(forKey: defaultsKey)
         } else {
-            defaults.set(true, forKey: defaultsKey)
+            defaults.set(max(level, none), forKey: defaultsKey)
         }
+    }
+
+    /// How high a level you chose goes where the backlogs have `count` levels above tasks: past them, as one you chose on
+    /// another team's with more, is all, as the Parents menu says.
+    public static func choice(of level: Int, among count: Int) -> Int {
+        level <= none ? none : level <= count ? level : all
     }
 }
 
@@ -320,7 +338,8 @@ public struct MapHidden: Equatable, Sendable {
 
 /// A work item on the Map that the Board doesn't have, by its reference: someone else's that your work waits for, or that
 /// waits for yours, with Others' work (`WorkMap(showsOthers:)`); one you added to the Map (`MapEdits.addItem`); or, with
-/// Parents, one Azure DevOps gives as the parent of your work, or of one of its parents (`WorkMap(showsParents:)`).
+/// Parents, one Azure DevOps gives as the parent of your work, or of one of its parents, as high as Parents goes: yours, or,
+/// with Others' work, anyone's (`WorkMap(parentLevel:)`).
 public struct MapWorkItem: Equatable, Sendable, Identifiable {
     public var ref: ItemRef
     /// Resolved, done or removed: it holds nothing back.
@@ -1111,13 +1130,15 @@ public struct WorkMap: Equatable, Sendable {
     public let showsDone: Bool
     /// How many of its cards, work items and steps are done, but those you hid: what Done shows, or leaves out.
     public private(set) var doneCount: Int
-    /// Whether it shows the parents Azure DevOps gives your work items, and theirs (`MapParents`).
-    public let showsParents: Bool
-    /// Whether Azure DevOps gives any of its work items a parent, shown or not: what Parents is for.
+    /// How high up their chains it shows the parents Azure DevOps gives your work items (`MapParentLevel`).
+    public let parentLevel: Int
+    /// Whether Azure DevOps gives any of its work items a parent the page knows, shown or not, whatever Parents and Others'
+    /// work leave out: what Parents is for.
     public private(set) var hasParents: Bool
-    /// How many of others' work items it shows, hidden or not (`init(showsOthers:)`): not those you added, nor parents.
+    /// How many of others' work items it shows, hidden or not (`init(showsOthers:)`): not those you added, nor parents but
+    /// others' parents, which it shows only with Others' work.
     public var othersCount: Int {
-        everything.filter { $0.workItem.map { !$0.isAdded && !$0.isParent } ?? false }.count
+        everything.filter { $0.workItem.map { !$0.isAdded && (!$0.isParent || !$0.isYours) } ?? false }.count
     }
     private let edges: Edges
     private let byID: [MapNodeID: WorkMapItem]
@@ -1147,20 +1168,25 @@ public struct WorkMap: Equatable, Sendable {
     ///     whether it's yours; nil for one it doesn't know.
     ///   - showsOthers: Others' work: the work items the Board doesn't have that are still open and that what the Map has
     ///     waits for, and what those wait for, and those that wait right after what it has, are nodes too, at most
-    ///     `mostOthers`, the nearest first.
+    ///     `mostOthers`, the nearest first; and others' parents, with Parents.
     ///   - showsDone: Done: what's done, in its Done column; off, what's done is off the Map, as what you hid is, but listed
     ///     nowhere, and, as it holds nothing back, with no dotted line through it.
     ///   - parents: the parent Azure DevOps gives each work item it knows one for, by their references.
     ///   - related: the work items Azure DevOps links as Related, two by two: those on the Map go in a box together, with
     ///     those they're related to through others, By Mission only those of the same band.
-    ///   - showsParents: Parents: the parents of its work items, and theirs, up their chains, are nodes too, at most
-    ///     `mostParents` of them, of those the page knows, each joined by a lighter line to the nearest of what's part of it,
-    ///     which it waits for; a pull request's card standing for a work item it names, as with lines.
+    ///   - parentLevel: Parents: the parents of its work items, and theirs, up their chains as high as this level, are nodes
+    ///     too, at most `mostParents` of them, of those the page knows, each joined by a lighter line to the nearest of
+    ///     what's part of it, which it waits for; a pull request's card standing for a work item it names, as with lines.
+    ///     Of those, others' and those no one has are nodes only with Others' work: else the line goes up through them.
+    ///   - level: the backlog level of a work item, by its reference (`MapParentLevel`): `0` a task, `1` a story, and so
+    ///     on; nil for one of a type the backlogs don't have, which is a level above what's part of it, and a task where
+    ///     the chain starts.
     public init(
         _ board: PullRequestBoard, missions: [OrderMission], state: MapState = MapState(), hidden: MapHidden = MapHidden(),
         done: Set<ItemRef> = [], linked: [ItemRef: [ItemRef]] = [:], azureDevOps: Set<MapEdits.Line> = [],
         work: (ItemRef) -> MapWorkItem? = { _ in nil }, showsOthers: Bool = false, showsDone: Bool = true,
-        parents: [ItemRef: ItemRef] = [:], related: Set<MapRelated> = [], showsParents: Bool = true
+        parents: [ItemRef: ItemRef] = [:], related: Set<MapRelated> = [], parentLevel: Int = MapParentLevel.all,
+        level: (ItemRef) -> Int? = { _ in nil }
     ) {
         // Every card, once, with the lanes it's in.
         var cards: [BoardItem] = []
@@ -1195,15 +1221,22 @@ public struct WorkMap: Equatable, Sendable {
             items.append(item)
             byID[item.id] = .workItem(item)
         }
-        // With Parents, each work item's parents up its chain, from your work's, the hidden and the done too: an open story
-        // whose tasks are all done still has its node.
+        // With Parents, each work item's parents up its chain, as high as it goes, from your work's, the hidden and the done
+        // too: an open story whose tasks are all done still has its node.
         let starts = cards.map(\.ref).filter { $0.kind == .workItem } + items.map(\.ref) + aliases.keys.sorted()
-        let climbed = Self.climb(from: starts, parents: parents, items: byID, aliases: aliases, work: work)
-        if showsParents {
-            for item in climbed.added {
-                items.append(item)
-                byID[item.id] = .workItem(item)
-            }
+        let climbed = parentLevel > MapParentLevel.none
+            ? Self.climb(
+                from: starts, parents: parents, items: byID, aliases: aliases, work: work, showsOthers: showsOthers,
+                upTo: parentLevel, level: level
+            )
+            : (added: [], chains: Chains())
+        let hasParents = starts.contains { start in
+            guard let parent = parents[start], parent != start else { return false }
+            return byID[.card(parent)] != nil || aliases[parent] != nil || work(parent) != nil
+        }
+        for item in climbed.added {
+            items.append(item)
+            byID[item.id] = .workItem(item)
         }
         // Of the work items the Board doesn't have that lines name, those the page knows are done hold nothing back.
         var known = done
@@ -1212,7 +1245,7 @@ public struct WorkMap: Equatable, Sendable {
         }
         let edges = Edges(
             missions, state: state, items: byID, aliases: aliases, done: known, azureDevOps: azureDevOps,
-            parents: showsParents ? climbed.chains : Chains()
+            parents: climbed.chains
         )
         if showsOthers {
             for item in Self.others(waitingWith: byID, edges: edges, work: work) {
@@ -1360,8 +1393,8 @@ public struct WorkMap: Equatable, Sendable {
         self.everything = everything
         self.showsDone = showsDone
         doneCount = everything.filter { $0.isDone && !isHidden.contains($0.id) }.count
-        self.showsParents = showsParents
-        hasParents = !climbed.chains.up.isEmpty
+        self.parentLevel = parentLevel
+        self.hasParents = hasParents
         self.edges = edges
         self.byID = byID
         self.bandOf = bandOf
@@ -1377,15 +1410,20 @@ public struct WorkMap: Equatable, Sendable {
 
     /// At most how many of others' work the Map shows (`init(showsOthers:)`).
     public static let mostOthers = 30
-    /// At most how many parents the Map adds nodes for (`init(showsParents:)`).
+    /// At most how many parents the Map adds nodes for (`init(parentLevel:)`).
     public static let mostParents = 30
 
-    /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, and the nodes each of
-    /// them and those is: each parent its own card, else the pull requests' cards that name it, else a node added for it, if
-    /// the page knows it, at most `mostParents` of those; a chain ends at one it doesn't.
+    /// The parents Azure DevOps gives these work items, and theirs, up their chains, breadth first, as high as `limit` by
+    /// their levels, and the nodes each of them and those is: each parent its own card, else the pull requests' cards that
+    /// name it, else a node added for it, if the page knows it and it's yours, or anyone's with `showsOthers`, at most
+    /// `mostParents` of those; else none, and the chain goes up through it. A chain ends at a parent the page doesn't know,
+    /// and below one above `limit`.
+    /// - Parameter level: a work item's level (`init(level:)`): one of a type the backlogs don't have is a level above its
+    ///   child, and a task where the chain starts.
     static func climb(
         from starts: [ItemRef], parents: [ItemRef: ItemRef], items: [MapNodeID: WorkMapItem], aliases: [ItemRef: [ItemRef]],
-        work: (ItemRef) -> MapWorkItem?
+        work: (ItemRef) -> MapWorkItem?, showsOthers: Bool = true, upTo limit: Int = MapParentLevel.all,
+        level: (ItemRef) -> Int? = { _ in nil }
     ) -> (added: [MapWorkItem], chains: Chains) {
         var added: [MapWorkItem] = []
         var has = Set(items.keys)
@@ -1394,26 +1432,31 @@ public struct WorkMap: Equatable, Sendable {
         }
         var chains = Chains()
         var climbed: Set<ItemRef> = []
-        var pending = starts
+        var pending = starts.map { ($0, level($0) ?? 0) }
         var next = 0
         while next < pending.count {
-            let child = pending[next]
+            let (child, below) = pending[next]
             next += 1
             guard climbed.insert(child).inserted, let parent = parents[child], parent != child else { continue }
+            let height = level(parent) ?? below + 1
+            guard height <= limit else { continue }
             var above = nodes(of: parent)
             if above.isEmpty {
-                guard added.count < mostParents, var item = work(parent) else { continue }
-                item.isParent = true
-                added.append(item)
-                has.insert(item.id)
-                above = [item.id]
+                guard var item = work(parent) else { continue }
+                if item.isYours || showsOthers {
+                    guard added.count < mostParents else { continue }
+                    item.isParent = true
+                    added.append(item)
+                    has.insert(item.id)
+                    above = [item.id]
+                }
             }
             chains.parent[child] = parent
             chains.nodes[parent] = above
             for node in nodes(of: child) {
                 chains.refs[node, default: []].append(child)
             }
-            pending.append(parent)
+            pending.append((parent, height))
         }
         return (added, chains)
     }
@@ -1423,23 +1466,35 @@ public struct WorkMap: Equatable, Sendable {
     struct Chains: Equatable, Sendable {
         /// The parent of each work item it climbed up from.
         var parent: [ItemRef: ItemRef] = [:]
-        /// The nodes each parent is: its card, else the pull requests' cards that name it, else the node added for it.
+        /// The nodes each parent is: its card, else the pull requests' cards that name it, else the node added for it; none
+        /// for one it went up through, as others' parents without Others' work.
         var nodes: [ItemRef: [MapNodeID]] = [:]
         /// The work items each node is, of those it climbed up from: its card's, or those a pull request's card names.
         var refs: [MapNodeID: [ItemRef]] = [:]
 
-        /// What each node is part of: the nodes of its work items' parents. A card that stands for the parent too is part of
-        /// none of its cards, as pull requests' that each name a task and its story: else they'd be part of each other, and
-        /// wait for each other.
+        /// What each node is part of: the nodes of its work items' nearest parents that have any, up through those that
+        /// have none. A card that stands for the parent too is part of none of its cards, as pull requests' that each name a
+        /// task and its story: else they'd be part of each other, and wait for each other.
         var up: [MapNodeID: Set<MapNodeID>] {
             var up: [MapNodeID: Set<MapNodeID>] = [:]
             for (node, refs) in refs {
                 for ref in refs {
-                    guard let parent = parent[ref], let above = nodes[parent], !above.contains(node) else { continue }
+                    guard let above = nearest(above: ref), !above.contains(node) else { continue }
                     up[node, default: []].formUnion(above)
                 }
             }
             return up
+        }
+
+        /// The nodes of the nearest parent up this work item's chain that has any.
+        func nearest(above ref: ItemRef) -> [MapNodeID]? {
+            var climbed: Set<ItemRef> = [ref]
+            var current = ref
+            while let next = parent[current], climbed.insert(next).inserted {
+                if let above = nodes[next], !above.isEmpty { return above }
+                current = next
+            }
+            return nil
         }
     }
 

@@ -746,15 +746,17 @@ import Testing
             Steps.task(5190): Steps.task(5195), Steps.task(5195): Steps.task(5199),
         ]
         let known: Set<Int> = [5180, 5190, 5195]
-        let work = { (ref: ItemRef) -> MapWorkItem? in ref.number.map(known.contains) == true ? MapWorkItem(ref: ref) : nil }
+        let work = { (ref: ItemRef) -> MapWorkItem? in
+            ref.number.map(known.contains) == true ? MapWorkItem(ref: ref, isYours: true) : nil
+        }
         let map = WorkMap(board, missions: [], work: work, parents: parents)
         let graph = try #require(map.bands.first?.graph)
-        #expect(map.hasParents && map.showsParents)
+        #expect(map.hasParents && map.parentLevel == MapParentLevel.all)
         #expect(graph.columns == [.wave(0), .wave(1), .wave(2), .wave(3)])
         #expect(Self.places(graph) == ["5150 0,0", "5151 0,1", "5180 1,0", "5190 2,0", "5195 3,0"])
         #expect(Self.lines(graph, in: map) == ["5150 > 5180", "5151 > 5180", "5180 > 5190", "5190 > 5195"])
         #expect(graph.lines.allSatisfy { $0.style == .parent })
-        #expect(map.item(Self.work(5180))?.workItem == MapWorkItem(ref: Steps.task(5180), isParent: true))
+        #expect(map.item(Self.work(5180))?.workItem == MapWorkItem(ref: Steps.task(5180), isYours: true, isParent: true))
         #expect(map.item(Self.work(5199)) == nil)
         #expect(map.band(of: Self.work(5195)) == .notInAMission)
         #expect(map.waitsFor(Self.work(5180)).isEmpty)
@@ -772,20 +774,20 @@ import Testing
         for id in 6001..<6040 {
             chain[Steps.task(id)] = Steps.task(id + 1)
         }
-        let long = WorkMap(board, missions: [], work: { ref in MapWorkItem(ref: ref) }, parents: chain)
+        let long = WorkMap(board, missions: [], work: { ref in MapWorkItem(ref: ref, isYours: true) }, parents: chain)
         #expect(long.everything.compactMap(\.workItem).count == WorkMap.mostParents)
         #expect(long.item(Self.work(6030)) != nil && long.item(Self.work(6031)) == nil)
     }
 
-    /// Parents off leaves them off the Map, lines and all, though it still knows Azure DevOps gives some, which is what the
-    /// switch is for; none it knows, or only one the page doesn't, and there's nothing to switch. On until you turn it off,
-    /// remembered.
-    @Test func parentsOffLeavesThemOffTheMap() {
+    /// Parents: None leaves them off the Map, lines and all, though it still knows Azure DevOps gives some, which is what the
+    /// menu is for; none it knows, or only one the page doesn't, and there's nothing to choose. Stories until you choose
+    /// another, remembered; Parents unchecked, before it was a menu, is None until you choose again.
+    @Test func parentsNoneLeavesThemOffTheMap() {
         let board = Steps.board([:]).withWork([Steps.work(5150, .toDo), Steps.work(5151, .toDo)], missions: [], stories: [])
         let parents = [Steps.task(5150): Steps.task(5180), Steps.task(5151): Steps.task(5180)]
-        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref) : nil }
-        let off = WorkMap(board, missions: [], work: work, parents: parents, showsParents: false)
-        #expect(off.hasParents && !off.showsParents)
+        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref, isYours: true) : nil }
+        let off = WorkMap(board, missions: [], work: work, parents: parents, parentLevel: MapParentLevel.none)
+        #expect(off.hasParents && off.parentLevel == MapParentLevel.none)
         #expect(Self.places(off.bands.first?.graph) == ["5150 0,0", "5151 0,1"])
         #expect(off.bands.first?.graph?.lines.isEmpty == true)
         #expect(off.item(Self.work(5180)) == nil)
@@ -794,12 +796,79 @@ import Testing
         #expect(!WorkMap(board, missions: [], work: work, parents: [Steps.task(5150): Steps.task(5199)]).hasParents)
 
         let defaults = MemorySettings()
-        #expect(MapParents.load(from: defaults))
-        MapParents.save(false, to: defaults)
-        #expect(defaults.object(forKey: "order.map.hidesParents") as? Bool == true)
-        #expect(!MapParents.load(from: defaults))
-        MapParents.save(true, to: defaults)
+        #expect(MapParentLevel.load(from: defaults) == MapParentLevel.stories)
+        for level in [MapParentLevel.none, 2, MapParentLevel.all] {
+            MapParentLevel.save(level, to: defaults)
+            #expect(defaults.object(forKey: "order.map.parentLevel") as? Int == level)
+            #expect(MapParentLevel.load(from: defaults) == level)
+        }
+        MapParentLevel.save(MapParentLevel.stories, to: defaults)
+        #expect(defaults.object(forKey: "order.map.parentLevel") == nil)
+        #expect(MapParentLevel.load(from: defaults) == MapParentLevel.stories)
+
+        defaults.set(true, forKey: "order.map.hidesParents")
+        #expect(MapParentLevel.load(from: defaults) == MapParentLevel.none)
+        MapParentLevel.save(2, to: defaults)
         #expect(defaults.object(forKey: "order.map.hidesParents") == nil)
+        #expect(MapParentLevel.load(from: defaults) == 2)
+    }
+
+    /// Parents goes up each chain as high as the level you chose: a story at Stories, its feature at Features, and so on; a
+    /// parent of a type the backlogs don't have, such as a Key Result over an epic, a level above what's part of it, so only
+    /// All shows it. What's part of one that's higher has no line to it, even to its card; Azure DevOps still gives it one,
+    /// so the menu stays. A level past the backlogs' is All, as one you chose on another team's.
+    @Test func parentsGoAsHighAsTheLevelYouChose() throws {
+        let work = [Steps.work(5150, .toDo), Steps.work(5160, .toDo), Steps.work(5191, .toDo)]
+        let board = Steps.board([:]).withWork(work, missions: [], stories: [])
+        let parents = [
+            Steps.task(5150): Steps.task(5180), Steps.task(5180): Steps.task(5190), Steps.task(5190): Steps.task(5195),
+            Steps.task(5195): Steps.task(5198), Steps.task(5160): Steps.task(5191),
+        ]
+        let levels = [5160: 1, 5180: 1, 5190: 2, 5191: 2, 5195: 3]
+        func map(_ level: Int) -> WorkMap {
+            WorkMap(
+                board, missions: [], work: { MapWorkItem(ref: $0, isYours: true) }, parents: parents, parentLevel: level,
+                level: { ref in ref.number.flatMap { levels[$0] } }
+            )
+        }
+        func shown(_ map: WorkMap) -> [String] {
+            map.everything.compactMap(\.workItem).filter(\.isParent).map { $0.ref.shortOrderLabel }
+        }
+        let stories = map(MapParentLevel.stories)
+        #expect(stories.hasParents && shown(stories) == ["5180"])
+        #expect(Self.lines(stories.bands.first?.graph, in: stories) == ["5150 > 5180"])
+        #expect(shown(map(2)) == ["5180", "5190"])
+        let features = map(2)
+        #expect(Self.lines(features.bands.first?.graph, in: features) == ["5150 > 5180", "5180 > 5190", "5160 > 5191"])
+        #expect(shown(map(3)) == ["5180", "5190", "5195"])
+        #expect(shown(map(4)) == ["5180", "5190", "5195", "5198"])
+        #expect(shown(map(MapParentLevel.all)) == shown(map(4)))
+
+        #expect(MapParentLevel.choice(of: MapParentLevel.none, among: 3) == MapParentLevel.none)
+        #expect(MapParentLevel.choice(of: -1, among: 3) == MapParentLevel.none)
+        #expect(MapParentLevel.choice(of: 3, among: 3) == 3)
+        #expect(MapParentLevel.choice(of: 4, among: 3) == MapParentLevel.all)
+        #expect(MapParentLevel.choice(of: MapParentLevel.all, among: 3) == MapParentLevel.all)
+    }
+
+    /// Others' parents, and those no one has, are nodes only with Others' work: else the line goes up through them, to the
+    /// nearest of yours above, and Others' work counts them while it shows them.
+    @Test func othersParentsAreNodesOnlyWithOthersWork() throws {
+        let board = Steps.board([:]).withWork([Steps.work(5150, .toDo)], missions: [], stories: [])
+        let parents = [Steps.task(5150): Steps.task(5180), Steps.task(5180): Steps.task(5190), Steps.task(5190): Steps.task(5195)]
+        let work = { (ref: ItemRef) -> MapWorkItem? in MapWorkItem(ref: ref, isYours: ref == Steps.task(5190)) }
+        let yours = WorkMap(board, missions: [], work: work, parents: parents)
+        let graph = try #require(yours.bands.first?.graph)
+        #expect(Self.places(graph) == ["5150 0,0", "5190 1,0"])
+        #expect(Self.lines(graph, in: yours) == ["5150 > 5190"])
+        #expect(graph.partOf == [Self.work(5150): [Self.work(5190)]])
+        #expect(yours.item(Self.work(5180)) == nil && yours.item(Self.work(5195)) == nil)
+        #expect(yours.othersCount == 0)
+
+        let others = WorkMap(board, missions: [], work: work, showsOthers: true, parents: parents)
+        #expect(Self.places(others.bands.first?.graph) == ["5150 0,0", "5180 1,0", "5190 2,0", "5195 3,0"])
+        #expect(Self.lines(others.bands.first?.graph, in: others) == ["5150 > 5180", "5180 > 5190", "5190 > 5195"])
+        #expect(others.othersCount == 2)
     }
 
     /// A parent the Board has a card for is that card; one a pull request's card names, or Show Links links to it, is that
@@ -810,7 +879,7 @@ import Testing
         let work = [Steps.work(5112, .inProgress, linked: [Steps.linked(4091)]), Steps.work(5150, .toDo), Steps.work(5151, .toDo)]
         let board = Steps.board(Self.open([4091]), missions: [checkout]).withWork(work, missions: [checkout], stories: [])
         let parents = [Steps.task(5112): Steps.task(5180), Steps.task(5180): Steps.task(5190), Steps.task(5150): Steps.task(5151)]
-        let known = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5190) ? MapWorkItem(ref: ref) : nil }
+        let known = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5190) ? MapWorkItem(ref: ref, isYours: true) : nil }
         let linked = [Self.pr(4091): [Steps.task(5180)]]
         let map = WorkMap(board, missions: [checkout], linked: linked, work: known, parents: parents)
         #expect(map.bands.map(\.lane.kind) == [.mission(checkout.key), .notInAMission])
@@ -876,7 +945,8 @@ import Testing
         yours.addItem(Steps.task(5210), home: nil, by: .you, at: Self.day)
         let map = WorkMap(
             board, missions: [], state: MapEdits.merged([yours], now: Self.day), azureDevOps: [.init(Self.work(5201), Self.work(5150))],
-            work: { MapWorkItem(ref: $0) }, showsOthers: true, parents: [Steps.task(5150): Steps.task(5180)]
+            work: { MapWorkItem(ref: $0, isYours: $0 == Steps.task(5180)) }, showsOthers: true,
+            parents: [Steps.task(5150): Steps.task(5180)]
         )
         #expect(Set(map.everything.map(Self.name)) == ["5150", "5180", "5201", "5210"])
         #expect(map.othersCount == 1)
@@ -886,7 +956,7 @@ import Testing
     @Test func anOpenParentOfDoneWorkStaysOnTheMap() {
         let board = Steps.board([:]).withWork([Steps.work(5150, .completed), Steps.work(5151, .completed)], missions: [], stories: [])
         let parents = [Steps.task(5150): Steps.task(5180), Steps.task(5151): Steps.task(5180)]
-        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref) : nil }
+        let work = { (ref: ItemRef) -> MapWorkItem? in ref == Steps.task(5180) ? MapWorkItem(ref: ref, isYours: true) : nil }
         let map = WorkMap(board, missions: [], work: work, parents: parents)
         let graph = map.bands.first?.graph
         #expect(graph?.columns == [.done, .wave(0)])
@@ -916,7 +986,9 @@ import Testing
     @Test func workUnderAHiddenCardGoesUpOnlyItsOwnWorkItemsParents() throws {
         let board = Steps.board(Self.open([4091])).withWork([Steps.work(5150, .toDo)], missions: [], stories: [])
         let parents = [Steps.task(5150): Steps.task(5112), Steps.task(5112): Steps.task(5180), Steps.task(5113): Steps.task(5190)]
-        let known = { (ref: ItemRef) -> MapWorkItem? in [5180, 5190].contains(ref.number ?? 0) ? MapWorkItem(ref: ref) : nil }
+        let known = { (ref: ItemRef) -> MapWorkItem? in
+            [5180, 5190].contains(ref.number ?? 0) ? MapWorkItem(ref: ref, isYours: true) : nil
+        }
         let linked = [Self.pr(4091): [Steps.task(5112), Steps.task(5113)]]
         let map = WorkMap(board, missions: [], linked: linked, work: known, parents: parents)
         #expect(Self.lines(map.bands.first?.graph, in: map) == ["5150 > !4091", "!4091 > 5180", "!4091 > 5190"])

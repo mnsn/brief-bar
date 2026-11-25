@@ -15,9 +15,10 @@ import SwiftUI
 /// their work items, and what those stories are when nothing else has them, which the engine reads then. And it tells My
 /// Work's Map the dependencies Azure DevOps links the sprint's work items with (`MapDependencies`), and, while My Work shows
 /// the Map, has the engine read what the work items the Map can show that no list or sprint has are: those the
-/// dependencies, and the lines you and sessions said, name, and those you added. With Parents on, it climbs from your work
-/// items to their parents, a level each time a read names them, all the way up (`mapParentLookups`), and tells the Map
-/// those parents, with the Related links Azure DevOps has between the sprint's work items and others.
+/// dependencies, and the lines you and sessions said, name, and those you added. With Parents showing any, it climbs from your
+/// work items to their parents, a level each time a read names them, all the way up, however high Parents goes, so another
+/// level shows at once (`mapParentLookups`), and tells the Map those parents, with the Related links Azure DevOps has between
+/// the sprint's work items and others.
 @MainActor
 final class WorkLinksStore {
     /// The stories your pull requests are for, while Show Links reads them and Pull Request Order wants them.
@@ -137,8 +138,8 @@ final class WorkLinksStore {
             order.$mapEdits.map { _ in () }
                 .merge(with: order.$mapTold.map { _ in () }, order.$myWorkView.map { _ in () }, order.$myWorkPage.map { _ in () })
                 .merge(
-                    with: order.$mapShowsParents.map { _ in () }, settings.$myWorkShows.removeDuplicates().map { _ in () },
-                    order.$stages.map { _ in () }
+                    with: order.$mapParentLevel.map { $0 != MapParentLevel.none }.removeDuplicates().map { _ in () },
+                    settings.$myWorkShows.removeDuplicates().map { _ in () }, order.$stages.map { _ in () }
                 )
                 .dropFirst()
                 .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
@@ -382,13 +383,15 @@ final class WorkLinksStore {
     /// At most how many work items the Map has read for it.
     static let mostMapLookups = 200
 
-    /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents on: climbing
-    /// from the work items Show Links links to the pull requests on its board, as their cards stand for them, those you added
-    /// to it and, while Show shows your work, those My Work has cards for, your work in the sprint, what's left and what's done
-    /// (`SprintBoard.myWork`, `myDone`), and outside it, up their parents (`mapParentLookups`): not a story of yours whose tasks
-    /// are all someone else's, which has none. Someone else's work adds none. None otherwise.
+    /// The work items My Work's Map wants read with their parent, while a window shows it on screen with Parents showing any:
+    /// climbing from the work items Show Links links to the pull requests on its board, as their cards stand for them, those
+    /// you added to it and, while Show shows your work, those My Work has cards for, your work in the sprint, what's left and
+    /// what's done (`SprintBoard.myWork`, `myDone`), and outside it, up their parents (`mapParentLookups`): not a story of
+    /// yours whose tasks are all someone else's, which has none. Someone else's work adds none. None otherwise.
     private func mapParentNames() -> Set<WorkItemKey> {
-        guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map, order.mapShowsParents else { return [] }
+        guard myWorkIsOnScreen, let order, order.showsMyWork, order.myWorkView == .map,
+              order.mapParentLevel != MapParentLevel.none
+        else { return [] }
         var start: Set<WorkItemKey> = []
         func add(_ ref: ItemRef) {
             if ref.kind == .workItem, let id = ref.number { start.insert(WorkItemKey(ref.scope, id)) }

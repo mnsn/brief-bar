@@ -63,6 +63,9 @@ package struct WorkMapContent {
     /// What a pull request's or work item's node says at a glance, under its title, in their order, whatever At a Glance
     /// hides (`MapGlance`): none for one the page doesn't know.
     package var glances: (ItemRef) -> [MapGlance]
+    /// The backlog levels above tasks that Parents offers, from the lowest, as the sprint's team names them: Stories,
+    /// Features, Epics.
+    package var parentLevels: [String]
 
     package init(
         card: @escaping (BoardCard) -> BoardCardContent?, work: BoardWorkContent?, face: @escaping (ItemRef) -> WorkMapFace?,
@@ -71,7 +74,8 @@ package struct WorkMapContent {
         select: @escaping (ItemRef) -> Void, related: Set<ItemRef> = [], showBoard: @escaping () -> Void,
         ask: ((WorkMapQuestion, WorkMapAsk) async -> String)? = nil, asksSessions: Bool = false, find: WorkMapFinder? = nil,
         azureDevOps: WorkMapAzureDevOps? = nil, state: @escaping (ItemRef) -> AnyView? = { _ in nil },
-        workItem: @escaping (ItemRef) -> WorkMapWorkItemMenu? = { _ in nil }, glances: @escaping (ItemRef) -> [MapGlance] = { _ in [] }
+        workItem: @escaping (ItemRef) -> WorkMapWorkItemMenu? = { _ in nil }, glances: @escaping (ItemRef) -> [MapGlance] = { _ in [] },
+        parentLevels: [String] = ["Stories", "Features", "Epics"]
     ) {
         self.card = card
         self.work = work
@@ -90,6 +94,7 @@ package struct WorkMapContent {
         self.state = state
         self.workItem = workItem
         self.glances = glances
+        self.parentLevels = parentLevels
     }
 }
 
@@ -394,15 +399,15 @@ package struct WorkMapView: View {
     }
 
     /// What's over the bands, or All's canvas: Done, while the Map has anything done, with how many it leaves out while it's
-    /// off; Parents, while Azure DevOps gives your work any; Others' work, with how many it shows; At a Glance, while it has
-    /// anything to show; and Link in Azure DevOps… for the lines Azure DevOps doesn't link yet; and, with All, + Task, + Step
-    /// and what you hid there.
+    /// off; Parents, how high it shows them, while Azure DevOps gives your work any or it shows none; Others' work, with how
+    /// many it shows; At a Glance, while it has anything to show; and Link in Azure DevOps… for the lines Azure DevOps
+    /// doesn't link yet; and, with All, + Task, + Step and what you hid there.
     @ViewBuilder
     private var controls: some View {
         let unlinked = content.azureDevOps == nil ? [] : map.unlinked
         let showsAll = grouping == .all
         let offersDone = map.doneCount > 0 || !map.showsDone
-        let offersParents = map.hasParents || !map.showsParents
+        let offersParents = map.hasParents || map.parentLevel == MapParentLevel.none
         let offersGlances = !map.bands.isEmpty || !map.groups.isEmpty || !map.loose.isEmpty
         if offersDone || offersParents || content.find != nil || offersGlances || !unlinked.isEmpty || showsAll {
             HStack(spacing: 10) {
@@ -410,7 +415,7 @@ package struct WorkMapView: View {
                     WorkMapDoneToggle(order: order, isOn: map.showsDone, count: map.doneCount)
                 }
                 if offersParents {
-                    WorkMapParentsToggle(order: order, isOn: map.showsParents)
+                    WorkMapParentsMenu(order: order, level: map.parentLevel, levels: content.parentLevels)
                 }
                 if content.find != nil {
                     WorkMapOthersToggle(order: order, count: map.othersCount, shown: shownOthers)
@@ -2723,19 +2728,51 @@ struct WorkMapDoneToggle: View {
 
 // MARK: - Parents
 
-/// Parents, over the Map: a checkbox, remembered.
-struct WorkMapParentsToggle: View {
+/// Parents, over the Map: a menu of how high up their chains it shows the parents Azure DevOps gives your work, remembered:
+/// None, the team's backlog levels above tasks, from the lowest, or All, of whatever type, its choice in its title.
+struct WorkMapParentsMenu: View {
     let order: PullRequestOrder
-    /// Whether the Map shows the parents Azure DevOps gives your work, and theirs.
-    let isOn: Bool
+    /// How high the Map shows them (`MapParentLevel`).
+    let level: Int
+    /// The team's backlog levels above tasks, from the lowest: Stories, Features, Epics.
+    let levels: [String]
 
     var body: some View {
-        Toggle(isOn: Binding(get: { isOn }, set: { order.setMapShowsParents($0) })) {
-            Text("Parents")
-                .font(size: 12, weight: .medium)
+        let name = Self.name(of: level, levels: levels)
+        Menu {
+            Picker(
+                "Parents",
+                selection: Binding(
+                    get: { MapParentLevel.choice(of: level, among: levels.count) }, set: { order.setMapParentLevel($0) }
+                )
+            ) {
+                Text("None").tag(MapParentLevel.none)
+                ForEach(Array(levels.enumerated()), id: \.offset) { offset, level in
+                    Text(level).tag(offset + 1)
+                }
+                Text("All").tag(MapParentLevel.all)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            WorkMapControlLabel(title: "Parents: \(name)", systemImage: "arrow.up.to.line", isMenu: true)
         }
-        .toggleStyle(.checkbox)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help(WorkMapText.parentsHelp)
+        .accessibilityLabel("Parents")
+        .accessibilityValue(name)
+    }
+
+    /// What its title says it shows: "None", "Stories", "All".
+    static func name(of level: Int, levels: [String]) -> String {
+        switch MapParentLevel.choice(of: level, among: levels.count) {
+        case MapParentLevel.none: "None"
+        case MapParentLevel.all: "All"
+        case let choice: levels[choice - 1]
+        }
     }
 }
 
@@ -3059,8 +3096,10 @@ package enum WorkMapText {
     // MARK: Parents and related work
 
     static let parentsHelp = """
-        Show the parents Azure DevOps gives your work, and theirs, each after all that's part of it, as a parent waits for \
-        it to close, joined to it by a lighter line. Off, the Map leaves them out
+        How far up to show the parents Azure DevOps gives your work, and theirs: its stories, then features, and so on, or \
+        all of them, whatever their type. Each comes after all that's part of it, as a parent waits for it to close, joined \
+        to it by a lighter line. Someone else's, or no one's, show only with Others' work: without it, the line goes up past \
+        them. None leaves parents out
         """
 
     /// What a parent's node is, for VoiceOver and its tooltip.
@@ -3085,7 +3124,8 @@ package enum WorkMapText {
 
     static let othersHelp = """
         Show, faded, the work items of others that your work waits for, and what those wait for, and those that wait right \
-        after yours, as Azure DevOps links them and you or sessions said on the Map
+        after yours, as Azure DevOps links them and you or sessions said on the Map; and, with Parents, the parents of your \
+        work that are someone else's or no one's
         """
 
     static let glancesHelp = """

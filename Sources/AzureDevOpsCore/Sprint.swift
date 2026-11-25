@@ -295,6 +295,9 @@ public struct SprintBoard: Sendable, Equatable {
     /// stories pull requests are for (`WorkItemStories`).
     public var taskTypes: Set<String>
     public var portfolioTypes: Set<String>
+    /// Its backlogs above tasks, from the lowest, as its backlog configuration names them, such as Stories, Features and
+    /// Epics; empty when it couldn't be read. For how far up My Work's Map shows parents (`BacklogLevels`).
+    public var levels: [BacklogLevel]
     /// Each work item type's states, by the category of each, as the team's backlog configuration maps them, such as Task's
     /// `["New": "Proposed", "Active": "InProgress", "Closed": "Completed", "Removed": "Removed"]`: for the states a work item
     /// can be put in (`states(of:)`); empty when its configuration couldn't be read.
@@ -302,7 +305,7 @@ public struct SprintBoard: Sendable, Equatable {
 
     public init(
         team: TeamRef, sprint: Sprint, rows: [Row], me: String, taskTypes: Set<String> = ["Task"], portfolioTypes: Set<String> = [],
-        stateCategories: [String: [String: String]] = [:]
+        levels: [BacklogLevel] = [], stateCategories: [String: [String: String]] = [:]
     ) {
         self.team = team
         self.sprint = sprint
@@ -310,16 +313,19 @@ public struct SprintBoard: Sendable, Equatable {
         self.me = me.lowercased()
         self.taskTypes = taskTypes
         self.portfolioTypes = portfolioTypes
+        self.levels = levels
         self.stateCategories = stateCategories
     }
 
     /// Lays the sprint's work items out as a task board. `relations` are the sprint's (each work item at the top
     /// level, and each task under its parent); `taskTypes` are the types that are cards rather than rows, such as
     /// Task (and Bug, for teams that track bugs as tasks); `portfolioTypes` are those of the team's portfolio backlogs;
-    /// `stateCategories` each type's states, by their categories. Removed work items are left out.
+    /// `levels` its backlogs above tasks; `stateCategories` each type's states, by their categories. Removed work items are
+    /// left out.
     public static func build(
         team: TeamRef, sprint: Sprint, me: String, relations: [ADOIterationWorkItems.Relation], items: [WorkItem],
-        taskTypes: Set<String>, portfolioTypes: Set<String> = [], stateCategories: [String: [String: String]] = [:]
+        taskTypes: Set<String>, portfolioTypes: Set<String> = [], levels: [BacklogLevel] = [],
+        stateCategories: [String: [String: String]] = [:]
     ) -> SprintBoard {
         var byId: [Int: WorkItem] = [:]
         for item in items where item.category != .removed {
@@ -364,7 +370,7 @@ public struct SprintBoard: Sendable, Equatable {
             rows.append(Row(parent: nil, tasks: unparented.sorted(by: WorkItem.ordered)))
         }
         return SprintBoard(
-            team: team, sprint: sprint, rows: rows, me: me, taskTypes: taskTypes, portfolioTypes: portfolioTypes,
+            team: team, sprint: sprint, rows: rows, me: me, taskTypes: taskTypes, portfolioTypes: portfolioTypes, levels: levels,
             stateCategories: stateCategories
         )
     }

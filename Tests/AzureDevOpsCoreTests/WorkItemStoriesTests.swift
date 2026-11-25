@@ -143,6 +143,32 @@ import Testing
         #expect(standard.stories(of: Self.pullRequest, workItems: [5171]) == [OrderStory(ref: Self.ref(5171), type: "Dev Task")])
     }
 
+    /// How high each work item is, for how far up My Work's Map shows parents: by the team's backlogs in its project, whatever
+    /// the case of its type; as every process has them elsewhere, or when they couldn't be read; and unknown for a type on
+    /// none of them.
+    @Test func howHighAWorkItemIsTheTeamsBacklogsSayInItsProject() {
+        var board = Self.board
+        board.levels = [
+            BacklogLevel(name: "Backlog items", types: ["User Story", "Spike"]), BacklogLevel(name: "Features", types: ["Feature"]),
+            BacklogLevel(name: "Initiatives", types: ["Initiative"]),
+        ]
+        let levels = WorkItemLevels(board: board)
+        #expect(levels.levels.names == ["Backlog items", "Features", "Initiatives"])
+        let level = { (type: String, project: String) in levels.level(of: Self.item(1, type, project: project)) }
+        #expect(level("Bug", "Storefront") == 0 && level("task", "Storefront") == 0)
+        #expect(level(" spike ", "storefront") == 1 && level("Feature", "Storefront") == 2 && level("Initiative", "Storefront") == 3)
+        #expect(level("Epic", "Storefront") == nil && level("Key Result", "Storefront") == nil)
+        // Another project's are as standard: a bug is on none of them, and an epic is above features.
+        #expect(level("Bug", "Payments") == nil && level("Spike", "Payments") == nil)
+        #expect(level("Product Backlog Item", "Payments") == 1 && level("Epic", "Payments") == 3)
+        #expect(levels.level(of: Self.item(1, "Spike", organization: "fabrikam")) == nil)
+        // Without them, as standard everywhere.
+        for unread in [WorkItemLevels(board: Self.board), WorkItemLevels(board: nil)] {
+            #expect(unread.levels == .standard && unread.levels.names == ["Stories", "Features", "Epics"])
+            #expect(unread.level(of: Self.item(1, "User Story")) == 1 && unread.level(of: Self.item(1, "Epic")) == 3)
+        }
+    }
+
     @Test func aPullRequestIsForEachStoryOnceWithItsTaskThatComesFirst() {
         let stories = WorkItemStories(workItems: [
             Self.item(5101, "User Story"), Self.item(5102, "Task", parent: 5101, rank: 5), Self.item(5103, "Task", parent: 5101, rank: 2),
