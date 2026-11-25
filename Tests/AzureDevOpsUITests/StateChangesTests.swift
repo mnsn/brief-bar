@@ -18,6 +18,9 @@ import Testing
         var fails: ADOError?
         /// Whom the Azure CLI is signed in as: as the client does, a change asked for as someone else goes nowhere.
         var signedIn: String?
+        /// The rest of the work item it answers a change of its state with, by its fields' names, as Azure DevOps answers
+        /// with the whole of it: nothing more than its state and when it changed, unless a test says.
+        var fields: [String: Any] = [:]
 
         /// As the client does: nothing goes as someone else, nor once `wanted` no longer wants it, as it's about to go.
         func send(
@@ -28,9 +31,12 @@ import Testing
             sent.append(write)
             if let fails { throw fails }
             guard case .setState(let key, _, let state) = write else { throw ADOError.http(400) }
+            var fields = self.fields
+            fields["System.Id"] = key.id
+            fields["System.State"] = state
+            fields["System.ChangedDate"] = "2030-01-01T10:00:00Z"
             return .workItem(try ADOJSON.decoder().decode(ADOWorkItem.self, from: JSONSerialization.data(withJSONObject: [
-                "id": key.id, "rev": 2,
-                "fields": ["System.Id": key.id, "System.State": state, "System.ChangedDate": "2030-01-01T10:00:00Z"],
+                "id": key.id, "rev": 2, "fields": fields,
             ] as [String: Any])))
         }
     }
@@ -555,6 +561,45 @@ import Testing
 
         sprint.setVisible(true, for: "sprint")
         #expect(states.item(story.key) == story)
+    }
+
+    /// A story My Work's Map shows as your tasks' parent, renamed and given to someone else since the sprint was last read,
+    /// while nothing shows the sprint, keeps its new name and owner once you changed its state from the Map, as Azure DevOps
+    /// answered the change, with the whole work item: on the sprint's board too, though it isn't read again until something
+    /// shows the sprint, so that Show Links' next read, as the change left it and changed as late as the board has it,
+    /// doesn't give it back its old name.
+    @Test func aWorkItemRenamedWhileNothingShowsTheSprintKeepsItsNameOnceItsStateChanged() async throws {
+        let (sprint, states, azure) = live()
+        let story = try item(sprint, 5101)
+        let changedAt = try #require(story.changedAt)
+        #expect(!sprint.isShowing)
+        let sam = Person(id: "22222222-2222-2222-2222-222222222222", name: "Sam Rivera")
+        #expect(story.assignedTo != sam)
+        var renamed = story
+        renamed.title = "Save items for later"
+        renamed.assignedTo = sam
+        renamed.changedAt = changedAt.addingTimeInterval(60)
+        states.linked = { $0 == story.key ? renamed : nil }
+        #expect(states.item(story.key) == renamed)
+        azure.fields = [
+            "System.Title": renamed.title,
+            "System.AssignedTo": ["id": sam.id.uppercased(), "displayName": sam.name, "uniqueName": "sam@contoso.com"],
+        ]
+
+        #expect(await states.change(renamed, to: "Closed"))
+        let changed = try #require(states.item(story.key))
+        #expect(changed.state == "Closed" && changed.isDone && changed.changedAt != renamed.changedAt)
+        #expect(changed.title == renamed.title && changed.assignedTo == sam)
+        let onBoard = try item(sprint, 5101)
+        #expect(onBoard.title == renamed.title && onBoard.assignedTo == sam && onBoard.changedAt == changed.changedAt)
+
+        var read = renamed
+        read.state = changed.state
+        read.category = changed.category
+        read.changedAt = changed.changedAt
+        states.linked = { $0 == story.key ? read : nil }
+        #expect(states.item(story.key)?.title == renamed.title)
+        #expect(states.item(story.key) == changed)
     }
 
     /// Waits for what the changes do, which runs on the main actor between this test's awaits, for as long as a busy machine

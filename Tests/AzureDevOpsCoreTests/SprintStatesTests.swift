@@ -49,43 +49,64 @@ import Testing
 
     // MARK: Where a change shows at once
 
-    /// As Azure DevOps answered: in the state it says, in the category the board maps it to, changed when it says; else in
-    /// the state asked for, at once; and, for a state the board doesn't map, in the category its name says.
+    /// As Azure DevOps answered: in the state it says, in the category the board maps it to, changed when it says, named and
+    /// assigned as it says, as it answers with the whole work item, unassigned when it leaves its owner out, with the rest of
+    /// it as it was; else in the state asked for, at once, named and assigned as it was; and, for a state the board doesn't
+    /// map, in the category its name says.
     @Test func aWorkItemWhoseStateChangedIsAsAzureDevOpsSays() throws {
         let board = DemoData.sprintBoard(now: t(0))
         let task = try #require(board.item(WorkItemKey(DemoData.organization, 5104)))
-        #expect(task.state == "New" && task.category == .proposed)
-        let answer = try Fixture.decode(ADOWorkItem.self, WorkFixture.workItem(5104, state: "Active"))
+        #expect(task.state == "New" && task.category == .proposed && task.assignedTo != nil && task.assignedTo != People.sam)
+        let answer = try Fixture.decode(
+            ADOWorkItem.self, WorkFixture.workItem(5104, "Task", "Move a saved item back", state: "Active", assignee: People.sam)
+        )
         let changed = task.changing(state: "Active", answer: answer, at: t(60), categories: board.categories(of: task.type))
         #expect(changed.state == "Active" && changed.category == .inProgress)
         #expect(changed.changedAt == answer.fields.changedDate)
-        #expect(changed.title == task.title && changed.remainingWork == task.remainingWork && changed.iteration == task.iteration)
+        #expect(changed.title == "Move a saved item back" && changed.assignedTo == People.sam)
+        #expect(changed.remainingWork == task.remainingWork && changed.iteration == task.iteration && changed.parentId == task.parentId)
+        let unassigned = try Fixture.decode(ADOWorkItem.self, WorkFixture.workItem(5104, state: "Active"))
+        #expect(task.changing(state: "Active", answer: unassigned, at: t(60), categories: nil).assignedTo == nil)
+        let untitled = try Fixture.decode(ADOWorkItem.self, [
+            "id": 5104, "rev": 2, "fields": ["System.Id": 5104, "System.State": "Active", "System.ChangedDate": "2030-01-01T10:00:00Z"],
+        ] as [String: Any])
+        let stateOnly = task.changing(state: "Active", answer: untitled, at: t(60), categories: nil)
+        #expect(stateOnly.state == "Active" && stateOnly.title == task.title && stateOnly.assignedTo == task.assignedTo)
         let unanswered = task.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "task"))
         #expect(unanswered.state == "Closed" && unanswered.category == .completed && unanswered.changedAt == t(60))
+        #expect(unanswered.title == task.title && unanswered.assignedTo == task.assignedTo)
         let guessed = task.changing(state: "Blocked", answer: nil, at: t(60), categories: board.categories(of: task.type))
         #expect(guessed.category == .inProgress)
     }
 
-    /// Changed, it's in its new state where it was on the board, a story's row or a task in it, with nothing else of it
+    /// Changed, it's in its new state where it was on the board, a story's row or a task in it, named and assigned as the
+    /// change has it, though it was renamed or given to someone else since the sprint was read, with nothing else of it
     /// changed; in a removed state, it leaves the board; one the board doesn't have changes nothing.
     @Test func aWorkItemWhoseStateChangedStaysWhereItIs() throws {
         let board = DemoData.sprintBoard(now: t(0))
         let task = try #require(board.item(WorkItemKey(DemoData.organization, 5104)))
-        // Only its state is the change's: the rest is the board's, as read.
-        var stale = task
-        stale.title = "As it was when its state changed"
-        let closed = board.changingState(stale.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "Task")))
+        // Its state, name and owner are the change's, as Azure DevOps answered it or BriefBar last read it; the rest is the
+        // board's, as read.
+        var renamed = task
+        renamed.title = "Renamed since the sprint was read"
+        renamed.assignedTo = People.sam
+        renamed.remainingWork = 99
+        let closing = renamed.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "Task"))
+        let closed = board.changingState(closing)
         let row = try #require(closed.rows.first { $0.parent?.id == 5101 })
         #expect(row.tasks.map(\.id) == [5102, 5103, 5104, 5105])
         let shown = try #require(closed.item(task.key))
         #expect(shown.state == "Closed" && shown.isDone && shown.changedAt == t(60))
-        #expect(shown.title == task.title)
+        #expect(shown.title == renamed.title && shown.assignedTo == People.sam && shown.remainingWork == task.remainingWork)
         #expect(closed.count(in: .done) == board.count(in: .done) + 1)
 
         let story = try #require(board.item(WorkItemKey(DemoData.organization, 5101)))
+        var renamedStory = story
+        renamedStory.title = "Save items for later"
         let categories = board.categories(of: story.type)
-        let resolved = board.changingState(story.changing(state: "Resolved", answer: nil, at: t(60), categories: categories))
-        #expect(resolved.rows.first { $0.parent?.id == 5101 }?.parent?.category == .resolved)
+        let resolved = board.changingState(renamedStory.changing(state: "Resolved", answer: nil, at: t(60), categories: categories))
+        let parent = try #require(resolved.rows.first { $0.parent?.id == 5101 }?.parent)
+        #expect(parent.category == .resolved && parent.title == renamedStory.title)
         #expect(resolved.rows.map(\.id) == board.rows.map(\.id))
 
         let removing = task.changing(state: "Removed", answer: nil, at: t(60), categories: board.categories(of: "Task"))
@@ -97,19 +118,21 @@ import Testing
         #expect(board.changingState(elsewhere.changing(state: "Closed", answer: nil, at: t(60), categories: nil)) == board)
     }
 
-    /// Changed, one of your work items outside the sprint is in its new state where it is among them, with nothing else of
-    /// it changed, though it's done, until they're read again; one they don't have changes nothing.
+    /// Changed, one of your work items outside the sprint is in its new state where it is among them, named as the change has
+    /// it, with nothing else of it changed, though it's done, until they're read again; one they don't have changes nothing.
     @Test func yourWorkOutsideTheSprintWhoseStateChangedStaysWhereItIs() throws {
         let board = DemoData.sprintBoard(now: t(0))
         let outside = DemoData.outsideWork(now: t(0))
         let task = try #require(outside.items.first { $0.id == 5052 })
-        var stale = task
-        stale.title = "As it was when its state changed"
-        let closed = outside.changingState(stale.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "Task")))
+        var renamed = task
+        renamed.title = "Renamed since they were read"
+        renamed.iteration = "Shop\\Somewhere else"
+        let closing = renamed.changing(state: "Closed", answer: nil, at: t(60), categories: board.categories(of: "Task"))
+        let closed = outside.changingState(closing)
         #expect(closed.items.map(\.id) == outside.items.map(\.id))
         let shown = try #require(closed.items.first { $0.id == 5052 })
         #expect(shown.state == "Closed" && shown.isDone && shown.changedAt == t(60))
-        #expect(shown.title == task.title && shown.iteration == task.iteration)
+        #expect(shown.title == renamed.title && shown.iteration == task.iteration)
 
         var elsewhere = task
         elsewhere.id = 9_999
